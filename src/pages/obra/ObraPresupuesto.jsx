@@ -1102,7 +1102,17 @@ function TabMateriales({ detalle, obra }) {
         for (const m of recipeMats) {
           if (!m.nombre) continue;
           const key = m.nombre;
-          const qty = (m.cantidad || 0) * t.cantidad;
+          // Physical quantity per APU unit: validate stored cantidad against costoUnit/precio
+          const stored = m.cantidad || 0;
+          const precio = m.precio || 0;
+          const costoUnit = m.costoUnit || 0;
+          let cantUnit = stored;
+          if (stored > 0 && precio > 0 && costoUnit > 0 && Math.abs(stored * precio - costoUnit) > costoUnit * 0.01 + 0.01) {
+            cantUnit = costoUnit / precio; // stored cantidad is inconsistent → derive from cost
+          } else if (stored === 0 && precio > 0 && costoUnit > 0) {
+            cantUnit = costoUnit / precio; // only costoUnit available → derive
+          }
+          const qty = cantUnit * t.cantidad;
           if (matMap.has(key)) {
             matMap.get(key).cantidad += qty;
           } else {
@@ -1144,7 +1154,7 @@ function TabMateriales({ detalle, obra }) {
         <td><b>${m.nombre}</b></td>
         <td>${m.categoria}</td>
         <td>${m.unidad}</td>
-        <td style="text-align:right;font-family:monospace">${fmtN(m.cantidad)}</td>
+        <td style="text-align:right;font-family:monospace">${fmtQ(m.cantidad)}</td>
         <td style="width:120px"></td>
       </tr>`).join('');
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -1235,7 +1245,7 @@ function TabMateriales({ detalle, obra }) {
                     <Chip style={{ fontSize: 9 }}>{m.categoria}</Chip>
                   </div>
                   <div className="k-cell" style={{ flex: 0.6, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>{m.unidad}</div>
-                  <div className="k-cell" style={{ flex: 0.9, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmtN(m.cantidad)}</div>
+                  <div className="k-cell" style={{ flex: 0.9, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmtQ(m.cantidad)}</div>
                 </div>
               ))}
             </>
