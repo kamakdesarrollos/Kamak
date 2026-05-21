@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"C:\\\\Users\\\\307000\\\\.claude\\\\projects\\\\c--Users-307000-Desktop-Kamak-Desarrollos-Software-kamak\\\\memory\")",
+      "Bash(npx vite *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\307000\\.claude\\projects\\c--Users-307000-Desktop-Kamak-Desarrollos-Software-kamak\\memory"
+    ]
+  }
+}

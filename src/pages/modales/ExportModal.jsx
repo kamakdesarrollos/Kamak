@@ -16,7 +16,7 @@ const tareaVentaUnit = (t, rubro) => {
 
 const calcRubroExport = (rubro) => {
   let cMat = 0, cSub = 0, venta = 0;
-  for (const t of rubro.tareas) {
+  for (const t of rubro.tareas.filter(t => t.tipo !== 'seccion')) {
     cMat += t.costoMat * t.cantidad;
     cSub += (t.costoSub || 0) * t.cantidad;
     venta += tareaVentaUnit(t, rubro) * t.cantidad;
@@ -82,7 +82,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       <div><div class="cell-lbl">CLIENTE</div><div class="cell-val">${obra?.cliente || '—'}</div></div>
       <div><div class="cell-lbl">TIPO DE OBRA</div><div class="cell-val">${obra?.tipo || '—'}</div></div>
       <div><div class="cell-lbl">FECHA · VIGENCIA</div><div class="cell-val">${fecha}</div><div class="cell-sub">Vigencia: ${vigencia} días</div></div>
-      <div><div class="cell-lbl">MONTO TOTAL</div><div class="cell-val-lg">${fmtM(totalVenta, moneda)}</div><div class="cell-sub">+ IVA</div></div>
+      <div><div class="cell-lbl">MONTO TOTAL</div><div class="cell-val-lg">${fmtM(totalVenta, moneda)}</div>${dolarVenta && moneda === 'ARS' ? `<div style="font-size:13px;font-weight:800;color:#1a9b9c;font-family:'JetBrains Mono',monospace;margin-top:4px">U$S ${Math.round(totalVenta / dolarVenta).toLocaleString('es-AR')} <span style="font-size:9px;letter-spacing:1px;font-weight:700">+ IVA</span></div>` : ''}<div class="cell-sub">+ IVA</div></div>
     </div>
   </div>`;
 
@@ -144,7 +144,11 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
           <span>TOTAL ${moneda}</span>
           <span class="total-val">${fmtM(totalVenta, moneda)} <span class="iva">+ IVA</span></span>
         </div>
-        ${dolarVenta && moneda === 'ARS' ? `<div style="margin-top:6px;font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;border-top:1px solid #333;padding-top:5px">Equiv. USD (TC BNA $${Math.round(dolarVenta).toLocaleString('es-AR')}): <b style="color:#1a9b9c">U$S ${Math.round(totalVenta / dolarVenta).toLocaleString('es-AR')}</b></div>` : ''}
+        ${dolarVenta && moneda === 'ARS' ? `
+        <div style="margin-top:6px;border-top:1px solid #2a4a4a;padding-top:6px;display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1px">TC BNA $${Math.round(dolarVenta).toLocaleString('es-AR')}</span>
+          <span style="font-size:13px;font-weight:800;color:#1a9b9c;font-family:'JetBrains Mono',monospace">U$S ${Math.round(totalVenta / dolarVenta).toLocaleString('es-AR')} <span style="font-size:8px;letter-spacing:1px;font-weight:700">+ IVA</span></span>
+        </div>` : ''}
         ${nota ? `<div class="nota-pie">${nota}</div>` : ''}
       </div>
     </div>
@@ -190,6 +194,15 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
               <span>TOTAL</span>
               <span class="total-val">${fmtM(totalVenta, moneda)} <span class="iva">+ IVA</span></span>
             </div>
+            ${dolarVenta && moneda === 'ARS' ? `
+            <div style="margin-top:8px;border-top:1px solid #2a4a4a;padding-top:7px">
+              <div style="font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;margin-bottom:4px">EQUIVALENTE EN DÓLARES</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <span style="font-size:8.5px;color:#9a9892;font-family:'JetBrains Mono',monospace">TC BNA $${Math.round(dolarVenta).toLocaleString('es-AR')}</span>
+                <span style="font-size:15px;font-weight:800;color:#1a9b9c;font-family:'JetBrains Mono',monospace">U$S ${Math.round(totalVenta / dolarVenta).toLocaleString('es-AR')}</span>
+              </div>
+              <div style="font-size:8px;color:#9a9892;margin-top:3px;line-height:1.4">Los pagos se realizan en pesos argentinos<br>al tipo de cambio vigente.</div>
+            </div>` : ''}
           </div>
           ${nota ? `<div class="cond-nota">${nota}</div>` : ''}
         </div>

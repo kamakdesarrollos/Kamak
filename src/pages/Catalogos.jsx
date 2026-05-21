@@ -10,6 +10,54 @@ const today = () => new Date().toISOString().split('T')[0];
 const inputSt = { padding: '5px 8px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 2 };
 
+// ── Excel paste parser ─────────────────────────────────────────────────────────
+function parseReceta(text) {
+  if (!text.trim()) return { rubro: '', receta: '', unidad: 'm²', items: [] };
+  const SKIP = new Set(['Tipo','Descripcion','UD','Cantidad','P. Unitario','Importe',
+    'Materiales:','Subcontratos:','Mano de Obra:','Equipos:','Otros:','Auxiliares:',
+    'Obra:','Presupuesto:','Computo:','Emitido:','Usuario:']);
+  const VALID = new Set(['MA','SC','OT','EQ','AU','MO']);
+  const lines = text.split('\n');
+  const hdrLines = [], dataLines = [];
+  let found = false;
+  let unidad = 'm²';
+  for (const line of lines) {
+    const cells = line.split('\t').map(c => c.trim());
+    const first = cells.filter(c => c)[0] || '';
+    if (first === 'Tipo') { found = true; continue; }
+    if (VALID.has(first.toUpperCase())) found = true;
+    (found ? dataLines : hdrLines).push(cells);
+  }
+  const hdrTokens = [];
+  for (const cells of hdrLines) {
+    let skipNext = false;
+    for (const c of cells) {
+      if (!c) continue;
+      if (skipNext) { skipNext = false; continue; }
+      if (c.length < 2) continue;
+      if (SKIP.has(c)) { skipNext = true; continue; }
+      if (/^unidad:/i.test(c)) { unidad = c.replace(/^unidad:\s*/i, '').trim() || unidad; continue; }
+      hdrTokens.push(c);
+    }
+  }
+  const rubro  = hdrTokens[0] || '';
+  const receta = hdrTokens.length > 1 ? hdrTokens[1] : hdrTokens[0] || '';
+  const items  = [];
+  for (const cells of dataLines) {
+    const ne = cells.filter(c => c);
+    if (ne.length < 3) continue;
+    const tipo = ne[0].toUpperCase();
+    if (!VALID.has(tipo)) continue;
+    const cantidad = parseFloat((ne[3] || '1').replace(',', '.')) || 1;
+    const precio   = ne[4] ? parseFloat(ne[4].replace(',', '.')) || 0 : 0;
+    items.push({
+      id: `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}-${items.length}`,
+      nombre: ne[1] || '', unidad: ne[2] || 'u', cantidad, precio, tipo,
+    });
+  }
+  return { rubro, receta, unidad, items };
+}
+
 function FRow({ label, children }) {
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}><div style={labelSt}>{label}</div>{children}</div>;
 }
@@ -114,8 +162,10 @@ function APUEditor({ form, setForm, rubros, materiales, subcontratos, onSave, on
             autoFocus
             style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: '1.5px solid rgba(255,255,255,.3)', color: T.paper, fontFamily: T.font, fontSize: 18, fontWeight: 800, outline: 'none', padding: '2px 0' }}
           />
+          <input value={form.subRubro || ''} onChange={e => setForm(f => ({ ...f, subRubro: e.target.value }))}
+            placeholder="Sub-categoría" style={headerInput({ width: 180 })} />
           <input value={form.codigo || ''} onChange={e => setForm(f => ({ ...f, codigo: e.target.value }))}
-            placeholder="Código" style={headerInput({ width: 120, fontFamily: T.fontMono })} />
+            placeholder="Código" style={headerInput({ width: 100, fontFamily: T.fontMono })} />
           <input value={form.unidad || ''} onChange={e => setForm(f => ({ ...f, unidad: e.target.value }))}
             placeholder="Unidad" style={headerInput({ width: 70 })} />
           <select value={form.rubroNombre || ''} onChange={e => setForm(f => ({ ...f, rubroNombre: e.target.value }))}
@@ -281,14 +331,174 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
   );
 }
 
+// ── Importar APU desde Excel ──────────────────────────────────────────────────
+function ImportarAPUModal({ rubros, onImport, onClose }) {
+  const [text, setText] = useState('');
+  const [nombre, setNombre] = useState('');
+  const [subRubro, setSubRubro] = useState('');
+  const [rubroNombre, setRubroNombre] = useState(rubros[0]?.nombre || '');
+  const [unidad, setUnidad] = useState('m²');
+  const [items, setItems] = useState([]);
+  const [parsed, setParsed] = useState(false);
+
+  const handlePaste = (raw) => {
+    setText(raw);
+    const r = parseReceta(raw);
+    setNombre(r.receta || '');
+    setUnidad(r.unidad || 'm²');
+    if (r.rubro && rubros.find(rb => rb.nombre.toUpperCase() === r.rubro.toUpperCase())) {
+      setRubroNombre(rubros.find(rb => rb.nombre.toUpperCase() === r.rubro.toUpperCase()).nombre);
+    } else if (r.rubro && rubros.length > 0) {
+      setRubroNombre(rubros[0].nombre);
+    }
+    setItems(r.items);
+    setParsed(true);
+  };
+
+  const mats = items.filter(i => i.tipo === 'MA');
+  const subs = items.filter(i => i.tipo === 'SC');
+  const gens = items.filter(i => i.tipo === 'OT');
+  const others = items.filter(i => i.tipo !== 'MA' && i.tipo !== 'SC' && i.tipo !== 'OT');
+
+  const updateItem = (id, field, val) => setItems(prev => prev.map(it => it.id === id ? { ...it, [field]: val } : it));
+  const removeItem = (id) => setItems(prev => prev.filter(it => it.id !== id));
+
+  const confirm = () => {
+    if (!nombre.trim()) return;
+    onImport({ nombre: nombre.trim(), subRubro: subRubro.trim(), unidad, rubroNombre, mats, subs, gens });
+    onClose();
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: T.paper, borderRadius: 8, width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.4)', overflow: 'hidden' }}>
+
+        {/* Header */}
+        <div style={{ background: T.dark, color: T.paper, padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>Importar APU desde Excel</div>
+          <span onClick={onClose} style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7, userSelect: 'none' }}>✕</span>
+        </div>
+
+        <div style={{ flex: 1, overflow: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Paste area */}
+          <div>
+            <div style={{ ...labelSt, marginBottom: 4 }}>1. Copiá la pestaña del Excel y pegala acá</div>
+            <textarea
+              value={text}
+              onChange={e => handlePaste(e.target.value)}
+              onPaste={e => { e.preventDefault(); handlePaste(e.clipboardData.getData('text')); }}
+              placeholder="Ctrl+A en la pestaña del Excel → Ctrl+C → Ctrl+V acá…"
+              style={{ width: '100%', height: 100, resize: 'vertical', fontFamily: T.fontMono, fontSize: 11, padding: 8, border: `1.5px solid ${T.faint2}`, borderRadius: 4, outline: 'none', background: T.faint, boxSizing: 'border-box', color: T.ink }}
+            />
+          </div>
+
+          {/* Detected preview */}
+          {parsed && (
+            <>
+              <div style={{ background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 6, padding: '10px 14px', fontSize: 12 }}>
+                <div style={{ fontWeight: 800, marginBottom: 6, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: T.ink2 }}>2. Revisá y ajustá los datos detectados</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div>
+                      <div style={labelSt}>Nombre de la tarea (receta)</div>
+                      <input style={{ ...inputSt, fontWeight: 700 }} value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Nombre del APU…" />
+                    </div>
+                    <div>
+                      <div style={labelSt}>Sub-categoría (opcional)</div>
+                      <input style={inputSt} value={subRubro} onChange={e => setSubRubro(e.target.value)} placeholder="Ej: Muebles de hierro y madera…" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignContent: 'start' }}>
+                    <div>
+                      <div style={labelSt}>Unidad</div>
+                      <input style={inputSt} value={unidad} onChange={e => setUnidad(e.target.value)} />
+                    </div>
+                    <div>
+                      <div style={labelSt}>Gremio / Rubro</div>
+                      <select style={{ ...inputSt, cursor: 'pointer' }} value={rubroNombre} onChange={e => setRubroNombre(e.target.value)}>
+                        {rubros.map(r => <option key={r.id}>{r.nombre}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items editables */}
+              {[{ label: 'Materiales (MA)', list: mats, color: '#3d7a4a' },
+                { label: 'Sub contratos (SC)', list: subs, color: '#4a7ab5' },
+                { label: 'Gastos generales (OT)', list: gens, color: '#a05a2c' }].map(({ label, list, color }) => (
+                <div key={label} style={{ background: T.faint, borderRadius: 5, padding: 10, border: `1px solid ${T.faint2}` }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                    {label} · {list.length}
+                  </div>
+                  {list.length === 0
+                    ? <div style={{ fontSize: 11, color: T.ink3, fontStyle: 'italic' }}>Sin items</div>
+                    : <>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 56px 44px 80px 20px', gap: 3, marginBottom: 4, fontSize: 9, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                          <span>Descripción</span><span style={{ textAlign: 'right' }}>Cant</span><span style={{ textAlign: 'center' }}>UD</span><span style={{ textAlign: 'right' }}>$ Unit</span><span />
+                        </div>
+                        {list.map(it => (
+                          <div key={it.id} style={{ display: 'grid', gridTemplateColumns: '1fr 56px 44px 80px 20px', gap: 3, marginBottom: 3, alignItems: 'center' }}>
+                            <input
+                              value={it.nombre}
+                              onChange={e => updateItem(it.id, 'nombre', e.target.value)}
+                              style={{ ...inputSt, fontSize: 11, padding: '2px 5px' }}
+                            />
+                            <input
+                              type="number" min="0" step="0.01"
+                              value={it.cantidad}
+                              onChange={e => updateItem(it.id, 'cantidad', parseFloat(e.target.value) || 0)}
+                              style={{ ...inputSt, fontSize: 11, padding: '2px 5px', textAlign: 'right', fontFamily: T.fontMono }}
+                            />
+                            <input
+                              value={it.unidad}
+                              onChange={e => updateItem(it.id, 'unidad', e.target.value)}
+                              style={{ ...inputSt, fontSize: 11, padding: '2px 5px', textAlign: 'center' }}
+                            />
+                            <input
+                              type="number" min="0" step="0.01"
+                              value={it.precio}
+                              onChange={e => updateItem(it.id, 'precio', parseFloat(e.target.value) || 0)}
+                              style={{ ...inputSt, fontSize: 11, padding: '2px 5px', textAlign: 'right', fontFamily: T.fontMono }}
+                            />
+                            <span
+                              onClick={() => removeItem(it.id)}
+                              style={{ color: T.accent, cursor: 'pointer', fontSize: 14, textAlign: 'center', userSelect: 'none', lineHeight: 1 }}>×</span>
+                          </div>
+                        ))}
+                      </>
+                  }
+                </div>
+              ))}
+              {others.length > 0 && (
+                <div style={{ fontSize: 11, color: T.ink3 }}>+ {others.length} items de otros tipos (MO, EQ, etc.) no importados</div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '12px 18px', borderTop: `1px solid ${T.faint2}`, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <Btn sm onClick={onClose}>Cancelar</Btn>
+          <Btn sm fill onClick={confirm} style={{ opacity: (!parsed || !nombre.trim()) ? 0.4 : 1, pointerEvents: (!parsed || !nombre.trim()) ? 'none' : 'auto' }}>
+            ✓ Crear APU
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Tab: APU ──────────────────────────────────────────────────────────────────
-function TabAPU({ catalog, onAdd, onUpdate, onDelete }) {
+function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcontrato }) {
   const { tareas, rubros, materiales, subcontratos } = catalog;
   const [selRubro, setSelRubro] = useState('');
   const [search, setSearch] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState(null);
   const [editId, setEditId] = useState(null);
+  const [showImport, setShowImport] = useState(false);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -300,11 +510,41 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete }) {
 
   const startEdit = (t) => { setForm(JSON.parse(JSON.stringify(t))); setEditId(t.id); setEditMode(true); };
   const startNew  = () => {
-    setForm({ codigo: '', nombre: '', unidad: 'u', rubroNombre: rubros[0]?.nombre || '', materiales: [], subcontratos: [], mo: [] });
+    setForm({ codigo: '', nombre: '', subRubro: '', unidad: 'u', rubroNombre: rubros[0]?.nombre || '', materiales: [], subcontratos: [], mo: [] });
     setEditId(null);
     setEditMode(true);
   };
   const cancel = () => { setEditMode(false); setForm(null); setEditId(null); };
+
+  const handleImport = ({ nombre, subRubro, unidad, rubroNombre, mats, subs, gens }) => {
+    const match = (list, item) => list.find(c => c.nombre.trim().toLowerCase() === item.nombre.trim().toLowerCase());
+
+    const linkedMat = mats.map(item => {
+      const existing = match(materiales, item);
+      if (!existing) {
+        const newItem = { id: newId(), codigo: '', nombre: item.nombre, unidad: item.unidad, precio: item.precio, rubro: rubroNombre, updatedAt: today() };
+        onAddMaterial(newItem);
+        return { id: newId(), nombre: item.nombre, unidad: item.unidad, cantidad: item.cantidad, precio: item.precio };
+      }
+      return { id: newId(), nombre: existing.nombre, unidad: existing.unidad, cantidad: item.cantidad, precio: existing.precio };
+    });
+
+    const linkedSub = subs.map(item => {
+      const existing = match(subcontratos || [], item);
+      if (!existing) {
+        const newItem = { id: newId(), codigo: '', nombre: item.nombre, unidad: item.unidad, precio: item.precio, rubro: rubroNombre, updatedAt: today() };
+        onAddSubcontrato(newItem);
+        return { id: newId(), nombre: item.nombre, unidad: item.unidad, cantidad: item.cantidad, precio: item.precio };
+      }
+      return { id: newId(), nombre: existing.nombre, unidad: existing.unidad, cantidad: item.cantidad, precio: existing.precio };
+    });
+
+    const linkedGen = (gens || []).map(item => ({
+      id: newId(), nombre: item.nombre, unidad: item.unidad, cantidad: item.cantidad, precio: item.precio,
+    }));
+
+    onAdd({ codigo: '', nombre, subRubro: subRubro || '', unidad, rubroNombre, materiales: linkedMat, subcontratos: linkedSub, mo: [], generales: linkedGen });
+  };
   const save = () => {
     if (!form || !form.nombre.trim()) return;
     if (editId) onUpdate(editId, form);
@@ -339,6 +579,7 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete }) {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar tarea…"
             style={{ ...inputSt, flex: 1, padding: '4px 8px' }} />
           <Chip style={{ fontSize: 10 }}>{filtered.length} tareas</Chip>
+          <Btn sm onClick={() => setShowImport(true)}>⬇ Desde Excel</Btn>
           <Btn sm fill onClick={startNew}>+ Nueva APU</Btn>
         </div>
         <div style={{ flex: 1, overflow: 'auto' }}>
@@ -362,7 +603,10 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete }) {
                     <td style={{ padding: '7px 10px', fontWeight: 600 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <span style={{ width: 6, height: 6, borderRadius: 2, background: rCol(t.rubroNombre), flexShrink: 0 }} />
-                        {t.nombre}
+                        <div>
+                          {t.subRubro && <div style={{ fontSize: 9, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 1 }}>{t.subRubro}</div>}
+                          {t.nombre}
+                        </div>
                       </div>
                     </td>
                     <td style={{ padding: '7px 10px', color: T.ink2 }}>{t.unidad}</td>
@@ -392,6 +636,14 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete }) {
           subcontratos={subcontratos || []}
           onSave={save}
           onCancel={cancel}
+        />
+      )}
+
+      {showImport && (
+        <ImportarAPUModal
+          rubros={rubros}
+          onImport={handleImport}
+          onClose={() => setShowImport(false)}
         />
       )}
     </div>
@@ -698,6 +950,8 @@ export default function Catalogos() {
             onAdd={item => add('tareas', item)}
             onUpdate={(id, ch) => update('tareas', id, ch)}
             onDelete={id => remove('tareas', id)}
+            onAddMaterial={item => add('materiales', item)}
+            onAddSubcontrato={item => add('subcontratos', item)}
           />
         )}
         {tab === 5 && (

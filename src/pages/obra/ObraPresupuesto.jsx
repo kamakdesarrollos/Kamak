@@ -20,6 +20,7 @@ import { useUsuarios } from '../../store/UsuariosContext';
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 const fmtM = (n, moneda) => moneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
+const fmtQ = (n) => { if (!n) return '0'; const r = Math.round(n * 1000) / 1000; return r.toLocaleString('es-AR', { maximumFractionDigits: 3 }); };
 const fmtD = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
 
 const tareaVentaUnit = (t, rubro) => {
@@ -29,15 +30,16 @@ const tareaVentaUnit = (t, rubro) => {
 };
 
 const calcRubro = (rubro) => {
+  const tareas = (rubro.tareas || []).filter(t => t.tipo !== 'seccion');
   let cMat = 0, cSub = 0, venta = 0;
-  for (const t of rubro.tareas) {
+  for (const t of tareas) {
     cMat += t.costoMat * t.cantidad;
     cSub += (t.costoSub || 0) * t.cantidad;
     venta += tareaVentaUnit(t, rubro) * t.cantidad;
   }
   const costo = cMat + cSub;
   const margen = venta > 0 ? Math.round((venta - costo) / venta * 100) : 0;
-  const avance = rubro.tareas.length > 0 ? Math.round(rubro.tareas.reduce((s, t) => s + t.avance, 0) / rubro.tareas.length) : 0;
+  const avance = tareas.length > 0 ? Math.round(tareas.reduce((s, t) => s + t.avance, 0) / tareas.length) : 0;
   return { cMat, cSub, costo, venta, margen, avance };
 };
 
@@ -110,6 +112,7 @@ function TabResumen({ obra, detalle, moneda }) {
   const verCostos   = currentUser?.permisos?.verCostos   ?? true;
   const verMargenes = currentUser?.permisos?.verMargenes ?? true;
   const { costo, venta, margen, rubros: rr } = calcObra(detalle.rubros);
+  const { dolarVenta } = useDolar();
   const { movimientos: allMovs } = useMovimientos();
   const today = new Date();
   const fin = obra.fechaFinEstim ? new Date(obra.fechaFinEstim) : null;
@@ -128,6 +131,8 @@ function TabResumen({ obra, detalle, moneda }) {
   if (margen < 0) alertas.push({ tipo: 'danger', msg: `Margen negativo (${margen}%) — sobrecosto detectado` });
   if (diasRest !== null && diasRest < 30 && obra.avance < 80) alertas.push({ tipo: 'warn', msg: `Quedan ${diasRest} días pero el avance es solo ${obra.avance}%` });
   detalle.adicionales.filter(a => a.estado === 'pendiente').forEach(a => alertas.push({ tipo: 'info', msg: `Adicional pendiente de aprobación: "${a.descripcion}"` }));
+
+  const toUSD = (n) => moneda === 'ARS' && dolarVenta ? `U$S ${fmtN(Math.round(n / dolarVenta))}` : fmtM(n, moneda);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -166,12 +171,12 @@ function TabResumen({ obra, detalle, moneda }) {
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Financiero</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {[
-              ['Venta total (presu)', fmtM(venta, moneda), T.ink, true],
-              ['Costo total (presu)', fmtM(costo, moneda), T.ink, true],
-              ['Margen bruto (presu)', fmtM(venta - costo, moneda), margen < 0 ? T.accent : T.ok, verMargenes],
-              ['Gastado real', fmtM(totalGastadoReal, moneda), totalGastadoReal > costo ? T.accent : T.ink, true],
-              ['Cobrado (movimientos)', fmtM(totalCobradoReal, moneda), T.ok, true],
-              ['Falta cobrar', fmtM(faltaCobrar, moneda), faltaCobrar > 0 ? T.warn : T.ok, true],
+              ['Venta total (presu)', toUSD(venta), T.ink, true],
+              ['Costo total (presu)', toUSD(costo), T.ink, true],
+              ['Margen bruto (presu)', toUSD(venta - costo), margen < 0 ? T.accent : T.ok, verMargenes],
+              ['Gastado real', toUSD(totalGastadoReal), totalGastadoReal > costo ? T.accent : T.ink, true],
+              ['Cobrado (movimientos)', toUSD(totalCobradoReal), T.ok, true],
+              ['Falta cobrar', toUSD(faltaCobrar), faltaCobrar > 0 ? T.warn : T.ok, true],
             ].filter(([,,, show]) => show).map(([l, v, c], i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${T.faint2}`, fontSize: 12 }}>
                 <span style={{ color: T.ink2 }}>{l}</span>
@@ -274,6 +279,19 @@ function TaskAutocomplete({ value, onChange, suggestions, onSelect }) {
   );
 }
 
+function buildVisibleTareas(tareas, collapsedSections) {
+  let sec1 = null, sec2 = null;
+  return tareas.map(t => {
+    if (t.tipo === 'seccion') {
+      if (t.nivel === 1) { sec1 = t; sec2 = null; return { ...t, _hidden: false }; }
+      sec2 = t;
+      return { ...t, _hidden: !!(sec1 && collapsedSections.has(sec1.id)) };
+    }
+    const hidden = (sec1 && collapsedSections.has(sec1.id)) || (sec2 && collapsedSections.has(sec2.id));
+    return { ...t, _hidden: hidden };
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 1: PRESUPUESTO
 // ─────────────────────────────────────────────────────────────────────────────
@@ -289,9 +307,14 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
   const [addingTask, setAddingTask] = useState(null);
   const [addingRubro, setAddingRubro] = useState(false);
   const [newTask, setNewTask] = useState({ codigo: '', nombre: '', unidad: 'u', cantidad: 1, costoMat: 0, costoSub: 0 });
-  const [newRubro, setNewRubro] = useState({ nombre: '', margenMat: 20, margenMO: 35, proveedor: '' });
+  const [newRubro, setNewRubro] = useState({ rubroId: '', margenMat: 20, margenMO: 35, proveedor: '' });
+  const [selectedTareas, setSelectedTareas] = useState(new Set());
   const [showPlantillas, setShowPlantillas] = useState(false);
   const [inlineEdit, setInlineEdit] = useState(null);
+  const [editSeccionId, setEditSeccionId] = useState(null);
+  const [editSeccionNombre, setEditSeccionNombre] = useState('');
+  const [collapsedSections, setCollapsedSections] = useState(new Set());
+  const toggleSeccion = (id) => setCollapsedSections(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [colsUser, setColsUser] = useState({ costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
   // Force-off cost/margin columns based on permissions
   const cols = {
@@ -301,10 +324,13 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
     ventaUnit:  colsUser.ventaUnit,
     ventaTotal: colsUser.ventaTotal,
   };
-  const { plantillas, incrementUso } = usePlantillas();
+  const { plantillas, add: addPlantilla, incrementUso } = usePlantillas();
+  const [showSavePlantilla, setShowSavePlantilla] = useState(false);
+  const [savePlantillaForm, setSavePlantillaForm] = useState({ nombre: '', tipo: 'Comercial', descripcion: '' });
   const { obras: todasObras, detalles } = useObras();
   const { totalMensual: gfMensual } = useGastosFijos();
   const { catalog } = useCatalog();
+  const { dolarVenta } = useDolar();
 
   // Drag state ─ rubros
   const dragRubroRef = useRef(null);
@@ -348,6 +374,16 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
   })();
   const gastosFijosObra = obrasActivas.length > 0 ? Math.round(gfMensual * durMeses / obrasActivas.length) : 0;
 
+  const allVisibleTaskIds = useMemo(() => {
+    const ids = [];
+    for (const r of detalle.rubros) {
+      for (const t of buildVisibleTareas(r.tareas, collapsedSections)) {
+        if (!t._hidden && t.tipo !== 'seccion') ids.push(t.id);
+      }
+    }
+    return ids;
+  }, [detalle.rubros, collapsedSections]);
+
   const saveInlineCost = () => {
     if (!inlineEdit) return;
     const { taskId, field, value } = inlineEdit;
@@ -363,16 +399,43 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
     setSelTask(prev => prev && prev.id === taskId ? { ...prev, receta, costoMat } : prev);
   };
 
+  const guardarComoPlantilla = () => {
+    if (!savePlantillaForm.nombre.trim()) return;
+    const rubros = (detalle.rubros || []).map(r => ({
+      id: newId(), nombre: r.nombre, margenMat: r.margenMat, margenMO: r.margenMO,
+      tareas: (r.tareas || []).map(t => t.tipo === 'seccion'
+        ? { id: newId(), tipo: 'seccion', nombre: t.nombre, nivel: t.nivel || 1 }
+        : { id: newId(), nombre: t.nombre, codigo: t.codigo || '', unidad: t.unidad || 'u',
+            cantidad: t.cantidad || 1, costoMat: t.costoMat || 0, costoSub: t.costoSub || 0,
+            receta: t.receta ? { materiales: (t.receta.materiales || []).map(m => ({ ...m, id: newId() })) } : { materiales: [] },
+            ...(t.margenLinea != null ? { margenLinea: t.margenLinea } : {}) }
+      ),
+    }));
+    addPlantilla({ nombre: savePlantillaForm.nombre.trim(), tipo: savePlantillaForm.tipo, descripcion: savePlantillaForm.descripcion, rubros });
+    setShowSavePlantilla(false);
+  };
+
   const importarPlantilla = (plt) => {
     const n = detalle.rubros.length;
     const nuevos = (plt.rubros || []).map((r, idx) => ({
       id: newId(), nombre: r.nombre, proveedor: '', margenMat: r.margenMat || 20, margenMO: r.margenMO || 35,
       orden: n + idx, abierto: true,
-      tareas: (r.tareas || []).map(t => ({ id: newId(), codigo: t.codigo || '', nombre: t.nombre, unidad: t.unidad || 'u', cantidad: t.cantidad || 1, costoMat: t.costoMat || 0, costoSub: t.costoSub || 0, receta: t.receta ? { materiales: (t.receta.materiales || []).map(m => ({ ...m, id: newId() })) } : { materiales: [] }, avance: 0 })),
+      tareas: (r.tareas || []).map(t => t.tipo === 'seccion'
+        ? { id: newId(), tipo: 'seccion', nombre: t.nombre, nivel: t.nivel || 1 }
+        : { id: newId(), codigo: t.codigo || '', nombre: t.nombre, unidad: t.unidad || 'u', cantidad: t.cantidad || 1, costoMat: t.costoMat || 0, costoSub: t.costoSub || 0, receta: t.receta ? { materiales: (t.receta.materiales || []).map(m => ({ ...m, id: newId() })) } : { materiales: [] }, avance: 0 }),
     }));
     patch(d => ({ ...d, rubros: [...d.rubros, ...nuevos] }));
     incrementUso(plt.id);
     setShowPlantillas(false);
+  };
+
+  const addSeccion = (rubroId, nivel) => {
+    const nombre = window.prompt(nivel === 2 ? 'Nombre de la sub-sección:' : 'Nombre de la sección:');
+    if (!nombre?.trim()) return;
+    patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, tareas: [...r.tareas, { id: newId(), tipo: 'seccion', nombre: nombre.trim(), nivel }] } : r) }));
+  };
+  const patchSeccionNombre = (tareaId, nombre) => {
+    patch(d => ({ ...d, rubros: d.rubros.map(r => ({ ...r, tareas: r.tareas.map(t => t.id === tareaId ? { ...t, nombre } : t) })) }));
   };
 
   const toggleRubro = (id) => patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === id ? { ...r, abierto: !r.abierto } : r) }));
@@ -388,10 +451,18 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
   };
 
   const saveRubro = () => {
-    if (!newRubro.nombre.trim()) return;
-    patch(d => ({ ...d, rubros: [...d.rubros, { id: newId(), nombre: newRubro.nombre.toUpperCase(), proveedor: newRubro.proveedor, margenMat: +newRubro.margenMat, margenMO: +newRubro.margenMO, orden: d.rubros.length, abierto: true, tareas: [] }] }));
+    const catalogRubro = (catalog.rubros || []).find(r => r.id === newRubro.rubroId);
+    if (!catalogRubro) return;
+    const tareasIniciales = (catalog.tareas || [])
+      .filter(t => selectedTareas.has(t.id))
+      .map(t => {
+        const { mat, sub, mo, gen } = calcTarea(t);
+        return { id: newId(), nombre: t.nombre, codigo: t.codigo || '', unidad: t.unidad || 'u', cantidad: 1, costoMat: Math.round(mat + gen), costoSub: Math.round(sub + mo), receta: { materiales: (t.materiales || []).map(m => ({ id: newId(), nombre: m.nombre, cantidad: m.cantidad || 0, unidad: m.unidad || '', precio: m.precio || 0, costoUnit: (m.cantidad || 0) * (m.precio || 0) })) }, avance: 0 };
+      });
+    patch(d => ({ ...d, rubros: [...d.rubros, { id: newId(), nombre: catalogRubro.nombre, proveedor: newRubro.proveedor, margenMat: +newRubro.margenMat, margenMO: +newRubro.margenMO, orden: d.rubros.length, abierto: true, tareas: tareasIniciales }] }));
     setAddingRubro(false);
-    setNewRubro({ nombre: '', margenMat: 20, margenMO: 35, proveedor: '' });
+    setNewRubro({ rubroId: '', margenMat: 20, margenMO: 35, proveedor: '' });
+    setSelectedTareas(new Set());
   };
 
   const saveEditTask = () => {
@@ -480,13 +551,15 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
           <div style={{ flex: 1, background: '#f6efd9', borderRadius: 4, border: `1px solid ${T.faint2}`, overflow: 'hidden' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
               {[
-                { label: 'Total venta', val: fmtM(venta, moneda), color: T.ink, show: true },
-                { label: 'Total costo', val: fmtM(costo, moneda), color: T.ink, show: verCostos },
-                { label: 'Margen', val: `${margen}%`, color: margen < 0 ? '#dc2626' : margen < 15 ? T.warn : T.ok, show: verMargenes },
+                { label: 'Total venta', val: fmtM(venta, moneda), usd: moneda === 'ARS' && dolarVenta ? Math.round(venta / dolarVenta) : null, color: T.ink, show: true },
+                { label: 'Total costo', val: fmtM(costo, moneda), usd: moneda === 'ARS' && dolarVenta ? Math.round(costo / dolarVenta) : null, color: T.ink, show: verCostos },
+                { label: 'Margen', val: `${margen}%`, sub: fmtM(venta - costo, moneda), usd: moneda === 'ARS' && dolarVenta ? Math.round((venta - costo) / dolarVenta) : null, color: margen < 0 ? '#dc2626' : margen < 15 ? T.warn : T.ok, show: verMargenes },
               ].filter(s => s.show).map((s, i, arr) => (
                 <div key={i} style={{ padding: '8px 14px', textAlign: 'center', borderRight: i < 2 ? `1px solid ${T.faint2}` : 'none' }}>
                   <div style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>{s.label}</div>
                   <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 17, color: s.color }}>{s.val}</div>
+                  {s.sub && <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink, marginTop: 2 }}>{s.sub}</div>}
+                  {s.usd != null && <div style={{ fontFamily: T.fontMono, fontSize: 10, color: '#1a9b9c', marginTop: 2 }}>U$S {s.usd.toLocaleString('es-AR')}</div>}
                 </div>
               ))}
             </div>
@@ -507,6 +580,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center', flexShrink: 0 }}>
               <Btn sm fill onClick={() => setAddingRubro(true)}>+ Rubro</Btn>
               <Btn sm onClick={() => setShowPlantillas(true)}>📋 Desde plantilla</Btn>
+              <Btn sm onClick={() => { setSavePlantillaForm({ nombre: obra.nombre || '', tipo: 'Comercial', descripcion: '' }); setShowSavePlantilla(true); }}>💾 Guardar como plantilla</Btn>
             </div>
           )}
         </div>
@@ -578,7 +652,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
                     <div className="k-cell" style={{ flex: 0.4 }}></div>
                   </div>
 
-                  {rubro.tareas.map(tarea => {
+                  {buildVisibleTareas(rubro.tareas, collapsedSections).map(tarea => {
+                    if (tarea._hidden) return null;
                     const costoUnit = tarea.costoMat + (tarea.costoSub || 0);
                     const costoTotalRow = costoUnit * tarea.cantidad;
                     const ventaUnitRow = tareaVentaUnit(tarea, rubro);
@@ -593,12 +668,63 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
                         onClick={e => { e.stopPropagation(); setInlineEdit({ taskId: tarea.id, field, value: String(value) }); }}>
                         {ie?.field === field
                           ? <input autoFocus type="number" min="0" step="1" style={inlineInputSt} value={ie.value}
+                              onFocus={e => e.target.select()}
                               onChange={e => setInlineEdit(x => ({ ...x, value: e.target.value }))}
                               onBlur={saveInlineCost}
-                              onKeyDown={e => { if (e.key === 'Enter') saveInlineCost(); if (e.key === 'Escape') setInlineEdit(null); }} />
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  saveInlineCost();
+                                  if (field === 'cantidad') {
+                                    const idx = allVisibleTaskIds.indexOf(tarea.id);
+                                    const nextId = allVisibleTaskIds[idx + 1];
+                                    if (nextId) {
+                                      let nextT = null;
+                                      for (const r of detalle.rubros) { nextT = r.tareas.find(t => t.id === nextId); if (nextT) break; }
+                                      if (nextT) setInlineEdit({ taskId: nextId, field: 'cantidad', value: String(nextT.cantidad) });
+                                    }
+                                  }
+                                }
+                                if (e.key === 'Escape') setInlineEdit(null);
+                              }} />
                           : <span style={{ ...inlineCellSt, ...(color ? { color } : {}) }}>{fmt ? fmt(value) : value}</span>}
                       </div>
                     );
+
+                    if (tarea.tipo === 'seccion') {
+                      const indent = (tarea.nivel || 1) === 2 ? 36 : 16;
+                      const bg = tarea.nivel === 2 ? T.faint : '#e4eaf0';
+                      const isCollapsed = collapsedSections.has(tarea.id);
+                      return (
+                        <div key={tarea.id}
+                          draggable
+                          onDragStart={e => onTaskDragStart(e, rubro.id, tarea.id)}
+                          onDragOver={e => onTaskDragOver(e, tarea.id)}
+                          onDrop={e => onTaskDrop(e, rubro.id, tarea.id)}
+                          onDragEnd={onTaskDragEnd}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: `5px 12px 5px ${indent}px`, background: bg, borderTop: dragOverTaskId === tarea.id ? `2px solid ${T.accent}` : `1px solid ${T.faint2}` }}>
+                          <span style={{ color: T.ink3, cursor: 'grab', fontSize: 10, userSelect: 'none' }}>⋮⋮</span>
+                          <span
+                            onClick={() => toggleSeccion(tarea.id)}
+                            style={{ cursor: 'pointer', fontSize: 11, color: T.ink2, userSelect: 'none', width: 14, flexShrink: 0 }}>
+                            {isCollapsed ? '▸' : '▾'}
+                          </span>
+                          {editSeccionId === tarea.id
+                            ? <input autoFocus value={editSeccionNombre}
+                                onChange={e => setEditSeccionNombre(e.target.value)}
+                                onBlur={() => { patchSeccionNombre(tarea.id, editSeccionNombre); setEditSeccionId(null); }}
+                                onKeyDown={e => { if (e.key === 'Enter') { patchSeccionNombre(tarea.id, editSeccionNombre); setEditSeccionId(null); } if (e.key === 'Escape') setEditSeccionId(null); }}
+                                style={{ flex: 1, fontSize: 11, fontWeight: 800, background: 'transparent', border: 'none', borderBottom: `1.5px solid ${T.accent}`, outline: 'none', color: T.ink, fontFamily: T.font, textTransform: 'uppercase', letterSpacing: 0.5 }} />
+                            : <span
+                                onDoubleClick={() => { setEditSeccionId(tarea.id); setEditSeccionNombre(tarea.nombre); }}
+                                style={{ flex: 1, fontSize: 11, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, cursor: 'text', userSelect: 'none' }}>
+                                {tarea.nombre}
+                              </span>
+                          }
+                          {puedeEditar && <span style={{ color: T.accent, fontSize: 12, cursor: 'pointer', marginLeft: 'auto' }}
+                            onClick={() => deleteTarea(rubro.id, tarea.id)}>🗑</span>}
+                        </div>
+                      );
+                    }
 
                     return (
                       <div key={tarea.id} className="k-tr"
@@ -627,9 +753,22 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
                             {ie?.field === 'margenLinea'
                               ? <input autoFocus type="number" min="0" step="0.5" style={{ ...inlineInputSt, width: 56 }} value={ie.value}
                                   placeholder={`${rubro.margenMat}/${rubro.margenMO}`}
+                                  onFocus={e => e.target.select()}
                                   onChange={e => setInlineEdit(x => ({ ...x, value: e.target.value }))}
                                   onBlur={saveInlineCost}
-                                  onKeyDown={e => { if (e.key === 'Enter') saveInlineCost(); if (e.key === 'Escape') setInlineEdit(null); }} />
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                      saveInlineCost();
+                                      const idx = allVisibleTaskIds.indexOf(tarea.id);
+                                      const nextId = allVisibleTaskIds[idx + 1];
+                                      if (nextId) {
+                                        let nextT = null;
+                                        for (const r of detalle.rubros) { nextT = r.tareas.find(t => t.id === nextId); if (nextT) break; }
+                                        if (nextT) setInlineEdit({ taskId: nextId, field: 'margenLinea', value: nextT.margenLinea != null ? String(nextT.margenLinea) : '' });
+                                      }
+                                    }
+                                    if (e.key === 'Escape') setInlineEdit(null);
+                                  }} />
                               : <span style={{ ...inlineCellSt, color: tarea.margenLinea != null ? T.accent : T.ink3 }}>
                                   {tarea.margenLinea != null ? `${tarea.margenLinea}%` : 'def'}
                                 </span>}
@@ -671,8 +810,12 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
                       </div>
                     </div>
                   ) : (
-                    <div className="k-tr" style={{ cursor: 'pointer' }} onClick={() => { setAddingTask(rubro.id); setSelTask(null); }}>
-                      <div className="k-cell" style={{ flex: 1, color: T.accent, fontSize: 12 }}>+ Agregar tarea</div>
+                    <div className="k-tr" style={{ cursor: 'pointer', gap: 0 }}>
+                      <div className="k-cell" style={{ flex: 1, color: T.accent, fontSize: 12 }} onClick={() => { setAddingTask(rubro.id); setSelTask(null); }}>+ Agregar tarea</div>
+                      {puedeEditar && <>
+                        <div className="k-cell" style={{ color: T.ink2, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => addSeccion(rubro.id, 1)}>§ Sección</div>
+                        <div className="k-cell" style={{ color: T.ink3, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => addSeccion(rubro.id, 2)}>§§ Sub-sección</div>
+                      </>}
                     </div>
                   )}
                 </>
@@ -680,16 +823,55 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
             </Box>
           ))}
 
-          {addingRubro && (
-            <FormPanel title="Nuevo rubro" onSave={saveRubro} onCancel={() => setAddingRubro(false)}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1.5fr', gap: 10 }}>
-                <FInput label="Nombre" value={newRubro.nombre} onChange={v => setNewRubro(p => ({ ...p, nombre: v }))} placeholder="Ej: ELECTRICIDAD" />
-                <FInput label="% margen mat" value={newRubro.margenMat} onChange={v => setNewRubro(p => ({ ...p, margenMat: v }))} type="number" />
-                <FInput label="% margen Sub" value={newRubro.margenMO} onChange={v => setNewRubro(p => ({ ...p, margenMO: v }))} type="number" />
-                <FInput label="Proveedor" value={newRubro.proveedor} onChange={v => setNewRubro(p => ({ ...p, proveedor: v }))} placeholder="Nombre proveedor" />
-              </div>
-            </FormPanel>
-          )}
+          {addingRubro && (() => {
+            const selCatRubro = (catalog.rubros || []).find(r => r.id === newRubro.rubroId);
+            const tareasDispo = selCatRubro
+              ? (catalog.tareas || []).filter(t => t.rubroNombre === selCatRubro.nombre)
+              : [];
+            const toggleTarea = (id) => setSelectedTareas(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+            return (
+              <FormPanel title="Nuevo rubro" onSave={saveRubro} onCancel={() => { setAddingRubro(false); setNewRubro({ rubroId: '', margenMat: 20, margenMO: 35, proveedor: '' }); setSelectedTareas(new Set()); }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1.5fr', gap: 10 }}>
+                  <FRow label="Rubro">
+                    <select style={{ ...inputSt, cursor: 'pointer' }} value={newRubro.rubroId}
+                      onChange={e => { setNewRubro(p => ({ ...p, rubroId: e.target.value })); setSelectedTareas(new Set()); }}>
+                      <option value="">— Seleccionar rubro —</option>
+                      {(catalog.rubros || []).map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+                    </select>
+                  </FRow>
+                  <FInput label="% margen mat" value={newRubro.margenMat} onChange={v => setNewRubro(p => ({ ...p, margenMat: v }))} type="number" />
+                  <FInput label="% margen Sub" value={newRubro.margenMO} onChange={v => setNewRubro(p => ({ ...p, margenMO: v }))} type="number" />
+                  <FInput label="Proveedor" value={newRubro.proveedor} onChange={v => setNewRubro(p => ({ ...p, proveedor: v }))} placeholder="Nombre proveedor" />
+                </div>
+                {newRubro.rubroId && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Tareas disponibles {selectedTareas.size > 0 && <span style={{ color: T.accent }}>· {selectedTareas.size} seleccionadas</span>}
+                    </div>
+                    {tareasDispo.length === 0
+                      ? <div style={{ fontSize: 12, color: T.ink3, padding: '8px 0' }}>No hay tareas cargadas en este rubro del catálogo.</div>
+                      : <div style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${T.faint2}`, borderRadius: 4, background: T.paper }}>
+                          {tareasDispo.map(t => {
+                            const checked = selectedTareas.has(t.id);
+                            const { mat, sub, mo, gen } = calcTarea(t);
+                            return (
+                              <div key={t.id} onClick={() => toggleTarea(t.id)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', background: checked ? T.accentSoft : 'transparent', borderBottom: `1px solid ${T.faint}` }}>
+                                <input type="checkbox" readOnly checked={checked} style={{ cursor: 'pointer', flexShrink: 0 }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: checked ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.nombre}</div>
+                                  <div style={{ fontSize: 10, color: T.ink3 }}>{t.unidad} · mat ${fmtN(Math.round(mat + gen))} · sub ${fmtN(Math.round(sub + mo))}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                    }
+                  </div>
+                )}
+              </FormPanel>
+            );
+          })()}
         </div>
       </div>
 
@@ -720,6 +902,42 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
               })}
             </div>
             <div style={{ marginTop: 14, textAlign: 'right' }}><Btn sm onClick={() => setShowPlantillas(false)}>Cerrar</Btn></div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Guardar como plantilla */}
+      {showSavePlantilla && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowSavePlantilla(false)}>
+          <div style={{ background: T.paper, borderRadius: 8, padding: 24, width: 460, boxShadow: '0 6px 32px rgba(0,0,0,0.22)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>Guardar como plantilla</div>
+            <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>
+              Se guardará una copia del presupuesto actual con {detalle.rubros.length} rubros y {detalle.rubros.reduce((s, r) => s + (r.tareas || []).filter(t => t.tipo !== 'seccion').length, 0)} tareas (incluyendo secciones y sub-secciones).
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <FRow label="Nombre de la plantilla">
+                <input autoFocus style={inputSt} value={savePlantillaForm.nombre}
+                  onChange={e => setSavePlantillaForm(p => ({ ...p, nombre: e.target.value }))}
+                  placeholder="Ej: Panadería 130m²" />
+              </FRow>
+              <FRow label="Tipo">
+                <select style={{ ...inputSt, cursor: 'pointer' }} value={savePlantillaForm.tipo}
+                  onChange={e => setSavePlantillaForm(p => ({ ...p, tipo: e.target.value }))}>
+                  {['Comercial', 'Vivienda', 'Industrial', 'Refacción'].map(t => <option key={t}>{t}</option>)}
+                </select>
+              </FRow>
+              <FRow label="Descripción (opcional)">
+                <input style={inputSt} value={savePlantillaForm.descripcion}
+                  onChange={e => setSavePlantillaForm(p => ({ ...p, descripcion: e.target.value }))}
+                  placeholder="Breve descripción del modelo" />
+              </FRow>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+              <Btn sm onClick={() => setShowSavePlantilla(false)}>Cancelar</Btn>
+              <Btn sm fill style={{ opacity: savePlantillaForm.nombre.trim() ? 1 : 0.5 }} onClick={guardarComoPlantilla}>Guardar plantilla</Btn>
+            </div>
           </div>
         </div>
       )}
@@ -868,105 +1086,162 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 2: MATERIALES
 // ─────────────────────────────────────────────────────────────────────────────
-function TabMateriales({ detalle }) {
+function TabMateriales({ detalle, obra }) {
   const [selRubroId, setSelRubroId] = useState(null);
+  const { catalog } = useCatalog();
 
+  // Aggregate materials per rubro, grouped by nombre
   const rubroMats = useMemo(() => {
+    const catalogByNombre = new Map((catalog.tareas || []).map(ct => [ct.nombre, ct]));
     return detalle.rubros.map(rubro => {
-      const lineas = [];
-      for (const t of rubro.tareas) {
-        const mats = t.receta?.materiales || [];
-        if (mats.length > 0) {
-          mats.forEach(m => lineas.push({
-            key: `${t.id}-${m.id}`,
-            tarea: t.nombre,
-            tareaQty: t.cantidad,
-            tareaUnidad: t.unidad,
-            nombre: m.nombre,
-            categoria: m.categoria || 'General',
-            costoUnitTarea: m.costoUnit || 0,
-            total: (m.costoUnit || 0) * t.cantidad,
-          }));
-        } else if (t.costoMat > 0) {
-          lineas.push({
-            key: t.id,
-            tarea: t.nombre,
-            tareaQty: t.cantidad,
-            tareaUnidad: t.unidad,
-            nombre: 'Materiales (según presupuesto)',
-            categoria: 'General',
-            costoUnitTarea: t.costoMat,
-            total: t.costoMat * t.cantidad,
-          });
+      const matMap = new Map();
+      for (const t of (rubro.tareas || []).filter(t => t.tipo !== 'seccion')) {
+        const recipeMats = (t.receta?.materiales || []).length > 0
+          ? t.receta.materiales
+          : (catalogByNombre.get(t.nombre)?.materiales || []);
+        for (const m of recipeMats) {
+          if (!m.nombre) continue;
+          const key = m.nombre;
+          const qty = (m.cantidad || 0) * t.cantidad;
+          if (matMap.has(key)) {
+            matMap.get(key).cantidad += qty;
+          } else {
+            matMap.set(key, { nombre: m.nombre, unidad: m.unidad || '', categoria: m.categoria || 'General', cantidad: qty });
+          }
         }
       }
-      return { rubro, lineas, total: lineas.reduce((s, l) => s + l.total, 0) };
-    });
-  }, [detalle.rubros]);
+      return { rubro, materiales: [...matMap.values()].sort((a, b) => a.nombre.localeCompare(b.nombre)) };
+    }).filter(r => r.materiales.length > 0);
+  }, [detalle.rubros, catalog.tareas]);
 
-  const totalGeneral = rubroMats.reduce((s, r) => s + r.total, 0);
-  const rubrosConMats = rubroMats.filter(r => r.lineas.length > 0);
-  const visible = selRubroId ? rubroMats.filter(r => r.rubro.id === selRubroId) : rubrosConMats;
+  // Global aggregate across all rubros
+  const globalMats = useMemo(() => {
+    const matMap = new Map();
+    for (const { rubro, materiales } of rubroMats) {
+      for (const m of materiales) {
+        if (matMap.has(m.nombre)) {
+          matMap.get(m.nombre).cantidad += m.cantidad;
+        } else {
+          matMap.set(m.nombre, { ...m });
+        }
+      }
+    }
+    return [...matMap.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [rubroMats]);
+
+  const visibleMats = selRubroId
+    ? (rubroMats.find(r => r.rubro.id === selRubroId)?.materiales || [])
+    : globalMats;
+
+  const exportarLista = () => {
+    const titulo = selRubroId
+      ? rubroMats.find(r => r.rubro.id === selRubroId)?.rubro.nombre || 'Rubro'
+      : 'Todos los gremios';
+    const fecha = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const rows = visibleMats.map((m, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td><b>${m.nombre}</b></td>
+        <td>${m.categoria}</td>
+        <td>${m.unidad}</td>
+        <td style="text-align:right;font-family:monospace">${fmtN(m.cantidad)}</td>
+        <td style="width:120px"></td>
+      </tr>`).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Lista de Materiales — ${obra?.nombre || ''}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:12px;padding:16mm 20mm;color:#1a1a1a}
+  h2{margin:0 0 2px;font-size:17px;letter-spacing:0.5px}
+  .sub{font-size:11px;color:#666;margin-bottom:18px}
+  table{width:100%;border-collapse:collapse}
+  th{background:#1f2024;color:#fff;padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.5px}
+  th:nth-child(5),th:nth-child(6){text-align:right}
+  td{padding:6px 10px;border-bottom:1px solid #e8e8e8;vertical-align:top}
+  tr:nth-child(even) td{background:#f7f7f7}
+  .note{font-size:10px;color:#888;margin-top:14px}
+  @media print{body{padding:8mm 12mm}.note{display:none}}
+</style></head><body>
+<h2>LISTA DE MATERIALES · ${(obra?.nombre || '').toUpperCase()}</h2>
+<div class="sub">${titulo} · Para cotización · ${fecha}</div>
+<table>
+  <thead><tr>
+    <th style="width:32px">#</th>
+    <th>Material / Descripción</th>
+    <th>Categoría</th>
+    <th>Unidad</th>
+    <th style="text-align:right;width:90px">Cantidad</th>
+    <th style="text-align:right;width:120px">Precio unitario</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="note">* Lista generada automáticamente desde Kamak · Precios a confirmar por proveedor</div>
+<script>setTimeout(()=>window.print(),400)</script>
+</body></html>`;
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+  };
 
   return (
     <div style={{ display: 'flex', gap: 12, height: 'calc(100vh - 240px)' }}>
 
-      {/* Sidebar: gremios */}
+      {/* Sidebar: rubros */}
       <div style={{ width: 200, flexShrink: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div onClick={() => setSelRubroId(null)}
           style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${!selRubroId ? T.accent : T.faint2}`, background: !selRubroId ? T.accentSoft : T.paper }}>
           <div style={{ fontSize: 12, fontWeight: !selRubroId ? 700 : 400 }}>Todos los gremios</div>
-          <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.accent, marginTop: 2 }}>$ {fmtN(totalGeneral)}</div>
+          <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, marginTop: 2 }}>{globalMats.length} materiales</div>
         </div>
-        {rubrosConMats.map(({ rubro, total }) => (
+        {rubroMats.map(({ rubro, materiales }) => (
           <div key={rubro.id} onClick={() => setSelRubroId(rubro.id)}
             style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${selRubroId === rubro.id ? T.accent : T.faint2}`, background: selRubroId === rubro.id ? T.accentSoft : T.paper }}>
             <div style={{ fontSize: 12, fontWeight: 600 }}>{rubro.nombre}</div>
-            <div style={{ fontFamily: T.fontMono, color: T.accent, fontSize: 11, marginTop: 2 }}>$ {fmtN(total)}</div>
+            <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, marginTop: 2 }}>{materiales.length} materiales</div>
           </div>
         ))}
       </div>
 
-      {/* Main: material table */}
-      <Box style={{ flex: 1, padding: 0, overflow: 'auto' }}>
-        {visible.length === 0 && (
-          <div style={{ padding: 48, textAlign: 'center', color: T.ink3 }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>🧱</div>
-            <div style={{ fontSize: 12 }}>Sin materiales registrados. Agregá recetas a las tareas desde la pestaña Presupuesto.</div>
+      {/* Main table */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Header bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexShrink: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
+            {visibleMats.length} {visibleMats.length === 1 ? 'material' : 'materiales'}
           </div>
-        )}
-        {visible.map(({ rubro, lineas, total }) => (
-          <div key={rubro.id}>
-            {/* Rubro header */}
-            <div style={{ padding: '10px 16px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase' }}>{rubro.nombre}</div>
-              <div style={{ fontFamily: T.fontMono, fontSize: 13, color: T.accent }}>$ {fmtN(total)}</div>
+          <Btn sm onClick={exportarLista} disabled={visibleMats.length === 0}>
+            📋 Exportar para cotización
+          </Btn>
+        </div>
+
+        <Box style={{ flex: 1, padding: 0, overflow: 'auto' }}>
+          {visibleMats.length === 0 && (
+            <div style={{ padding: 48, textAlign: 'center', color: T.ink3 }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>🧱</div>
+              <div style={{ fontSize: 12 }}>Sin materiales registrados. Agregá recetas APU a las tareas desde la pestaña Presupuesto.</div>
             </div>
-            {/* Column headers */}
-            <div className="k-tr" style={{ background: T.faint, fontWeight: 700, fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-              <div className="k-cell" style={{ flex: 2.5 }}>Material</div>
-              <div className="k-cell" style={{ flex: 0.8 }}>Categoría</div>
-              <div className="k-cell" style={{ flex: 2 }}>Tarea</div>
-              <div className="k-cell" style={{ flex: 0.7, textAlign: 'right' }}>Cant</div>
-              <div className="k-cell" style={{ flex: 1, textAlign: 'right' }}>$ / u. tarea</div>
-              <div className="k-cell" style={{ flex: 1, textAlign: 'right' }}>Total $</div>
-            </div>
-            {/* Rows */}
-            {lineas.map(l => (
-              <div key={l.key} className="k-tr" style={{ alignItems: 'center' }}>
-                <div className="k-cell" style={{ flex: 2.5, fontWeight: 600, fontSize: 12 }}>{l.nombre}</div>
-                <div className="k-cell" style={{ flex: 0.8 }}>
-                  <Chip style={{ fontSize: 9 }}>{l.categoria}</Chip>
-                </div>
-                <div className="k-cell" style={{ flex: 2, fontSize: 11, color: T.ink2 }}>{l.tarea}</div>
-                <div className="k-cell" style={{ flex: 0.7, fontFamily: T.fontMono, textAlign: 'right', fontSize: 11, color: T.ink2 }}>{l.tareaQty} {l.tareaUnidad}</div>
-                <div className="k-cell" style={{ flex: 1, fontFamily: T.fontMono, textAlign: 'right', fontSize: 11, color: T.ink2 }}>$ {fmtN(l.costoUnitTarea)}</div>
-                <div className="k-cell" style={{ flex: 1, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 12 }}>$ {fmtN(l.total)}</div>
+          )}
+          {visibleMats.length > 0 && (
+            <>
+              <div className="k-tr" style={{ background: T.faint, fontWeight: 700, fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                <div className="k-cell" style={{ flex: 3 }}>Material</div>
+                <div className="k-cell" style={{ flex: 0.9 }}>Categoría</div>
+                <div className="k-cell" style={{ flex: 0.6, textAlign: 'right' }}>Unidad</div>
+                <div className="k-cell" style={{ flex: 0.9, textAlign: 'right' }}>Cantidad total</div>
               </div>
-            ))}
-          </div>
-        ))}
-      </Box>
+              {visibleMats.map((m, i) => (
+                <div key={m.nombre} className="k-tr" style={{ alignItems: 'center' }}>
+                  <div className="k-cell" style={{ flex: 3, fontWeight: 600, fontSize: 12 }}>{m.nombre}</div>
+                  <div className="k-cell" style={{ flex: 0.9 }}>
+                    <Chip style={{ fontSize: 9 }}>{m.categoria}</Chip>
+                  </div>
+                  <div className="k-cell" style={{ flex: 0.6, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>{m.unidad}</div>
+                  <div className="k-cell" style={{ flex: 0.9, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmtN(m.cantidad)}</div>
+                </div>
+              ))}
+            </>
+          )}
+        </Box>
+      </div>
     </div>
   );
 }
@@ -1837,7 +2112,7 @@ export default function ObraPresupuesto() {
       {/* Content */}
       {displayTab === 0 && <TabResumen obra={obra} detalle={detalle} moneda={moneda} />}
       {displayTab === 1 && <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} />}
-      {displayTab === 2 && <TabMateriales detalle={detalle} />}
+      {displayTab === 2 && <TabMateriales detalle={detalle} obra={obra} />}
       {displayTab === 3 && <TabAdicionales detalle={detalle} patch={patch} moneda={moneda} />}
       {displayTab === 5 && <TabMovimientos obra={obra} moneda={moneda} />}
       {displayTab === 6 && <TabCuentaCliente detalle={detalle} patch={patch} moneda={moneda} />}

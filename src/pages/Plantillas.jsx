@@ -1,14 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Divider } from '../components/ui';
 import { T } from '../theme';
 import { usePlantillas } from '../store/PlantillasContext';
+import { useCatalog, calcTarea } from '../store/CatalogContext';
 
 const newId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const fmtN  = (n) => Math.round(n).toLocaleString('es-AR');
 const fmtM  = (n) => `$ ${fmtN(n)}`;
 
 const inputSt = { padding: '5px 8px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
+const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
 
 const TIPOS = ['Todos', 'Comercial', 'Vivienda', 'Industrial', 'Refacción'];
 const TIPO_BG  = { Comercial: '#e8f7f7', Vivienda: '#e8f4ea', Industrial: '#e8eef5', Refacción: '#f9f0e3', Otro: T.faint };
@@ -23,7 +25,7 @@ const tareaVentaUnit = (t, rubro) => {
 
 const calcRubros = (rubros) => (rubros || []).map(r => {
   let cMat = 0, cSub = 0, venta = 0;
-  for (const t of (r.tareas || [])) {
+  for (const t of (r.tareas || []).filter(t => t.tipo !== 'seccion')) {
     cMat  += (t.costoMat || 0) * (t.cantidad || 1);
     cSub  += (t.costoSub || 0) * (t.cantidad || 1);
     venta += tareaVentaUnit(t, r) * (t.cantidad || 1);
@@ -34,7 +36,7 @@ const calcRubros = (rubros) => (rubros || []).map(r => {
 });
 
 const calcRef    = (plt) => calcRubros(plt.rubros).reduce((s, r) => s + r.venta, 0);
-const totalTareas = (plt) => (plt.rubros || []).reduce((s, r) => s + (r.tareas || []).length, 0);
+const totalTareas = (plt) => (plt.rubros || []).reduce((s, r) => s + (r.tareas || []).filter(t => t.tipo !== 'seccion').length, 0);
 
 const fmtRef = (n) => {
   if (n >= 1e6) return `$ ${(n / 1e6).toFixed(1)}M`;
@@ -50,7 +52,56 @@ const COLS_DEF = [
   { key: 'ventaTotal', label: '$ Venta total'  },
 ];
 
-// ── Totals strip (compartido entre viewer y editor) ───────────────────────────
+// ── Excel paste parser ─────────────────────────────────────────────────────────
+function parseReceta(text) {
+  if (!text.trim()) return { rubro: '', receta: '', items: [] };
+  const SKIP = new Set(['Tipo','Descripcion','UD','Cantidad','P. Unitario','Importe',
+    'Materiales:','Subcontratos:','Mano de Obra:','Equipos:','Otros:','Auxiliares:',
+    'Obra:','Presupuesto:','Computo:','Emitido:','Usuario:']);
+  const VALID = new Set(['MA','SC','OT','EQ','AU','MO']);
+  const lines = text.split('\n');
+  const hdrLines = [], dataLines = [];
+  let found = false;
+  for (const line of lines) {
+    const cells = line.split('\t').map(c => c.trim());
+    const first = cells.filter(c => c)[0] || '';
+    if (first === 'Tipo') { found = true; continue; }
+    if (VALID.has(first.toUpperCase())) found = true;
+    (found ? dataLines : hdrLines).push(cells);
+  }
+  const hdrTokens = [];
+  for (const cells of hdrLines) {
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      if (!c || c.length < 3) continue;
+      if (SKIP.has(c)) { i++; continue; }
+      if (/^unidad/i.test(c)) continue;
+      hdrTokens.push(c);
+    }
+  }
+  const rubro  = hdrTokens[0] || '';
+  const receta = hdrTokens.length > 1 ? hdrTokens[1] : hdrTokens[0] || '';
+  const items  = [];
+  for (const cells of dataLines) {
+    const ne = cells.filter(c => c);
+    if (ne.length < 3) continue;
+    const tipo = ne[0].toUpperCase();
+    if (!VALID.has(tipo)) continue;
+    const cantidad = parseFloat((ne[3] || '1').replace(',', '.')) || 1;
+    const precio   = ne[4] ? parseFloat(ne[4].replace(',', '.')) || 0 : 0;
+    items.push({
+      id: `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}-${items.length}`,
+      nombre:   ne[1] || '',
+      unidad:   ne[2] || 'u',
+      cantidad,
+      costoMat: tipo === 'SC' ? 0 : precio,
+      costoSub: tipo === 'SC' ? precio : 0,
+    });
+  }
+  return { rubro, receta, items };
+}
+
+// ── Totals strip ──────────────────────────────────────────────────────────────
 function TotalsStrip({ rr, cols, setCols, children }) {
   const totalVenta  = rr.reduce((s, r) => s + r.venta, 0);
   const totalCosto  = rr.reduce((s, r) => s + r.costo, 0);
@@ -98,12 +149,142 @@ function TotalsStrip({ rr, cols, setCols, children }) {
   );
 }
 
+// ── ImportarRecetaModal ───────────────────────────────────────────────────────
+function ImportarRecetaModal({ onAgregar, onClose }) {
+  const [texto,          setTexto]          = useState('');
+  const [nombreOverride, setNombreOverride] = useState('');
+  const [margenMat,      setMargenMat]      = useState(15);
+  const [margenMO,       setMargenMO]       = useState(35);
+
+  const parsed = useMemo(() => parseReceta(texto), [texto]);
+  const nombre = nombreOverride || parsed.receta.toUpperCase();
+  const canAdd = nombre.trim() && parsed.items.length > 0;
+
+  useEffect(() => {
+    if (parsed.receta && !nombreOverride) setNombreOverride(parsed.receta.toUpperCase());
+  }, [parsed.receta]);
+
+  return (
+    <div className="k-modal-overlay" onClick={onClose}>
+      <div className="k-modal" style={{ width: 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>Importar receta desde Excel</div>
+          <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
+        </div>
+
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14, overflow: 'auto' }}>
+          <div>
+            <label style={labelSt}>Pegá el contenido copiado desde Excel</label>
+            <textarea
+              autoFocus
+              value={texto}
+              onChange={e => setTexto(e.target.value)}
+              placeholder="Seleccioná todas las celdas en Excel (Ctrl+A) y pegá acá (Ctrl+V)…"
+              style={{ width: '100%', height: 130, fontFamily: T.fontMono, fontSize: 10, padding: '6px 8px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, resize: 'vertical', outline: 'none', color: T.ink2, boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {texto.trim() && (
+            <div style={{ background: T.faint, borderRadius: 4, padding: '8px 12px', fontSize: 12, display: 'flex', gap: 20 }}>
+              <span style={{ color: T.ink2 }}>Gremio detectado: <b style={{ color: T.ink }}>{parsed.rubro || '—'}</b></span>
+              <span style={{ color: T.ink2 }}>Receta detectada: <b style={{ color: T.ink }}>{parsed.receta || '—'}</b></span>
+            </div>
+          )}
+
+          {parsed.items.length > 0 && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px', gap: 10 }}>
+                <div>
+                  <label style={labelSt}>Nombre del rubro *</label>
+                  <input style={inputSt} value={nombre}
+                    onChange={e => setNombreOverride(e.target.value.toUpperCase())} />
+                </div>
+                <div>
+                  <label style={labelSt}>% Mat</label>
+                  <input style={inputSt} type="number" min="0" value={margenMat}
+                    onChange={e => setMargenMat(+e.target.value)} />
+                </div>
+                <div>
+                  <label style={labelSt}>% Sub</label>
+                  <input style={inputSt} type="number" min="0" value={margenMO}
+                    onChange={e => setMargenMO(+e.target.value)} />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ ...labelSt, marginBottom: 6 }}>
+                  {parsed.items.length} ítems detectados · vista previa
+                </label>
+                <div style={{ border: `1px solid ${T.faint2}`, borderRadius: 4, maxHeight: 230, overflow: 'auto' }}>
+                  <div style={{ display: 'flex', padding: '4px 10px', background: T.faint, fontSize: 10, fontWeight: 700, color: T.ink2, borderBottom: `1px solid ${T.faint2}` }}>
+                    <span style={{ width: 30 }}>Tipo</span>
+                    <span style={{ flex: 1 }}>Descripción</span>
+                    <span style={{ width: 60, textAlign: 'right' }}>Cant</span>
+                    <span style={{ width: 40, marginLeft: 6 }}>Ud</span>
+                    <span style={{ width: 90, textAlign: 'right' }}>$ Unitario</span>
+                  </div>
+                  {parsed.items.map((it, i) => (
+                    <div key={i} style={{ display: 'flex', padding: '5px 10px', borderBottom: `1px solid ${T.faint2}`, fontSize: 11, alignItems: 'center', background: i % 2 ? T.faint : 'transparent' }}>
+                      <span style={{ width: 30, fontWeight: 700, color: it.costoSub > 0 ? '#6b7db3' : T.ok, flexShrink: 0 }}>
+                        {it.costoSub > 0 ? 'SC' : 'MA'}
+                      </span>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.nombre}</span>
+                      <span style={{ width: 60, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2, flexShrink: 0 }}>{it.cantidad}</span>
+                      <span style={{ width: 40, marginLeft: 6, color: T.ink2, flexShrink: 0 }}>{it.unidad}</span>
+                      <span style={{ width: 90, textAlign: 'right', fontFamily: T.fontMono, color: T.accent, flexShrink: 0 }}>
+                        $ {fmtN(Math.max(it.costoMat, it.costoSub))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {texto.trim() && parsed.items.length === 0 && (
+            <div style={{ fontSize: 12, color: T.warn, padding: '6px 10px', background: '#fff8e6', borderRadius: 4 }}>
+              No se detectaron ítems MA/SC/OT. Asegurate de copiar las filas de datos desde Excel.
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
+          <Btn sm onClick={onClose}>Cancelar</Btn>
+          <Btn sm fill style={{ opacity: canAdd ? 1 : 0.5 }} onClick={() => {
+            if (!canAdd) return;
+            onAgregar({ id: newId(), nombre: nombre.trim(), margenMat, margenMO, tareas: parsed.items });
+            onClose();
+          }}>
+            Agregar rubro
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── buildVisibleTareas ────────────────────────────────────────────────────────
+function buildVisibleTareas(tareas, collapsedSections) {
+  let sec1 = null, sec2 = null;
+  return tareas.map(t => {
+    if (t.tipo === 'seccion') {
+      if (t.nivel === 1) { sec1 = t; sec2 = null; return { ...t, _hidden: false }; }
+      sec2 = t;
+      return { ...t, _hidden: !!(sec1 && collapsedSections.has(sec1.id)) };
+    }
+    const hidden = (sec1 && collapsedSections.has(sec1.id)) || (sec2 && collapsedSections.has(sec2.id));
+    return { ...t, _hidden: !!hidden };
+  });
+}
+
 // ── PlantillaViewer ───────────────────────────────────────────────────────────
 function PlantillaViewer({ plt, onClose, onEdit, onUsar }) {
-  const [cols, setCols]     = useState({ costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
+  const [cols, setCols]         = useState({ costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
   const [abiertos, setAbiertos] = useState({});
+  const [collapsedSections, setCollapsedSections] = useState(new Set());
   const rr = calcRubros(plt.rubros);
-  const toggleRubro = (id) => setAbiertos(p => ({ ...p, [id]: !p[id] }));
+  const toggleRubro   = (id) => setAbiertos(p => ({ ...p, [id]: !p[id] }));
+  const toggleSeccion = (id) => setCollapsedSections(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const isOpen = (id) => abiertos[id] !== false;
 
   return (
@@ -157,7 +338,21 @@ function PlantillaViewer({ plt, onClose, onEdit, onUsar }) {
                     {cols.ventaUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: T.accent }}>$ Venta u</div>}
                     {cols.ventaTotal && <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', color: T.accent }}>$ Venta T</div>}
                   </div>
-                  {(rubro.tareas || []).map((t, ti) => {
+                  {buildVisibleTareas(rubro.tareas || [], collapsedSections).map((t, ti) => {
+                    if (t._hidden) return null;
+                    if (t.tipo === 'seccion') {
+                      const indent = (t.nivel || 1) === 2 ? 36 : 16;
+                      const bg = t.nivel === 2 ? T.faint : '#e4eaf0';
+                      const isCollapsed = collapsedSections.has(t.id);
+                      return (
+                        <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: `5px 12px 5px ${indent}px`, background: bg, borderTop: `1px solid ${T.faint2}` }}>
+                          <span onClick={() => toggleSeccion(t.id)} style={{ cursor: 'pointer', fontSize: 11, color: T.ink2, userSelect: 'none', width: 14, flexShrink: 0 }}>
+                            {isCollapsed ? '▸' : '▾'}
+                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>{t.nombre}</span>
+                        </div>
+                      );
+                    }
                     const costoUnit  = (t.costoMat || 0) + (t.costoSub || 0);
                     const costoTotal = costoUnit * (t.cantidad || 1);
                     const ventaUnit  = tareaVentaUnit(t, rubro);
@@ -191,21 +386,49 @@ function PlantillaViewer({ plt, onClose, onEdit, onUsar }) {
   );
 }
 
-// ── PlantillaEditor — idéntico al presupuesto de obra ─────────────────────────
+// ── PlantillaEditor ───────────────────────────────────────────────────────────
 function PlantillaEditor({ form, setForm, onSave, onCancel }) {
-  const [cols, setCols] = useState({ costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
+  const [cols, setCols]         = useState({ costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
   const [abiertos, setAbiertos] = useState({});
+  const [showImport, setShowImport] = useState(false);
+  const [addingRubro, setAddingRubro] = useState(false);
+  const [newRubroForm, setNewRubroForm] = useState({ rubroId: '', margenMat: 15, margenMO: 35 });
+  const [selectedTareasRubro, setSelectedTareasRubro] = useState(new Set());
+
+  const { catalog } = useCatalog();
 
   const rr = calcRubros(form.rubros || []);
   const isOpen = (id) => abiertos[id] !== false;
   const toggleRubro = (id) => setAbiertos(p => ({ ...p, [id]: !p[id] }));
 
   // ── Rubro ops ────────────────────────────────────────────────────────────────
-  const addRubro = () => {
-    const r = { id: newId(), nombre: 'NUEVO RUBRO', margenMat: 15, margenMO: 35, tareas: [] };
+  const openAddRubro = () => setAddingRubro(true);
+  const cancelAddRubro = () => {
+    setAddingRubro(false);
+    setNewRubroForm({ rubroId: '', margenMat: 15, margenMO: 35 });
+    setSelectedTareasRubro(new Set());
+  };
+  const saveNewRubro = () => {
+    const catalogRubro = (catalog.rubros || []).find(r => r.id === newRubroForm.rubroId);
+    if (!catalogRubro) return;
+    const tareasIniciales = (catalog.tareas || [])
+      .filter(t => selectedTareasRubro.has(t.id))
+      .map(t => {
+        const { mat, sub, mo, gen } = calcTarea(t);
+        return { id: newId(), nombre: t.nombre, codigo: t.codigo || '', unidad: t.unidad || 'u', cantidad: 1, costoMat: Math.round(mat + gen), costoSub: Math.round(sub + mo), receta: { materiales: (t.materiales || []).map(m => ({ id: newId(), nombre: m.nombre, cantidad: m.cantidad || 0, unidad: m.unidad || '', precio: m.precio || 0, costoUnit: (m.cantidad || 0) * (m.precio || 0) })) } };
+      });
+    const r = { id: newId(), nombre: catalogRubro.nombre, margenMat: +newRubroForm.margenMat, margenMO: +newRubroForm.margenMO, tareas: tareasIniciales };
     setForm(f => ({ ...f, rubros: [...(f.rubros || []), r] }));
     setAbiertos(p => ({ ...p, [r.id]: true }));
+    cancelAddRubro();
   };
+  const toggleTareaRubro = (id) => setSelectedTareasRubro(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const addRubroFromExcel = (rubro) => {
+    setForm(f => ({ ...f, rubros: [...(f.rubros || []), rubro] }));
+    setAbiertos(p => ({ ...p, [rubro.id]: true }));
+  };
+
   const delRubro = (rid) => {
     if (!window.confirm('¿Eliminar rubro y todas sus tareas?')) return;
     setForm(f => ({ ...f, rubros: f.rubros.filter(r => r.id !== rid) }));
@@ -225,7 +448,6 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
       ? { ...r, tareas: r.tareas.map(t => t.id === tid ? { ...t, ...patch } : t) }
       : r) }));
 
-  // Estilos reutilizados para inputs inline dentro de celdas
   const cellInSt = (mono, color) => ({
     width: '100%', fontFamily: mono ? T.fontMono : T.font, fontSize: 12,
     background: 'transparent', border: 'none',
@@ -238,7 +460,6 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 300, display: 'flex', padding: 16 }}>
       <div style={{ flex: 1, background: T.paper, borderRadius: 6, border: `1.5px solid ${T.faint2}`, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.3)' }}>
 
-        {/* Header oscuro — nombre / tipo / descripción editables */}
         <div style={{ padding: '12px 18px', background: T.dark, color: T.paper, display: 'flex', gap: 14, alignItems: 'center', flexShrink: 0 }}>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <input
@@ -270,17 +491,21 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
           </div>
         </div>
 
-        {/* Totals strip + col toggles + botón Rubro */}
         <TotalsStrip rr={rr} cols={cols} setCols={setCols}>
-          <Btn sm fill onClick={addRubro}>+ Rubro</Btn>
+          <Btn sm fill onClick={openAddRubro}>+ Rubro</Btn>
+          <Btn sm onClick={() => setShowImport(true)} style={{ background: '#e8f4ea', color: T.ok, border: `1px solid ${T.ok}` }}>
+            ⬇ Desde Excel
+          </Btn>
         </TotalsStrip>
 
-        {/* Cuerpo — rubros editables */}
         <div style={{ flex: 1, overflow: 'auto' }}>
-          {(form.rubros || []).length === 0 && (
+          {(form.rubros || []).length === 0 && !addingRubro && (
             <div style={{ padding: 32, textAlign: 'center', color: T.ink3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontSize: 13 }}>Sin rubros. Agregá el primero.</div>
-              <Btn sm fill onClick={addRubro}>+ Agregar rubro</Btn>
+              <div style={{ fontSize: 13 }}>Sin rubros. Agregá uno manualmente o importá desde Excel.</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Btn sm fill onClick={openAddRubro}>+ Agregar rubro</Btn>
+                <Btn sm onClick={() => setShowImport(true)} style={{ background: '#e8f4ea', color: T.ok, border: `1px solid ${T.ok}` }}>⬇ Desde Excel</Btn>
+              </div>
             </div>
           )}
 
@@ -288,8 +513,6 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
             const open = isOpen(rubro.id);
             return (
               <div key={rubro.id} style={{ borderBottom: `1px solid ${T.faint2}` }}>
-
-                {/* Rubro header editable */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: T.faint }}>
                   <span style={{ color: T.ink3, cursor: 'pointer', userSelect: 'none', fontSize: 11, fontWeight: 700 }}
                     onClick={() => toggleRubro(rubro.id)}>{open ? '▾' : '▸'}</span>
@@ -321,7 +544,6 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
 
                 {open && (
                   <>
-                    {/* Cabecera de columnas */}
                     <div className="k-tr k-th" style={{ background: T.paper, borderBottom: `1px dashed ${T.faint2}` }}>
                       <div className="k-cell" style={{ flex: 3 }}>Tarea</div>
                       <div className="k-cell" style={{ flex: 0.8, textAlign: 'right' }}>Cant ✏</div>
@@ -336,8 +558,17 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
                       <div className="k-cell" style={{ flex: 0.4 }}></div>
                     </div>
 
-                    {/* Filas de tareas editables */}
                     {rubro.tareas.map(t => {
+                      if (t.tipo === 'seccion') {
+                        const indent = (t.nivel || 1) === 2 ? 36 : 16;
+                        const bg = t.nivel === 2 ? T.faint : '#e4eaf0';
+                        return (
+                          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: `5px 12px 5px ${indent}px`, background: bg, borderTop: `1px solid ${T.faint2}` }}>
+                            <span style={{ flex: 1, fontSize: 11, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>{t.nombre}</span>
+                            <span style={{ color: T.accent, cursor: 'pointer', fontSize: 11 }} onClick={() => delTarea(rubro.id, t.id)}>🗑</span>
+                          </div>
+                        );
+                      }
                       const costoUnit  = (t.costoMat || 0) + (t.costoSub || 0);
                       const costoTotal = costoUnit * (t.cantidad || 1);
                       const ventaUnit  = tareaVentaUnit(t, rubro);
@@ -347,9 +578,7 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
                       return (
                         <div key={t.id} className="k-tr" style={{ alignItems: 'center' }}>
                           <div className="k-cell" style={{ flex: 3 }}>
-                            <input
-                              value={t.nombre}
-                              placeholder="Nombre de la tarea"
+                            <input value={t.nombre} placeholder="Nombre de la tarea"
                               onChange={e => updTarea(rubro.id, t.id, { nombre: e.target.value })}
                               style={cellInSt(false)} />
                           </div>
@@ -386,9 +615,7 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
                       );
                     })}
 
-                    {/* Fila "Agregar tarea" */}
-                    <div className="k-tr" style={{ cursor: 'pointer' }}
-                      onClick={() => addTarea(rubro.id)}>
+                    <div className="k-tr" style={{ cursor: 'pointer' }} onClick={() => addTarea(rubro.id)}>
                       <div className="k-cell" style={{ flex: 1, color: T.accent, fontSize: 12 }}>+ Agregar tarea</div>
                     </div>
                   </>
@@ -396,8 +623,75 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
               </div>
             );
           })}
+
+          {addingRubro && (() => {
+            const selCatRubro = (catalog.rubros || []).find(r => r.id === newRubroForm.rubroId);
+            const tareasDispo = selCatRubro
+              ? (catalog.tareas || []).filter(t => t.rubroNombre === selCatRubro.nombre)
+              : [];
+            return (
+              <div style={{ margin: 12, background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 6, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>Nuevo rubro</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3 }}>Rubro</div>
+                    <select style={{ ...inputSt, cursor: 'pointer' }} value={newRubroForm.rubroId}
+                      onChange={e => { setNewRubroForm(p => ({ ...p, rubroId: e.target.value })); setSelectedTareasRubro(new Set()); }}>
+                      <option value="">— Seleccionar rubro —</option>
+                      {(catalog.rubros || []).map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3 }}>% Margen mat</div>
+                    <input style={inputSt} type="number" value={newRubroForm.margenMat} onChange={e => setNewRubroForm(p => ({ ...p, margenMat: e.target.value }))} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3 }}>% Margen sub</div>
+                    <input style={inputSt} type="number" value={newRubroForm.margenMO} onChange={e => setNewRubroForm(p => ({ ...p, margenMO: e.target.value }))} />
+                  </div>
+                </div>
+                {newRubroForm.rubroId && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Tareas disponibles {selectedTareasRubro.size > 0 && <span style={{ color: T.accent }}>· {selectedTareasRubro.size} seleccionadas</span>}
+                    </div>
+                    {tareasDispo.length === 0
+                      ? <div style={{ fontSize: 12, color: T.ink3, padding: '8px 0' }}>No hay tareas cargadas en este rubro del catálogo.</div>
+                      : <div style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${T.faint2}`, borderRadius: 4, background: T.paper }}>
+                          {tareasDispo.map(t => {
+                            const checked = selectedTareasRubro.has(t.id);
+                            const { mat, sub, mo, gen } = calcTarea(t);
+                            return (
+                              <div key={t.id} onClick={() => toggleTareaRubro(t.id)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', background: checked ? T.accentSoft : 'transparent', borderBottom: `1px solid ${T.faint}` }}>
+                                <input type="checkbox" readOnly checked={checked} style={{ cursor: 'pointer', flexShrink: 0 }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: checked ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.nombre}</div>
+                                  <div style={{ fontSize: 10, color: T.ink3 }}>{t.unidad} · mat ${fmtN(Math.round(mat + gen))} · sub ${fmtN(Math.round(sub + mo))}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                    }
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+                  <Btn sm onClick={cancelAddRubro}>Cancelar</Btn>
+                  <Btn sm fill style={{ opacity: newRubroForm.rubroId ? 1 : 0.5 }} onClick={saveNewRubro}>Agregar rubro</Btn>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
+
+      {showImport && (
+        <ImportarRecetaModal
+          onAgregar={addRubroFromExcel}
+          onClose={() => setShowImport(false)}
+        />
+      )}
     </div>
   );
 }
@@ -466,7 +760,6 @@ export default function Plantillas() {
 
   return (
     <PageLayout breadcrumb={['Plantillas']} active="Plantillas">
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
         <div>
           <div className="k-h" style={{ fontSize: 26 }}>Plantillas de presupuesto</div>
@@ -475,7 +768,6 @@ export default function Plantillas() {
         <Btn sm fill onClick={startNew}>+ Nueva plantilla</Btn>
       </div>
 
-      {/* Filtros */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar…"
           style={{ ...inputSt, width: 180, padding: '5px 10px' }} />
@@ -493,7 +785,6 @@ export default function Plantillas() {
         <span style={{ fontSize: 11, color: T.ink3, marginLeft: 4 }}>{filtered.length} plantillas</span>
       </div>
 
-      {/* Card grid */}
       <div style={{ overflow: 'auto', height: 'calc(100vh - 230px)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
           {filtered.map(p => {
@@ -557,7 +848,6 @@ export default function Plantillas() {
         </div>
       </div>
 
-      {/* Viewer pantalla completa */}
       {viewPlt && !showEdit && (
         <PlantillaViewer
           plt={viewPlt}
@@ -567,7 +857,6 @@ export default function Plantillas() {
         />
       )}
 
-      {/* Editor pantalla completa — igual al presupuesto de obra */}
       {showEdit && (
         <PlantillaEditor form={form} setForm={setForm} onSave={save} onCancel={cancel} />
       )}
