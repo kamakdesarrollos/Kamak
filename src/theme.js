@@ -1,0 +1,18 @@
+export const T = {
+  paper: '#f7f4ec',
+  ink: '#2d2d2d',
+  ink2: '#5a5a58',
+  ink3: '#9a9892',
+  rule: '#2d2d2d',
+  faint: '#eae6da',
+  faint2: '#d4cfbf',
+  accent: '#1a9b9c',
+  accent2: '#0d7475',
+  accentSoft: '#d6efef',
+  ok: '#3d7a4a',
+  warn: '#d4923a',
+  dark: '#1f2024',
+  font: '"Montserrat", system-ui, sans-serif',
+  fontMono: '"JetBrains Mono", ui-monospace, monospace',
+  fontNote: '"Caveat", cursive',
+};
