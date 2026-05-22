@@ -466,9 +466,10 @@ function EndosarModal({ cheque, cajas, obras, onConfirm, onClose }) {
 function TraspasoModal({ cheque, cajas, onConfirm, onClose }) {
   const cajaCheque = cajas.find(c => c.id === cheque.cajaId);
   const sinCaja = !cheque.cajaId;
-  const [traspasadoA, setTraspasadoA] = useState('');
-  const [fecha,        setFecha]       = useState(todayStr());
-  const [nota,         setNota]        = useState('');
+  const cajasDestino = cajas.filter(c => c.activa && c.id !== cheque.cajaId);
+  const [cajaDestinoId, setCajaDestinoId] = useState(cajasDestino[0]?.id || '');
+  const [fecha,          setFecha]         = useState(todayStr());
+  const [nota,           setNota]          = useState('');
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
@@ -499,9 +500,13 @@ function TraspasoModal({ cheque, cajas, onConfirm, onClose }) {
           ) : (
             <>
               <div>
-                <label style={labelSt}>Traspasado a *</label>
-                <input style={inputSt} value={traspasadoA} onChange={e => setTraspasadoA(e.target.value)}
-                  placeholder="Nombre del socio o persona que lo lleva" autoFocus />
+                <label style={labelSt}>Traspasar a caja *</label>
+                {cajasDestino.length === 0
+                  ? <div style={{ ...inputSt, background: T.faint, color: T.ink3 }}>No hay otras cajas disponibles</div>
+                  : <select style={{ ...inputSt, cursor: 'pointer' }} value={cajaDestinoId} onChange={e => setCajaDestinoId(e.target.value)} autoFocus>
+                      {cajasDestino.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
+                }
               </div>
               <div>
                 <label style={labelSt}>Fecha</label>
@@ -521,8 +526,12 @@ function TraspasoModal({ cheque, cajas, onConfirm, onClose }) {
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn sm onClick={onClose}>{sinCaja ? 'Cerrar' : 'Cancelar'}</Btn>
           {!sinCaja && (
-            <Btn sm fill onClick={() => onConfirm({ traspasadoA, fecha, nota })}
-              style={{ background: '#6366f1', opacity: traspasadoA.trim() ? 1 : 0.5 }}>
+            <Btn sm fill
+              onClick={() => {
+                const caja = cajasDestino.find(c => c.id === cajaDestinoId);
+                onConfirm({ traspasadoA: caja?.nombre || cajaDestinoId, cajaDestinoId, fecha, nota });
+              }}
+              style={{ background: '#6366f1', opacity: (cajaDestinoId && cajasDestino.length > 0) ? 1 : 0.5 }}>
               Confirmar traspaso
             </Btn>
           )}
