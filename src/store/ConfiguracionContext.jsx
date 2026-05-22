@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { loadUserData, saveUserData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { supabase } from '../lib/supabase';
 
 const CTX = createContext(null);
 const LS_KEY = 'kamak_config_v1';
@@ -46,23 +47,32 @@ function persist(data) {
 export function ConfiguracionProvider({ children }) {
   const [config, setConfig] = useState(load);
   const sbLoaded = useRef(false);
+  const lastSaveTime = useRef(0);
 
   useEffect(() => {
-    loadUserData('config').then(data => {
-      if (data) {
-        const merged = { ...DEFAULT, ...data };
-        setConfig(merged);
-        persist(merged);
-      } else {
-        saveUserData('config', config); // eslint-disable-line react-hooks/exhaustive-deps
-      }
+    loadSharedData('config').then(data => {
+      if (data) { const merged = { ...DEFAULT, ...data }; setConfig(merged); persist(merged); }
+      else saveSharedData('config', config); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
     });
+
+    const channel = supabase
+      .channel('shared-config')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.config' },
+        (payload) => {
+          if (!payload.new?.data) return;
+          if (Date.now() - lastSaveTime.current < 2000) return;
+          const merged = { ...DEFAULT, ...payload.new.data };
+          setConfig(merged); persist(merged);
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!sbLoaded.current) return;
-    const t = setTimeout(() => saveUserData('config', config), 800);
+    const t = setTimeout(() => { lastSaveTime.current = Date.now(); saveSharedData('config', config); }, 800);
     return () => clearTimeout(t);
   }, [config]);
 

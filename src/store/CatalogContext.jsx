@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { loadUserData, saveUserData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { supabase } from '../lib/supabase';
 
 const newId = () => `cat-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -60,22 +61,33 @@ export function CatalogProvider({ children }) {
   const [catalog, setCatalog] = useState(load);
   const sbLoaded = useRef(false);
 
+  const lastSaveTime = useRef(0);
+
   useEffect(() => {
-    loadUserData('catalog').then(data => {
-      if (data) {
-        setCatalog(data);
-        localStorage.setItem('kamak_catalog_v4', JSON.stringify(data));
-      } else {
-        saveUserData('catalog', catalog); // eslint-disable-line react-hooks/exhaustive-deps
-      }
+    loadSharedData('catalog').then(data => {
+      if (data) { setCatalog(data); localStorage.setItem('kamak_catalog_v4', JSON.stringify(data)); }
+      else saveSharedData('catalog', catalog); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
     });
+
+    const channel = supabase
+      .channel('shared-catalog')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.catalog' },
+        (payload) => {
+          if (!payload.new?.data) return;
+          if (Date.now() - lastSaveTime.current < 2000) return;
+          setCatalog(payload.new.data);
+          localStorage.setItem('kamak_catalog_v4', JSON.stringify(payload.new.data));
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     localStorage.setItem('kamak_catalog_v4', JSON.stringify(catalog));
     if (!sbLoaded.current) return;
-    const t = setTimeout(() => saveUserData('catalog', catalog), 800);
+    const t = setTimeout(() => { lastSaveTime.current = Date.now(); saveSharedData('catalog', catalog); }, 800);
     return () => clearTimeout(t);
   }, [catalog]);
 

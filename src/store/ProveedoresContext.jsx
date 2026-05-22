@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { loadUserData, saveUserData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { supabase } from '../lib/supabase';
 
 const CTX = createContext(null);
 const LS_PROVS = 'kamak_proveedores_v1';
@@ -67,26 +68,44 @@ export function ProveedoresProvider({ children }) {
   const [proveedores, setProveedores] = useState(() => load(LS_PROVS, SEED_PROVS));
   const [ccEntries,   setCCEntries]   = useState(() => load(LS_CC,    SEED_CC));
   const sbLoaded = useRef(false);
+  const lastSaveTime = useRef(0);
   const provsRef = useRef(proveedores);
   const ccRef    = useRef(ccEntries);
   useEffect(() => { provsRef.current = proveedores; }, [proveedores]);
   useEffect(() => { ccRef.current = ccEntries; }, [ccEntries]);
 
   useEffect(() => {
-    loadUserData('proveedores').then(data => {
+    loadSharedData('proveedores').then(data => {
       if (data) {
         if (data.proveedores) { setProveedores(data.proveedores); save(LS_PROVS, data.proveedores); }
-        if (data.ccEntries)   { setCCEntries(data.ccEntries);   save(LS_CC,    data.ccEntries); }
+        if (data.ccEntries)   { setCCEntries(data.ccEntries);     save(LS_CC,    data.ccEntries); }
       } else {
-        saveUserData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
+        saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
       }
       sbLoaded.current = true;
     });
+
+    const channel = supabase
+      .channel('shared-proveedores')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.proveedores' },
+        (payload) => {
+          if (!payload.new?.data) return;
+          if (Date.now() - lastSaveTime.current < 2000) return;
+          const d = payload.new.data;
+          if (d.proveedores) { setProveedores(d.proveedores); save(LS_PROVS, d.proveedores); }
+          if (d.ccEntries)   { setCCEntries(d.ccEntries);     save(LS_CC,    d.ccEntries); }
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!sbLoaded.current) return;
-    const t = setTimeout(() => saveUserData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current }), 800);
+    const t = setTimeout(() => {
+      lastSaveTime.current = Date.now();
+      saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
+    }, 800);
     return () => clearTimeout(t);
   }, [proveedores, ccEntries]);
 

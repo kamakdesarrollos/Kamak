@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { loadUserData, saveUserData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { supabase } from '../lib/supabase';
 
 const CTX = createContext(null);
 const LS_KEY = 'kamak_clientes_v1';
@@ -32,22 +33,31 @@ function save(data) {
 export function ClientesProvider({ children }) {
   const [clientes, setClientes] = useState(() => load(SEED_CLIENTES));
   const sbLoaded = useRef(false);
+  const lastSaveTime = useRef(0);
 
   useEffect(() => {
-    loadUserData('clientes').then(data => {
-      if (data) {
-        setClientes(data);
-        save(data);
-      } else {
-        saveUserData('clientes', clientes); // eslint-disable-line react-hooks/exhaustive-deps
-      }
+    loadSharedData('clientes').then(data => {
+      if (data) { setClientes(data); save(data); }
+      else saveSharedData('clientes', clientes); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
     });
+
+    const channel = supabase
+      .channel('shared-clientes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.clientes' },
+        (payload) => {
+          if (!payload.new?.data) return;
+          if (Date.now() - lastSaveTime.current < 2000) return;
+          setClientes(payload.new.data); save(payload.new.data);
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!sbLoaded.current) return;
-    const t = setTimeout(() => saveUserData('clientes', clientes), 800);
+    const t = setTimeout(() => { lastSaveTime.current = Date.now(); saveSharedData('clientes', clientes); }, 800);
     return () => clearTimeout(t);
   }, [clientes]);
 

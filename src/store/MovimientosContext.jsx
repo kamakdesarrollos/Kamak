@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { loadUserData, saveUserData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { supabase } from '../lib/supabase';
 
 const CTX = createContext(null);
 const LS_CAJAS = 'kamak_cajas_v1';
@@ -57,26 +58,44 @@ export function MovimientosProvider({ children }) {
   const [cajas,       setCajas]       = useState(() => load(LS_CAJAS, SEED_CAJAS));
   const [movimientos, setMovimientos] = useState(() => load(LS_MOVS,  SEED_MOVS));
   const sbLoaded  = useRef(false);
+  const lastSaveTime = useRef(0);
   const cajasRef  = useRef(cajas);
   const movsRef   = useRef(movimientos);
   useEffect(() => { cajasRef.current = cajas; }, [cajas]);
   useEffect(() => { movsRef.current = movimientos; }, [movimientos]);
 
   useEffect(() => {
-    loadUserData('movimientos').then(data => {
+    loadSharedData('movimientos').then(data => {
       if (data) {
         if (data.cajas)       { setCajas(data.cajas);             persist(LS_CAJAS, data.cajas); }
         if (data.movimientos) { setMovimientos(data.movimientos); persist(LS_MOVS,  data.movimientos); }
       } else {
-        saveUserData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
+        saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
       }
       sbLoaded.current = true;
     });
+
+    const channel = supabase
+      .channel('shared-movimientos')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.movimientos' },
+        (payload) => {
+          if (!payload.new?.data) return;
+          if (Date.now() - lastSaveTime.current < 2000) return;
+          const d = payload.new.data;
+          if (d.cajas)       { setCajas(d.cajas);             persist(LS_CAJAS, d.cajas); }
+          if (d.movimientos) { setMovimientos(d.movimientos); persist(LS_MOVS,  d.movimientos); }
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!sbLoaded.current) return;
-    const t = setTimeout(() => saveUserData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current }), 800);
+    const t = setTimeout(() => {
+      lastSaveTime.current = Date.now();
+      saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
+    }, 800);
     return () => clearTimeout(t);
   }, [cajas, movimientos]);
 

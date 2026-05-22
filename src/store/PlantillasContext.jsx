@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { loadUserData, saveUserData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { supabase } from '../lib/supabase';
 
 const newId = () => `plt-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -249,22 +250,33 @@ export function PlantillasProvider({ children }) {
   const [plantillas, setPlantillas] = useState(load);
   const sbLoaded = useRef(false);
 
+  const lastSaveTime = useRef(0);
+
   useEffect(() => {
-    loadUserData('plantillas').then(data => {
-      if (data) {
-        setPlantillas(data);
-        localStorage.setItem('kamak_plantillas_v1', JSON.stringify(data));
-      } else {
-        saveUserData('plantillas', plantillas); // eslint-disable-line react-hooks/exhaustive-deps
-      }
+    loadSharedData('plantillas').then(data => {
+      if (data) { setPlantillas(data); localStorage.setItem('kamak_plantillas_v1', JSON.stringify(data)); }
+      else saveSharedData('plantillas', plantillas); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
     });
+
+    const channel = supabase
+      .channel('shared-plantillas')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.plantillas' },
+        (payload) => {
+          if (!payload.new?.data) return;
+          if (Date.now() - lastSaveTime.current < 2000) return;
+          setPlantillas(payload.new.data);
+          localStorage.setItem('kamak_plantillas_v1', JSON.stringify(payload.new.data));
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     localStorage.setItem('kamak_plantillas_v1', JSON.stringify(plantillas));
     if (!sbLoaded.current) return;
-    const t = setTimeout(() => saveUserData('plantillas', plantillas), 800);
+    const t = setTimeout(() => { lastSaveTime.current = Date.now(); saveSharedData('plantillas', plantillas); }, 800);
     return () => clearTimeout(t);
   }, [plantillas]);
 

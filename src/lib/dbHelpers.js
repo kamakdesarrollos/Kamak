@@ -63,3 +63,19 @@ export async function saveUserData(key, value) {
     );
   } catch (e) { console.error('saveUserData:', e); }
 }
+
+export async function loadSharedData(key) {
+  try {
+    const { data } = await supabase.from('shared_data').select('data').eq('key', key).maybeSingle();
+    return data?.data ?? null;
+  } catch { return null; }
+}
+
+export async function saveSharedData(key, value) {
+  try {
+    await supabase.from('shared_data').upsert(
+      { key, data: value, updated_at: new Date().toISOString() },
+      { onConflict: 'key' }
+    );
+  } catch (e) { console.error('saveSharedData:', e); }
+}

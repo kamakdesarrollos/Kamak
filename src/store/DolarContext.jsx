@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { loadUserData, saveUserData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { supabase } from '../lib/supabase';
 
 const CTX = createContext(null);
 const LS_KEY = 'kamak_dolar_v1';
@@ -29,21 +30,31 @@ export function DolarProvider({ children }) {
     });
   }, []);
 
+  const lastSaveTime = useRef(0);
+
   useEffect(() => {
-    loadUserData('dolar').then(saved => {
-      if (saved) {
-        setData(saved);
-        saveLS(saved);
-      } else {
-        saveUserData('dolar', data); // eslint-disable-line react-hooks/exhaustive-deps
-      }
+    loadSharedData('dolar').then(saved => {
+      if (saved) { setData(saved); saveLS(saved); }
+      else saveSharedData('dolar', data); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
     });
+
+    const channel = supabase
+      .channel('shared-dolar')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.dolar' },
+        (payload) => {
+          if (!payload.new?.data) return;
+          if (Date.now() - lastSaveTime.current < 2000) return;
+          setData(payload.new.data); saveLS(payload.new.data);
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!sbLoaded.current) return;
-    const t = setTimeout(() => saveUserData('dolar', data), 800);
+    const t = setTimeout(() => { lastSaveTime.current = Date.now(); saveSharedData('dolar', data); }, 800);
     return () => clearTimeout(t);
   }, [data]);
 

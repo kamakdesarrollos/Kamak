@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { loadUserData, saveUserData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { supabase } from '../lib/supabase';
 
 // ── Datos semilla obras ───────────────────────────────────────────────────────
 const SEED_OBRAS = [
@@ -185,21 +186,36 @@ export function ObrasProvider({ children }) {
   const [obras, setObras] = useState(loadObras);
   const [detalles, setDetalles] = useState(loadDet);
   const sbLoaded   = useRef(false);
+  const lastSaveTime = useRef(0);
   const obrasRef   = useRef(obras);
   const detallesRef = useRef(detalles);
   useEffect(() => { obrasRef.current = obras; }, [obras]);
   useEffect(() => { detallesRef.current = detalles; }, [detalles]);
 
   useEffect(() => {
-    loadUserData('obras').then(data => {
+    loadSharedData('obras').then(data => {
       if (data) {
         if (data.obras)    { setObras(data.obras);       saveObras(data.obras); }
         if (data.detalles) { setDetalles(data.detalles); saveDet(data.detalles); }
       } else {
-        saveUserData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
+        saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
       }
       sbLoaded.current = true;
     });
+
+    const channel = supabase
+      .channel('shared-obras')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.obras' },
+        (payload) => {
+          if (!payload.new?.data) return;
+          if (Date.now() - lastSaveTime.current < 2000) return;
+          const d = payload.new.data;
+          if (d.obras)    { setObras(d.obras);       saveObras(d.obras); }
+          if (d.detalles) { setDetalles(d.detalles); saveDet(d.detalles); }
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { saveObras(obras); }, [obras]);
@@ -207,7 +223,10 @@ export function ObrasProvider({ children }) {
 
   useEffect(() => {
     if (!sbLoaded.current) return;
-    const t = setTimeout(() => saveUserData('obras', { obras: obrasRef.current, detalles: detallesRef.current }), 800);
+    const t = setTimeout(() => {
+      lastSaveTime.current = Date.now();
+      saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
+    }, 800);
     return () => clearTimeout(t);
   }, [obras, detalles]);
 

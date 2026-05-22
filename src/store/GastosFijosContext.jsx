@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { loadUserData, saveUserData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { supabase } from '../lib/supabase';
 
 const CTX = createContext(null);
 
@@ -21,22 +22,32 @@ export function GastosFijosProvider({ children }) {
     } catch { return INIT; }
   });
   const sbLoaded = useRef(false);
+  const lastSaveTime = useRef(0);
 
   useEffect(() => {
-    loadUserData('gastos_fijos').then(data => {
-      if (data) {
-        setItemsState(data);
-        localStorage.setItem(LS_KEY, JSON.stringify(data));
-      } else {
-        saveUserData('gastos_fijos', items); // eslint-disable-line react-hooks/exhaustive-deps
-      }
+    loadSharedData('gastos_fijos').then(data => {
+      if (data) { setItemsState(data); localStorage.setItem(LS_KEY, JSON.stringify(data)); }
+      else saveSharedData('gastos_fijos', items); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
     });
+
+    const channel = supabase
+      .channel('shared-gastos-fijos')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.gastos_fijos' },
+        (payload) => {
+          if (!payload.new?.data) return;
+          if (Date.now() - lastSaveTime.current < 2000) return;
+          setItemsState(payload.new.data);
+          localStorage.setItem(LS_KEY, JSON.stringify(payload.new.data));
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!sbLoaded.current) return;
-    const t = setTimeout(() => saveUserData('gastos_fijos', items), 800);
+    const t = setTimeout(() => { lastSaveTime.current = Date.now(); saveSharedData('gastos_fijos', items); }, 800);
     return () => clearTimeout(t);
   }, [items]);
 
