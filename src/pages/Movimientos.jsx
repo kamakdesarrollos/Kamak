@@ -187,6 +187,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
         obraNombre:      obra?.nombre || '',
         clienteNombre:   !isGasto ? contraparteName : '',
         proveedorNombre: isGasto  ? contraparteName : '',
+        cajaId:          effectiveCajaId,
         movimientoId:    movId || null,
         estado:          'cartera',
       });

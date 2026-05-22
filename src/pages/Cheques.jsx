@@ -149,6 +149,9 @@ function ChequeFila({ cheque: c, onAccion }) {
         {c.estado === 'endosado' && c.endosadoA && (
           <div style={{ fontSize: 10, color: '#d97706' }}>→ {c.endosadoA}</div>
         )}
+        {c.traspasoA && c.estado === 'cartera' && (
+          <div style={{ fontSize: 10, color: '#6366f1' }}>↗ {c.traspasoA}</div>
+        )}
         {c.estado === 'depositado' && c.cajaDestinoNombre && (
           <div style={{ fontSize: 10, color: '#2d7a2d' }}>Dep. {c.cajaDestinoNombre}</div>
         )}
@@ -169,6 +172,7 @@ function ChequeFila({ cheque: c, onAccion }) {
             <>
               <Btn sm onClick={() => onAccion('depositar', c)} style={{ fontSize: 10 }}>Depositar</Btn>
               <Btn sm onClick={() => onAccion('endosar', c)} style={{ fontSize: 10 }}>Endosar</Btn>
+              <Btn sm onClick={() => onAccion('traspasar', c)} style={{ fontSize: 10, color: '#6366f1', borderColor: '#6366f1' }}>Traspasar</Btn>
             </>
           )}
           {c.estado === 'cartera' && !esTercero && (
@@ -370,14 +374,19 @@ function DepositarModal({ cheque, cajas, onConfirm, onClose }) {
 
 // ── Modal: endosar ────────────────────────────────────────────────────────────
 function EndosarModal({ cheque, cajas, obras, onConfirm, onClose }) {
-  const cajasActivas = cajas.filter(c => c.activa);
+  const cajaCheque = cajas.find(c => c.id === cheque.cajaId);
   const [endosadoA, setEndosadoA] = useState('');
   const [fecha,      setFecha]    = useState(todayStr());
-  const [cajaId,     setCajaId]   = useState(cajasActivas[0]?.id || '');
   const [obraId,     setObraId]   = useState(cheque.obraId || '');
   const [concepto,   setConcepto] = useState('');
 
-  const canConfirm = endosadoA.trim() && cajaId;
+  // Si el cheque no tiene cajaId registrada, permitir seleccionarla
+  const sinCaja = !cheque.cajaId;
+  const cajasActivas = cajas.filter(c => c.activa);
+  const [cajaIdFallback, setCajaIdFallback] = useState(cajasActivas[0]?.id || '');
+  const cajaIdFinal = cheque.cajaId || cajaIdFallback;
+
+  const canConfirm = endosadoA.trim() && cajaIdFinal;
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
@@ -407,10 +416,14 @@ function EndosarModal({ cheque, cajas, obras, onConfirm, onClose }) {
               <input type="date" style={inputSt} value={fecha} onChange={e => setFecha(e.target.value)} />
             </div>
             <div>
-              <label style={labelSt}>Caja de egreso *</label>
-              <select style={{ ...inputSt, cursor: 'pointer' }} value={cajaId} onChange={e => setCajaId(e.target.value)}>
-                {cajasActivas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>
+              <label style={labelSt}>Caja de egreso</label>
+              {sinCaja ? (
+                <select style={{ ...inputSt, cursor: 'pointer' }} value={cajaIdFallback} onChange={e => setCajaIdFallback(e.target.value)}>
+                  {cajasActivas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              ) : (
+                <div style={{ ...inputSt, background: T.faint, color: T.ink2 }}>{cajaCheque?.nombre || '—'}</div>
+              )}
             </div>
           </div>
 
@@ -430,9 +443,60 @@ function EndosarModal({ cheque, cajas, obras, onConfirm, onClose }) {
         </div>
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn sm onClick={onClose}>Cancelar</Btn>
-          <Btn sm fill onClick={() => onConfirm({ endosadoA, fecha, cajaId, obraId, concepto })}
+          <Btn sm fill onClick={() => onConfirm({ endosadoA, fecha, cajaId: cajaIdFinal, obraId, concepto })}
             style={{ background: '#d97706', opacity: canConfirm ? 1 : 0.5 }}>
             Confirmar endoso
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal: traspasar ──────────────────────────────────────────────────────────
+function TraspasoModal({ cheque, onConfirm, onClose }) {
+  const [traspasadoA, setTraspasadoA] = useState('');
+  const [fecha,        setFecha]       = useState(todayStr());
+  const [nota,         setNota]        = useState('');
+
+  return (
+    <div className="k-modal-overlay" onClick={onClose}>
+      <div className="k-modal" style={{ width: 380 }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', background: '#6366f1', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Traspasar cheque</div>
+            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>El cheque queda en cartera, bajo custodia de otra persona</div>
+          </div>
+          <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
+        </div>
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: T.faint, borderRadius: 6, padding: '10px 14px' }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{cheque.banco}{cheque.numero ? ` #${cheque.numero}` : ''}</div>
+            <div style={{ fontSize: 12, color: T.ink2, fontFamily: T.fontMono, fontWeight: 700 }}>$ {fmtN(cheque.monto)}</div>
+          </div>
+          <div>
+            <label style={labelSt}>Traspasado a *</label>
+            <input style={inputSt} value={traspasadoA} onChange={e => setTraspasadoA(e.target.value)}
+              placeholder="Nombre del socio o persona que lo lleva" autoFocus />
+          </div>
+          <div>
+            <label style={labelSt}>Fecha</label>
+            <input type="date" style={inputSt} value={fecha} onChange={e => setFecha(e.target.value)} />
+          </div>
+          <div>
+            <label style={labelSt}>Nota (opcional)</label>
+            <input style={inputSt} value={nota} onChange={e => setNota(e.target.value)}
+              placeholder="Para qué / a quién va a pagar" />
+          </div>
+          <div style={{ fontSize: 11, color: '#6366f1', background: '#eef2ff', padding: '8px 10px', borderRadius: 4 }}>
+            No genera movimiento. Cuando se concrete el pago, registralo como endoso.
+          </div>
+        </div>
+        <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Btn sm onClick={onClose}>Cancelar</Btn>
+          <Btn sm fill onClick={() => onConfirm({ traspasadoA, fecha, nota })}
+            style={{ background: '#6366f1', opacity: traspasadoA.trim() ? 1 : 0.5 }}>
+            Confirmar traspaso
           </Btn>
         </div>
       </div>
@@ -572,6 +636,15 @@ export default function Cheques() {
     closeModal();
   };
 
+  const handleTraspasar = ({ traspasadoA, fecha, nota }) => {
+    updateCheque(modal.cheque.id, {
+      traspasoA: traspasadoA,
+      fechaTraspaso: fecha,
+      observacion: nota || modal.cheque.observacion,
+    });
+    closeModal();
+  };
+
   // ── Totales ───────────────────────────────────────────────────────────────
   const totalCartera  = cartera.reduce((s, c) => s + (c.monto || 0), 0);
   const totalEmitidos = emitidos.filter(c => c.estado === 'cartera').reduce((s, c) => s + (c.monto || 0), 0);
@@ -633,6 +706,9 @@ export default function Cheques() {
       )}
       {modal?.action === 'endosar' && (
         <EndosarModal cheque={modal.cheque} cajas={cajas} obras={obrasActivas} onConfirm={handleEndosar} onClose={closeModal} />
+      )}
+      {modal?.action === 'traspasar' && (
+        <TraspasoModal cheque={modal.cheque} onConfirm={handleTraspasar} onClose={closeModal} />
       )}
       {modal?.action === 'rechazar' && (
         <RechazarModal cheque={modal.cheque} onConfirm={handleRechazar} onClose={closeModal} />
