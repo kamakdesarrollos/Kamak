@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { loadUserData, saveUserData } from '../lib/dbHelpers';
 
 const newId = () => `plt-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -246,7 +247,26 @@ function load() {
 
 export function PlantillasProvider({ children }) {
   const [plantillas, setPlantillas] = useState(load);
-  useEffect(() => { localStorage.setItem('kamak_plantillas_v1', JSON.stringify(plantillas)); }, [plantillas]);
+  const sbLoaded = useRef(false);
+
+  useEffect(() => {
+    loadUserData('plantillas').then(data => {
+      if (data) {
+        setPlantillas(data);
+        localStorage.setItem('kamak_plantillas_v1', JSON.stringify(data));
+      } else {
+        saveUserData('plantillas', plantillas); // eslint-disable-line react-hooks/exhaustive-deps
+      }
+      sbLoaded.current = true;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    localStorage.setItem('kamak_plantillas_v1', JSON.stringify(plantillas));
+    if (!sbLoaded.current) return;
+    const t = setTimeout(() => saveUserData('plantillas', plantillas), 800);
+    return () => clearTimeout(t);
+  }, [plantillas]);
 
   const add = (plt) => setPlantillas(p => [...p, { ...plt, id: newId(), updatedAt: today(), usosCount: 0 }]);
   const update = (id, changes) => setPlantillas(p => p.map(t => t.id === id ? { ...t, ...changes, updatedAt: today() } : t));

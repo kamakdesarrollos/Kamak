@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { loadUserData, saveUserData } from '../lib/dbHelpers';
 
 const CTX = createContext(null);
 const LS_KEY = 'kamak_config_v1';
@@ -44,6 +45,26 @@ function persist(data) {
 
 export function ConfiguracionProvider({ children }) {
   const [config, setConfig] = useState(load);
+  const sbLoaded = useRef(false);
+
+  useEffect(() => {
+    loadUserData('config').then(data => {
+      if (data) {
+        const merged = { ...DEFAULT, ...data };
+        setConfig(merged);
+        persist(merged);
+      } else {
+        saveUserData('config', config); // eslint-disable-line react-hooks/exhaustive-deps
+      }
+      sbLoaded.current = true;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!sbLoaded.current) return;
+    const t = setTimeout(() => saveUserData('config', config), 800);
+    return () => clearTimeout(t);
+  }, [config]);
 
   const patch = useCallback((section, changes) => {
     setConfig(prev => {

@@ -1,4 +1,5 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { loadUserData, saveUserData } from '../lib/dbHelpers';
 
 const CTX = createContext(null);
 
@@ -19,6 +20,25 @@ export function GastosFijosProvider({ children }) {
       return saved ? JSON.parse(saved) : INIT;
     } catch { return INIT; }
   });
+  const sbLoaded = useRef(false);
+
+  useEffect(() => {
+    loadUserData('gastos_fijos').then(data => {
+      if (data) {
+        setItemsState(data);
+        localStorage.setItem(LS_KEY, JSON.stringify(data));
+      } else {
+        saveUserData('gastos_fijos', items); // eslint-disable-line react-hooks/exhaustive-deps
+      }
+      sbLoaded.current = true;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!sbLoaded.current) return;
+    const t = setTimeout(() => saveUserData('gastos_fijos', items), 800);
+    return () => clearTimeout(t);
+  }, [items]);
 
   const setItems = (fn) => {
     setItemsState(prev => {

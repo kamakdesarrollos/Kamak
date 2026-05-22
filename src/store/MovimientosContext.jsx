@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { loadUserData, saveUserData } from '../lib/dbHelpers';
 
 const CTX = createContext(null);
 const LS_CAJAS = 'kamak_cajas_v1';
@@ -55,6 +56,29 @@ function persist(key, data) {
 export function MovimientosProvider({ children }) {
   const [cajas,       setCajas]       = useState(() => load(LS_CAJAS, SEED_CAJAS));
   const [movimientos, setMovimientos] = useState(() => load(LS_MOVS,  SEED_MOVS));
+  const sbLoaded  = useRef(false);
+  const cajasRef  = useRef(cajas);
+  const movsRef   = useRef(movimientos);
+  useEffect(() => { cajasRef.current = cajas; }, [cajas]);
+  useEffect(() => { movsRef.current = movimientos; }, [movimientos]);
+
+  useEffect(() => {
+    loadUserData('movimientos').then(data => {
+      if (data) {
+        if (data.cajas)       { setCajas(data.cajas);             persist(LS_CAJAS, data.cajas); }
+        if (data.movimientos) { setMovimientos(data.movimientos); persist(LS_MOVS,  data.movimientos); }
+      } else {
+        saveUserData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
+      }
+      sbLoaded.current = true;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!sbLoaded.current) return;
+    const t = setTimeout(() => saveUserData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current }), 800);
+    return () => clearTimeout(t);
+  }, [cajas, movimientos]);
 
   // ── Cajas CRUD ────────────────────────────────────────────────────────────
   const addCaja = useCallback((data) => {
@@ -78,7 +102,6 @@ export function MovimientosProvider({ children }) {
   // ── Movimientos CRUD ──────────────────────────────────────────────────────
   const addMovimiento = useCallback((data) => {
     const nuevo = { ...data, id: newId(), fecha: data.fecha || today() };
-    // Actualizar saldo de la caja origen
     setCajas(prev => {
       const next = prev.map(c => {
         if (c.id === data.cajaId) {
@@ -108,7 +131,6 @@ export function MovimientosProvider({ children }) {
   const removeMovimiento = useCallback((id) => {
     const mov = movimientos.find(m => m.id === id);
     if (!mov) return;
-    // Revertir saldo
     setCajas(prev => {
       const next = prev.map(c => {
         if (c.id === mov.cajaId) {
@@ -126,7 +148,7 @@ export function MovimientosProvider({ children }) {
     setMovimientos(prev => { const next = prev.filter(m => m.id !== id); persist(LS_MOVS, next); return next; });
   }, [movimientos]);
 
-  // ── Traspaso: gasto en origen + ingreso en destino (un único mov tipo traspaso) ──
+  // ── Traspaso ──────────────────────────────────────────────────────────────
   const traspasar = useCallback(({ cajaOrigenId, cajaDestinoId, monto, fecha, concepto, tcAplicado }) => {
     const id = newId();
     const mov = {

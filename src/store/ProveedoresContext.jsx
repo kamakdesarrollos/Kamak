@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { loadUserData, saveUserData } from '../lib/dbHelpers';
 
 const CTX = createContext(null);
 const LS_PROVS = 'kamak_proveedores_v1';
@@ -65,6 +66,29 @@ export function calcSaldoCC(proveedorId, obraId, ccEntries) {
 export function ProveedoresProvider({ children }) {
   const [proveedores, setProveedores] = useState(() => load(LS_PROVS, SEED_PROVS));
   const [ccEntries,   setCCEntries]   = useState(() => load(LS_CC,    SEED_CC));
+  const sbLoaded = useRef(false);
+  const provsRef = useRef(proveedores);
+  const ccRef    = useRef(ccEntries);
+  useEffect(() => { provsRef.current = proveedores; }, [proveedores]);
+  useEffect(() => { ccRef.current = ccEntries; }, [ccEntries]);
+
+  useEffect(() => {
+    loadUserData('proveedores').then(data => {
+      if (data) {
+        if (data.proveedores) { setProveedores(data.proveedores); save(LS_PROVS, data.proveedores); }
+        if (data.ccEntries)   { setCCEntries(data.ccEntries);   save(LS_CC,    data.ccEntries); }
+      } else {
+        saveUserData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
+      }
+      sbLoaded.current = true;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!sbLoaded.current) return;
+    const t = setTimeout(() => saveUserData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current }), 800);
+    return () => clearTimeout(t);
+  }, [proveedores, ccEntries]);
 
   // ── Proveedores CRUD ──────────────────────────────────────────────────────
   const addProveedor = useCallback((data) => {
@@ -135,7 +159,6 @@ export function ProveedoresProvider({ children }) {
     obraId ? calcSaldoCC(proveedorId, obraId, ccEntries) : calcSaldoProveedor(proveedorId, ccEntries),
     [ccEntries]);
 
-  // Obras únicas que tiene un proveedor en su CC
   const getObrasProveedor = useCallback((proveedorId) => {
     const map = {};
     ccEntries

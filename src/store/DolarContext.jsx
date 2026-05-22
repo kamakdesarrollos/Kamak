@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { loadUserData, saveUserData } from '../lib/dbHelpers';
 
 const CTX = createContext(null);
 const LS_KEY = 'kamak_dolar_v1';
@@ -12,13 +13,13 @@ function saveLS(data) {
   try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {}
 }
 
-// manual: false → auto-fetch al montar si los datos tienen más de 1 hora
 const DEFAULT = { venta: 1070, compra: 1060, updatedAt: null, manual: false, manualVal: 1070 };
 
 export function DolarProvider({ children }) {
   const [data, setData] = useState(() => loadLS() || DEFAULT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const sbLoaded = useRef(false);
 
   const patch = useCallback((fn) => {
     setData(prev => {
@@ -28,6 +29,24 @@ export function DolarProvider({ children }) {
     });
   }, []);
 
+  useEffect(() => {
+    loadUserData('dolar').then(saved => {
+      if (saved) {
+        setData(saved);
+        saveLS(saved);
+      } else {
+        saveUserData('dolar', data); // eslint-disable-line react-hooks/exhaustive-deps
+      }
+      sbLoaded.current = true;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!sbLoaded.current) return;
+    const t = setTimeout(() => saveUserData('dolar', data), 800);
+    return () => clearTimeout(t);
+  }, [data]);
+
   const fetchBNA = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -35,10 +54,8 @@ export function DolarProvider({ children }) {
       const res = await fetch('https://dolarapi.com/v1/dolares/oficial', { signal: AbortSignal.timeout(8000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      // Validar que al menos uno de los dos campos existe
       if (!json?.compra && !json?.venta) throw new Error('Respuesta inesperada de dolarapi.com');
       const compra = json.compra || json.venta;
-      // venta siempre >= compra; si la API no la trae, estimamos con spread estándar BNA
       const venta = (json.venta && json.venta >= json.compra) ? json.venta : json.compra * 1.005;
       patch(prev => ({ ...prev, compra, venta, updatedAt: new Date().toISOString(), manual: false }));
     } catch (e) {

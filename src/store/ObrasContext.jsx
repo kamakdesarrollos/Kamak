@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { loadUserData, saveUserData } from '../lib/dbHelpers';
 
 // ── Datos semilla obras ───────────────────────────────────────────────────────
 const SEED_OBRAS = [
@@ -183,9 +184,32 @@ const ObrasContext = createContext(null);
 export function ObrasProvider({ children }) {
   const [obras, setObras] = useState(loadObras);
   const [detalles, setDetalles] = useState(loadDet);
+  const sbLoaded   = useRef(false);
+  const obrasRef   = useRef(obras);
+  const detallesRef = useRef(detalles);
+  useEffect(() => { obrasRef.current = obras; }, [obras]);
+  useEffect(() => { detallesRef.current = detalles; }, [detalles]);
+
+  useEffect(() => {
+    loadUserData('obras').then(data => {
+      if (data) {
+        if (data.obras)    { setObras(data.obras);       saveObras(data.obras); }
+        if (data.detalles) { setDetalles(data.detalles); saveDet(data.detalles); }
+      } else {
+        saveUserData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
+      }
+      sbLoaded.current = true;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { saveObras(obras); }, [obras]);
   useEffect(() => { saveDet(detalles); }, [detalles]);
+
+  useEffect(() => {
+    if (!sbLoaded.current) return;
+    const t = setTimeout(() => saveUserData('obras', { obras: obrasRef.current, detalles: detallesRef.current }), 800);
+    return () => clearTimeout(t);
+  }, [obras, detalles]);
 
   // ── Obras CRUD ──
   const addObra = (obra) => {

@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { loadUserData, saveUserData } from '../lib/dbHelpers';
 
 const newId = () => `cat-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -39,7 +40,6 @@ function load() {
     const s3 = localStorage.getItem('kamak_catalog_v4');
     if (s3) return JSON.parse(s3);
 
-    // Migrar desde versión anterior: tomar v2 (donde el usuario cargó sus datos reales)
     const raw = localStorage.getItem('kamak_catalog_v2');
     if (raw) {
       const old = JSON.parse(raw);
@@ -58,7 +58,26 @@ function load() {
 
 export function CatalogProvider({ children }) {
   const [catalog, setCatalog] = useState(load);
-  useEffect(() => { localStorage.setItem('kamak_catalog_v4', JSON.stringify(catalog)); }, [catalog]);
+  const sbLoaded = useRef(false);
+
+  useEffect(() => {
+    loadUserData('catalog').then(data => {
+      if (data) {
+        setCatalog(data);
+        localStorage.setItem('kamak_catalog_v4', JSON.stringify(data));
+      } else {
+        saveUserData('catalog', catalog); // eslint-disable-line react-hooks/exhaustive-deps
+      }
+      sbLoaded.current = true;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    localStorage.setItem('kamak_catalog_v4', JSON.stringify(catalog));
+    if (!sbLoaded.current) return;
+    const t = setTimeout(() => saveUserData('catalog', catalog), 800);
+    return () => clearTimeout(t);
+  }, [catalog]);
 
   const add    = (coll, item)        => setCatalog(c => ({ ...c, [coll]: [...c[coll], { id: newId(), ...item, updatedAt: today() }] }));
   const update = (coll, id, changes) => setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...changes, updatedAt: today() } : i) }));

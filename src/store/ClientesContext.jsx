@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { loadUserData, saveUserData } from '../lib/dbHelpers';
 
 const CTX = createContext(null);
 const LS_KEY = 'kamak_clientes_v1';
@@ -30,6 +31,25 @@ function save(data) {
 
 export function ClientesProvider({ children }) {
   const [clientes, setClientes] = useState(() => load(SEED_CLIENTES));
+  const sbLoaded = useRef(false);
+
+  useEffect(() => {
+    loadUserData('clientes').then(data => {
+      if (data) {
+        setClientes(data);
+        save(data);
+      } else {
+        saveUserData('clientes', clientes); // eslint-disable-line react-hooks/exhaustive-deps
+      }
+      sbLoaded.current = true;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!sbLoaded.current) return;
+    const t = setTimeout(() => saveUserData('clientes', clientes), 800);
+    return () => clearTimeout(t);
+  }, [clientes]);
 
   const addCliente = useCallback((data) => {
     const nuevo = { nombre: '', empresa: '', cuit: '', telefono: '', email: '', notas: '', ...data, id: newId() };

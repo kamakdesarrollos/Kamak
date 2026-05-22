@@ -2,13 +2,18 @@ import { Link } from 'react-router-dom';
 import { Logo, Stripes } from '../ui';
 import { T } from '../../theme';
 import { useDolar } from '../../store/DolarContext';
+import { useAuth } from '../../store/AuthContext';
 import { useUsuarios } from '../../store/UsuariosContext';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 
 export default function Topbar({ breadcrumb = [], right, search = true }) {
   const { dolarVenta, dolarCompra, loading: dolarLoading } = useDolar();
-  const { currentUser, logout } = useUsuarios();
+  const { user: authUser, signOut } = useAuth();
+  const { currentUser } = useUsuarios();
+  const logout = signOut;
+  const displayName = currentUser?.nombre || authUser?.email?.split('@')[0] || 'Usuario';
+  const displayRol  = currentUser?.rol || 'Administrador';
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', background: T.dark, color: '#fff', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
@@ -62,11 +67,11 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
           {/* Avatar + nombre */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderLeft: '1px solid #3a3a3e', paddingLeft: 10 }}>
             <div style={{ width: 28, height: 28, borderRadius: '50%', background: T.accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: `'Montserrat', sans-serif`, fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
-              {(currentUser?.nombre || 'U')[0].toUpperCase()}
+              {displayName[0].toUpperCase()}
             </div>
             <div style={{ fontSize: 11, color: '#9a9892', lineHeight: 1.3 }}>
-              <div style={{ color: '#fff', fontWeight: 700, fontSize: 12 }}>{currentUser?.nombre}</div>
-              <div style={{ fontSize: 10 }}>{currentUser?.rol}</div>
+              <div style={{ color: '#fff', fontWeight: 700, fontSize: 12 }}>{displayName}</div>
+              <div style={{ fontSize: 10 }}>{displayRol}</div>
             </div>
           </div>
 
