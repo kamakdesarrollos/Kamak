@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { Logo, Stripes } from '../components/ui';
 import { T } from '../theme';
-import { useUsuarios } from '../store/UsuariosContext';
+import { useAuth } from '../store/AuthContext';
 
 export default function Login() {
-  const { login } = useUsuarios();
-  const [email, setEmail] = useState('');
+  const { signIn, signUp } = useAuth();
+  const [mode,     setMode]     = useState('login'); // 'login' | 'register'
+  const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [error,    setError]    = useState('');
+  const [msg,      setMsg]      = useState('');
+  const [loading,  setLoading]  = useState(false);
 
   const inputSt = {
     width: '100%', padding: '9px 11px',
@@ -18,28 +20,31 @@ export default function Login() {
     boxSizing: 'border-box', outline: 'none', color: T.ink,
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email.trim() || !password) return;
     setLoading(true);
     setError('');
-    const result = login(email, password);
-    if (!result.ok) {
-      setError(result.error);
+    setMsg('');
+
+    const fn = mode === 'login' ? signIn : signUp;
+    const { error: err } = await fn(email.trim(), password);
+
+    if (err) {
+      setError(err.message);
       setLoading(false);
+    } else if (mode === 'register') {
+      setMsg('Cuenta creada. Revisá tu email para confirmar y luego iniciá sesión.');
+      setLoading(false);
+      setMode('login');
     }
-    // Si ok=true, el cambio de currentUser re-renderiza App → AuthGate muestra el app
+    // Si login ok → AuthContext detecta el cambio y App renderiza la app
   };
 
   return (
-    <div style={{
-      minHeight: '100vh', background: '#f0ece0',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: T.font,
-    }}>
+    <div style={{ minHeight: '100vh', background: '#f0ece0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font }}>
       <div style={{ width: 400, background: T.paper, borderRadius: 8, boxShadow: '0 8px 48px rgba(0,0,0,0.13)', overflow: 'hidden' }}>
 
-        {/* Header oscuro */}
         <div style={{ background: T.dark, padding: '26px 30px 22px', position: 'relative', overflow: 'hidden' }}>
           <Stripes style={{ top: -20, right: -10 }} />
           <Logo h={30} dark />
@@ -48,38 +53,25 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Formulario */}
         <form onSubmit={handleSubmit} style={{ padding: '28px 30px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, marginBottom: 2 }}>Iniciar sesión</div>
-
-          <div>
-            <label style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>
-              Usuario / Email
-            </label>
-            <input
-              autoFocus
-              type="text"
-              value={email}
-              onChange={e => { setEmail(e.target.value); setError(''); }}
-              placeholder="usuario@kamak"
-              style={inputSt}
-            />
+          <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, marginBottom: 2 }}>
+            {mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
           </div>
 
           <div>
-            <label style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>
-              Contraseña
-            </label>
+            <label style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>Email</label>
+            <input autoFocus type="email" value={email}
+              onChange={e => { setEmail(e.target.value); setError(''); }}
+              placeholder="email@empresa.com" style={inputSt} />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>Contraseña</label>
             <div style={{ position: 'relative' }}>
-              <input
-                type={showPass ? 'text' : 'password'}
-                value={password}
+              <input type={showPass ? 'text' : 'password'} value={password}
                 onChange={e => { setPassword(e.target.value); setError(''); }}
-                placeholder="••••••••"
-                style={{ ...inputSt, paddingRight: 38 }}
-              />
-              <span
-                onClick={() => setShowPass(v => !v)}
+                placeholder="••••••••" style={{ ...inputSt, paddingRight: 38 }} />
+              <span onClick={() => setShowPass(v => !v)}
                 style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: 15, color: T.ink3, userSelect: 'none' }}>
                 {showPass ? '🙈' : '👁'}
               </span>
@@ -91,22 +83,24 @@ export default function Login() {
               {error}
             </div>
           )}
+          {msg && (
+            <div style={{ padding: '8px 12px', background: '#e6f4ea', borderRadius: 4, fontSize: 12, color: T.ok, borderLeft: `3px solid ${T.ok}` }}>
+              {msg}
+            </div>
+          )}
 
-          <button
-            type="submit"
-            disabled={loading || !email.trim() || !password}
-            style={{
-              padding: '11px', background: (!email.trim() || !password) ? T.faint2 : T.accent,
-              color: '#fff', border: 'none', borderRadius: 5, fontFamily: T.font,
-              fontSize: 14, fontWeight: 700, cursor: (!email.trim() || !password) ? 'default' : 'pointer',
-              transition: 'background 0.15s', marginTop: 2,
-            }}>
-            {loading ? 'Ingresando…' : 'Ingresar →'}
+          <button type="submit" disabled={loading || !email.trim() || !password}
+            style={{ padding: '11px', background: (!email.trim() || !password) ? T.faint2 : T.accent, color: '#fff', border: 'none', borderRadius: 5, fontFamily: T.font, fontSize: 14, fontWeight: 700, cursor: (!email.trim() || !password) ? 'default' : 'pointer', transition: 'background 0.15s', marginTop: 2 }}>
+            {loading ? 'Cargando…' : mode === 'login' ? 'Ingresar →' : 'Crear cuenta →'}
           </button>
         </form>
 
-        <div style={{ padding: '0 30px 20px', fontSize: 11, color: T.ink3, textAlign: 'center' }}>
-          ¿Olvidaste tu contraseña? Contactá al administrador del sistema.
+        <div style={{ padding: '0 30px 20px', fontSize: 12, color: T.ink3, textAlign: 'center' }}>
+          {mode === 'login' ? (
+            <>¿No tenés cuenta? <span onClick={() => { setMode('register'); setError(''); setMsg(''); }} style={{ color: T.accent, cursor: 'pointer', fontWeight: 700 }}>Registrarse</span></>
+          ) : (
+            <>¿Ya tenés cuenta? <span onClick={() => { setMode('login'); setError(''); setMsg(''); }} style={{ color: T.accent, cursor: 'pointer', fontWeight: 700 }}>Iniciar sesión</span></>
+          )}
         </div>
       </div>
     </div>

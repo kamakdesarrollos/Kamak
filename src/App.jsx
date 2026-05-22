@@ -10,6 +10,7 @@ import { ClientesProvider } from './store/ClientesContext';
 import { MovimientosProvider } from './store/MovimientosContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
+import { AuthProvider, useAuth } from './store/AuthContext';
 
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -37,32 +38,26 @@ const INACTIVITY_MS = 15 * 60 * 1000; // 15 minutos
 const WARN_MS       =  1 * 60 * 1000; // aviso 1 minuto antes
 
 function AuthGate({ children }) {
-  const { currentUser, logout } = useUsuarios();
-  const [secondsLeft, setSecondsLeft] = useState(null); // null = sin aviso
-  const logoutTimer  = useRef(null);
-  const warnTimer    = useRef(null);
-  const countdown    = useRef(null);
+  const { user, loading, signOut } = useAuth();
+  const [secondsLeft, setSecondsLeft] = useState(null);
+  const logoutTimer = useRef(null);
+  const warnTimer   = useRef(null);
+  const countdown   = useRef(null);
 
   const reset = useCallback(() => {
     clearTimeout(logoutTimer.current);
     clearTimeout(warnTimer.current);
     clearInterval(countdown.current);
     setSecondsLeft(null);
-
-    if (!currentUser) return;
-
+    if (!user) return;
     warnTimer.current = setTimeout(() => {
       setSecondsLeft(60);
       countdown.current = setInterval(() => {
-        setSecondsLeft(s => {
-          if (s <= 1) { clearInterval(countdown.current); return 0; }
-          return s - 1;
-        });
+        setSecondsLeft(s => { if (s <= 1) { clearInterval(countdown.current); return 0; } return s - 1; });
       }, 1000);
     }, INACTIVITY_MS - WARN_MS);
-
-    logoutTimer.current = setTimeout(logout, INACTIVITY_MS);
-  }, [currentUser, logout]);
+    logoutTimer.current = setTimeout(signOut, INACTIVITY_MS);
+  }, [user, signOut]);
 
   useEffect(() => {
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
@@ -76,7 +71,13 @@ function AuthGate({ children }) {
     };
   }, [reset]);
 
-  if (!currentUser) return <Login />;
+  if (loading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0ece0', fontFamily: 'sans-serif', color: '#666', fontSize: 14 }}>
+      Cargando…
+    </div>
+  );
+
+  if (!user) return <Login />;
 
   return (
     <>
@@ -85,10 +86,7 @@ function AuthGate({ children }) {
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1a1a1e', color: '#fff', padding: '12px 20px', borderRadius: 8, boxShadow: '0 6px 28px rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', gap: 14, fontSize: 13, border: '1.5px solid #d97706', whiteSpace: 'nowrap' }}>
           <span style={{ color: '#d97706', fontSize: 16 }}>⚠</span>
           <span>Tu sesión se cerrará en <b style={{ fontVariantNumeric: 'tabular-nums' }}>{secondsLeft}s</b> por inactividad</span>
-          <button onClick={reset}
-            style={{ padding: '5px 14px', background: '#1a9b9c', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
-            Continuar
-          </button>
+          <button onClick={reset} style={{ padding: '5px 14px', background: '#1a9b9c', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>Continuar</button>
         </div>
       )}
     </>
@@ -97,6 +95,7 @@ function AuthGate({ children }) {
 
 export default function App() {
   return (
+    <AuthProvider>
     <ConfiguracionProvider>
     <DolarProvider>
     <ObrasProvider>
@@ -144,5 +143,6 @@ export default function App() {
     </ObrasProvider>
     </DolarProvider>
     </ConfiguracionProvider>
+    </AuthProvider>
   );
 }
