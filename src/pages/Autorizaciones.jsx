@@ -5,7 +5,7 @@ import { T } from '../theme';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
-import { adminAction } from '../lib/dbHelpers';
+import { adminAction, createAuthUser } from '../lib/dbHelpers';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -181,11 +181,9 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
     if (!ok || creating) return;
     setCreating(true);
     setSbError('');
-    const result = await adminAction('createUser', { email: email.trim(), password: password.trim() });
-    console.log('[Autorizaciones] adminAction result:', result);
-    const { error } = result || {};
-    if (error) {
-      setSbError(error);
+    const { error: authError, data } = await createAuthUser(email.trim(), password.trim());
+    if (authError) {
+      setSbError(authError.message);
       setCreating(false);
       return;
     }
