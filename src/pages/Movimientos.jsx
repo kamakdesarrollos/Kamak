@@ -79,6 +79,8 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const isGasto  = tipo === 'gasto';
   const color    = isGasto ? T.warn : T.ok;
   const { catalog } = useCatalog();
+  const { config } = useConfiguracion();
+  const mediosDePago = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
 
   const [desc,          setDesc]          = useState('');
   const [monto,         setMonto]         = useState('');
@@ -350,9 +352,6 @@ export default function Movimientos() {
   const { clientes }       = useClientes();
   const { dolarVenta }     = useDolar();
   const { currentUser }    = useUsuarios();
-  const { config }         = useConfiguracion();
-  const mediosDePago       = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
-
   const cv = currentUser?.cajasVisibles ?? '*';
   const cajas = cv === '*' ? allCajas : allCajas.filter(c => Array.isArray(cv) && cv.includes(c.id));
 
