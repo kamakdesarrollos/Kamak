@@ -79,14 +79,15 @@ export function MovimientosProvider({ children }) {
       .channel('shared-movimientos')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.movimientos' },
         (payload) => {
+          console.log('[RT movimientos] evento recibido, dt:', Date.now() - lastSaveTime.current, payload.new?.data ? 'con datos' : 'sin datos');
           if (!payload.new?.data) return;
-          if (Date.now() - lastSaveTime.current < 2000) return;
+          if (Date.now() - lastSaveTime.current < 2000) { console.log('[RT movimientos] bloqueado por guard'); return; }
           const d = payload.new.data;
           if (d.cajas)       { setCajas(d.cajas);             persist(LS_CAJAS, d.cajas); }
           if (d.movimientos) { setMovimientos(d.movimientos); persist(LS_MOVS,  d.movimientos); }
         }
       )
-      .subscribe();
+      .subscribe((status) => console.log('[RT movimientos] status:', status));
     return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
