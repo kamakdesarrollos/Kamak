@@ -330,7 +330,7 @@ export default function Autorizaciones() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
         <div>
           <div className="k-h" style={{ fontSize: 28 }}>Autorizaciones</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>Matriz de permisos por usuario · solo admins acceden a esta sección</div>
+          <div style={{ fontSize: 12, color: T.ink2 }}>Matriz de permisos por usuario · solo admins acceden a esta sección · <b style={{color:'red'}}>v3</b></div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo usuario</Btn>
