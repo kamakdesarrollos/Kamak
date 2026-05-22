@@ -294,24 +294,32 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           </div>
         )}
 
-        <select style={{ ...inputSt, flex: 1, cursor: 'pointer' }} value={obraId} onChange={e => setObraId(e.target.value)}>
-          <option value="">Sin obra</option>
-          {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-        </select>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
+          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Obra</span>
+          <select style={{ ...inputSt, cursor: 'pointer', width: '100%' }} value={obraId} onChange={e => setObraId(e.target.value)}>
+            <option value="">— Sin obra —</option>
+            {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+          </select>
+        </div>
 
-        {/* Caja filtrada por moneda seleccionada */}
-        <select style={{ ...inputSt, flex: 1, cursor: 'pointer' }}
-          value={cajasMoneda.find(c => c.id === cajaId) ? cajaId : cajasMoneda[0]?.id || ''}
-          onChange={e => setCajaId(e.target.value)}>
-          {cajasMoneda.length === 0
-            ? <option value="">Sin cajas {monedaActual}</option>
-            : cajasMoneda.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)
-          }
-        </select>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
+          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Caja</span>
+          <select style={{ ...inputSt, cursor: 'pointer', width: '100%' }}
+            value={cajasMoneda.find(c => c.id === cajaId) ? cajaId : cajasMoneda[0]?.id || ''}
+            onChange={e => setCajaId(e.target.value)}>
+            {cajasMoneda.length === 0
+              ? <option value="">Sin cajas {monedaActual}</option>
+              : cajasMoneda.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)
+            }
+          </select>
+        </div>
 
-        <select style={{ ...inputSt, width: 120, cursor: 'pointer' }} value={medio} onChange={e => setMedio(e.target.value)}>
-          {mediosDePago.map(v => <option key={v}>{v}</option>)}
-        </select>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Medio de pago</span>
+          <select style={{ ...inputSt, width: 120, cursor: 'pointer' }} value={medio} onChange={e => setMedio(e.target.value)}>
+            {mediosDePago.map(v => <option key={v}>{v}</option>)}
+          </select>
+        </div>
 
         <Btn sm onClick={onCancel}>✕</Btn>
         <button onClick={save}
