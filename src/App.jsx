@@ -94,6 +94,17 @@ function AuthGate({ children }) {
 
   if (!user) return <Login />;
 
+  if (!loading && !currentUser) return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f0ece0', fontFamily: 'sans-serif', gap: 12 }}>
+      <div style={{ fontSize: 48 }}>🚫</div>
+      <div style={{ fontWeight: 700, fontSize: 18, color: '#1a1a1e' }}>Sin acceso</div>
+      <div style={{ fontSize: 13, color: '#666', textAlign: 'center', maxWidth: 320 }}>
+        Tu cuenta <b>{user.email}</b> no tiene acceso a esta aplicación.<br />Contactá al administrador.
+      </div>
+      <button onClick={signOut} style={{ marginTop: 8, padding: '8px 20px', background: '#1a9b9c', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>Cerrar sesión</button>
+    </div>
+  );
+
   return (
     <>
       {children}

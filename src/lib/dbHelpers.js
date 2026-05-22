@@ -1,6 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
+// Llama la Edge Function admin-users (requiere que exista en Supabase)
+export async function adminAction(action, payload) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) return { error: 'Sin sesión' };
+
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-users`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...payload }),
+  });
+  return res.json();
+}
+
 export async function loadUserData(key) {
   try {
     const { data: { user } } = await supabase.auth.getUser();

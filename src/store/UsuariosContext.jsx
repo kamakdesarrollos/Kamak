@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { adminAction } from '../lib/dbHelpers';
 
 const CTX = createContext(null);
 const SESSION_KEY  = 'kamak_session_v1';
@@ -144,9 +145,13 @@ export function UsuariosProvider({ children }) {
   }, [usuarios]);
 
   const removeUsuario = useCallback(async (id) => {
+    const u = usuarios.find(u => u.id === id);
     const { error } = await supabase.from('app_users').delete().eq('id', id);
-    if (!error) setUsuarios(prev => prev.filter(u => u.id !== id));
-  }, []);
+    if (!error) {
+      setUsuarios(prev => prev.filter(u => u.id !== id));
+      if (u?.email) adminAction('deleteUser', { email: u.email });
+    }
+  }, [usuarios]);
 
   const togglePermiso = useCallback(async (id, permiso) => {
     const u = usuarios.find(u => u.id === id);
@@ -183,10 +188,15 @@ export function UsuariosProvider({ children }) {
       const session = buildSession(u);
       saveSession(session);
       setCurrentUser(session);
-    } else {
+    } else if (usuarios.length === 0) {
+      // Tabla vacía → bootstrap admin en curso
       const session = { id: 'supabase', nombre: email.split('@')[0], email, rol: 'Admin', permisos: ROLES['Admin'], cajasVisibles: '*', obrasVisibles: '*', tabsOcultos: [] };
       saveSession(session);
       setCurrentUser(session);
+    } else {
+      // Usuario no registrado en app_users → sin acceso
+      saveSession(null);
+      setCurrentUser(null);
     }
   }, [usuarios]);
 

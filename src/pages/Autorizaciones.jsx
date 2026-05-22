@@ -5,8 +5,7 @@ import { T } from '../theme';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
-import { createAuthUser } from '../lib/dbHelpers';
-import { supabase } from '../lib/supabase';
+import { createAuthUser, adminAction } from '../lib/dbHelpers';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -305,6 +304,7 @@ export default function Autorizaciones() {
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editAccesos, setEditAccesos] = useState(null);
   const [resetPassId, setResetPassId] = useState(null);
+  const [newPass, setNewPass] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
   const cajas = allCajas.filter(c => c.activa);
@@ -375,22 +375,39 @@ export default function Autorizaciones() {
                 <div style={{ fontWeight: 700, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nombre}</div>
               </div>
 
-              {/* Credenciales: email + enviar reset */}
+              {/* Credenciales: email + cambiar contraseña */}
               <div style={{ width: 170, flexShrink: 0, padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
                 <div style={{ fontSize: 11, color: T.ink2, fontFamily: T.fontMono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</div>
                 {resetPassId === u.id ? (
-                  <span style={{ fontSize: 9, color: T.ok, fontWeight: 700 }}>Email enviado ✓</span>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <input
+                      autoFocus
+                      type="password"
+                      value={newPass}
+                      onChange={e => setNewPass(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Escape') { setResetPassId(null); setNewPass(''); } }}
+                      placeholder="Nueva contraseña"
+                      style={{ fontSize: 11, padding: '2px 6px', border: `1.5px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, outline: 'none', width: 100 }}
+                    />
+                    <span
+                      title="Confirmar"
+                      style={{ fontSize: 10, color: resetLoading ? T.ink3 : T.ok, cursor: resetLoading ? 'default' : 'pointer', fontWeight: 700 }}
+                      onClick={async () => {
+                        if (!newPass.trim() || resetLoading) return;
+                        setResetLoading(true);
+                        const { error } = await adminAction('updatePassword', { email: u.email, password: newPass.trim() });
+                        setResetLoading(false);
+                        if (error) { alert('Error: ' + error); return; }
+                        setResetPassId(null); setNewPass('');
+                      }}>✓</span>
+                    <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer' }}
+                      onClick={() => { setResetPassId(null); setNewPass(''); }}>✕</span>
+                    {resetLoading && <span style={{ fontSize: 9, color: T.ink3 }}>…</span>}
+                  </div>
                 ) : (
-                  <span style={{ fontSize: 9, color: resetLoading === u.id ? T.ink3 : T.accent, cursor: resetLoading === u.id ? 'default' : 'pointer', fontWeight: 700 }}
-                    onClick={async () => {
-                      if (resetLoading === u.id) return;
-                      setResetLoading(u.id);
-                      await supabase.auth.resetPasswordForEmail(u.email);
-                      setResetLoading(false);
-                      setResetPassId(u.id);
-                      setTimeout(() => setResetPassId(null), 4000);
-                    }}>
-                    {resetLoading === u.id ? 'enviando…' : 'enviar reset contraseña'}
+                  <span style={{ fontSize: 9, color: T.accent, cursor: 'pointer', fontWeight: 700 }}
+                    onClick={() => { setResetPassId(u.id); setNewPass(''); }}>
+                    cambiar contraseña
                   </span>
                 )}
               </div>
