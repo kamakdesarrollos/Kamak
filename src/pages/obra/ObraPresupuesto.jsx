@@ -845,8 +845,16 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
                 </div>
                 {newRubro.rubroId && (
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      Tareas disponibles {selectedTareas.size > 0 && <span style={{ color: T.accent }}>· {selectedTareas.size} seleccionadas</span>}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        Tareas disponibles {selectedTareas.size > 0 && <span style={{ color: T.accent }}>· {selectedTareas.size} seleccionadas</span>}
+                      </div>
+                      {tareasDispo.length > 0 && (
+                        <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer', fontWeight: 700 }}
+                          onClick={() => setSelectedTareas(selectedTareas.size === tareasDispo.length ? new Set() : new Set(tareasDispo.map(t => t.id)))}>
+                          {selectedTareas.size === tareasDispo.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                        </span>
+                      )}
                     </div>
                     {tareasDispo.length === 0
                       ? <div style={{ fontSize: 12, color: T.ink3, padding: '8px 0' }}>No hay tareas cargadas en este rubro del catálogo.</div>
@@ -1799,8 +1807,30 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
           {/* Selección de tareas */}
           {rubroSel && (
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Tareas disponibles — {rubroSel.nombre}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Tareas disponibles — {rubroSel.nombre}
+                </div>
+                {tareasDisponibles.length > 0 && (
+                  <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer', fontWeight: 700 }}
+                    onClick={() => {
+                      const allSel = tareasDisponibles.every(t => form.tareasSel[t.id]);
+                      if (allSel) {
+                        setForm(p => ({ ...p, tareasSel: {} }));
+                      } else {
+                        const next = { ...form.tareasSel };
+                        tareasDisponibles.forEach(t => {
+                          if (!next[t.id]) {
+                            const disponible = t.cantidad - calcTareaContratada(t.id, contratos);
+                            next[t.id] = { cantidad: disponible, precioUnit: Math.round(t.costoSub || t.costoMO) || 0 };
+                          }
+                        });
+                        setForm(p => ({ ...p, tareasSel: next }));
+                      }
+                    }}>
+                    {tareasDisponibles.every(t => form.tareasSel[t.id]) ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                  </span>
+                )}
               </div>
               {tareasDisponibles.length === 0 ? (
                 <div style={{ fontSize: 12, color: T.ink3, padding: '8px 0' }}>Todas las tareas de este rubro ya están completamente contratadas.</div>
