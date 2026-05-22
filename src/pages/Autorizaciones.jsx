@@ -5,6 +5,7 @@ import { T } from '../theme';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
+import { createAuthUser } from '../lib/dbHelpers';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -161,6 +162,9 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
   const [cajasSelected, setCajasSelected] = useState([]);
   const [tabsOcultos, setTabsOcultos] = useState([]);
 
+  const [creating, setCreating] = useState(false);
+  const [sbError, setSbError] = useState('');
+
   const ok = nombre.trim() && email.trim() && password.trim();
 
   const toggleObra = (id) => setObrasSelected(prev =>
@@ -173,8 +177,17 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
     prev.includes(tab) ? prev.filter(x => x !== tab) : [...prev, tab]
   );
 
-  const confirmar = () => {
-    if (!ok) return;
+  const confirmar = async () => {
+    if (!ok || creating) return;
+    setCreating(true);
+    setSbError('');
+    const { error } = await createAuthUser(email.trim(), password.trim());
+    // "already registered" no es un error real — el usuario ya existe en Supabase
+    if (error && !error.message.toLowerCase().includes('already registered')) {
+      setSbError(error.message);
+      setCreating(false);
+      return;
+    }
     addUsuario({
       nombre: nombre.trim(),
       email: email.trim(),
@@ -269,9 +282,16 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
             </div>
           </div>
         </div>
+        {sbError && (
+          <div style={{ margin: '0 18px', padding: '8px 12px', background: '#fae6e0', borderRadius: 4, fontSize: 12, color: T.accent, borderLeft: `3px solid ${T.accent}` }}>
+            {sbError}
+          </div>
+        )}
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
           <Btn sm onClick={onClose}>Cancelar</Btn>
-          <Btn sm fill onClick={confirmar} style={{ opacity: ok ? 1 : 0.5 }}>Crear usuario</Btn>
+          <Btn sm fill onClick={confirmar} style={{ opacity: ok && !creating ? 1 : 0.5 }}>
+            {creating ? 'Creando…' : 'Crear usuario'}
+          </Btn>
         </div>
       </div>
     </div>

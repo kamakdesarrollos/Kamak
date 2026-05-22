@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
 export async function loadUserData(key) {
@@ -13,6 +14,16 @@ export async function loadUserData(key) {
     if (error || !data) return null;
     return data.data;
   } catch { return null; }
+}
+
+// Crea un usuario en Supabase Auth sin afectar la sesión actual del admin
+export async function createAuthUser(email, password) {
+  const tempClient = createClient(
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_ANON_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
+  );
+  return tempClient.auth.signUp({ email, password });
 }
 
 export async function saveUserData(key, value) {
