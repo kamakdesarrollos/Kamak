@@ -181,7 +181,9 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
     if (!ok || creating) return;
     setCreating(true);
     setSbError('');
-    const { error } = await adminAction('createUser', { email: email.trim(), password: password.trim() });
+    const result = await adminAction('createUser', { email: email.trim(), password: password.trim() });
+    console.log('[Autorizaciones] adminAction result:', result);
+    const { error } = result || {};
     if (error) {
       setSbError(error);
       setCreating(false);
