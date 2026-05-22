@@ -3,17 +3,29 @@ import { supabase } from './supabase';
 
 // Llama la Edge Function admin-users (requiere que exista en Supabase)
 export async function adminAction(action, payload) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
-  if (!token) return { error: 'Sin sesión' };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return { error: 'Sin sesión activa' };
 
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-users`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, ...payload }),
-  });
-  return res.json();
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-users`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload }),
+    });
+
+    if (!res.ok && res.status !== 200) {
+      const text = await res.text();
+      console.error('adminAction error response:', res.status, text);
+      return { error: `Error ${res.status}: ${text.slice(0, 200)}` };
+    }
+
+    return res.json();
+  } catch (e) {
+    console.error('adminAction exception:', e);
+    return { error: e.message || 'Error de red' };
+  }
 }
 
 export async function loadUserData(key) {
