@@ -10,6 +10,7 @@ import { useDolar } from '../store/DolarContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useCatalog } from '../store/CatalogContext';
 import { useConfiguracion } from '../store/ConfiguracionContext';
+import { useCheques } from '../store/ChequesContext';
 
 const DEFAULT_MEDIOS = ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débito', 'Tarjeta'];
 
@@ -75,11 +76,14 @@ function MovRow({ m, cajas, onRemove }) {
 }
 
 // ── Formulario rápido inline ──────────────────────────────────────────────────
+const BANCOS_QUICK = ['Banco Nación', 'Banco Galicia', 'Banco Provincia', 'Santander', 'BBVA', 'Macro', 'Supervielle', 'Credicoop', 'Comafi', 'Itaú', 'HSBC', 'Otro'];
+
 function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, onSave, onCancel }) {
   const isGasto  = tipo === 'gasto';
   const color    = isGasto ? T.warn : T.ok;
   const { catalog } = useCatalog();
   const { config } = useConfiguracion();
+  const { addCheque } = useCheques();
   const mediosDePago = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
 
   const [desc,          setDesc]          = useState('');
@@ -89,6 +93,13 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const [medio,         setMedio]         = useState('Transferencia');
   const [contraparteId, setContraparteId] = useState('');
   const [rubroNombre,   setRubroNombre]   = useState('');
+
+  // Campos del cheque (visibles solo cuando medio = Cheque / E-cheq)
+  const [cheqNumero,     setCheqNumero]     = useState('');
+  const [cheqBanco,      setCheqBanco]      = useState('');
+  const [cheqTitular,    setCheqTitular]    = useState('');
+  const [cheqVencimiento,setCheqVencimiento]= useState('');
+  const isCheckPayment = medio === 'Cheque' || medio === 'E-cheq';
 
   // Moneda: 'ARS', 'USD' (directo a caja USD), 'USD_ARS' (pesos recibidos con ref USD, solo ingresos)
   const [monedaIngreso, setMonedaIngreso] = useState('ARS');
@@ -142,7 +153,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       }
     }
 
-    onSave({
+    const movId = onSave({
       tipo,
       descripcion:   desc.trim(),
       monto:         montoFinal,
@@ -154,11 +165,35 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       proveedor:     contraparteName,
       categoria:     isGasto ? 'general' : 'cobro-cliente',
       medioPago:     medio,
-      referencia:    '',
+      referencia:    cheqNumero || '',
       fondoReparo:   false,
       ...extra,
     });
+
+    if (isCheckPayment && cheqVencimiento) {
+      const tipoCheck = isGasto
+        ? (medio === 'E-cheq' ? 'echeq_propio' : 'propio')
+        : (medio === 'E-cheq' ? 'echeq_tercero' : 'tercero');
+      addCheque({
+        tipo:            tipoCheck,
+        numero:          cheqNumero,
+        banco:           cheqBanco,
+        titular:         cheqTitular,
+        monto:           montoFinal,
+        moneda:          cajaIsUSD ? 'USD' : 'ARS',
+        fechaIngreso:    fecha,
+        fechaVencimiento: cheqVencimiento,
+        obraId:          obraId || null,
+        obraNombre:      obra?.nombre || '',
+        clienteNombre:   !isGasto ? contraparteName : '',
+        proveedorNombre: isGasto  ? contraparteName : '',
+        movimientoId:    movId || null,
+        estado:          'cartera',
+      });
+    }
+
     setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId('');
+    setCheqNumero(''); setCheqBanco(''); setCheqTitular(''); setCheqVencimiento('');
   };
 
   const onKey = (e) => {
@@ -283,6 +318,30 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           ↵ Guardar
         </button>
       </div>
+
+      {/* Fila 3: datos del cheque (solo cuando medio = Cheque / E-cheq) */}
+      {isCheckPayment && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: '8px 10px', background: isGasto ? 'rgba(212,146,58,.06)' : 'rgba(61,122,74,.06)', borderRadius: 4, border: `1px dashed ${isGasto ? T.warn : T.ok}` }}>
+          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, flexShrink: 0, alignSelf: 'center' }}>Datos cheque</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '0 0 100px' }}>
+            <span style={{ fontSize: 10, color: T.ink3 }}>N° cheque</span>
+            <input style={{ ...inputSt }} value={cheqNumero} onChange={e => setCheqNumero(e.target.value)} placeholder="12345678" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '0 0 140px' }}>
+            <span style={{ fontSize: 10, color: T.ink3 }}>Banco</span>
+            <input list="mov-bancos-list" style={{ ...inputSt }} value={cheqBanco} onChange={e => setCheqBanco(e.target.value)} placeholder="Banco Galicia" />
+            <datalist id="mov-bancos-list">{BANCOS_QUICK.map(b => <option key={b} value={b} />)}</datalist>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+            <span style={{ fontSize: 10, color: T.ink3 }}>{isGasto ? 'Destinatario' : 'Titular (emisor)'}</span>
+            <input style={{ ...inputSt }} value={cheqTitular} onChange={e => setCheqTitular(e.target.value)} placeholder={isGasto ? 'A quién se emite' : 'Quien lo firmó'} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '0 0 140px' }}>
+            <span style={{ fontSize: 10, color: T.ink3 }}>Vencimiento *</span>
+            <input type="date" style={{ ...inputSt }} value={cheqVencimiento} onChange={e => setCheqVencimiento(e.target.value)} />
+          </div>
+        </div>
+      )}
 
       <div style={{ fontSize: 10, color: T.ink3 }}>Enter guarda · Esc cierra · el formulario queda abierto para cargar varios seguidos</div>
     </div>

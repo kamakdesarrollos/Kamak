@@ -203,12 +203,10 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
   const [clienteNombre, setClienteNombre] = useState(cheque?.clienteNombre || '');
   const [proveedorNombre, setProveedorNombre] = useState(cheque?.proveedorNombre || '');
   const [observacion, setObservacion] = useState(cheque?.observacion || '');
-  const [cajaId, setCajaId]           = useState(cheque?.cajaId || cajas[0]?.id || '');
-  const [concepto, setConcepto]       = useState(cheque?.concepto || '');
 
   const esTercero = tipo === 'tercero' || tipo === 'echeq_tercero';
   const montoNum = parseFloat(monto.replace(',', '.')) || 0;
-  const canSave = montoNum > 0 && fechaVencimiento && (esEdicion || cajaId);
+  const canSave = montoNum > 0 && fechaVencimiento;
 
   const guardar = () => {
     if (!canSave) return;
@@ -219,15 +217,9 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
       obraNombre: obras.find(o => o.id === obraId)?.nombre || '',
       clienteNombre: esTercero ? clienteNombre : '',
       proveedorNombre: !esTercero ? proveedorNombre : '',
-      observacion, concepto,
-      cajaId: esEdicion ? cheque.cajaId : cajaId,
+      observacion,
     });
   };
-
-  const cajaLabel = esTercero ? 'Registrar ingreso en caja' : 'Pagar desde caja';
-  const cajaHint  = esTercero
-    ? 'Se acredita el ingreso en esta caja al recibir el cheque'
-    : 'Se debita el gasto de esta caja al emitir el cheque';
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
@@ -308,24 +300,6 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
               <input type="date" style={inputSt} value={fechaVencimiento} onChange={e => setFechaVencimiento(e.target.value)} />
             </div>
           </div>
-
-          {/* Caja + Obra solo en alta nueva */}
-          {!esEdicion && (
-            <>
-              <div>
-                <label style={labelSt}>{cajaLabel} *</label>
-                <select style={{ ...inputSt, cursor: 'pointer' }} value={cajaId} onChange={e => setCajaId(e.target.value)}>
-                  {cajas.filter(c => c.activa).map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                </select>
-                <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>{cajaHint}</div>
-              </div>
-              <div>
-                <label style={labelSt}>Concepto</label>
-                <input style={inputSt} value={concepto} onChange={e => setConcepto(e.target.value)}
-                  placeholder={esTercero ? `Cobro de ${clienteNombre || 'cliente'}` : `Pago a ${proveedorNombre || 'proveedor'}`} />
-              </div>
-            </>
-          )}
 
           <div>
             <label style={labelSt}>Obra (opcional)</label>
@@ -465,7 +439,7 @@ function RechazarModal({ cheque, onConfirm, onClose }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Cheques() {
   const { cheques, addCheque, updateCheque, removeCheque, depositarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque } = useCheques();
-  const { cajas, addMovimiento } = useMovimientos();
+  const { cajas } = useMovimientos();
   const { obras } = useObras();
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
 
@@ -505,30 +479,7 @@ export default function Cheques() {
   };
 
   const handleNuevo = (data) => {
-    const esTercero = data.tipo === 'tercero' || data.tipo === 'echeq_tercero';
-    const caja = cajas.find(x => x.id === data.cajaId);
-    const obraNombre = data.obraNombre || 'General';
-    const descripcion = data.concepto?.trim() ||
-      (esTercero
-        ? `Cobro cheque${data.numero ? ` #${data.numero}` : ''} · ${data.titular || data.clienteNombre || ''}`
-        : `Pago cheque${data.numero ? ` #${data.numero}` : ''} · ${data.proveedorNombre || ''}`);
-
-    const movId = addMovimiento({
-      tipo: esTercero ? 'ingreso' : 'gasto',
-      descripcion,
-      monto: data.monto,
-      fecha: data.fechaIngreso,
-      cajaId: data.cajaId,
-      obraId: data.obraId || null,
-      obraNombre,
-      proveedor: esTercero ? (data.clienteNombre || '') : (data.proveedorNombre || ''),
-      categoria: esTercero ? 'cobro-cliente' : 'subcontrato',
-      medioPago: (data.tipo === 'echeq_tercero' || data.tipo === 'echeq_propio') ? 'E-cheq' : 'Cheque',
-      referencia: data.numero || '',
-      fondoReparo: false,
-    });
-
-    addCheque({ ...data, movimientoId: movId, cajaDestinoId: esTercero ? null : data.cajaId, cajaDestinoNombre: esTercero ? null : (caja?.nombre || null) });
+    addCheque(data);
     closeModal();
   };
 
