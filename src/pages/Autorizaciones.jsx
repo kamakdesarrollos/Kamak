@@ -6,6 +6,7 @@ import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { createAuthUser } from '../lib/dbHelpers';
+import { supabase } from '../lib/supabase';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -303,9 +304,8 @@ export default function Autorizaciones() {
   const [tab, setTab] = useState('usuarios');
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editAccesos, setEditAccesos] = useState(null);
-  const [showPassId, setShowPassId] = useState(null);
-  const [editPassId, setEditPassId] = useState(null);
-  const [newPass, setNewPass] = useState('');
+  const [resetPassId, setResetPassId] = useState(null);
+  const [resetLoading, setResetLoading] = useState(false);
 
   const cajas = allCajas.filter(c => c.activa);
 
@@ -375,42 +375,23 @@ export default function Autorizaciones() {
                 <div style={{ fontWeight: 700, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nombre}</div>
               </div>
 
-              {/* Credenciales: email + contraseña */}
+              {/* Credenciales: email + enviar reset */}
               <div style={{ width: 170, flexShrink: 0, padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
                 <div style={{ fontSize: 11, color: T.ink2, fontFamily: T.fontMono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</div>
-                {editPassId === u.id ? (
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                    <input
-                      autoFocus
-                      type="text"
-                      value={newPass}
-                      onChange={e => setNewPass(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && newPass.trim()) { updateUsuario(u.id, { password: newPass.trim() }); setEditPassId(null); setNewPass(''); }
-                        if (e.key === 'Escape') { setEditPassId(null); setNewPass(''); }
-                      }}
-                      placeholder="Nueva contraseña"
-                      style={{ fontSize: 11, padding: '2px 6px', border: `1.5px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, outline: 'none', width: 100 }}
-                    />
-                    <span style={{ fontSize: 10, color: T.ok, cursor: 'pointer', fontWeight: 700 }}
-                      onClick={() => { if (newPass.trim()) { updateUsuario(u.id, { password: newPass.trim() }); setEditPassId(null); setNewPass(''); } }}>✓</span>
-                    <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer' }}
-                      onClick={() => { setEditPassId(null); setNewPass(''); }}>✕</span>
-                  </div>
+                {resetPassId === u.id ? (
+                  <span style={{ fontSize: 9, color: T.ok, fontWeight: 700 }}>Email enviado ✓</span>
                 ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ fontSize: 11, fontFamily: T.fontMono, color: T.ink3, letterSpacing: 2 }}>
-                      {showPassId === u.id ? u.password : '••••••'}
-                    </span>
-                    <span style={{ fontSize: 12, cursor: 'pointer', color: T.ink3, userSelect: 'none' }}
-                      onClick={() => setShowPassId(showPassId === u.id ? null : u.id)}>
-                      {showPassId === u.id ? '🙈' : '👁'}
-                    </span>
-                    <span style={{ fontSize: 9, color: T.accent, cursor: 'pointer', fontWeight: 700, marginLeft: 2 }}
-                      onClick={() => { setEditPassId(u.id); setNewPass(u.password || ''); setShowPassId(null); }}>
-                      editar
-                    </span>
-                  </div>
+                  <span style={{ fontSize: 9, color: resetLoading === u.id ? T.ink3 : T.accent, cursor: resetLoading === u.id ? 'default' : 'pointer', fontWeight: 700 }}
+                    onClick={async () => {
+                      if (resetLoading === u.id) return;
+                      setResetLoading(u.id);
+                      await supabase.auth.resetPasswordForEmail(u.email);
+                      setResetLoading(false);
+                      setResetPassId(u.id);
+                      setTimeout(() => setResetPassId(null), 4000);
+                    }}>
+                    {resetLoading === u.id ? 'enviando…' : 'enviar reset contraseña'}
+                  </span>
                 )}
               </div>
 
