@@ -11,6 +11,7 @@ const ALL_ITEMS = [
   { icon: '◎', label: 'Clientes',       path: '/clientes' },
   { icon: '⇄', label: 'Movimientos',    path: '/movimientos' },
   { icon: '$', label: 'Cajas',          path: '/cajas',        perm: 'verCaja' },
+  { icon: '✓', label: 'Cheques',        path: '/cheques' },
   { icon: '⌗', label: 'Prorrateo',      path: '/prorrateo' },
   { section: 'Datos' },
   { icon: '▤', label: 'Catálogos',      path: '/catalogos',   adminOnly: true },

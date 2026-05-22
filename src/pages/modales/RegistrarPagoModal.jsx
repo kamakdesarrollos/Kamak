@@ -4,17 +4,20 @@ import { T } from '../../theme';
 import { useProveedores } from '../../store/ProveedoresContext';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useObras } from '../../store/ObrasContext';
+import { useConfiguracion } from '../../store/ConfiguracionContext';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 
-const MEDIOS = ['Transferencia', 'Cheque', 'E-cheq', 'Efectivo', 'Tarjeta'];
+const DEFAULT_MEDIOS = ['Transferencia', 'Cheque', 'E-cheq', 'Efectivo', 'Tarjeta'];
 
 export default function RegistrarPagoModal({ proveedor = '', proveedorId = null, onClose }) {
   const { addCC } = useProveedores();
   const { cajas, addMovimiento } = useMovimientos();
   const { obras } = useObras();
+  const { config } = useConfiguracion();
+  const mediosDePago = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
 
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
   const cajasARS = cajas.filter(c => c.moneda === 'ARS' && c.activa);
@@ -137,7 +140,7 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
           <div>
             <label style={labelSt}>Medio de pago</label>
             <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-              {MEDIOS.map(m => (
+              {mediosDePago.map(m => (
                 <span key={m} onClick={() => setMedio(m)}
                   style={{ fontSize: 11, padding: '4px 10px', borderRadius: 12, border: `1.5px solid ${medio === m ? T.accent : T.faint2}`, background: medio === m ? T.accentSoft : 'transparent', cursor: 'pointer', fontWeight: medio === m ? 700 : 400 }}>
                   {m}

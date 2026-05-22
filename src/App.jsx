@@ -8,6 +8,7 @@ import { DolarProvider } from './store/DolarContext';
 import { ProveedoresProvider } from './store/ProveedoresContext';
 import { ClientesProvider } from './store/ClientesContext';
 import { MovimientosProvider } from './store/MovimientosContext';
+import { ChequesProvider } from './store/ChequesContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
 import { AppLoadingProvider, useAppLoading } from './store/AppLoadingContext';
@@ -31,6 +32,7 @@ import Plantillas from './pages/Plantillas';
 import Reportes from './pages/Reportes';
 import Autorizaciones from './pages/Autorizaciones';
 import Configuracion from './pages/Configuracion';
+import Cheques from './pages/Cheques';
 import MobileComprador from './pages/mobile/MobileComprador';
 import MobileDirector from './pages/mobile/MobileDirector';
 import PortalCliente from './pages/portal/PortalCliente';
@@ -140,6 +142,7 @@ export default function App() {
     <ProveedoresProvider>
     <ClientesProvider>
     <MovimientosProvider>
+    <ChequesProvider>
     <UsuariosProvider>
       <AuthGate>
         <BrowserRouter>
@@ -154,6 +157,7 @@ export default function App() {
             <Route path="/movimientos" element={<Movimientos />} />
             <Route path="/cajas" element={<Cajas />} />
             <Route path="/cajas/conciliacion" element={<Conciliacion />} />
+            <Route path="/cheques" element={<Cheques />} />
             <Route path="/prorrateo" element={<Prorrateo />} />
             <Route path="/catalogos" element={<Catalogos />} />
             <Route path="/plantillas" element={<Plantillas />} />
@@ -169,6 +173,7 @@ export default function App() {
         </BrowserRouter>
       </AuthGate>
     </UsuariosProvider>
+    </ChequesProvider>
     </MovimientosProvider>
     </ClientesProvider>
     </ProveedoresProvider>

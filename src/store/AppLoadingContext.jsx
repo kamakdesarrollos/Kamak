@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback } from 'react';
 
 const CTX = createContext({ allReady: false, markReady: () => {} });
 
-const TOTAL_LOADERS = 9; // configuracion, dolar, obras, catalog, plantillas, gastos_fijos, proveedores, clientes, movimientos
+const TOTAL_LOADERS = 10; // configuracion, dolar, obras, catalog, plantillas, gastos_fijos, proveedores, clientes, movimientos, cheques
 
 export function AppLoadingProvider({ children }) {
   const [count, setCount] = useState(0);

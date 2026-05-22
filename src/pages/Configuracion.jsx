@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Label, Divider, Chip } from '../components/ui';
 import { T } from '../theme';
@@ -171,6 +171,51 @@ function CambiarContrasena() {
   );
 }
 
+// ── Medios de pago ────────────────────────────────────────────────────────────
+function MediosDePago({ medios, onChange }) {
+  const [nuevo, setNuevo] = useState('');
+  const inputRef = useRef(null);
+
+  const agregar = () => {
+    const v = nuevo.trim();
+    if (!v || medios.includes(v)) return;
+    onChange([...medios, v]);
+    setNuevo('');
+    inputRef.current?.focus();
+  };
+
+  const quitar = (m) => onChange(medios.filter(x => x !== m));
+
+  const mover = (i, dir) => {
+    const arr = [...medios];
+    const j = i + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    onChange(arr);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {medios.map((m, i) => (
+          <div key={m} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', background: T.faint, borderRadius: 4, border: `1px solid ${T.faint2}` }}>
+            <span style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{m}</span>
+            <button onClick={() => mover(i, -1)} disabled={i === 0} style={{ border: 'none', background: 'none', cursor: i === 0 ? 'default' : 'pointer', color: i === 0 ? T.faint2 : T.ink2, fontSize: 12, padding: '0 2px' }}>▲</button>
+            <button onClick={() => mover(i, 1)} disabled={i === medios.length - 1} style={{ border: 'none', background: 'none', cursor: i === medios.length - 1 ? 'default' : 'pointer', color: i === medios.length - 1 ? T.faint2 : T.ink2, fontSize: 12, padding: '0 2px' }}>▼</button>
+            <button onClick={() => quitar(m)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: T.accent, fontSize: 13, padding: '0 2px', lineHeight: 1 }}>✕</button>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input ref={inputRef} style={{ ...inputSt, flex: 1 }} placeholder="Nuevo medio…" value={nuevo}
+          onChange={e => setNuevo(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && agregar()} />
+        <Btn sm fill onClick={agregar}>+ Agregar</Btn>
+      </div>
+    </div>
+  );
+}
+
 // ── Página ─────────────────────────────────────────────────────────────────────
 export default function Configuracion() {
   const { config, patchEmpresa, patchNotificaciones, patchSeguridad, patchApariencia, patchRoot } = useConfiguracion();
@@ -282,6 +327,18 @@ export default function Configuracion() {
               onChange={v => save(patchApariencia, { formatoMoneda: v })}
               options={['$ 1.234.567,00', '$ 1,234,567.00']} />
           </div>
+        </Box>
+
+        {/* Medios de pago */}
+        <Box style={{ padding: 16 }}>
+          <Label style={{ fontSize: 14, marginBottom: 4 }}>Medios de pago</Label>
+          <div style={{ fontSize: 11, color: T.ink2, marginBottom: 10 }}>
+            Usados en todos los formularios de pago y movimientos del sistema
+          </div>
+          <MediosDePago
+            medios={config.mediosDePago || []}
+            onChange={v => save(patchRoot, { mediosDePago: v })}
+          />
         </Box>
 
         <CambiarContrasena />

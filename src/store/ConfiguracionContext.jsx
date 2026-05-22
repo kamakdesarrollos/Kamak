@@ -16,6 +16,7 @@ const DEFAULT = {
   },
   ejercicioInicio: '01/01',
   doubleCurrency: true,
+  mediosDePago: ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débito', 'Tarjeta'],
   notificaciones: {
     pagosPendientes: true,
     avanceEmail: true,

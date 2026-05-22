@@ -9,6 +9,9 @@ import { useClientes } from '../store/ClientesContext';
 import { useDolar } from '../store/DolarContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useCatalog } from '../store/CatalogContext';
+import { useConfiguracion } from '../store/ConfiguracionContext';
+
+const DEFAULT_MEDIOS = ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débito', 'Tarjeta'];
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none' };
 const fmtN   = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
@@ -269,7 +272,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
         </select>
 
         <select style={{ ...inputSt, width: 120, cursor: 'pointer' }} value={medio} onChange={e => setMedio(e.target.value)}>
-          {['Transferencia','Efectivo','Cheque','E-cheq','Débito','Tarjeta'].map(v => <option key={v}>{v}</option>)}
+          {mediosDePago.map(v => <option key={v}>{v}</option>)}
         </select>
 
         <Btn sm onClick={onCancel}>✕</Btn>
@@ -347,6 +350,8 @@ export default function Movimientos() {
   const { clientes }       = useClientes();
   const { dolarVenta }     = useDolar();
   const { currentUser }    = useUsuarios();
+  const { config }         = useConfiguracion();
+  const mediosDePago       = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
 
   const cv = currentUser?.cajasVisibles ?? '*';
   const cajas = cv === '*' ? allCajas : allCajas.filter(c => Array.isArray(cv) && cv.includes(c.id));
