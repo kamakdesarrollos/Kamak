@@ -66,16 +66,19 @@ export async function saveUserData(key, value) {
 
 export async function loadSharedData(key) {
   try {
-    const { data } = await supabase.from('shared_data').select('data').eq('key', key).maybeSingle();
+    const { data, error } = await supabase.from('shared_data').select('data').eq('key', key).maybeSingle();
+    if (error) console.error('[loadSharedData] error:', key, error);
     return data?.data ?? null;
-  } catch { return null; }
+  } catch (e) { console.error('[loadSharedData] exception:', key, e); return null; }
 }
 
 export async function saveSharedData(key, value) {
   try {
-    await supabase.from('shared_data').upsert(
+    const { error } = await supabase.from('shared_data').upsert(
       { key, data: value, updated_at: new Date().toISOString() },
       { onConflict: 'key' }
     );
-  } catch (e) { console.error('saveSharedData:', e); }
+    if (error) console.error('[saveSharedData] error:', key, error);
+    else console.log('[saveSharedData] ok:', key);
+  } catch (e) { console.error('[saveSharedData] exception:', key, e); }
 }
