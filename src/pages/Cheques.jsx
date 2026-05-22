@@ -369,33 +369,71 @@ function DepositarModal({ cheque, cajas, onConfirm, onClose }) {
 }
 
 // ── Modal: endosar ────────────────────────────────────────────────────────────
-function EndosarModal({ cheque, onConfirm, onClose }) {
+function EndosarModal({ cheque, cajas, obras, onConfirm, onClose }) {
+  const cajasActivas = cajas.filter(c => c.activa);
   const [endosadoA, setEndosadoA] = useState('');
-  const [fecha, setFecha]         = useState(todayStr());
+  const [fecha,      setFecha]    = useState(todayStr());
+  const [cajaId,     setCajaId]   = useState(cajasActivas[0]?.id || '');
+  const [obraId,     setObraId]   = useState(cheque.obraId || '');
+  const [concepto,   setConcepto] = useState('');
+
+  const canConfirm = endosadoA.trim() && cajaId;
+
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 360 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: '#d97706', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Endosar cheque</div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Endosar cheque</div>
+            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>Se registrará un gasto por el monto del cheque</div>
+          </div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
         </div>
         <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ background: T.faint, borderRadius: 6, padding: '10px 14px' }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>{cheque.banco} #{cheque.numero}</div>
-            <div style={{ fontSize: 12, color: T.ink2 }}>$ {fmtN(cheque.monto)}</div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{cheque.banco}{cheque.numero ? ` #${cheque.numero}` : ''}</div>
+            <div style={{ fontSize: 12, color: T.ink2, fontFamily: T.fontMono, fontWeight: 700 }}>$ {fmtN(cheque.monto)}</div>
           </div>
+
           <div>
-            <label style={labelSt}>Endosado a</label>
-            <input style={inputSt} value={endosadoA} onChange={e => setEndosadoA(e.target.value)} placeholder="Nombre del proveedor o destinatario" autoFocus />
+            <label style={labelSt}>Endosado a (proveedor / destinatario) *</label>
+            <input style={inputSt} value={endosadoA} onChange={e => setEndosadoA(e.target.value)}
+              placeholder="Nombre de quien recibe el cheque" autoFocus />
           </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={labelSt}>Fecha de endoso</label>
+              <input type="date" style={inputSt} value={fecha} onChange={e => setFecha(e.target.value)} />
+            </div>
+            <div>
+              <label style={labelSt}>Caja de egreso *</label>
+              <select style={{ ...inputSt, cursor: 'pointer' }} value={cajaId} onChange={e => setCajaId(e.target.value)}>
+                {cajasActivas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+          </div>
+
           <div>
-            <label style={labelSt}>Fecha de endoso</label>
-            <input type="date" style={inputSt} value={fecha} onChange={e => setFecha(e.target.value)} />
+            <label style={labelSt}>Obra (opcional)</label>
+            <select style={{ ...inputSt, cursor: 'pointer' }} value={obraId} onChange={e => setObraId(e.target.value)}>
+              <option value="">— Sin obra —</option>
+              {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelSt}>Concepto</label>
+            <input style={inputSt} value={concepto} onChange={e => setConcepto(e.target.value)}
+              placeholder={`Pago a ${endosadoA || 'proveedor'}`} />
           </div>
         </div>
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn sm onClick={onClose}>Cancelar</Btn>
-          <Btn sm fill onClick={() => onConfirm({ endosadoA, fecha })} style={{ background: '#d97706', opacity: endosadoA.trim() ? 1 : 0.5 }}>Confirmar endoso</Btn>
+          <Btn sm fill onClick={() => onConfirm({ endosadoA, fecha, cajaId, obraId, concepto })}
+            style={{ background: '#d97706', opacity: canConfirm ? 1 : 0.5 }}>
+            Confirmar endoso
+          </Btn>
         </div>
       </div>
     </div>
@@ -439,7 +477,7 @@ function RechazarModal({ cheque, onConfirm, onClose }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Cheques() {
   const { cheques, addCheque, updateCheque, removeCheque, depositarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque } = useCheques();
-  const { cajas } = useMovimientos();
+  const { cajas, addMovimiento } = useMovimientos();
   const { obras } = useObras();
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
 
@@ -502,8 +540,30 @@ export default function Cheques() {
     closeModal();
   };
 
-  const handleEndosar = ({ endosadoA, fecha }) => {
-    endosarCheque(modal.cheque.id, { endosadoA, fechaEndoso: fecha });
+  const handleEndosar = ({ endosadoA, fecha, cajaId, obraId, concepto }) => {
+    const c = modal.cheque;
+    const caja = cajas.find(x => x.id === cajaId);
+    const obra = obrasActivas.find(o => o.id === obraId);
+    const esEcheq = c.tipo === 'echeq_tercero' || c.tipo === 'echeq_propio';
+    const desc = concepto.trim() ||
+      `Endoso ${esEcheq ? 'ECheq' : 'Cheque'}${c.numero ? ` #${c.numero}` : ''} a ${endosadoA}`;
+
+    addMovimiento({
+      tipo: 'gasto',
+      descripcion: desc,
+      monto: c.monto,
+      fecha,
+      cajaId,
+      obraId: obraId || null,
+      obraNombre: obra?.nombre || 'General',
+      proveedor: endosadoA,
+      categoria: 'subcontrato',
+      medioPago: esEcheq ? 'E-cheq' : 'Cheque',
+      referencia: c.numero || '',
+      fondoReparo: false,
+    });
+
+    endosarCheque(c.id, { endosadoA, fechaEndoso: fecha });
     closeModal();
   };
 
@@ -572,7 +632,7 @@ export default function Cheques() {
         <DepositarModal cheque={modal.cheque} cajas={cajas} onConfirm={handleAcreditar} onClose={closeModal} />
       )}
       {modal?.action === 'endosar' && (
-        <EndosarModal cheque={modal.cheque} onConfirm={handleEndosar} onClose={closeModal} />
+        <EndosarModal cheque={modal.cheque} cajas={cajas} obras={obrasActivas} onConfirm={handleEndosar} onClose={closeModal} />
       )}
       {modal?.action === 'rechazar' && (
         <RechazarModal cheque={modal.cheque} onConfirm={handleRechazar} onClose={closeModal} />
