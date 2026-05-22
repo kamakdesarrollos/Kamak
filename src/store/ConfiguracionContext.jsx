@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
-import { supabase } from '../lib/supabase';
+import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 
 const CTX = createContext(null);
@@ -62,19 +62,16 @@ export function ConfiguracionProvider({ children }) {
       markReady();
     });
 
-    const channel = supabase
-      .channel('shared-config')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
-        (payload) => {
-          if (payload.new?.key !== 'config' || !payload.new?.data) return;
-          fromRemote.current = true;
-          const merged = { ...DEFAULT, ...payload.new.data };
-          setConfig(merged); persist(merged);
-          setTimeout(() => { fromRemote.current = false; }, 0);
-        }
-      )
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    const unsub = onRemoteChange('config', () => {
+      loadSharedData('config').then(d => {
+        if (!d) return;
+        fromRemote.current = true;
+        const merged = { ...DEFAULT, ...d };
+        setConfig(merged); persist(merged);
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      });
+    });
+    return () => unsub();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

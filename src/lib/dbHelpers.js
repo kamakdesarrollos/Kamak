@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { broadcastChange } from './syncBus';
 
 // Llama la Edge Function admin-users (requiere que exista en Supabase)
 export async function adminAction(action, payload) {
@@ -79,6 +80,6 @@ export async function saveSharedData(key, value) {
       { onConflict: 'key' }
     );
     if (error) console.error('[saveSharedData] error:', key, error);
-    else console.log('[saveSharedData] ok:', key);
+    else broadcastChange(key);
   } catch (e) { console.error('[saveSharedData] exception:', key, e); }
 }

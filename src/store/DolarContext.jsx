@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
-import { supabase } from '../lib/supabase';
+import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 
 const CTX = createContext(null);
@@ -44,18 +44,15 @@ export function DolarProvider({ children }) {
       markReady();
     });
 
-    const channel = supabase
-      .channel('shared-dolar')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
-        (payload) => {
-          if (payload.new?.key !== 'dolar' || !payload.new?.data) return;
-          fromRemote.current = true;
-          setData(payload.new.data); saveLS(payload.new.data);
-          setTimeout(() => { fromRemote.current = false; }, 0);
-        }
-      )
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    const unsub = onRemoteChange('dolar', () => {
+      loadSharedData('dolar').then(d => {
+        if (!d) return;
+        fromRemote.current = true;
+        setData(d); saveLS(d);
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      });
+    });
+    return () => unsub();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

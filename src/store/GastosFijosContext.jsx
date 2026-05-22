@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
-import { supabase } from '../lib/supabase';
+import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 
 const CTX = createContext(null);
@@ -37,19 +37,16 @@ export function GastosFijosProvider({ children }) {
       markReady();
     });
 
-    const channel = supabase
-      .channel('shared-gastos-fijos')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
-        (payload) => {
-          if (payload.new?.key !== 'gastos_fijos' || !payload.new?.data) return;
-          fromRemote.current = true;
-          setItemsState(payload.new.data);
-          localStorage.setItem(LS_KEY, JSON.stringify(payload.new.data));
-          setTimeout(() => { fromRemote.current = false; }, 0);
-        }
-      )
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    const unsub = onRemoteChange('gastos_fijos', () => {
+      loadSharedData('gastos_fijos').then(d => {
+        if (!d) return;
+        fromRemote.current = true;
+        setItemsState(d);
+        localStorage.setItem(LS_KEY, JSON.stringify(d));
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      });
+    });
+    return () => unsub();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

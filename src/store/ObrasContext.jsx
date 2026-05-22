@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
-import { supabase } from '../lib/supabase';
+import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 
 // ── Datos semilla obras ───────────────────────────────────────────────────────
@@ -208,20 +208,16 @@ export function ObrasProvider({ children }) {
       markReady();
     });
 
-    const channel = supabase
-      .channel('shared-obras')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
-        (payload) => {
-          if (payload.new?.key !== 'obras' || !payload.new?.data) return;
-          fromRemote.current = true;
-          const d = payload.new.data;
-          if (d.obras)    { setObras(d.obras);       saveObras(d.obras); }
-          if (d.detalles) { setDetalles(d.detalles); saveDet(d.detalles); }
-          setTimeout(() => { fromRemote.current = false; }, 0);
-        }
-      )
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    const unsub = onRemoteChange('obras', () => {
+      loadSharedData('obras').then(d => {
+        if (!d) return;
+        fromRemote.current = true;
+        if (d.obras)    { setObras(d.obras);       saveObras(d.obras); }
+        if (d.detalles) { setDetalles(d.detalles); saveDet(d.detalles); }
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      });
+    });
+    return () => unsub();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { saveObras(obras); }, [obras]);

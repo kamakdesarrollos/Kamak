@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
-import { supabase } from '../lib/supabase';
+import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 
 const newId = () => `plt-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
@@ -264,19 +264,16 @@ export function PlantillasProvider({ children }) {
       markReady();
     });
 
-    const channel = supabase
-      .channel('shared-plantillas')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
-        (payload) => {
-          if (payload.new?.key !== 'plantillas' || !payload.new?.data) return;
-          fromRemote.current = true;
-          setPlantillas(payload.new.data);
-          localStorage.setItem('kamak_plantillas_v1', JSON.stringify(payload.new.data));
-          setTimeout(() => { fromRemote.current = false; }, 0);
-        }
-      )
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    const unsub = onRemoteChange('plantillas', () => {
+      loadSharedData('plantillas').then(d => {
+        if (!d) return;
+        fromRemote.current = true;
+        setPlantillas(d);
+        localStorage.setItem('kamak_plantillas_v1', JSON.stringify(d));
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      });
+    });
+    return () => unsub();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

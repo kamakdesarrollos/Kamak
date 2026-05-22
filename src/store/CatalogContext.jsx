@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
-import { supabase } from '../lib/supabase';
+import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 
 const newId = () => `cat-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
@@ -75,19 +75,16 @@ export function CatalogProvider({ children }) {
       markReady();
     });
 
-    const channel = supabase
-      .channel('shared-catalog')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
-        (payload) => {
-          if (payload.new?.key !== 'catalog' || !payload.new?.data) return;
-          fromRemote.current = true;
-          setCatalog(payload.new.data);
-          localStorage.setItem('kamak_catalog_v4', JSON.stringify(payload.new.data));
-          setTimeout(() => { fromRemote.current = false; }, 0);
-        }
-      )
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    const unsub = onRemoteChange('catalog', () => {
+      loadSharedData('catalog').then(d => {
+        if (!d) return;
+        fromRemote.current = true;
+        setCatalog(d);
+        localStorage.setItem('kamak_catalog_v4', JSON.stringify(d));
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      });
+    });
+    return () => unsub();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
-import { supabase } from '../lib/supabase';
+import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 
 const CTX = createContext(null);
@@ -80,20 +80,16 @@ export function MovimientosProvider({ children }) {
       markReady();
     });
 
-    const channel = supabase
-      .channel('shared-movimientos')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
-        (payload) => {
-          if (payload.new?.key !== 'movimientos' || !payload.new?.data) return;
-          fromRemote.current = true;
-          const d = payload.new.data;
-          if (d.cajas)       { setCajas(d.cajas);             persist(LS_CAJAS, d.cajas); }
-          if (d.movimientos) { setMovimientos(d.movimientos); persist(LS_MOVS,  d.movimientos); }
-          setTimeout(() => { fromRemote.current = false; }, 0);
-        }
-      )
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    const unsub = onRemoteChange('movimientos', () => {
+      loadSharedData('movimientos').then(d => {
+        if (!d) return;
+        fromRemote.current = true;
+        if (d.cajas)       { setCajas(d.cajas);             persist(LS_CAJAS, d.cajas); }
+        if (d.movimientos) { setMovimientos(d.movimientos); persist(LS_MOVS,  d.movimientos); }
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      });
+    });
+    return () => unsub();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
