@@ -151,6 +151,21 @@ export function UsuariosProvider({ children }) {
     return { ok: true };
   }, [usuarios]);
 
+  // Auto-login por email (usado cuando Supabase Auth ya autenticó al usuario)
+  const loginByEmail = useCallback((email) => {
+    const u = usuarios.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
+    if (u) {
+      const session = buildSession(u);
+      saveSession(session);
+      setCurrentUser(session);
+    } else {
+      // Email no existe en UsuariosContext → sesión Admin por defecto
+      const session = { id: 'supabase', nombre: email.split('@')[0], email, rol: 'Admin', permisos: ROLES['Admin'], cajasVisibles: '*', obrasVisibles: '*', tabsOcultos: [] };
+      saveSession(session);
+      setCurrentUser(session);
+    }
+  }, [usuarios]);
+
   const logout = useCallback(() => {
     saveSession(null);
     setCurrentUser(null);
@@ -214,7 +229,7 @@ export function UsuariosProvider({ children }) {
   }, []);
 
   return (
-    <CTX.Provider value={{ usuarios, currentUser, login, logout, addUsuario, updateUsuario, removeUsuario, togglePermiso, applyRol, roles, updateRol, removeRol }}>
+    <CTX.Provider value={{ usuarios, currentUser, login, loginByEmail, logout, addUsuario, updateUsuario, removeUsuario, togglePermiso, applyRol, roles, updateRol, removeRol }}>
       {children}
     </CTX.Provider>
   );

@@ -10,6 +10,7 @@ import { ClientesProvider } from './store/ClientesContext';
 import { MovimientosProvider } from './store/MovimientosContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
+
 import { AuthProvider, useAuth } from './store/AuthContext';
 
 import Login from './pages/Login';
@@ -39,7 +40,13 @@ const WARN_MS       =  1 * 60 * 1000; // aviso 1 minuto antes
 
 function AuthGate({ children }) {
   const { user, loading, signOut } = useAuth();
+  const { currentUser, loginByEmail } = useUsuarios();
   const [secondsLeft, setSecondsLeft] = useState(null);
+
+  // Sincronizar sesión Supabase con UsuariosContext
+  useEffect(() => {
+    if (user && !currentUser) loginByEmail(user.email);
+  }, [user, currentUser, loginByEmail]);
   const logoutTimer = useRef(null);
   const warnTimer   = useRef(null);
   const countdown   = useRef(null);
