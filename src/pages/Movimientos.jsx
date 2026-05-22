@@ -128,12 +128,12 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
     ? Math.round(parsedMonto / parsedTC)
     : 0;
 
-  const canSave = montoFinal > 0 && desc.trim().length > 0 && (!isCheckPayment || cheqVencimiento);
+  const effectiveCajaId = cajasMoneda.find(c => c.id === cajaId) ? cajaId : cajasMoneda[0]?.id || '';
+  const canSave = montoFinal > 0 && desc.trim().length > 0 && effectiveCajaId && (!isCheckPayment || cheqVencimiento);
 
   const save = () => {
     if (!canSave) return;
     const obra = obras.find(o => o.id === obraId);
-    const effectiveCajaId = cajasMoneda.find(c => c.id === cajaId) ? cajaId : cajasMoneda[0]?.id || cajaId;
 
     let contraparteName = '';
     const extra = {};
@@ -356,6 +356,7 @@ function Panel({ tipo, movs, cajas, obras, proveedores, clientes, dolarVenta, to
   const color = isIngreso ? T.ok : T.warn;
   const label = isIngreso ? 'Ingresos' : 'Gastos';
   const arrow = isIngreso ? '↑' : '↓';
+  const sinCajas = cajas.filter(c => c.activa).length === 0;
 
   return (
     <Box style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -366,14 +367,23 @@ function Panel({ tipo, movs, cajas, obras, proveedores, clientes, dolarVenta, to
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontFamily: T.fontMono, fontWeight: 800, color, fontSize: 15 }}>$ {fmtN(total)}</span>
-          <button onClick={() => setOpen(o => !o)}
-            style={{ padding: '4px 12px', borderRadius: 4, border: `1.5px solid ${color}`, background: open ? color : 'transparent', color: open ? '#fff' : color, fontFamily: T.font, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+          <button
+            onClick={() => !sinCajas && setOpen(o => !o)}
+            title={sinCajas ? 'Creá al menos una caja en Cajas antes de registrar movimientos' : ''}
+            style={{ padding: '4px 12px', borderRadius: 4, border: `1.5px solid ${sinCajas ? T.faint2 : color}`, background: open ? color : 'transparent', color: open ? '#fff' : (sinCajas ? T.ink3 : color), fontFamily: T.font, fontSize: 11, fontWeight: 700, cursor: sinCajas ? 'not-allowed' : 'pointer', opacity: sinCajas ? 0.5 : 1 }}>
             {open ? '✕ Cerrar' : `+ ${isIngreso ? 'Ingreso' : 'Gasto'}`}
           </button>
         </div>
       </div>
 
-      {open && (
+      {sinCajas && (
+        <div style={{ padding: '10px 14px', fontSize: 12, color: T.ink3, background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
+          Para registrar movimientos necesitás tener al menos una caja activa.{' '}
+          <a href="/cajas" style={{ color: T.accent, fontWeight: 700 }}>Ir a Cajas →</a>
+        </div>
+      )}
+
+      {open && !sinCajas && (
         <QuickAddForm
           tipo={tipo}
           obras={obras}
@@ -390,12 +400,14 @@ function Panel({ tipo, movs, cajas, obras, proveedores, clientes, dolarVenta, to
         {movs.length === 0 && (
           <div style={{ padding: 32, textAlign: 'center', color: T.ink3, fontSize: 12 }}>
             Sin {label.toLowerCase()} en {mesLabel(mes)}
-            <div style={{ marginTop: 8 }}>
-              <button onClick={() => setOpen(true)}
-                style={{ padding: '5px 14px', borderRadius: 4, border: `1px solid ${color}`, background: 'transparent', color, fontFamily: T.font, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                + Registrar {isIngreso ? 'ingreso' : 'gasto'}
-              </button>
-            </div>
+            {!sinCajas && (
+              <div style={{ marginTop: 8 }}>
+                <button onClick={() => setOpen(true)}
+                  style={{ padding: '5px 14px', borderRadius: 4, border: `1px solid ${color}`, background: 'transparent', color, fontFamily: T.font, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                  + Registrar {isIngreso ? 'ingreso' : 'gasto'}
+                </button>
+              </div>
+            )}
           </div>
         )}
         {movs.map(m => <MovRow key={m.id} m={m} cajas={cajas} onRemove={onRemove} />)}
