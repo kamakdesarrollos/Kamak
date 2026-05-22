@@ -182,16 +182,14 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
     setCreating(true);
     setSbError('');
     const { error } = await createAuthUser(email.trim(), password.trim());
-    // "already registered" no es un error real — el usuario ya existe en Supabase
     if (error && !error.message.toLowerCase().includes('already registered')) {
       setSbError(error.message);
       setCreating(false);
       return;
     }
-    addUsuario({
+    await addUsuario({
       nombre: nombre.trim(),
       email: email.trim(),
-      password: password.trim(),
       rol,
       obrasVisibles: obrasAll ? '*' : obrasSelected,
       cajasVisibles: cajasAll ? '*' : cajasSelected,

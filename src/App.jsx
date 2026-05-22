@@ -39,14 +39,22 @@ const INACTIVITY_MS = 15 * 60 * 1000; // 15 minutos
 const WARN_MS       =  1 * 60 * 1000; // aviso 1 minuto antes
 
 function AuthGate({ children }) {
-  const { user, loading, signOut } = useAuth();
-  const { currentUser, loginByEmail } = useUsuarios();
+  const { user, loading: authLoading, signOut } = useAuth();
+  const { currentUser, loginByEmail, bootstrapAdmin, usuarios, loading: usuariosLoading } = useUsuarios();
+  const loading = authLoading || usuariosLoading;
   const [secondsLeft, setSecondsLeft] = useState(null);
 
   // Sincronizar sesión Supabase con UsuariosContext
   useEffect(() => {
-    if (user && !currentUser) loginByEmail(user.email);
-  }, [user, currentUser, loginByEmail]);
+    if (user) loginByEmail(user.email);
+  }, [user, loginByEmail]);
+
+  // Si la tabla app_users está vacía, insertar al usuario actual como Admin
+  useEffect(() => {
+    if (user && !loading && usuarios.length === 0) {
+      bootstrapAdmin(user.email, user.user_metadata?.nombre || user.email.split('@')[0]);
+    }
+  }, [user, loading, usuarios, bootstrapAdmin]);
   const logoutTimer = useRef(null);
   const warnTimer   = useRef(null);
   const countdown   = useRef(null);
