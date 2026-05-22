@@ -337,7 +337,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
             <input style={{ ...inputSt }} value={cheqTitular} onChange={e => setCheqTitular(e.target.value)} placeholder={isGasto ? 'A quién se emite' : 'Quien lo firmó'} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '0 0 140px' }}>
-            <span style={{ fontSize: 10, color: T.ink3 }}>Vencimiento *</span>
+            <span style={{ fontSize: 10, color: T.ink3 }}>Fecha de cobro *</span>
             <input type="date" style={{ ...inputSt }} value={cheqVencimiento} onChange={e => setCheqVencimiento(e.target.value)} />
           </div>
         </div>

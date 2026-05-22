@@ -107,7 +107,7 @@ function ChequesTable({ cheques, onAccion }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <thead>
           <tr style={{ background: T.faint }}>
-            {['Vencimiento', 'Tipo', 'Banco / N°', 'Emisor / Destinatario', 'Obra', 'Monto', 'Estado', ''].map(h => (
+            {['Fecha de cobro', 'Tipo', 'Banco / N°', 'Emisor / Destinatario', 'Obra', 'Monto', 'Estado', ''].map(h => (
               <th key={h} style={{ padding: '7px 10px', textAlign: 'left', fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, borderBottom: `1.5px solid ${T.faint2}`, whiteSpace: 'nowrap' }}>{h}</th>
             ))}
           </tr>
@@ -296,7 +296,7 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
               <input type="date" style={inputSt} value={fechaIngreso} onChange={e => setFechaIngreso(e.target.value)} />
             </div>
             <div>
-              <label style={labelSt}>Fecha de vencimiento *</label>
+              <label style={labelSt}>Fecha de cobro *</label>
               <input type="date" style={inputSt} value={fechaVencimiento} onChange={e => setFechaVencimiento(e.target.value)} />
             </div>
           </div>
