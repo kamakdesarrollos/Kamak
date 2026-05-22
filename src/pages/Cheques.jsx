@@ -189,7 +189,7 @@ function ChequeFila({ cheque: c, onAccion }) {
 }
 
 // ── Modal: registrar / editar cheque ─────────────────────────────────────────
-function ChequeModal({ cheque, onSave, onClose, obras }) {
+function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
   const esEdicion = !!cheque?.id;
   const [tipo, setTipo]               = useState(cheque?.tipo || 'tercero');
   const [numero, setNumero]           = useState(cheque?.numero || '');
@@ -203,10 +203,12 @@ function ChequeModal({ cheque, onSave, onClose, obras }) {
   const [clienteNombre, setClienteNombre] = useState(cheque?.clienteNombre || '');
   const [proveedorNombre, setProveedorNombre] = useState(cheque?.proveedorNombre || '');
   const [observacion, setObservacion] = useState(cheque?.observacion || '');
+  const [cajaId, setCajaId]           = useState(cheque?.cajaId || cajas[0]?.id || '');
+  const [concepto, setConcepto]       = useState(cheque?.concepto || '');
 
   const esTercero = tipo === 'tercero' || tipo === 'echeq_tercero';
   const montoNum = parseFloat(monto.replace(',', '.')) || 0;
-  const canSave = montoNum > 0 && fechaVencimiento;
+  const canSave = montoNum > 0 && fechaVencimiento && (esEdicion || cajaId);
 
   const guardar = () => {
     if (!canSave) return;
@@ -217,9 +219,15 @@ function ChequeModal({ cheque, onSave, onClose, obras }) {
       obraNombre: obras.find(o => o.id === obraId)?.nombre || '',
       clienteNombre: esTercero ? clienteNombre : '',
       proveedorNombre: !esTercero ? proveedorNombre : '',
-      observacion,
+      observacion, concepto,
+      cajaId: esEdicion ? cheque.cajaId : cajaId,
     });
   };
+
+  const cajaLabel = esTercero ? 'Registrar ingreso en caja' : 'Pagar desde caja';
+  const cajaHint  = esTercero
+    ? 'Se acredita el ingreso en esta caja al recibir el cheque'
+    : 'Se debita el gasto de esta caja al emitir el cheque';
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
@@ -231,20 +239,22 @@ function ChequeModal({ cheque, onSave, onClose, obras }) {
         <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
           {/* Tipo */}
-          <div>
-            <label style={labelSt}>Tipo</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-              {TIPO_OPTS.map(opt => (
-                <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '7px 10px', borderRadius: 4, border: `1.5px solid ${tipo === opt.value ? T.accent : T.faint2}`, background: tipo === opt.value ? '#f0f9f9' : 'transparent' }}>
-                  <input type="radio" checked={tipo === opt.value} onChange={() => setTipo(opt.value)} style={{ accentColor: T.accent, marginTop: 2 }} />
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</div>
-                    <div style={{ fontSize: 10, color: T.ink2 }}>{opt.desc}</div>
-                  </div>
-                </label>
-              ))}
+          {!esEdicion && (
+            <div>
+              <label style={labelSt}>Tipo</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {TIPO_OPTS.map(opt => (
+                  <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '7px 10px', borderRadius: 4, border: `1.5px solid ${tipo === opt.value ? T.accent : T.faint2}`, background: tipo === opt.value ? '#f0f9f9' : 'transparent' }}>
+                    <input type="radio" checked={tipo === opt.value} onChange={() => setTipo(opt.value)} style={{ accentColor: T.accent, marginTop: 2 }} />
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</div>
+                      <div style={{ fontSize: 10, color: T.ink2 }}>{opt.desc}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
@@ -290,7 +300,7 @@ function ChequeModal({ cheque, onSave, onClose, obras }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <label style={labelSt}>Fecha de ingreso</label>
+              <label style={labelSt}>{esTercero ? 'Fecha de recepción' : 'Fecha de emisión'}</label>
               <input type="date" style={inputSt} value={fechaIngreso} onChange={e => setFechaIngreso(e.target.value)} />
             </div>
             <div>
@@ -298,6 +308,24 @@ function ChequeModal({ cheque, onSave, onClose, obras }) {
               <input type="date" style={inputSt} value={fechaVencimiento} onChange={e => setFechaVencimiento(e.target.value)} />
             </div>
           </div>
+
+          {/* Caja + Obra solo en alta nueva */}
+          {!esEdicion && (
+            <>
+              <div>
+                <label style={labelSt}>{cajaLabel} *</label>
+                <select style={{ ...inputSt, cursor: 'pointer' }} value={cajaId} onChange={e => setCajaId(e.target.value)}>
+                  {cajas.filter(c => c.activa).map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+                <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>{cajaHint}</div>
+              </div>
+              <div>
+                <label style={labelSt}>Concepto</label>
+                <input style={inputSt} value={concepto} onChange={e => setConcepto(e.target.value)}
+                  placeholder={esTercero ? `Cobro de ${clienteNombre || 'cliente'}` : `Pago a ${proveedorNombre || 'proveedor'}`} />
+              </div>
+            </>
+          )}
 
           <div>
             <label style={labelSt}>Obra (opcional)</label>
@@ -354,7 +382,7 @@ function DepositarModal({ cheque, cajas, onConfirm, onClose }) {
             </select>
           </div>
           <div style={{ fontSize: 11, color: '#2d7a2d', background: '#e8f4e8', padding: '8px 10px', borderRadius: 4 }}>
-            Se registrará un ingreso de <b>$ {fmtN(cheque.monto)}</b> en la caja seleccionada
+            Se registra el depósito del cheque. El ingreso ya fue acreditado al recibirlo.
           </div>
         </div>
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -477,7 +505,30 @@ export default function Cheques() {
   };
 
   const handleNuevo = (data) => {
-    addCheque(data);
+    const esTercero = data.tipo === 'tercero' || data.tipo === 'echeq_tercero';
+    const caja = cajas.find(x => x.id === data.cajaId);
+    const obraNombre = data.obraNombre || 'General';
+    const descripcion = data.concepto?.trim() ||
+      (esTercero
+        ? `Cobro cheque${data.numero ? ` #${data.numero}` : ''} · ${data.titular || data.clienteNombre || ''}`
+        : `Pago cheque${data.numero ? ` #${data.numero}` : ''} · ${data.proveedorNombre || ''}`);
+
+    const movId = addMovimiento({
+      tipo: esTercero ? 'ingreso' : 'gasto',
+      descripcion,
+      monto: data.monto,
+      fecha: data.fechaIngreso,
+      cajaId: data.cajaId,
+      obraId: data.obraId || null,
+      obraNombre,
+      proveedor: esTercero ? (data.clienteNombre || '') : (data.proveedorNombre || ''),
+      categoria: esTercero ? 'cobro-cliente' : 'subcontrato',
+      medioPago: (data.tipo === 'echeq_tercero' || data.tipo === 'echeq_propio') ? 'E-cheq' : 'Cheque',
+      referencia: data.numero || '',
+      fondoReparo: false,
+    });
+
+    addCheque({ ...data, movimientoId: movId, cajaDestinoId: esTercero ? null : data.cajaId, cajaDestinoNombre: esTercero ? null : (caja?.nombre || null) });
     closeModal();
   };
 
@@ -489,28 +540,14 @@ export default function Cheques() {
   const handleDepositar = ({ cajaId, fecha }) => {
     const c = modal.cheque;
     const caja = cajas.find(x => x.id === cajaId);
-    const movId = addMovimiento({
-      tipo: 'ingreso',
-      descripcion: `Depósito ${c.tipo === 'echeq_tercero' ? 'ECheq' : 'Cheque'} #${c.numero} · ${c.titular || c.clienteNombre || ''}`,
-      monto: c.monto,
-      fecha,
-      cajaId,
-      obraId: c.obraId || null,
-      obraNombre: c.obraNombre || 'General',
-      proveedor: c.clienteNombre || '',
-      categoria: 'cobro-cliente',
-      medioPago: c.tipo === 'echeq_tercero' ? 'E-cheq' : 'Cheque',
-      referencia: c.numero || '',
-      fondoReparo: false,
-    });
-    depositarCheque(c.id, { cajaDestinoId: cajaId, cajaDestinoNombre: caja?.nombre || '', fechaDeposito: fecha, movimientoId: movId });
+    depositarCheque(c.id, { cajaDestinoId: cajaId, cajaDestinoNombre: caja?.nombre || '', fechaDeposito: fecha, movimientoId: c.movimientoId || null });
     closeModal();
   };
 
   const handleAcreditar = ({ cajaId, fecha }) => {
     const c = modal.cheque;
     const caja = cajas.find(x => x.id === cajaId);
-    depositarCheque(c.id, { cajaDestinoId: cajaId, cajaDestinoNombre: caja?.nombre || '', fechaDeposito: fecha, movimientoId: null });
+    depositarCheque(c.id, { cajaDestinoId: cajaId, cajaDestinoNombre: caja?.nombre || '', fechaDeposito: fecha, movimientoId: c.movimientoId || null });
     closeModal();
   };
 
@@ -572,10 +609,10 @@ export default function Cheques() {
 
       {/* Modales */}
       {modal === 'nuevo' && (
-        <ChequeModal obras={obrasActivas} onSave={handleNuevo} onClose={closeModal} />
+        <ChequeModal obras={obrasActivas} cajas={cajas} onSave={handleNuevo} onClose={closeModal} />
       )}
       {modal?.action === 'editar' && (
-        <ChequeModal cheque={modal.cheque} obras={obrasActivas} onSave={handleEditar} onClose={closeModal} />
+        <ChequeModal cheque={modal.cheque} obras={obrasActivas} cajas={cajas} onSave={handleEditar} onClose={closeModal} />
       )}
       {modal?.action === 'depositar' && (
         <DepositarModal cheque={modal.cheque} cajas={cajas} onConfirm={handleDepositar} onClose={closeModal} />
