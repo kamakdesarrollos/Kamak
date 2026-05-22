@@ -128,7 +128,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
     ? Math.round(parsedMonto / parsedTC)
     : 0;
 
-  const canSave = montoFinal > 0 && desc.trim().length > 0;
+  const canSave = montoFinal > 0 && desc.trim().length > 0 && (!isCheckPayment || cheqVencimiento);
 
   const save = () => {
     if (!canSave) return;
