@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { supabase } from '../lib/supabase';
+import { useAppLoading } from './AppLoadingContext';
 
 const CTX = createContext(null);
 const LS_KEY = 'kamak_dolar_v1';
@@ -20,7 +21,9 @@ export function DolarProvider({ children }) {
   const [data, setData] = useState(() => loadLS() || DEFAULT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const sbLoaded = useRef(false);
+  const sbLoaded   = useRef(false);
+  const fromRemote = useRef(false);
+  const { markReady } = useAppLoading();
 
   const patch = useCallback((fn) => {
     setData(prev => {
@@ -30,22 +33,25 @@ export function DolarProvider({ children }) {
     });
   }, []);
 
-  const lastSaveTime = useRef(0);
-
   useEffect(() => {
     loadSharedData('dolar').then(saved => {
-      if (saved) { setData(saved); saveLS(saved); }
-      else saveSharedData('dolar', data); // eslint-disable-line react-hooks/exhaustive-deps
+      if (saved) {
+        fromRemote.current = true;
+        setData(saved); saveLS(saved);
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      } else saveSharedData('dolar', data); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
+      markReady();
     });
 
     const channel = supabase
       .channel('shared-dolar')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.dolar' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
         (payload) => {
-          if (!payload.new?.data) return;
-          if (Date.now() - lastSaveTime.current < 2000) return;
+          if (payload.new?.key !== 'dolar' || !payload.new?.data) return;
+          fromRemote.current = true;
           setData(payload.new.data); saveLS(payload.new.data);
+          setTimeout(() => { fromRemote.current = false; }, 0);
         }
       )
       .subscribe();
@@ -53,8 +59,8 @@ export function DolarProvider({ children }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!sbLoaded.current) return;
-    const t = setTimeout(() => { lastSaveTime.current = Date.now(); saveSharedData('dolar', data); }, 800);
+    if (!sbLoaded.current || fromRemote.current) return;
+    const t = setTimeout(() => { saveSharedData('dolar', data); }, 800);
     return () => clearTimeout(t);
   }, [data]);
 

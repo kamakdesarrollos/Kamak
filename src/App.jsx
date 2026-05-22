@@ -10,6 +10,7 @@ import { ClientesProvider } from './store/ClientesContext';
 import { MovimientosProvider } from './store/MovimientosContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
+import { AppLoadingProvider, useAppLoading } from './store/AppLoadingContext';
 
 import { AuthProvider, useAuth } from './store/AuthContext';
 
@@ -41,6 +42,7 @@ const WARN_MS       =  1 * 60 * 1000; // aviso 1 minuto antes
 function AuthGate({ children }) {
   const { user, loading: authLoading, signOut } = useAuth();
   const { currentUser, loginByEmail, bootstrapAdmin, usuarios, loading: usuariosLoading } = useUsuarios();
+  const { allReady } = useAppLoading();
   const loading = authLoading || usuariosLoading;
   const [secondsLeft, setSecondsLeft] = useState(null);
 
@@ -94,6 +96,12 @@ function AuthGate({ children }) {
 
   if (!user) return <Login />;
 
+  if (!allReady) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0ece0', fontFamily: 'sans-serif', color: '#666', fontSize: 14 }}>
+      Cargando datos…
+    </div>
+  );
+
   if (!loading && !currentUser) return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f0ece0', fontFamily: 'sans-serif', gap: 12 }}>
       <div style={{ fontSize: 48 }}>🚫</div>
@@ -122,6 +130,7 @@ function AuthGate({ children }) {
 export default function App() {
   return (
     <AuthProvider>
+    <AppLoadingProvider>
     <ConfiguracionProvider>
     <DolarProvider>
     <ObrasProvider>
@@ -169,6 +178,7 @@ export default function App() {
     </ObrasProvider>
     </DolarProvider>
     </ConfiguracionProvider>
+    </AppLoadingProvider>
     </AuthProvider>
   );
 }

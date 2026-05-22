@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { supabase } from '../lib/supabase';
+import { useAppLoading } from './AppLoadingContext';
 
 const CTX = createContext(null);
 
@@ -21,24 +22,30 @@ export function GastosFijosProvider({ children }) {
       return saved ? JSON.parse(saved) : INIT;
     } catch { return INIT; }
   });
-  const sbLoaded = useRef(false);
-  const lastSaveTime = useRef(0);
+  const sbLoaded   = useRef(false);
+  const fromRemote = useRef(false);
+  const { markReady } = useAppLoading();
 
   useEffect(() => {
     loadSharedData('gastos_fijos').then(data => {
-      if (data) { setItemsState(data); localStorage.setItem(LS_KEY, JSON.stringify(data)); }
-      else saveSharedData('gastos_fijos', items); // eslint-disable-line react-hooks/exhaustive-deps
+      if (data) {
+        fromRemote.current = true;
+        setItemsState(data); localStorage.setItem(LS_KEY, JSON.stringify(data));
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      } else saveSharedData('gastos_fijos', items); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
+      markReady();
     });
 
     const channel = supabase
       .channel('shared-gastos-fijos')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.gastos_fijos' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
         (payload) => {
-          if (!payload.new?.data) return;
-          if (Date.now() - lastSaveTime.current < 2000) return;
+          if (payload.new?.key !== 'gastos_fijos' || !payload.new?.data) return;
+          fromRemote.current = true;
           setItemsState(payload.new.data);
           localStorage.setItem(LS_KEY, JSON.stringify(payload.new.data));
+          setTimeout(() => { fromRemote.current = false; }, 0);
         }
       )
       .subscribe();
@@ -46,8 +53,8 @@ export function GastosFijosProvider({ children }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!sbLoaded.current) return;
-    const t = setTimeout(() => { lastSaveTime.current = Date.now(); saveSharedData('gastos_fijos', items); }, 800);
+    if (!sbLoaded.current || fromRemote.current) return;
+    const t = setTimeout(() => { saveSharedData('gastos_fijos', items); }, 800);
     return () => clearTimeout(t);
   }, [items]);
 

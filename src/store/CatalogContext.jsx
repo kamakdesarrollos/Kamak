@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { supabase } from '../lib/supabase';
+import { useAppLoading } from './AppLoadingContext';
 
 const newId = () => `cat-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -59,25 +60,30 @@ function load() {
 
 export function CatalogProvider({ children }) {
   const [catalog, setCatalog] = useState(load);
-  const sbLoaded = useRef(false);
-
-  const lastSaveTime = useRef(0);
+  const sbLoaded   = useRef(false);
+  const fromRemote = useRef(false);
+  const { markReady } = useAppLoading();
 
   useEffect(() => {
     loadSharedData('catalog').then(data => {
-      if (data) { setCatalog(data); localStorage.setItem('kamak_catalog_v4', JSON.stringify(data)); }
-      else saveSharedData('catalog', catalog); // eslint-disable-line react-hooks/exhaustive-deps
+      if (data) {
+        fromRemote.current = true;
+        setCatalog(data); localStorage.setItem('kamak_catalog_v4', JSON.stringify(data));
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      } else saveSharedData('catalog', catalog); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
+      markReady();
     });
 
     const channel = supabase
       .channel('shared-catalog')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.catalog' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
         (payload) => {
-          if (!payload.new?.data) return;
-          if (Date.now() - lastSaveTime.current < 2000) return;
+          if (payload.new?.key !== 'catalog' || !payload.new?.data) return;
+          fromRemote.current = true;
           setCatalog(payload.new.data);
           localStorage.setItem('kamak_catalog_v4', JSON.stringify(payload.new.data));
+          setTimeout(() => { fromRemote.current = false; }, 0);
         }
       )
       .subscribe();
@@ -86,8 +92,8 @@ export function CatalogProvider({ children }) {
 
   useEffect(() => {
     localStorage.setItem('kamak_catalog_v4', JSON.stringify(catalog));
-    if (!sbLoaded.current) return;
-    const t = setTimeout(() => { lastSaveTime.current = Date.now(); saveSharedData('catalog', catalog); }, 800);
+    if (!sbLoaded.current || fromRemote.current) return;
+    const t = setTimeout(() => { saveSharedData('catalog', catalog); }, 800);
     return () => clearTimeout(t);
   }, [catalog]);
 

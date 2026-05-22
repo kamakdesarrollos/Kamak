@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { supabase } from '../lib/supabase';
+import { useAppLoading } from './AppLoadingContext';
 
 const CTX = createContext(null);
 const LS_CAJAS = 'kamak_cajas_v1';
@@ -57,46 +58,47 @@ function persist(key, data) {
 export function MovimientosProvider({ children }) {
   const [cajas,       setCajas]       = useState(() => load(LS_CAJAS, SEED_CAJAS));
   const [movimientos, setMovimientos] = useState(() => load(LS_MOVS,  SEED_MOVS));
-  const sbLoaded  = useRef(false);
-  const lastSaveTime = useRef(0);
-  const cajasRef  = useRef(cajas);
-  const movsRef   = useRef(movimientos);
+  const sbLoaded   = useRef(false);
+  const fromRemote = useRef(false);
+  const cajasRef   = useRef(cajas);
+  const movsRef    = useRef(movimientos);
+  const { markReady } = useAppLoading();
   useEffect(() => { cajasRef.current = cajas; }, [cajas]);
   useEffect(() => { movsRef.current = movimientos; }, [movimientos]);
 
   useEffect(() => {
     loadSharedData('movimientos').then(data => {
       if (data) {
+        fromRemote.current = true;
         if (data.cajas)       { setCajas(data.cajas);             persist(LS_CAJAS, data.cajas); }
         if (data.movimientos) { setMovimientos(data.movimientos); persist(LS_MOVS,  data.movimientos); }
+        setTimeout(() => { fromRemote.current = false; }, 0);
       } else {
         saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
       }
       sbLoaded.current = true;
+      markReady();
     });
 
     const channel = supabase
       .channel('shared-movimientos')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.movimientos' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
         (payload) => {
-          console.log('[RT movimientos] evento recibido, dt:', Date.now() - lastSaveTime.current, payload.new?.data ? 'con datos' : 'sin datos');
-          if (!payload.new?.data) return;
-          if (Date.now() - lastSaveTime.current < 2000) { console.log('[RT movimientos] bloqueado por guard'); return; }
+          if (payload.new?.key !== 'movimientos' || !payload.new?.data) return;
+          fromRemote.current = true;
           const d = payload.new.data;
           if (d.cajas)       { setCajas(d.cajas);             persist(LS_CAJAS, d.cajas); }
           if (d.movimientos) { setMovimientos(d.movimientos); persist(LS_MOVS,  d.movimientos); }
+          setTimeout(() => { fromRemote.current = false; }, 0);
         }
       )
-      .subscribe((status) => console.log('[RT movimientos] status:', status));
+      .subscribe();
     return () => supabase.removeChannel(channel);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!sbLoaded.current) return;
-    const t = setTimeout(() => {
-      lastSaveTime.current = Date.now();
-      saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
-    }, 800);
+    if (!sbLoaded.current || fromRemote.current) return;
+    const t = setTimeout(() => saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current }), 800);
     return () => clearTimeout(t);
   }, [cajas, movimientos]);
 

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { supabase } from '../lib/supabase';
+import { useAppLoading } from './AppLoadingContext';
 
 const newId = () => `plt-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -248,25 +249,30 @@ function load() {
 
 export function PlantillasProvider({ children }) {
   const [plantillas, setPlantillas] = useState(load);
-  const sbLoaded = useRef(false);
-
-  const lastSaveTime = useRef(0);
+  const sbLoaded   = useRef(false);
+  const fromRemote = useRef(false);
+  const { markReady } = useAppLoading();
 
   useEffect(() => {
     loadSharedData('plantillas').then(data => {
-      if (data) { setPlantillas(data); localStorage.setItem('kamak_plantillas_v1', JSON.stringify(data)); }
-      else saveSharedData('plantillas', plantillas); // eslint-disable-line react-hooks/exhaustive-deps
+      if (data) {
+        fromRemote.current = true;
+        setPlantillas(data); localStorage.setItem('kamak_plantillas_v1', JSON.stringify(data));
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      } else saveSharedData('plantillas', plantillas); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
+      markReady();
     });
 
     const channel = supabase
       .channel('shared-plantillas')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.plantillas' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
         (payload) => {
-          if (!payload.new?.data) return;
-          if (Date.now() - lastSaveTime.current < 2000) return;
+          if (payload.new?.key !== 'plantillas' || !payload.new?.data) return;
+          fromRemote.current = true;
           setPlantillas(payload.new.data);
           localStorage.setItem('kamak_plantillas_v1', JSON.stringify(payload.new.data));
+          setTimeout(() => { fromRemote.current = false; }, 0);
         }
       )
       .subscribe();
@@ -275,8 +281,8 @@ export function PlantillasProvider({ children }) {
 
   useEffect(() => {
     localStorage.setItem('kamak_plantillas_v1', JSON.stringify(plantillas));
-    if (!sbLoaded.current) return;
-    const t = setTimeout(() => { lastSaveTime.current = Date.now(); saveSharedData('plantillas', plantillas); }, 800);
+    if (!sbLoaded.current || fromRemote.current) return;
+    const t = setTimeout(() => { saveSharedData('plantillas', plantillas); }, 800);
     return () => clearTimeout(t);
   }, [plantillas]);
 

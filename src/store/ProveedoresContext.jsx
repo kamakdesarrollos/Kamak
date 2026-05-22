@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { supabase } from '../lib/supabase';
+import { useAppLoading } from './AppLoadingContext';
 
 const CTX = createContext(null);
 const LS_PROVS = 'kamak_proveedores_v1';
@@ -67,33 +68,38 @@ export function calcSaldoCC(proveedorId, obraId, ccEntries) {
 export function ProveedoresProvider({ children }) {
   const [proveedores, setProveedores] = useState(() => load(LS_PROVS, SEED_PROVS));
   const [ccEntries,   setCCEntries]   = useState(() => load(LS_CC,    SEED_CC));
-  const sbLoaded = useRef(false);
-  const lastSaveTime = useRef(0);
-  const provsRef = useRef(proveedores);
-  const ccRef    = useRef(ccEntries);
+  const sbLoaded   = useRef(false);
+  const fromRemote = useRef(false);
+  const provsRef   = useRef(proveedores);
+  const ccRef      = useRef(ccEntries);
+  const { markReady } = useAppLoading();
   useEffect(() => { provsRef.current = proveedores; }, [proveedores]);
   useEffect(() => { ccRef.current = ccEntries; }, [ccEntries]);
 
   useEffect(() => {
     loadSharedData('proveedores').then(data => {
       if (data) {
+        fromRemote.current = true;
         if (data.proveedores) { setProveedores(data.proveedores); save(LS_PROVS, data.proveedores); }
         if (data.ccEntries)   { setCCEntries(data.ccEntries);     save(LS_CC,    data.ccEntries); }
+        setTimeout(() => { fromRemote.current = false; }, 0);
       } else {
         saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
       }
       sbLoaded.current = true;
+      markReady();
     });
 
     const channel = supabase
       .channel('shared-proveedores')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.proveedores' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
         (payload) => {
-          if (!payload.new?.data) return;
-          if (Date.now() - lastSaveTime.current < 2000) return;
+          if (payload.new?.key !== 'proveedores' || !payload.new?.data) return;
+          fromRemote.current = true;
           const d = payload.new.data;
           if (d.proveedores) { setProveedores(d.proveedores); save(LS_PROVS, d.proveedores); }
           if (d.ccEntries)   { setCCEntries(d.ccEntries);     save(LS_CC,    d.ccEntries); }
+          setTimeout(() => { fromRemote.current = false; }, 0);
         }
       )
       .subscribe();
@@ -101,9 +107,8 @@ export function ProveedoresProvider({ children }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!sbLoaded.current) return;
+    if (!sbLoaded.current || fromRemote.current) return;
     const t = setTimeout(() => {
-      lastSaveTime.current = Date.now();
       saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
     }, 800);
     return () => clearTimeout(t);

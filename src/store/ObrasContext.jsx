@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { supabase } from '../lib/supabase';
+import { useAppLoading } from './AppLoadingContext';
 
 // ── Datos semilla obras ───────────────────────────────────────────────────────
 const SEED_OBRAS = [
@@ -185,33 +186,38 @@ const ObrasContext = createContext(null);
 export function ObrasProvider({ children }) {
   const [obras, setObras] = useState(loadObras);
   const [detalles, setDetalles] = useState(loadDet);
-  const sbLoaded   = useRef(false);
-  const lastSaveTime = useRef(0);
-  const obrasRef   = useRef(obras);
+  const sbLoaded    = useRef(false);
+  const fromRemote  = useRef(false);
+  const obrasRef    = useRef(obras);
   const detallesRef = useRef(detalles);
+  const { markReady } = useAppLoading();
   useEffect(() => { obrasRef.current = obras; }, [obras]);
   useEffect(() => { detallesRef.current = detalles; }, [detalles]);
 
   useEffect(() => {
     loadSharedData('obras').then(data => {
       if (data) {
+        fromRemote.current = true;
         if (data.obras)    { setObras(data.obras);       saveObras(data.obras); }
         if (data.detalles) { setDetalles(data.detalles); saveDet(data.detalles); }
+        setTimeout(() => { fromRemote.current = false; }, 0);
       } else {
         saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
       }
       sbLoaded.current = true;
+      markReady();
     });
 
     const channel = supabase
       .channel('shared-obras')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data', filter: 'key=eq.obras' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_data' },
         (payload) => {
-          if (!payload.new?.data) return;
-          if (Date.now() - lastSaveTime.current < 2000) return;
+          if (payload.new?.key !== 'obras' || !payload.new?.data) return;
+          fromRemote.current = true;
           const d = payload.new.data;
           if (d.obras)    { setObras(d.obras);       saveObras(d.obras); }
           if (d.detalles) { setDetalles(d.detalles); saveDet(d.detalles); }
+          setTimeout(() => { fromRemote.current = false; }, 0);
         }
       )
       .subscribe();
@@ -222,9 +228,8 @@ export function ObrasProvider({ children }) {
   useEffect(() => { saveDet(detalles); }, [detalles]);
 
   useEffect(() => {
-    if (!sbLoaded.current) return;
+    if (!sbLoaded.current || fromRemote.current) return;
     const t = setTimeout(() => {
-      lastSaveTime.current = Date.now();
       saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
     }, 800);
     return () => clearTimeout(t);
