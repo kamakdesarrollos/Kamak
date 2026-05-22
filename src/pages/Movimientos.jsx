@@ -8,6 +8,7 @@ import { useProveedores } from '../store/ProveedoresContext';
 import { useClientes } from '../store/ClientesContext';
 import { useDolar } from '../store/DolarContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useCatalog } from '../store/CatalogContext';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none' };
 const fmtN   = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
@@ -39,12 +40,15 @@ function MovRow({ m, cajas, onRemove }) {
           {m.obraNombre && m.obraNombre !== 'General' && (
             <span style={{ background: T.faint2, borderRadius: 2, padding: '0 4px' }}>{m.obraNombre}</span>
           )}
+          {m.rubroNombre && (
+            <span style={{ background: '#e8f4f0', color: '#1a9b9c', borderRadius: 2, padding: '0 4px', fontWeight: 600 }}>{m.rubroNombre}</span>
+          )}
           {caja && <span>{caja.nombre}</span>}
           {m.proveedor && <span>· {m.proveedor}</span>}
           {m.medioPago && m.medioPago !== 'Transferencia' && <span>· {m.medioPago}</span>}
           {m.tipoCambio && m.montoDolar && !cajaIsUSD && (
             <span style={{ fontFamily: T.fontMono, color: T.ok }}>
-              · USD {fmtN(m.montoDolar)} × ${fmtN(m.tipoCambio)}
+              · ref USD {fmtN(m.montoDolar)}
             </span>
           )}
           {m.tipoCambio && m.montoARS && cajaIsUSD && (
@@ -71,6 +75,7 @@ function MovRow({ m, cajas, onRemove }) {
 function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, onSave, onCancel }) {
   const isGasto  = tipo === 'gasto';
   const color    = isGasto ? T.warn : T.ok;
+  const { catalog } = useCatalog();
 
   const [desc,          setDesc]          = useState('');
   const [monto,         setMonto]         = useState('');
@@ -78,11 +83,11 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const [obraId,        setObraId]        = useState('');
   const [medio,         setMedio]         = useState('Transferencia');
   const [contraparteId, setContraparteId] = useState('');
+  const [rubroNombre,   setRubroNombre]   = useState('');
 
-  // Moneda: 'ARS', 'USD' (directo a caja USD), 'USD_ARS' (pesos a TC dólar, solo ingresos)
+  // Moneda: 'ARS', 'USD' (directo a caja USD), 'USD_ARS' (pesos recibidos con ref USD, solo ingresos)
   const [monedaIngreso, setMonedaIngreso] = useState('ARS');
   const [monedaGasto,   setMonedaGasto]   = useState('ARS');
-  const [montoDolar,    setMontoDolar]    = useState('');
   const [tipoCambio,    setTipoCambio]    = useState(() => String(Math.round(dolarVenta || 1070)));
 
   // La moneda activa determina qué cajas mostrar
@@ -98,15 +103,14 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
     if (firstMatch) setCajaId(firstMatch.id);
   }, [monedaActual]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const parsedMonto  = parseFloat(monto.replace(/[^0-9.]/g, ''))     || 0;
-  const parsedDolar  = parseFloat(montoDolar.replace(/[^0-9.]/g, '')) || 0;
+  const parsedMonto  = parseFloat(monto.replace(/[^0-9.]/g, '')) || 0;
   const parsedTC     = parseFloat(tipoCambio.replace(/[^0-9.]/g, '')) || dolarVenta || 1070;
 
-  // USD_ARS: ingreso en dólares convertido a pesos (caja ARS)
-  // todos los demás: monto directo en la moneda de la caja
-  const montoFinal = (!isGasto && monedaIngreso === 'USD_ARS')
-    ? Math.round(parsedDolar * parsedTC)
-    : Math.round(parsedMonto);
+  // USD_ARS: se reciben pesos, la ref USD es monto / TC
+  const montoFinal = Math.round(parsedMonto);
+  const refUSD     = (!isGasto && monedaIngreso === 'USD_ARS' && parsedTC > 0)
+    ? Math.round(parsedMonto / parsedTC)
+    : 0;
 
   const canSave = montoFinal > 0 && desc.trim().length > 0;
 
@@ -122,13 +126,14 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       const prov = proveedores.find(p => p.id === contraparteId);
       contraparteName = prov?.nombre || '';
       extra.proveedorId = contraparteId || null;
+      if (rubroNombre) extra.rubroNombre = rubroNombre;
     } else {
       const cli = clientes.find(c => c.id === contraparteId);
       contraparteName = cli?.nombre || '';
       extra.clienteId = contraparteId || null;
-      if (monedaIngreso === 'USD_ARS') {
+      if (monedaIngreso === 'USD_ARS' && refUSD > 0) {
         extra.tipoCambio = parsedTC;
-        extra.montoDolar = parsedDolar;
+        extra.montoDolar = refUSD;
       }
     }
 
@@ -148,7 +153,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       fondoReparo:   false,
       ...extra,
     });
-    setDesc(''); setMonto(''); setMontoDolar(''); setContraparteId('');
+    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId('');
   };
 
   const onKey = (e) => {
@@ -167,18 +172,18 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
 
         {/* Monto según modo */}
         {!isGasto && monedaIngreso === 'USD_ARS' ? (
-          // Pago en USD convertido a pesos: USD × TC = ARS
+          // Recibo pesos, referencia en USD: ARS ÷ TC = USD ref
           <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
-            <input style={{ ...inputSt, width: 90, fontFamily: T.fontMono, fontWeight: 700 }}
-              type="number" min="0" placeholder="USD"
-              value={montoDolar} onChange={e => setMontoDolar(e.target.value)} onKeyDown={onKey} />
-            <span style={{ fontSize: 11, color: T.ink3 }}>× TC</span>
+            <input style={{ ...inputSt, width: 110, fontFamily: T.fontMono, fontWeight: 700 }}
+              type="number" min="0" placeholder="$ Pesos"
+              value={monto} onChange={e => setMonto(e.target.value)} onKeyDown={onKey} />
+            <span style={{ fontSize: 11, color: T.ink3 }}>÷ TC</span>
             <input style={{ ...inputSt, width: 85, fontFamily: T.fontMono }}
               type="number" min="0" placeholder="TC"
               value={tipoCambio} onChange={e => setTipoCambio(e.target.value)} onKeyDown={onKey} />
             <span style={{ fontSize: 11, color: T.ink3 }}>=</span>
-            <div style={{ ...inputSt, width: 105, fontFamily: T.fontMono, fontWeight: 700, color: T.ok, background: T.faint, display: 'flex', alignItems: 'center', cursor: 'default' }}>
-              $ {montoFinal > 0 ? fmtN(montoFinal) : '0'}
+            <div style={{ ...inputSt, width: 90, fontFamily: T.fontMono, fontWeight: 700, color: T.ok, background: T.faint, display: 'flex', alignItems: 'center', cursor: 'default' }}>
+              USD {refUSD > 0 ? fmtN(refUSD) : '0'}
             </div>
           </div>
         ) : (
@@ -232,10 +237,21 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
               value={monedaIngreso} onChange={e => setMonedaIngreso(e.target.value)}>
               <option value="ARS">Pesos (ARS)</option>
               <option value="USD">Dólares (USD)</option>
-              <option value="USD_ARS">USD → Pesos</option>
+              <option value="USD_ARS">Pesos + ref USD</option>
             </select>
           )}
         </div>
+
+        {isGasto && (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
+            <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Rubro</span>
+            <select style={{ ...inputSt, cursor: 'pointer', width: '100%' }}
+              value={rubroNombre} onChange={e => setRubroNombre(e.target.value)}>
+              <option value="">— Sin rubro —</option>
+              {(catalog.rubros || []).map(r => <option key={r.id} value={r.nombre}>{r.nombre}</option>)}
+            </select>
+          </div>
+        )}
 
         <select style={{ ...inputSt, flex: 1, cursor: 'pointer' }} value={obraId} onChange={e => setObraId(e.target.value)}>
           <option value="">Sin obra</option>
