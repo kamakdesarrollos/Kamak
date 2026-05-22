@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip } from '../components/ui';
 import { T } from '../theme';
@@ -299,7 +300,12 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
 export default function Autorizaciones() {
   const { obras } = useObras();
   const { cajas: allCajas } = useMovimientos();
-  const { usuarios, togglePermiso, applyRol, removeUsuario, updateUsuario, roles, updateRol, removeRol } = useUsuarios();
+  const { usuarios, currentUser, togglePermiso, applyRol, removeUsuario, updateUsuario, roles, updateRol, removeRol } = useUsuarios();
+
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (currentUser && currentUser.rol !== 'Admin') navigate('/', { replace: true });
+  }, [currentUser, navigate]);
   const [tab, setTab] = useState('usuarios');
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editAccesos, setEditAccesos] = useState(null);
@@ -330,7 +336,7 @@ export default function Autorizaciones() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
         <div>
           <div className="k-h" style={{ fontSize: 28 }}>Autorizaciones</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>Matriz de permisos por usuario · solo admins acceden a esta sección · <b style={{color:'red'}}>v3</b></div>
+          <div style={{ fontSize: 12, color: T.ink2 }}>Matriz de permisos por usuario · solo admins</div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo usuario</Btn>

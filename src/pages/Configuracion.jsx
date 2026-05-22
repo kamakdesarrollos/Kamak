@@ -4,6 +4,7 @@ import { Box, Btn, Label, Divider, Chip } from '../components/ui';
 import { T } from '../theme';
 import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useDolar } from '../store/DolarContext';
+import { useUsuarios } from '../store/UsuariosContext';
 import { supabase } from '../lib/supabase';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
@@ -109,7 +110,35 @@ function DolarSection() {
   );
 }
 
-// ── Página ─────────────────────────────────────────────────────────────────────
+// ── Mi cuenta ─────────────────────────────────────────────────────────────────
+function CambiarNombre() {
+  const { currentUser, updateUsuario } = useUsuarios();
+  const [nombre, setNombre] = useState(currentUser?.nombre || '');
+  const [msg, setMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const guardar = async () => {
+    if (!nombre.trim() || loading) return;
+    setLoading(true);
+    await updateUsuario(currentUser.id, { nombre: nombre.trim() });
+    setLoading(false);
+    setMsg('Nombre actualizado');
+    setTimeout(() => setMsg(''), 2000);
+  };
+
+  return (
+    <Box style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 340 }}>
+      <div style={{ fontWeight: 700, fontSize: 13 }}>Mi perfil</div>
+      <FField label="Nombre" value={nombre} onChange={setNombre} />
+      <FField label="Usuario (email)" value={currentUser?.email || ''} readOnly />
+      {msg && <div style={{ fontSize: 12, color: T.ok }}>{msg}</div>}
+      <Btn sm fill onClick={guardar} style={{ opacity: loading ? 0.5 : 1 }}>
+        {loading ? 'Guardando…' : 'Guardar nombre'}
+      </Btn>
+    </Box>
+  );
+}
+
 function CambiarContrasena() {
   const [pass1, setPass1] = useState('');
   const [pass2, setPass2] = useState('');
@@ -142,8 +171,10 @@ function CambiarContrasena() {
   );
 }
 
+// ── Página ─────────────────────────────────────────────────────────────────────
 export default function Configuracion() {
   const { config, patchEmpresa, patchNotificaciones, patchSeguridad, patchApariencia, patchRoot } = useConfiguracion();
+  const { currentUser } = useUsuarios();
   const [saved, setSaved] = useState(false);
 
   const save = (patchFn, changes) => {
@@ -151,6 +182,22 @@ export default function Configuracion() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
+
+  // Vista reducida para usuarios no-admin
+  if (currentUser?.rol !== 'Admin') {
+    return (
+      <PageLayout breadcrumb={['Configuración']} active="Configuración">
+        <div style={{ marginBottom: 12 }}>
+          <div className="k-h" style={{ fontSize: 28 }}>Mi cuenta</div>
+          <div style={{ fontSize: 12, color: T.ink2 }}>Perfil y seguridad</div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 360 }}>
+          <CambiarNombre />
+          <CambiarContrasena />
+        </div>
+      </PageLayout>
+    );
+  }
 
   return (
     <PageLayout breadcrumb={['Configuración']} active="Configuración">
