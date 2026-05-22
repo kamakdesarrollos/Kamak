@@ -4,6 +4,7 @@ import { Box, Btn, Label, Divider, Chip } from '../components/ui';
 import { T } from '../theme';
 import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useDolar } from '../store/DolarContext';
+import { supabase } from '../lib/supabase';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -109,6 +110,38 @@ function DolarSection() {
 }
 
 // ── Página ─────────────────────────────────────────────────────────────────────
+function CambiarContrasena() {
+  const [pass1, setPass1] = useState('');
+  const [pass2, setPass2] = useState('');
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const guardar = async () => {
+    if (pass1.length < 6) { setErr('Mínimo 6 caracteres'); return; }
+    if (pass1 !== pass2) { setErr('Las contraseñas no coinciden'); return; }
+    setLoading(true); setErr(''); setMsg('');
+    const { error } = await supabase.auth.updateUser({ password: pass1 });
+    setLoading(false);
+    if (error) { setErr(error.message); return; }
+    setMsg('Contraseña actualizada correctamente');
+    setPass1(''); setPass2('');
+  };
+
+  return (
+    <Box style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 340 }}>
+      <div style={{ fontWeight: 700, fontSize: 13 }}>Cambiar mi contraseña</div>
+      <FField label="Nueva contraseña" type="password" value={pass1} onChange={setPass1} />
+      <FField label="Repetir contraseña" type="password" value={pass2} onChange={setPass2} />
+      {err && <div style={{ fontSize: 12, color: T.accent }}>{err}</div>}
+      {msg && <div style={{ fontSize: 12, color: T.ok }}>{msg}</div>}
+      <Btn sm fill onClick={guardar} style={{ opacity: loading ? 0.5 : 1 }}>
+        {loading ? 'Guardando…' : 'Guardar contraseña'}
+      </Btn>
+    </Box>
+  );
+}
+
 export default function Configuracion() {
   const { config, patchEmpresa, patchNotificaciones, patchSeguridad, patchApariencia, patchRoot } = useConfiguracion();
   const [saved, setSaved] = useState(false);
@@ -203,6 +236,8 @@ export default function Configuracion() {
               options={['$ 1.234.567,00', '$ 1,234,567.00']} />
           </div>
         </Box>
+
+        <CambiarContrasena />
 
       </div>
     </PageLayout>
