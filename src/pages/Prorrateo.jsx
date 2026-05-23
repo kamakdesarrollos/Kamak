@@ -79,7 +79,7 @@ export default function Prorrateo() {
   };
 
   return (
-    <PageLayout breadcrumb={['Prorrateo', MES_ACTUAL]} active="Prorrateo">
+    <PageLayout breadcrumb={['Gastos Fijos', MES_ACTUAL]} active="Gastos Fijos">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
         <div>
           <div className="k-h" style={{ fontSize: 28 }}>Prorrateo · {MES_ACTUAL}</div>

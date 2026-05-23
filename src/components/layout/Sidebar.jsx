@@ -2,17 +2,20 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Diamond } from '../ui';
 import { T } from '../../theme';
 import { useUsuarios } from '../../store/UsuariosContext';
+import { useWhatsappPending } from '../../store/WhatsappPendingContext';
 
 const ALL_ITEMS = [
   { section: 'Operación' },
   { icon: '◧', label: 'Dashboard',      path: '/',             perm: 'verDashboard' },
   { icon: '🏗', label: 'Obras',          path: '/obras' },
+  { icon: '💬', label: 'WhatsApp',       path: '/whatsapp' },
+  { section: 'Administración' },
   { icon: '◉', label: 'Proveedores',    path: '/proveedores' },
   { icon: '◎', label: 'Clientes',       path: '/clientes' },
   { icon: '⇄', label: 'Movimientos',    path: '/movimientos' },
   { icon: '$', label: 'Cajas',          path: '/cajas',        perm: 'verCaja' },
   { icon: '✓', label: 'Cheques',        path: '/cheques' },
-  { icon: '⌗', label: 'Prorrateo',      path: '/prorrateo' },
+  { icon: '⌗', label: 'Gastos Fijos',   path: '/prorrateo' },
   { section: 'Datos' },
   { icon: '▤', label: 'Catálogos',      path: '/catalogos',   adminOnly: true },
   { icon: '▦', label: 'Plantillas',     path: '/plantillas',  adminOnly: true },
@@ -26,6 +29,7 @@ export default function Sidebar({ active }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser } = useUsuarios();
+  const { pending } = useWhatsappPending();
   const p = currentUser?.permisos ?? {};
   const isAdmin = currentUser?.rol === 'Admin';
 
@@ -56,6 +60,11 @@ export default function Sidebar({ active }) {
           >
             <span style={{ width: 14, textAlign: 'center', fontSize: 13 }}>{it.icon || '·'}</span>
             <span>{it.label}</span>
+            {it.label === 'WhatsApp' && pending.length > 0 && (
+              <span style={{ marginLeft: 'auto', background: '#25803a', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700, lineHeight: '16px' }}>
+                {pending.length}
+              </span>
+            )}
           </div>
         );
       })}
