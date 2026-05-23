@@ -8,7 +8,7 @@ const ALL_ITEMS = [
   { section: 'Operación' },
   { icon: '◧', label: 'Dashboard',      path: '/',             perm: 'verDashboard' },
   { icon: '🏗', label: 'Obras',          path: '/obras' },
-  { icon: '💬', label: 'WhatsApp',       path: '/whatsapp' },
+  { icon: '⌨', label: 'WhatsApp',        path: '/whatsapp' },
   { section: 'Administración' },
   { icon: '◉', label: 'Proveedores',    path: '/proveedores' },
   { icon: '◎', label: 'Clientes',       path: '/clientes' },

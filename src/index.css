@@ -133,7 +133,7 @@ body {
 .k-sidebar-item:hover { background: rgba(0,0,0,0.03); }
 .k-sidebar-item.active { background: #fff; box-shadow: inset 3px 0 0 var(--accent); font-weight: 700; color: var(--dark); }
 .k-sidebar-item:not(.active) { color: var(--ink2); }
-.k-sidebar-section { padding: 14px 16px 6px; font-size: 9px; text-transform: uppercase; letter-spacing: 1.8px; color: var(--accent); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+.k-sidebar-section { padding: 14px 16px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
 
 /* ── Scrollbars ──────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
