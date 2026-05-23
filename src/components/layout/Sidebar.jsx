@@ -58,7 +58,7 @@ export default function Sidebar({ active }) {
             className={`k-sidebar-item${isActive ? ' active' : ''}`}
             onClick={() => it.path && navigate(it.path)}
           >
-            <span style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0 }}>{it.icon || '·'}</span>
+            <span style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0, lineHeight: 1 }}>{it.icon || '·'}</span>
             <span>{it.label}</span>
             {it.label === 'WhatsApp' && pending.length > 0 && (
               <span style={{ marginLeft: 'auto', background: '#25803a', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700, lineHeight: '16px' }}>
