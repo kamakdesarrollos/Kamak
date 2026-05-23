@@ -5,9 +5,6 @@ const ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const AUTH_TOKEN  = process.env.TWILIO_AUTH_TOKEN;
 const FROM_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const supabase  = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-
 const twilioAuth = () => 'Basic ' + Buffer.from(`${ACCOUNT_SID}:${AUTH_TOKEN}`).toString('base64');
 
 async function sendMessage(to, body) {
@@ -81,10 +78,13 @@ async function extractInvoice(base64, mimeType) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+  if (req.method !== 'POST') return res.status(200).json({ ok: true, vars: { sid: !!ACCOUNT_SID, token: !!AUTH_TOKEN, from: !!FROM_NUMBER, anthropic: !!process.env.ANTHROPIC_API_KEY, supabase: !!process.env.SUPABASE_URL } });
 
   res.setHeader('Content-Type', 'text/xml');
   res.status(200).send('<Response></Response>');
+
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const supabase  = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
   try {
     const body     = req.body;
