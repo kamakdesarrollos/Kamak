@@ -109,7 +109,7 @@ function FormPanel({ title, children, onSave, onCancel, style, saveLabel = 'Guar
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 0: RESUMEN
 // ─────────────────────────────────────────────────────────────────────────────
-function TabResumen({ obra, detalle, moneda }) {
+function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   const { currentUser } = useUsuarios();
   const verCostos   = currentUser?.permisos?.verCostos   ?? true;
   const verMargenes = currentUser?.permisos?.verMargenes ?? true;
@@ -165,15 +165,18 @@ function TabResumen({ obra, detalle, moneda }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         {/* KPI: Total cliente */}
         {verCostos && totalCliente > 0 && (
-          <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${T.accent}` }}>
+          <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${T.accent}`, cursor: 'pointer' }}
+            onClick={() => onChangeTab?.(10)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Total cliente</div>
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.accent }}>{fmtM(totalCliente, moneda)}</div>
             {adicionalCliente > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>incl. {fmtM(adicionalCliente, moneda)} adicionales</div>}
+            <div style={{ fontSize: 10, color: T.accent, marginTop: 4 }}>Ver plan de cuotas →</div>
           </Box>
         )}
         {/* KPI: Cuotas */}
         {cuotasPlan.length > 0 && (
-          <Box style={{ padding: '12px 14px' }}>
+          <Box style={{ padding: '12px 14px', cursor: 'pointer' }}
+            onClick={() => onChangeTab?.(10)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Cuotas cobradas</div>
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.ok }}>{fmtM(cuotasPagadas, moneda)}</div>
             <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{cuotasPlan.filter(c => c.estado === 'pagado').length} / {cuotasPlan.length} cuotas</div>
@@ -183,8 +186,11 @@ function TabResumen({ obra, detalle, moneda }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {/* Avance por rubro */}
-        <Box style={{ padding: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Avance por rubro</div>
+        <Box style={{ padding: 14, cursor: 'pointer' }} onClick={() => onChangeTab?.(1)}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Avance por rubro</div>
+            <span style={{ fontSize: 11, color: T.accent }}>Ver presupuesto →</span>
+          </div>
           {rr.length === 0 && <div style={{ color: T.ink3, fontSize: 12 }}>Sin rubros cargados</div>}
           {rr.map(r => (
             <div key={r.id} style={{ marginBottom: 10 }}>
@@ -234,7 +240,11 @@ function TabResumen({ obra, detalle, moneda }) {
       {/* Últimos movimientos */}
       {detalle.movimientos.length > 0 && (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '8px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontWeight: 700, fontSize: 13 }}>Últimos movimientos</div>
+          <div style={{ padding: '8px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>Últimos movimientos</span>
+            <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer' }}
+              onClick={() => onChangeTab?.(5)}>Ver todos →</span>
+          </div>
           {[...detalle.movimientos].reverse().slice(0, 5).map(m => (
             <div key={m.id} style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.faint2}`, fontSize: 12, borderLeft: `3px solid ${m.tipo === 'ingreso' ? T.ok : T.accent}` }}>
               <span style={{ flex: 0.7, fontFamily: T.fontMono, color: T.ink2 }}>{fmtD(m.fecha)}</span>
@@ -2898,7 +2908,7 @@ export default function ObraPresupuesto() {
       </div>
 
       {/* Content */}
-      {displayTab === 0 && <TabResumen obra={obra} detalle={detalle} moneda={moneda} />}
+      {displayTab === 0 && <TabResumen obra={obra} detalle={detalle} moneda={moneda} onChangeTab={handleTab} />}
       {displayTab === 1 && <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} />}
       {displayTab === 2 && <TabMateriales detalle={detalle} obra={obra} />}
       {displayTab === 3 && <TabAdicionales detalle={detalle} patch={patch} moneda={moneda} />}
