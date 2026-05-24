@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
@@ -537,8 +537,14 @@ export default function Movimientos() {
   const cv = currentUser?.cajasVisibles ?? '*';
   const cajas = cv === '*' ? allCajas : allCajas.filter(c => Array.isArray(cv) && cv.includes(c.id));
 
+  const [searchParams] = useSearchParams();
   const [mes,        setMes]        = useState(currMes);
-  const [filtroObra, setFiltroObra] = useState('');
+  const [filtroObra, setFiltroObra] = useState(() => searchParams.get('obra') || '');
+
+  useEffect(() => {
+    const o = searchParams.get('obra');
+    if (o) setFiltroObra(o);
+  }, [searchParams]);
 
   const obrasOpciones = useMemo(() =>
     obras.filter(o => ['activa', 'en-presupuesto', 'pausada'].includes(o.estado)),

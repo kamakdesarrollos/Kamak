@@ -2016,6 +2016,7 @@ function TabMovimientos({ obra, moneda }) {
   const { proveedores } = useProveedores();
   const { clientes }    = useClientes();
   const { dolarVenta }  = useDolar();
+  const navigate        = useNavigate();
 
   const movsObra = useMemo(() =>
     movimientos.filter(m => m.obraId === obra.id).sort((a, b) => b.fecha.localeCompare(a.fecha)),
@@ -2029,6 +2030,12 @@ function TabMovimientos({ obra, moneda }) {
 
   return (
     <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+          onClick={() => navigate(`/movimientos?obra=${obra.id}`)}>
+          Ver todos en Movimientos →
+        </span>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
         <Box style={{ padding: '10px 16px' }}>
           <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Ingresos</div>
