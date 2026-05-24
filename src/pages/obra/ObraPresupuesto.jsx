@@ -1741,11 +1741,16 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function TabFinanciacion({ obra, detalle, patch, moneda }) {
   const fin = detalle.financiacion || {};
+  const { dolarVenta } = useDolar();
+  const locked = !!fin.propuestaEnviada;
+
   const [editingFin, setEditingFin] = useState(false);
   const [finForm, setFinForm] = useState({ interes: String(fin.interes || 0), notaPortal: fin.notaPortal || '' });
   const [addingCuota, setAddingCuota] = useState(false);
   const [cuotaForm, setCuotaForm] = useState({ descripcion: '', monto: '', fecha: '', n: '' });
   const [editCuotaId, setEditCuotaId] = useState(null);
+  const [genAuto, setGenAuto] = useState(false);
+  const [genForm, setGenForm] = useState({ n: '6', primerFecha: '', cada: '1', intervalo: 'meses' });
 
   const { venta: ventaBase } = calcObra(detalle.rubros);
   const adicionalCliente = (detalle.adicionales || [])
@@ -1754,12 +1759,15 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
   const interes = parseFloat(fin.interes) || 0;
   const baseTotal = ventaBase + adicionalCliente;
   const totalConInteres = Math.round(baseTotal * (1 + interes / 100));
+  const tc = dolarVenta || 1;
+  const totalUSD = moneda === 'USD' ? totalConInteres : Math.round(totalConInteres / tc);
+  const fmtUSD = n => `U$S ${fmtN(n)}`;
 
   const cuotas = detalle.cuotas || [];
   const totalCuotas = cuotas.reduce((s, c) => s + (c.monto || 0), 0);
   const cuotasPagadas = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + (c.monto || 0), 0);
   const saldoCuotas = totalCuotas - cuotasPagadas;
-  const diferencia = totalConInteres - totalCuotas;
+  const diferencia = totalUSD - totalCuotas;
 
   const saveFin = () => {
     patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), interes: parseFloat(finForm.interes) || 0, notaPortal: finForm.notaPortal } }));
@@ -1785,16 +1793,35 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
   const togglePago = (id) => patch(d => ({ ...d, cuotas: d.cuotas.map(c => c.id === id ? { ...c, estado: c.estado === 'pagado' ? 'pendiente' : 'pagado' } : c) }));
   const delCuota = (id) => patch(d => ({ ...d, cuotas: d.cuotas.filter(c => c.id !== id) }));
 
-  const distribuirEnCuotas = (n) => {
-    if (!n || !totalConInteres) return;
-    const montoCuota = Math.round(totalConInteres / n);
-    const nuevas = Array.from({ length: n }, (_, i) => ({
+  const agregarFecha = (base, i, cada, intervalo) => {
+    const d = new Date(base);
+    const c = parseInt(cada) || 1;
+    if (intervalo === 'dias') d.setDate(d.getDate() + i * c);
+    else if (intervalo === 'semanas') d.setDate(d.getDate() + i * c * 7);
+    else d.setMonth(d.getMonth() + i * c);
+    return d.toISOString().split('T')[0];
+  };
+
+  const generarAutomatico = () => {
+    const num = parseInt(genForm.n) || 1;
+    if (!totalUSD || !num) return;
+    const montoCuota = Math.round(totalUSD / num);
+    const nuevas = Array.from({ length: num }, (_, i) => ({
       id: newId(), n: i + 1,
-      descripcion: `Cuota ${i + 1} de ${n}`,
-      monto: i === n - 1 ? totalConInteres - montoCuota * (n - 1) : montoCuota,
-      fecha: '', estado: 'pendiente',
+      descripcion: `Cuota ${i + 1} de ${num}`,
+      monto: i === num - 1 ? totalUSD - montoCuota * (num - 1) : montoCuota,
+      fecha: genForm.primerFecha ? agregarFecha(genForm.primerFecha, i, genForm.cada, genForm.intervalo) : '',
+      estado: 'pendiente',
     }));
     patch(d => ({ ...d, cuotas: [...(d.cuotas || []), ...nuevas] }));
+    setGenAuto(false);
+  };
+
+  const enviarPropuesta = () => {
+    patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), propuestaEnviada: true, fechaPropuesta: new Date().toISOString().split('T')[0] } }));
+  };
+  const reabrirNegociacion = () => {
+    patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), propuestaEnviada: false } }));
   };
 
   const statSt = { display: 'flex', flexDirection: 'column', gap: 3 };
@@ -1804,24 +1831,38 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
   return (
     <div style={{ maxWidth: 860, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+      {/* Banner propuesta enviada */}
+      {locked && (
+        <div style={{ padding: '10px 16px', background: '#0f5132', borderRadius: 7, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#d1fae5' }}>✓ Propuesta enviada{fin.fechaPropuesta ? ` el ${fmtD(fin.fechaPropuesta)}` : ''}</div>
+            <div style={{ fontSize: 11, color: 'rgba(209,250,229,.6)', marginTop: 2 }}>La financiación está bloqueada. Reabrí la negociación para modificarla.</div>
+          </div>
+          <Btn sm onClick={reabrirNegociacion} style={{ background: 'rgba(255,255,255,.12)', color: '#d1fae5', border: 'none' }}>↩ Reabrir negociación</Btn>
+        </div>
+      )}
+
       {/* Resumen financiero */}
       <Box style={{ padding: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Resumen financiero</div>
-          <Btn sm onClick={() => { setFinForm({ interes: String(fin.interes || 0), notaPortal: fin.notaPortal || '' }); setEditingFin(true); }}>✎ Editar</Btn>
+          {!locked && <Btn sm onClick={() => { setFinForm({ interes: String(fin.interes || 0), notaPortal: fin.notaPortal || '' }); setEditingFin(true); }}>✎ Editar</Btn>}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 16 }}>
           <div style={statSt}><div style={kSt}>Presupuesto venta</div><div style={vSt}>{fmtM(ventaBase, moneda)}</div></div>
           <div style={statSt}><div style={kSt}>Adicionales (cliente)</div><div style={{ ...vSt, color: adicionalCliente > 0 ? T.accent : T.ink }}>{fmtM(adicionalCliente, moneda)}</div></div>
           <div style={statSt}><div style={kSt}>Interés aplicado</div><div style={{ ...vSt, color: interes > 0 ? T.warn : T.ink3 }}>{interes > 0 ? `${interes}%` : '—'}</div></div>
+          {moneda === 'ARS' && dolarVenta && (
+            <div style={statSt}><div style={kSt}>TC venta</div><div style={{ ...vSt, fontSize: 12, color: T.ink2 }}>${fmtN(dolarVenta)}</div></div>
+          )}
           <div style={{ ...statSt, borderLeft: `3px solid ${T.accent}`, paddingLeft: 12 }}>
-            <div style={kSt}>Total cliente</div>
-            <div style={{ ...vSt, color: T.accent, fontSize: 20 }}>{fmtM(totalConInteres, moneda)}</div>
+            <div style={kSt}>Total cliente (USD)</div>
+            <div style={{ ...vSt, color: T.accent, fontSize: 20 }}>{fmtUSD(totalUSD)}</div>
           </div>
         </div>
 
-        {editingFin && (
+        {!locked && editingFin && (
           <FormPanel title="Configurar financiación" onSave={saveFin} onCancel={() => setEditingFin(false)} style={{ marginTop: 8 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
               <FInput label="Interés (%)" value={finForm.interes} onChange={v => setFinForm(p => ({ ...p, interes: v }))} type="number" placeholder="0" />
@@ -1841,46 +1882,70 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
       <Box style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '12px 18px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Plan de cuotas</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Plan de cuotas (en USD)</div>
             {cuotas.length > 0 && (
               <div style={{ fontSize: 11, color: T.ink3, marginTop: 2, fontFamily: T.fontMono }}>
-                {fmtM(cuotasPagadas, moneda)} cobrado · {fmtM(saldoCuotas, moneda)} saldo
-                {Math.abs(diferencia) > 10 && (
+                {fmtUSD(cuotasPagadas)} cobrado · {fmtUSD(saldoCuotas)} saldo
+                {Math.abs(diferencia) > 1 && (
                   <span style={{ color: diferencia > 0 ? T.warn : T.ok, marginLeft: 10 }}>
-                    {diferencia > 0 ? `⚠ faltan $ ${fmtN(diferencia)} en cuotas` : `✓ $ ${fmtN(Math.abs(diferencia))} extra en cuotas`}
+                    {diferencia > 0 ? `⚠ faltan U$S ${fmtN(diferencia)} en cuotas` : `✓ U$S ${fmtN(Math.abs(diferencia))} extra en cuotas`}
                   </span>
                 )}
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {cuotas.length === 0 && totalConInteres > 0 && (
-              <>
-                {[2, 3, 4, 6, 12].map(n => (
-                  <Btn key={n} sm onClick={() => distribuirEnCuotas(n)}>{n}×</Btn>
-                ))}
-              </>
-            )}
-            <Btn sm fill onClick={() => { setAddingCuota(true); setEditCuotaId(null); setCuotaForm({ descripcion: '', monto: '', fecha: '', n: String(cuotas.length + 1) }); }}>+ Cuota</Btn>
-          </div>
+          {!locked && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Btn sm onClick={() => { setGenAuto(true); setAddingCuota(false); }}>⚡ Generar automático</Btn>
+              <Btn sm fill onClick={() => { setAddingCuota(true); setGenAuto(false); setEditCuotaId(null); setCuotaForm({ descripcion: '', monto: '', fecha: '', n: String(cuotas.length + 1) }); }}>+ Cuota manual</Btn>
+            </div>
+          )}
         </div>
 
-        {addingCuota && (
+        {/* Generador automático */}
+        {!locked && genAuto && (
+          <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.faint2}`, background: T.faint }}>
+            <FormPanel title="Generar cuotas automáticamente" onSave={generarAutomatico} onCancel={() => setGenAuto(false)} saveLabel="Generar">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
+                <FInput label="Cantidad de cuotas" value={genForm.n} onChange={v => setGenForm(p => ({ ...p, n: v }))} type="number" placeholder="6" />
+                <FInput label="Primera fecha de pago" value={genForm.primerFecha} onChange={v => setGenForm(p => ({ ...p, primerFecha: v }))} type="date" />
+                <FInput label="Cada (número)" value={genForm.cada} onChange={v => setGenForm(p => ({ ...p, cada: v }))} type="number" placeholder="1" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6 }}>Intervalo</label>
+                  <select value={genForm.intervalo} onChange={e => setGenForm(p => ({ ...p, intervalo: e.target.value }))}
+                    style={{ padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper }}>
+                    <option value="meses">Meses</option>
+                    <option value="semanas">Semanas</option>
+                    <option value="dias">Días</option>
+                  </select>
+                </div>
+              </div>
+              {totalUSD > 0 && genForm.n && (
+                <div style={{ marginTop: 8, fontSize: 11, color: T.ink3 }}>
+                  → {genForm.n} cuotas de aprox. {fmtUSD(Math.round(totalUSD / (parseInt(genForm.n) || 1)))} c/u · Total {fmtUSD(totalUSD)}
+                </div>
+              )}
+            </FormPanel>
+          </div>
+        )}
+
+        {/* Cuota manual */}
+        {!locked && addingCuota && (
           <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.faint2}` }}>
             <FormPanel title={editCuotaId ? 'Editar cuota' : 'Nueva cuota'} onSave={saveCuota} onCancel={() => { setAddingCuota(false); setEditCuotaId(null); }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', gap: 10 }}>
                 <FInput label="N°" value={cuotaForm.n} onChange={v => setCuotaForm(p => ({ ...p, n: v }))} type="number" />
                 <FInput label="Descripción" value={cuotaForm.descripcion} onChange={v => setCuotaForm(p => ({ ...p, descripcion: v }))} placeholder="Ej: Anticipo / Cuota 1 de 6..." />
-                <FInput label="Monto" value={cuotaForm.monto} onChange={v => setCuotaForm(p => ({ ...p, monto: v }))} type="number" />
+                <FInput label="Monto (U$S)" value={cuotaForm.monto} onChange={v => setCuotaForm(p => ({ ...p, monto: v }))} type="number" />
                 <FInput label="Fecha de pago" value={cuotaForm.fecha} onChange={v => setCuotaForm(p => ({ ...p, fecha: v }))} type="date" />
               </div>
             </FormPanel>
           </div>
         )}
 
-        {cuotas.length === 0 && !addingCuota ? (
+        {cuotas.length === 0 && !addingCuota && !genAuto ? (
           <div style={{ padding: '40px 20px', textAlign: 'center', color: T.ink3, fontSize: 13 }}>
-            Sin cuotas. Usá los botones "2×", "3×"… para distribuir automáticamente, o agregá una por una.
+            Sin cuotas. Usá "⚡ Generar automático" para distribuir o "+ Cuota manual" para agregar una por una.
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1888,7 +1953,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
               <tr style={{ background: T.faint }}>
                 <th style={{ ...colH2, textAlign: 'center', width: 40 }}>#</th>
                 <th style={{ ...colH2, textAlign: 'left' }}>Descripción</th>
-                <th style={colH2}>Monto</th>
+                <th style={colH2}>Monto (USD)</th>
                 <th style={colH2}>Fecha</th>
                 <th style={{ ...colH2, textAlign: 'center' }}>Estado</th>
                 <th style={colH2}></th>
@@ -1899,7 +1964,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
                 <tr key={c.id} style={{ borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none' }}>
                   <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: T.ink2 }}>{c.n}</td>
                   <td style={{ padding: '10px 12px', fontSize: 12, color: T.ink }}>{c.descripcion}</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 700, color: c.estado === 'pagado' ? T.ok : T.ink }}>{fmtM(c.monto, moneda)}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 700, color: c.estado === 'pagado' ? T.ok : T.ink }}>{fmtUSD(c.monto)}</td>
                   <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, color: T.ink3 }}>{fmtD(c.fecha)}</td>
                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                     <Chip ok={c.estado === 'pagado'} warn={c.estado === 'pendiente'} accent={c.estado === 'proximo'} style={{ fontSize: 10, cursor: 'pointer' }} onClick={() => togglePago(c.id)}>
@@ -1907,10 +1972,12 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
                     </Chip>
                   </td>
                   <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                      <Btn sm onClick={() => startEditCuota(c)}>✎</Btn>
-                      <span style={{ color: T.accent, cursor: 'pointer', padding: '2px 4px', fontSize: 11 }} onClick={() => delCuota(c.id)}>🗑</span>
-                    </div>
+                    {!locked && (
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        <Btn sm onClick={() => startEditCuota(c)}>✎</Btn>
+                        <span style={{ color: T.accent, cursor: 'pointer', padding: '2px 4px', fontSize: 11 }} onClick={() => delCuota(c.id)}>🗑</span>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -1919,7 +1986,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
               <tfoot>
                 <tr style={{ background: T.faint }}>
                   <td colSpan={2} style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: T.ink3 }}>TOTAL</td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 800, color: T.ink }}>{fmtM(totalCuotas, moneda)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 800, color: T.ink }}>{fmtUSD(totalCuotas)}</td>
                   <td colSpan={3} />
                 </tr>
               </tfoot>
@@ -1927,6 +1994,13 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
           </table>
         )}
       </Box>
+
+      {/* Botón enviar propuesta */}
+      {!locked && cuotas.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Btn fill onClick={enviarPropuesta} style={{ padding: '10px 24px', fontSize: 14 }}>📤 Enviar propuesta</Btn>
+        </div>
+      )}
     </div>
   );
 }

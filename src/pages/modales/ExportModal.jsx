@@ -419,7 +419,18 @@ export default function ExportModal({ onClose, obra, detalle }) {
   const [vigencia, setVigencia] = useState(30);
   const [nota, setNota] = useState('');
   const [condiciones, setCondiciones] = useState(true);
-  const [formaPago, setFormaPago] = useState(FORMA_PAGO_DEFAULT);
+  const [formaPago, setFormaPago] = useState(() => {
+    const cuotas = detalle?.cuotas || [];
+    if (!cuotas.length) return FORMA_PAGO_DEFAULT;
+    const fmtDLocal = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
+    const lines = cuotas.map(c => {
+      const fecha = c.fecha ? ` (${fmtDLocal(c.fecha)})` : '';
+      return `${c.descripcion}: U$S ${Math.round(c.monto).toLocaleString('es-AR')}${fecha}`;
+    });
+    const total = cuotas.reduce((s, c) => s + (c.monto || 0), 0);
+    if (total > 0) lines.push(`Total: U$S ${Math.round(total).toLocaleString('es-AR')}`);
+    return lines.join('\n');
+  });
 
   const rr = (detalle?.rubros || []).map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
