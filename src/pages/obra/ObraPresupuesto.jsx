@@ -744,9 +744,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
 
                     const InlineNum = ({ field, value, flex, fmt, color }) => (
                       <div className="k-cell" style={{ flex, textAlign: 'right', padding: '2px 6px' }}
-                        onClick={e => { e.stopPropagation(); setInlineEdit({ taskId: tarea.id, field, value: String(value) }); }}>
+                        onClick={e => { e.stopPropagation(); if (!(ie?.taskId === tarea.id && ie?.field === field)) setInlineEdit({ taskId: tarea.id, field, value: String(value) }); }}>
                         {ie?.field === field
-                          ? <input autoFocus type="number" min="0" step="any" style={inlineInputSt} value={ie.value}
+                          ? <input autoFocus type="number" min="0" step="any" style={inlineInputSt} value={ie.value} onClick={e => e.stopPropagation()}
                               onFocus={e => e.target.select()}
                               onChange={e => setInlineEdit(x => ({ ...x, value: e.target.value }))}
                               onBlur={saveInlineCost}
@@ -1814,7 +1814,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
       fecha: genForm.primerFecha ? agregarFecha(genForm.primerFecha, i, genForm.intervalo) : '',
       estado: 'pendiente',
     }));
-    patch(d => ({ ...d, cuotas: [...(d.cuotas || []), ...nuevas] }));
+    patch(d => ({ ...d, cuotas: nuevas }));
     setGenAuto(false);
   };
 
