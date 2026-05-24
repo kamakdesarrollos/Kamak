@@ -16,6 +16,7 @@ import { useGastosFijos } from '../../store/GastosFijosContext';
 import { useCatalog, calcTarea } from '../../store/CatalogContext';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { supabase } from '../../lib/supabase';
+import { loadSharedData, saveSharedData } from '../../lib/dbHelpers';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -135,6 +136,16 @@ function TabResumen({ obra, detalle, moneda }) {
 
   const toUSD = (n) => moneda === 'ARS' && dolarVenta ? `U$S ${fmtN(Math.round(n / dolarVenta))}` : fmtM(n, moneda);
 
+  // Financiación
+  const fin = detalle.financiacion || {};
+  const adicionalCliente = (detalle.adicionales || [])
+    .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
+    .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
+  const interesFin = parseFloat(fin.interes) || 0;
+  const totalCliente = Math.round((venta + adicionalCliente) * (1 + interesFin / 100));
+  const cuotasPlan = detalle.cuotas || [];
+  const cuotasPagadas = cuotasPlan.filter(c => c.estado === 'pagado').reduce((s, c) => s + (c.monto || 0), 0);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* KPIs */}
@@ -149,6 +160,25 @@ function TabResumen({ obra, detalle, moneda }) {
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: k.color }}>{k.value}</div>
           </Box>
         ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        {/* KPI: Total cliente */}
+        {verCostos && totalCliente > 0 && (
+          <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${T.accent}` }}>
+            <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Total cliente</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.accent }}>{fmtM(totalCliente, moneda)}</div>
+            {adicionalCliente > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>incl. {fmtM(adicionalCliente, moneda)} adicionales</div>}
+          </Box>
+        )}
+        {/* KPI: Cuotas */}
+        {cuotasPlan.length > 0 && (
+          <Box style={{ padding: '12px 14px' }}>
+            <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Cuotas cobradas</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.ok }}>{fmtM(cuotasPagadas, moneda)}</div>
+            <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{cuotasPlan.filter(c => c.estado === 'pagado').length} / {cuotasPlan.length} cuotas</div>
+          </Box>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -1278,6 +1308,8 @@ function TabAdicionales({ detalle, patch, moneda }) {
     costoUnit: '', costoTotal: '',
     valorVentaUnit: '', valorVentaTotal: '',
     montoProveedor: '',
+    cantidadProveedor: '', costoUnitProveedor: '',
+    aplicaACliente: true, aplicaAProveedor: false,
     fecha: new Date().toISOString().split('T')[0], estado: 'pendiente',
   };
   const [form, setForm] = useState(defaultForm);
@@ -1309,10 +1341,14 @@ function TabAdicionales({ detalle, patch, moneda }) {
       costoTotal:      costoTot,
       valorVentaUnit:  parseFloat(form.valorVentaUnit) || null,
       valorVentaTotal: ventaTot,
-      montoProveedor:  form.montoProveedor !== '' ? parseFloat(form.montoProveedor) : null,
-      monto:           ventaTot ?? costoTot ?? 0,
-      fecha:           form.fecha,
-      estado:          form.estado || 'pendiente',
+      montoProveedor:    form.montoProveedor !== '' ? parseFloat(form.montoProveedor) : null,
+      cantidadProveedor: parseFloat(form.cantidadProveedor) || null,
+      costoUnitProveedor: parseFloat(form.costoUnitProveedor) || null,
+      aplicaACliente:    form.aplicaACliente !== false,
+      aplicaAProveedor:  !!form.aplicaAProveedor,
+      monto:             ventaTot ?? costoTot ?? 0,
+      fecha:             form.fecha,
+      estado:            form.estado || 'pendiente',
     };
     if (editingId) {
       patch(d => ({ ...d, adicionales: d.adicionales.map(a => a.id === editingId ? entry : a) }));
@@ -1331,6 +1367,8 @@ function TabAdicionales({ detalle, patch, moneda }) {
       costoUnit: a.costoUnit ?? '', costoTotal: a.costoTotal ?? '',
       valorVentaUnit: a.valorVentaUnit ?? '', valorVentaTotal: a.valorVentaTotal ?? '',
       montoProveedor: a.montoProveedor ?? '',
+      cantidadProveedor: a.cantidadProveedor ?? '', costoUnitProveedor: a.costoUnitProveedor ?? '',
+      aplicaACliente: a.aplicaACliente !== false, aplicaAProveedor: !!a.aplicaAProveedor,
       fecha: a.fecha || new Date().toISOString().split('T')[0], estado: a.estado || 'pendiente',
     });
     setEditingId(a.id);
@@ -1339,6 +1377,24 @@ function TabAdicionales({ detalle, patch, moneda }) {
 
   const setEstado = (id, estado) => patch(d => ({ ...d, adicionales: d.adicionales.map(a => a.id === id ? { ...a, estado } : a) }));
   const del = (id) => patch(d => ({ ...d, adicionales: d.adicionales.filter(a => a.id !== id) }));
+
+  const aplicarAContrato = (a) => {
+    const tareaKey = (a.tarea || '').toLowerCase();
+    patch(d => {
+      const contratos = d.contratos || [];
+      const cIdx = contratos.findIndex(c =>
+        (c.tareas || []).some(t => t.nombre?.toLowerCase().includes(tareaKey) || tareaKey.includes(t.nombre?.toLowerCase() || ''))
+      );
+      if (cIdx < 0) { alert('No se encontró un contrato MO con la tarea "' + a.tarea + '".\nCreá primero el contrato MO para ese rubro.'); return d; }
+      const cantProv = a.cantidadProveedor || a.cantidad || 1;
+      const precioProv = a.costoUnitProveedor || a.costoUnit || 0;
+      const extraTarea = { tareaId: newId(), nombre: `Adicional: ${a.descripcion}`, unidad: a.unidad || '', cantidadTotal: cantProv, cantidadContratada: cantProv, precioUnit: precioProv };
+      const montoExtra = cantProv * precioProv;
+      const updatedContratos = contratos.map((c, i) => i !== cIdx ? c : { ...c, tareas: [...(c.tareas || []), extraTarea], monto: (c.monto || 0) + montoExtra });
+      const updatedAdicionales = d.adicionales.map(x => x.id === a.id ? { ...x, aplicadoAContrato: true } : x);
+      return { ...d, contratos: updatedContratos, adicionales: updatedAdicionales };
+    });
+  };
 
   const aprobados   = detalle.adicionales.filter(a => a.estado === 'aprobado');
   const totalCosto  = aprobados.reduce((s, a) => s + (a.costoTotal ?? a.monto ?? 0), 0);
@@ -1376,12 +1432,24 @@ function TabAdicionales({ detalle, patch, moneda }) {
             <FInput label="Unidad" value={form.unidad} onChange={v => setForm(p => ({ ...p, unidad: v }))} placeholder="m², u..." />
             <FInput label="Fecha" value={form.fecha} onChange={v => setForm(p => ({ ...p, fecha: v }))} type="date" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 10, marginTop: 4 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginTop: 4 }}>
             <FInput label="Costo / unidad" value={form.costoUnit} onChange={set('costoUnit')} type="number" />
             <FInput label="Costo total" value={form.costoTotal} onChange={set('costoTotal')} type="number" />
-            <FInput label="Venta / unidad" value={form.valorVentaUnit} onChange={set('valorVentaUnit')} type="number" />
+            <FInput label="Venta / unidad (cliente)" value={form.valorVentaUnit} onChange={set('valorVentaUnit')} type="number" />
             <FInput label="Venta total (cliente)" value={form.valorVentaTotal} onChange={set('valorVentaTotal')} type="number" />
-            <FInput label="Monto proveedor" value={form.montoProveedor} onChange={v => setForm(p => ({ ...p, montoProveedor: v }))} type="number" placeholder="Opcional" />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 10, marginTop: 8, alignItems: 'end' }}>
+            <FInput label="Cant. proveedor MO" value={form.cantidadProveedor} onChange={v => setForm(p => ({ ...p, cantidadProveedor: v }))} type="number" placeholder="Si difiere de cant. cliente" />
+            <FInput label="Costo/u proveedor MO" value={form.costoUnitProveedor} onChange={v => setForm(p => ({ ...p, costoUnitProveedor: v }))} type="number" />
+            <FInput label="Monto prov. total" value={form.montoProveedor} onChange={v => setForm(p => ({ ...p, montoProveedor: v }))} type="number" placeholder="Opcional" />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.ink2, cursor: 'pointer', paddingBottom: 6 }}>
+              <input type="checkbox" checked={!!form.aplicaAProveedor} onChange={e => setForm(p => ({ ...p, aplicaAProveedor: e.target.checked }))} />
+              Aplica a proveedor MO
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.ink2, cursor: 'pointer', paddingBottom: 6 }}>
+              <input type="checkbox" checked={form.aplicaACliente !== false} onChange={e => setForm(p => ({ ...p, aplicaACliente: e.target.checked }))} />
+              Aplica a cliente
+            </label>
           </div>
         </FormPanel>
       )}
@@ -1427,9 +1495,20 @@ function TabAdicionales({ detalle, patch, moneda }) {
                   <td style={{ ...colD, fontWeight: 600 }}>{a.costoTotal != null ? fmtM(a.costoTotal, moneda) : (a.monto ? fmtM(a.monto, moneda) : '—')}</td>
                   <td style={{ ...colD, color: T.accent }}>{a.valorVentaUnit != null ? fmtM(a.valorVentaUnit, moneda) : '—'}</td>
                   <td style={{ ...colD, fontWeight: 700, color: T.accent }}>{a.valorVentaTotal != null ? fmtM(a.valorVentaTotal, moneda) : '—'}</td>
-                  <td style={{ ...colD, color: T.ink2 }}>{a.montoProveedor != null ? fmtM(a.montoProveedor, moneda) : <span style={{ color: T.ink3 }}>—</span>}</td>
+                  <td style={{ ...colD, color: T.ink2 }}>
+                    {a.montoProveedor != null ? fmtM(a.montoProveedor, moneda) : '—'}
+                    {a.cantidadProveedor != null && a.cantidadProveedor !== a.cantidad && (
+                      <div style={{ fontSize: 9, color: T.ink3 }}>{fmtQ(a.cantidadProveedor)} {a.unidad}</div>
+                    )}
+                  </td>
                   <td style={{ ...colD, textAlign: 'center' }}>
-                    <Chip ok={a.estado === 'aprobado'} warn={a.estado === 'pendiente'} accent={a.estado === 'rechazado'} style={{ fontSize: 10 }}>{a.estado}</Chip>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                      <Chip ok={a.estado === 'aprobado'} warn={a.estado === 'pendiente'} accent={a.estado === 'rechazado'} style={{ fontSize: 10 }}>{a.estado}</Chip>
+                      <div style={{ display: 'flex', gap: 3 }}>
+                        {a.aplicaACliente !== false && <span title="Aplica a cliente" style={{ fontSize: 9, color: T.accent, background: T.faint, padding: '1px 4px', borderRadius: 3 }}>💰 cliente</span>}
+                        {a.aplicaAProveedor && <span title="Aplica a proveedor MO" style={{ fontSize: 9, color: T.ink2, background: T.faint, padding: '1px 4px', borderRadius: 3 }}>{a.aplicadoAContrato ? '✓ contrato' : '🔧 prov'}</span>}
+                      </div>
+                    </div>
                   </td>
                   <td style={{ ...colD, textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
@@ -1437,6 +1516,9 @@ function TabAdicionales({ detalle, patch, moneda }) {
                         <Btn sm onClick={() => setEstado(a.id, 'aprobado')}>✓</Btn>
                         <Btn sm style={{ color: T.accent, borderColor: T.accent }} onClick={() => setEstado(a.id, 'rechazado')}>✕</Btn>
                       </>}
+                      {a.estado === 'aprobado' && a.aplicaAProveedor && !a.aplicadoAContrato && (
+                        <Btn sm onClick={() => aplicarAContrato(a)} style={{ fontSize: 9 }}>→ MO</Btn>
+                      )}
                       <Btn sm onClick={() => startEdit(a)}>✎</Btn>
                       <span style={{ color: T.accent, cursor: 'pointer', fontSize: 11, padding: '2px 4px' }} onClick={() => del(a.id)}>🗑</span>
                     </div>
@@ -1450,6 +1532,202 @@ function TabAdicionales({ detalle, patch, moneda }) {
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB 10: FINANCIACIÓN
+// ─────────────────────────────────────────────────────────────────────────────
+function TabFinanciacion({ obra, detalle, patch, moneda }) {
+  const fin = detalle.financiacion || {};
+  const [editingFin, setEditingFin] = useState(false);
+  const [finForm, setFinForm] = useState({ interes: String(fin.interes || 0), notaPortal: fin.notaPortal || '' });
+  const [addingCuota, setAddingCuota] = useState(false);
+  const [cuotaForm, setCuotaForm] = useState({ descripcion: '', monto: '', fecha: '', n: '' });
+  const [editCuotaId, setEditCuotaId] = useState(null);
+
+  const { venta: ventaBase } = calcObra(detalle.rubros);
+  const adicionalCliente = (detalle.adicionales || [])
+    .filter(a => a.estado === 'aprobado')
+    .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
+  const interes = parseFloat(fin.interes) || 0;
+  const baseTotal = ventaBase + adicionalCliente;
+  const totalConInteres = Math.round(baseTotal * (1 + interes / 100));
+
+  const cuotas = detalle.cuotas || [];
+  const totalCuotas = cuotas.reduce((s, c) => s + (c.monto || 0), 0);
+  const cuotasPagadas = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + (c.monto || 0), 0);
+  const saldoCuotas = totalCuotas - cuotasPagadas;
+  const diferencia = totalConInteres - totalCuotas;
+
+  const saveFin = () => {
+    patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), interes: parseFloat(finForm.interes) || 0, notaPortal: finForm.notaPortal } }));
+    setEditingFin(false);
+  };
+
+  const saveCuota = () => {
+    const n = parseInt(cuotaForm.n) || cuotas.length + 1;
+    const entry = { id: editCuotaId || newId(), n, descripcion: cuotaForm.descripcion || `Cuota ${n}`, monto: parseFloat(cuotaForm.monto) || 0, fecha: cuotaForm.fecha || '', estado: 'pendiente' };
+    if (editCuotaId) {
+      patch(d => ({ ...d, cuotas: d.cuotas.map(c => c.id === editCuotaId ? { ...c, ...entry } : c) }));
+    } else {
+      patch(d => ({ ...d, cuotas: [...(d.cuotas || []), entry] }));
+    }
+    setAddingCuota(false); setEditCuotaId(null); setCuotaForm({ descripcion: '', monto: '', fecha: '', n: '' });
+  };
+
+  const startEditCuota = (c) => {
+    setCuotaForm({ descripcion: c.descripcion || '', monto: String(c.monto || ''), fecha: c.fecha || '', n: String(c.n || '') });
+    setEditCuotaId(c.id); setAddingCuota(true);
+  };
+
+  const togglePago = (id) => patch(d => ({ ...d, cuotas: d.cuotas.map(c => c.id === id ? { ...c, estado: c.estado === 'pagado' ? 'pendiente' : 'pagado' } : c) }));
+  const delCuota = (id) => patch(d => ({ ...d, cuotas: d.cuotas.filter(c => c.id !== id) }));
+
+  const distribuirEnCuotas = (n) => {
+    if (!n || !totalConInteres) return;
+    const montoCuota = Math.round(totalConInteres / n);
+    const nuevas = Array.from({ length: n }, (_, i) => ({
+      id: newId(), n: i + 1,
+      descripcion: `Cuota ${i + 1} de ${n}`,
+      monto: i === n - 1 ? totalConInteres - montoCuota * (n - 1) : montoCuota,
+      fecha: '', estado: 'pendiente',
+    }));
+    patch(d => ({ ...d, cuotas: [...(d.cuotas || []), ...nuevas] }));
+  };
+
+  const statSt = { display: 'flex', flexDirection: 'column', gap: 3 };
+  const kSt = { fontSize: 10, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6 };
+  const vSt = { fontSize: 16, fontWeight: 800, fontFamily: T.fontMono, color: T.ink };
+
+  return (
+    <div style={{ maxWidth: 860, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Resumen financiero */}
+      <Box style={{ padding: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Resumen financiero</div>
+          <Btn sm onClick={() => { setFinForm({ interes: String(fin.interes || 0), notaPortal: fin.notaPortal || '' }); setEditingFin(true); }}>✎ Editar</Btn>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 16 }}>
+          <div style={statSt}><div style={kSt}>Presupuesto venta</div><div style={vSt}>{fmtM(ventaBase, moneda)}</div></div>
+          <div style={statSt}><div style={kSt}>Adicionales (cliente)</div><div style={{ ...vSt, color: adicionalCliente > 0 ? T.accent : T.ink }}>{fmtM(adicionalCliente, moneda)}</div></div>
+          <div style={statSt}><div style={kSt}>Interés aplicado</div><div style={{ ...vSt, color: interes > 0 ? T.warn : T.ink3 }}>{interes > 0 ? `${interes}%` : '—'}</div></div>
+          <div style={{ ...statSt, borderLeft: `3px solid ${T.accent}`, paddingLeft: 12 }}>
+            <div style={kSt}>Total cliente</div>
+            <div style={{ ...vSt, color: T.accent, fontSize: 20 }}>{fmtM(totalConInteres, moneda)}</div>
+          </div>
+        </div>
+
+        {editingFin && (
+          <FormPanel title="Configurar financiación" onSave={saveFin} onCancel={() => setEditingFin(false)} style={{ marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
+              <FInput label="Interés (%)" value={finForm.interes} onChange={v => setFinForm(p => ({ ...p, interes: v }))} type="number" placeholder="0" />
+              <FInput label="Nota para portal del cliente" value={finForm.notaPortal} onChange={v => setFinForm(p => ({ ...p, notaPortal: v }))} placeholder="Ej: Plan de pagos acordado el 01/01/2025" />
+            </div>
+          </FormPanel>
+        )}
+
+        {fin.notaPortal && (
+          <div style={{ marginTop: 12, padding: '8px 12px', background: T.faint, borderRadius: 5, fontSize: 12, color: T.ink2, borderLeft: `3px solid ${T.accent}` }}>
+            📋 Nota portal: {fin.notaPortal}
+          </div>
+        )}
+      </Box>
+
+      {/* Plan de cuotas */}
+      <Box style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 18px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Plan de cuotas</div>
+            {cuotas.length > 0 && (
+              <div style={{ fontSize: 11, color: T.ink3, marginTop: 2, fontFamily: T.fontMono }}>
+                {fmtM(cuotasPagadas, moneda)} cobrado · {fmtM(saldoCuotas, moneda)} saldo
+                {Math.abs(diferencia) > 10 && (
+                  <span style={{ color: diferencia > 0 ? T.warn : T.ok, marginLeft: 10 }}>
+                    {diferencia > 0 ? `⚠ faltan $ ${fmtN(diferencia)} en cuotas` : `✓ $ ${fmtN(Math.abs(diferencia))} extra en cuotas`}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {cuotas.length === 0 && totalConInteres > 0 && (
+              <>
+                {[2, 3, 4, 6, 12].map(n => (
+                  <Btn key={n} sm onClick={() => distribuirEnCuotas(n)}>{n}×</Btn>
+                ))}
+              </>
+            )}
+            <Btn sm fill onClick={() => { setAddingCuota(true); setEditCuotaId(null); setCuotaForm({ descripcion: '', monto: '', fecha: '', n: String(cuotas.length + 1) }); }}>+ Cuota</Btn>
+          </div>
+        </div>
+
+        {addingCuota && (
+          <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.faint2}` }}>
+            <FormPanel title={editCuotaId ? 'Editar cuota' : 'Nueva cuota'} onSave={saveCuota} onCancel={() => { setAddingCuota(false); setEditCuotaId(null); }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', gap: 10 }}>
+                <FInput label="N°" value={cuotaForm.n} onChange={v => setCuotaForm(p => ({ ...p, n: v }))} type="number" />
+                <FInput label="Descripción" value={cuotaForm.descripcion} onChange={v => setCuotaForm(p => ({ ...p, descripcion: v }))} placeholder="Ej: Anticipo / Cuota 1 de 6..." />
+                <FInput label="Monto" value={cuotaForm.monto} onChange={v => setCuotaForm(p => ({ ...p, monto: v }))} type="number" />
+                <FInput label="Fecha de pago" value={cuotaForm.fecha} onChange={v => setCuotaForm(p => ({ ...p, fecha: v }))} type="date" />
+              </div>
+            </FormPanel>
+          </div>
+        )}
+
+        {cuotas.length === 0 && !addingCuota ? (
+          <div style={{ padding: '40px 20px', textAlign: 'center', color: T.ink3, fontSize: 13 }}>
+            Sin cuotas. Usá los botones "2×", "3×"… para distribuir automáticamente, o agregá una por una.
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: T.faint }}>
+                <th style={{ ...colH2, textAlign: 'center', width: 40 }}>#</th>
+                <th style={{ ...colH2, textAlign: 'left' }}>Descripción</th>
+                <th style={colH2}>Monto</th>
+                <th style={colH2}>Fecha</th>
+                <th style={{ ...colH2, textAlign: 'center' }}>Estado</th>
+                <th style={colH2}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {cuotas.map((c, i) => (
+                <tr key={c.id} style={{ borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none' }}>
+                  <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: T.ink2 }}>{c.n}</td>
+                  <td style={{ padding: '10px 12px', fontSize: 12, color: T.ink }}>{c.descripcion}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 700, color: c.estado === 'pagado' ? T.ok : T.ink }}>{fmtM(c.monto, moneda)}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, color: T.ink3 }}>{fmtD(c.fecha)}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                    <Chip ok={c.estado === 'pagado'} warn={c.estado === 'pendiente'} accent={c.estado === 'proximo'} style={{ fontSize: 10, cursor: 'pointer' }} onClick={() => togglePago(c.id)}>
+                      {c.estado === 'pagado' ? '✓ pagado' : c.estado === 'proximo' ? 'próximo' : 'pendiente'}
+                    </Chip>
+                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                    <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                      <Btn sm onClick={() => startEditCuota(c)}>✎</Btn>
+                      <span style={{ color: T.accent, cursor: 'pointer', padding: '2px 4px', fontSize: 11 }} onClick={() => delCuota(c.id)}>🗑</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {cuotas.length > 1 && (
+              <tfoot>
+                <tr style={{ background: T.faint }}>
+                  <td colSpan={2} style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: T.ink3 }}>TOTAL</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 800, color: T.ink }}>{fmtM(totalCuotas, moneda)}</td>
+                  <td colSpan={3} />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        )}
+      </Box>
+    </div>
+  );
+}
+const colH2 = { fontSize: 10, fontWeight: 700, color: T.ink3, padding: '6px 12px', textAlign: 'right', borderBottom: `1px solid ${T.faint2}` };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 3: MOVIMIENTOS (connected to MovimientosContext)
@@ -2508,7 +2786,7 @@ function TabFotos({ detalle, patch, obraId }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
-const TABS_DEF = ['Resumen', 'Presupuesto', 'Materiales', 'Adicionales', 'Gantt', 'Movimientos', 'Cuenta cliente', 'Contratos MO', 'Documentos', 'Fotos', 'Portal cliente'];
+const TABS_DEF = ['Resumen', 'Presupuesto', 'Materiales', 'Adicionales', 'Gantt', 'Movimientos', 'Cuenta cliente', 'Contratos MO', 'Documentos', 'Fotos', 'Financiación', 'Portal cliente'];
 
 export default function ObraPresupuesto() {
   const { id } = useParams();
@@ -2523,6 +2801,10 @@ export default function ObraPresupuesto() {
   });
   const [showExport, setShowExport] = useState(false);
   const [showContrato, setShowContrato] = useState(false);
+  const [showPortalAccess, setShowPortalAccess] = useState(false);
+  const [portalPhone, setPortalPhone] = useState('');
+  const [portalSending, setPortalSending] = useState(false);
+  const [portalMsg, setPortalMsg] = useState('');
 
   const obra = obras.find(o => o.id === id) ?? { id, nombre: id, cliente: '', moneda: 'ARS', presupuesto: 0, avance: 0 };
   const detalle = getDetalle(id);
@@ -2538,6 +2820,7 @@ export default function ObraPresupuesto() {
     if (i === 7) return `Contratos MO${detalle.contratos.length > 0 ? ' · ' + detalle.contratos.length : ''}`;
     if (i === 8) return `Docs${detalle.documentos.length > 0 ? ' · ' + detalle.documentos.length : ''}`;
     if (i === 9) return `Fotos${detalle.fotos.length > 0 ? ' · ' + detalle.fotos.length : ''}`;
+    if (i === 10) { const cuotas = detalle.cuotas || []; return `Financiación${cuotas.length > 0 ? ' · ' + cuotas.length + ' cuotas' : ''}`; }
     return t;
   });
 
@@ -2547,11 +2830,38 @@ export default function ObraPresupuesto() {
 
   const handleTab = (i) => {
     if (TABS_DEF[i] === 'Gantt') { navigate(`/obras/${id}/gantt`); return; }
-    if (TABS_DEF[i] === 'Portal cliente') { navigate(`/portal/cliente/${id}`); return; }
+    if (TABS_DEF[i] === 'Portal cliente') { window.open(`/portal/cliente/${id}`, '_blank'); return; }
     setActiveTab(i);
   };
 
   const estadoColor = { activa: T.ok, 'en-presupuesto': T.ink2, pausada: T.warn, finalizada: T.accent, archivada: T.ink3 };
+
+  const sendPortalAccess = async () => {
+    const phone = portalPhone.replace(/\D/g, '');
+    if (!phone) return;
+    setPortalSending(true); setPortalMsg('');
+    try {
+      const token = `pt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+      const tokens = (await loadSharedData('portal_tokens')) || {};
+      tokens[token] = { obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone, expires, createdAt: new Date().toISOString() };
+      await saveSharedData('portal_tokens', tokens);
+      const baseUrl = window.location.origin;
+      const link = `${baseUrl}/portal/acceso/${token}`;
+      // Send via WA through the webhook API
+      const waPhone = phone.startsWith('549') ? phone : phone.startsWith('54') ? phone : `549${phone}`;
+      const text = `Hola! Te compartimos el acceso a tu portal de obra *${obra.nombre}*.\n\nPodés ver el avance, las cuotas y los documentos en este enlace:\n${link}\n\n_Kamak Desarrollos_`;
+      await fetch(`https://graph.facebook.com/v18.0/${import.meta.env.VITE_WA_PHONE_ID}/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${import.meta.env.VITE_WA_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messaging_product: 'whatsapp', to: waPhone, type: 'text', text: { body: text } }),
+      });
+      setPortalMsg(`✓ Acceso enviado a +${phone}.\nLink: ${link}`);
+    } catch (e) {
+      setPortalMsg(`Error: ${e.message}`);
+    }
+    setPortalSending(false);
+  };
 
   return (
     <PageLayout breadcrumb={['Obras', obra.nombre, tabLabels[displayTab]]} active="Obras">
@@ -2571,6 +2881,7 @@ export default function ObraPresupuesto() {
         <div style={{ display: 'flex', gap: 6 }}>
           <Btn sm onClick={() => navigate('/obras')}>← Obras</Btn>
           <Btn sm onClick={() => setShowExport(true)}>↗ Exportar</Btn>
+          <Btn sm onClick={() => { setShowPortalAccess(true); setPortalMsg(''); setPortalPhone(obra.clienteWhatsapp || ''); }}>🔗 Acceso cliente</Btn>
           <Btn sm fill onClick={() => setShowContrato(true)}>Contrato MO</Btn>
         </div>
       </div>
@@ -2596,9 +2907,38 @@ export default function ObraPresupuesto() {
       {displayTab === 7 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 8 && <TabDocumentos detalle={detalle} patch={patch} obraId={id} />}
       {displayTab === 9 && <TabFotos detalle={detalle} patch={patch} obraId={id} />}
+      {displayTab === 10 && <TabFinanciacion obra={obra} detalle={detalle} patch={patch} moneda={moneda} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
       {showContrato && <ContratoMOModal onClose={() => setShowContrato(false)} />}
+
+      {showPortalAccess && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 10, padding: 28, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 6 }}>🔗 Acceso al portal cliente</div>
+            <div style={{ fontSize: 12, color: T.ink3, marginBottom: 18 }}>Se genera un link único para <b>{obra.cliente || obra.nombre}</b>. Solo podrán ver el portal de esta obra.</div>
+            <FRow label="WhatsApp del cliente (sin +, con código país)">
+              <input
+                style={{ ...inputSt, fontSize: 14 }}
+                placeholder="Ej: 5491112345678"
+                value={portalPhone}
+                onChange={e => setPortalPhone(e.target.value)}
+              />
+            </FRow>
+            {portalMsg && (
+              <div style={{ marginTop: 12, padding: '10px 14px', background: portalMsg.startsWith('✓') ? '#d1fae5' : '#fee2e2', borderRadius: 6, fontSize: 12, color: T.ink, whiteSpace: 'pre-line' }}>
+                {portalMsg}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+              <Btn sm onClick={() => { setShowPortalAccess(false); setPortalMsg(''); }}>Cancelar</Btn>
+              <Btn sm fill onClick={sendPortalAccess} disabled={portalSending}>
+                {portalSending ? 'Enviando…' : '📲 Generar y enviar acceso'}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </PageLayout>
   );
 }

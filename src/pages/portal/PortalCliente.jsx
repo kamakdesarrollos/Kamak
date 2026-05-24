@@ -14,6 +14,20 @@ const rubroAvance = (rubro) =>
     ? Math.round(rubro.tareas.reduce((s, t) => s + t.avance, 0) / rubro.tareas.length)
     : 0;
 
+const calcVentaBase = (rubros) => {
+  let v = 0;
+  for (const r of rubros) {
+    for (const t of (r.tareas || []).filter(x => x.tipo !== 'seccion')) {
+      const costoUnit = (t.costoMat || 0) + (t.costoSub || 0);
+      const ventaUnit = t.margenLinea != null
+        ? costoUnit * (1 + t.margenLinea / 100)
+        : (t.costoMat || 0) * (1 + (r.margenMat || 0) / 100) + (t.costoSub || 0) * (1 + (r.margenMO || 0) / 100);
+      v += ventaUnit * (t.cantidad || 0);
+    }
+  }
+  return Math.round(v);
+};
+
 export default function PortalCliente() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -41,10 +55,18 @@ export default function PortalCliente() {
   const documentos = detalle.documentos || [];
   const fotos     = detalle.fotos     || [];
   const mensajes  = detalle.mensajes  || [];
+  const fin       = detalle.financiacion || {};
 
   const totalCuotas   = cuotas.reduce((s, c) => s + c.monto, 0);
   const pagadoCuotas  = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + c.monto, 0);
   const countPagadas  = cuotas.filter(c => c.estado === 'pagado').length;
+
+  const ventaBase = calcVentaBase(rubros);
+  const adicionalCliente = (detalle.adicionales || [])
+    .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
+    .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
+  const interes = parseFloat(fin.interes) || 0;
+  const totalCliente = Math.round((ventaBase + adicionalCliente) * (1 + interes / 100));
 
   const diasRestantes = obra.fechaFinEstim
     ? Math.max(0, Math.ceil((new Date(obra.fechaFinEstim) - new Date()) / 86400000))
@@ -211,6 +233,11 @@ export default function PortalCliente() {
                   {obra.notas}
                 </div>
               )}
+              {fin.notaPortal && (
+                <div style={{ marginTop: 14, padding: '10px 14px', background: '#fffbeb', borderRadius: 6, fontSize: 12, color: T.ink, borderLeft: `3px solid #f59e0b` }}>
+                  📋 {fin.notaPortal}
+                </div>
+              )}
             </Box>
           </div>
         )}
@@ -262,7 +289,14 @@ export default function PortalCliente() {
               <div style={{ padding: '12px 16px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}` }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Plan de cuotas</div>
               </div>
-              {cuotas.length === 0 ? (
+              {totalCliente > 0 && (
+            <div style={{ padding: '10px 16px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+              <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total acordado</span><div style={{ fontWeight: 800, fontFamily: T.fontMono, color: T.ink }}>{fmtM(totalCliente, obra.moneda)}</div></div>
+              {adicionalCliente > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Incluye adicionales</span><div style={{ fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{fmtM(adicionalCliente, obra.moneda)}</div></div>}
+              {interes > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Interés aplicado</span><div style={{ fontWeight: 700, color: T.ink2 }}>{interes}%</div></div>}
+            </div>
+          )}
+          {cuotas.length === 0 ? (
                 <div style={{ color: T.ink3, fontSize: 13, textAlign: 'center', padding: '40px 0' }}>Sin cuotas registradas.</div>
               ) : (
                 cuotas.map((c, i) => {

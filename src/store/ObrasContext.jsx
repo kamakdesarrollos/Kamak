@@ -21,7 +21,7 @@ const SEED_OBRAS = [
 ];
 
 // ── Datos semilla detalle por obra ────────────────────────────────────────────
-export const EMPTY_DETALLE = { rubros: [], adicionales: [], movimientos: [], cuotas: [], contratos: [], documentos: [], fotos: [], mensajes: [], gantt: null };
+export const EMPTY_DETALLE = { rubros: [], adicionales: [], movimientos: [], cuotas: [], contratos: [], documentos: [], fotos: [], mensajes: [], gantt: null, financiacion: {} };
 
 const SEED_DETALLES = {
   baradero: {

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Chip, Btn, Stat, Label, Bar, Stripes } from '../components/ui';
 import { T } from '../theme';
@@ -18,6 +19,8 @@ const ALL_WIDGETS = [
   { id: 'presupuesto', label: 'Presup. vs Gastado' },
   { id: 'kpis',        label: 'KPIs del Mes' },
   { id: 'top-prov',    label: 'Top Proveedores' },
+  { id: 'cuotas-prox', label: 'Cuotas Próximas' },
+  { id: 'adicionales', label: 'Adicionales Pendientes' },
 ];
 
 const STORAGE_KEY = 'kamak_dashboard_widgets_v1';
@@ -26,10 +29,13 @@ const loadWidgets = () => {
   return ALL_WIDGETS.map(w => w.id);
 };
 
+const fmtD = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
+
 export default function Dashboard() {
   const { movimientos, cajas } = useMovimientos();
-  const { obras }              = useObras();
+  const { obras, getDetalle }  = useObras();
   const { dolarVenta }         = useDolar();
+  const navigate               = useNavigate();
   const { alertas: alertasWA, noLeidas, marcarLeida, marcarTodasLeidas } = useAlertas();
 
   const [editMode,       setEditMode]       = useState(false);
@@ -88,6 +94,36 @@ export default function Dashboard() {
 
   // ── Obras ──
   const obrasActivas = useMemo(() => obras.filter(o => o.estado === 'activa'), [obras]);
+
+  // ── Cuotas próximas (todos las obras, próximos 45 días) ──
+  const cuotasProximas = useMemo(() => {
+    const now = new Date(); now.setHours(0,0,0,0);
+    const limit = new Date(now); limit.setDate(limit.getDate() + 45);
+    const items = [];
+    obras.forEach(o => {
+      const det = getDetalle(o.id);
+      (det.cuotas || []).forEach(c => {
+        if (c.estado === 'pagado') return;
+        const fecha = c.fecha ? new Date(c.fecha + 'T00:00:00') : null;
+        if (!fecha || fecha > limit) return;
+        const diasRestantes = Math.ceil((fecha - now) / 86400000);
+        items.push({ ...c, obraId: o.id, obraNombre: o.nombre, diasRestantes });
+      });
+    });
+    return items.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')).slice(0, 8);
+  }, [obras, getDetalle]);
+
+  // ── Adicionales pendientes de aprobación ──
+  const adicionalesPendientes = useMemo(() => {
+    const items = [];
+    obras.forEach(o => {
+      const det = getDetalle(o.id);
+      (det.adicionales || []).filter(a => a.estado === 'pendiente').forEach(a => {
+        items.push({ ...a, obraId: o.id, obraNombre: o.nombre });
+      });
+    });
+    return items.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, 8);
+  }, [obras, getDetalle]);
 
   // ── Alertas ──
   const alertas = useMemo(() => {
@@ -339,6 +375,71 @@ export default function Dashboard() {
             </div>
           )}
         </Box>
+      )}
+
+      {/* Cuotas próximas + Adicionales pendientes */}
+      {(on('cuotas-prox') || on('adicionales')) && (
+        <div style={{ display: 'grid', gridTemplateColumns: on('cuotas-prox') && on('adicionales') ? '1fr 1fr' : '1fr', gap: 12, marginTop: 12 }}>
+
+          {on('cuotas-prox') && (
+            <Box style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '10px 14px', background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
+                <Label style={{ marginBottom: 0 }}>Cuotas próximas · 45 días</Label>
+              </div>
+              {cuotasProximas.length === 0 ? (
+                <div style={{ padding: '20px 14px', fontSize: 12, color: T.ok }}>✓ Sin cuotas vencidas ni próximas</div>
+              ) : (
+                cuotasProximas.map((c, i) => (
+                  <div key={`${c.obraId}-${c.id}`}
+                    onClick={() => navigate(`/obras/${c.obraId}/presupuesto?tab=10`)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: i < cuotasProximas.length - 1 ? `1px solid ${T.faint2}` : 'none', cursor: 'pointer', fontSize: 12 }}
+                    onMouseEnter={e => e.currentTarget.style.background = T.faint}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ width: 36, height: 36, borderRadius: 6, background: c.diasRestantes < 0 ? T.accent : c.diasRestantes <= 7 ? T.warn + '33' : T.faint2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: c.diasRestantes < 0 ? 'white' : c.diasRestantes <= 7 ? T.warn : T.ink3, flexShrink: 0 }}>
+                      {c.diasRestantes < 0 ? 'VEN' : `${c.diasRestantes}d`}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.descripcion}</div>
+                      <div style={{ fontSize: 10, color: T.ink3 }}>{c.obraNombre} · {fmtD(c.fecha)}</div>
+                    </div>
+                    <div style={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, fontSize: 12, flexShrink: 0, color: c.diasRestantes < 0 ? T.accent : T.ink }}>$ {fmtN(c.monto)}</div>
+                  </div>
+                ))
+              )}
+            </Box>
+          )}
+
+          {on('adicionales') && (
+            <Box style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '10px 14px', background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
+                <Label style={{ marginBottom: 0 }}>Adicionales pendientes{adicionalesPendientes.length > 0 ? ` (${adicionalesPendientes.length})` : ''}</Label>
+              </div>
+              {adicionalesPendientes.length === 0 ? (
+                <div style={{ padding: '20px 14px', fontSize: 12, color: T.ok }}>✓ Sin adicionales pendientes</div>
+              ) : (
+                adicionalesPendientes.map((a, i) => (
+                  <div key={`${a.obraId}-${a.id}`}
+                    onClick={() => navigate(`/obras/${a.obraId}/presupuesto?tab=3`)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: i < adicionalesPendientes.length - 1 ? `1px solid ${T.faint2}` : 'none', cursor: 'pointer', fontSize: 12 }}
+                    onMouseEnter={e => e.currentTarget.style.background = T.faint}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <span style={{ fontSize: 20, flexShrink: 0 }}>➕</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.descripcion}</div>
+                      <div style={{ fontSize: 10, color: T.ink3 }}>{a.obraNombre}{a.tarea ? ` · ${a.tarea}` : ''} · {fmtD(a.fecha)}</div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      {a.valorVentaTotal != null && <div style={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: 11, fontWeight: 700, color: T.accent }}>V: $ {fmtN(a.valorVentaTotal)}</div>}
+                      {a.costoTotal != null && <div style={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: 10, color: T.ink3 }}>C: $ {fmtN(a.costoTotal)}</div>}
+                    </div>
+                  </div>
+                ))
+              )}
+            </Box>
+          )}
+        </div>
       )}
 
     </PageLayout>

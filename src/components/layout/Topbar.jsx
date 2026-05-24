@@ -7,6 +7,7 @@ import { useAuth } from '../../store/AuthContext';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useAlertas } from '../../store/AlertasContext';
 import { useWhatsappPending } from '../../store/WhatsappPendingContext';
+import GlobalSearch from '../GlobalSearch';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 const fmtFecha = (iso) => {
@@ -186,11 +187,7 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
         </div>
       )}
 
-      {search && (
-        <div style={{ width: 260, marginLeft: 'auto', background: '#171818', border: '1px solid #3a3a3e', borderRadius: 4, padding: '5px 10px', fontSize: 12, color: '#9a9892', fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>⌕</span><span>buscar obra, proveedor, factura…</span>
-        </div>
-      )}
+      {search && <GlobalSearch />}
 
       {right ?? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: search ? 0 : 'auto' }}>

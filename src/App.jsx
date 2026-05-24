@@ -41,6 +41,7 @@ import MobileComprador from './pages/mobile/MobileComprador';
 import MobileDirector from './pages/mobile/MobileDirector';
 import PortalCliente from './pages/portal/PortalCliente';
 import PortalProveedor from './pages/portal/PortalProveedor';
+import PortalAcceso from './pages/portal/PortalAcceso';
 
 const INACTIVITY_MS = 15 * 60 * 1000; // 15 minutos
 const WARN_MS       =  1 * 60 * 1000; // aviso 1 minuto antes
@@ -151,35 +152,43 @@ export default function App() {
     <WhatsappPendingProvider>
     <AlertasProvider>
     <UsuariosProvider>
-      <AuthGate>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/obras" element={<Obras />} />
-            <Route path="/obras/:id/presupuesto" element={<ObraPresupuesto />} />
-            <Route path="/obras/:id/gantt" element={<ObraGantt />} />
-            <Route path="/proveedores" element={<Proveedores />} />
-            <Route path="/clientes" element={<Clientes />} />
-            <Route path="/proveedores/:id" element={<ProveedorCC />} />
-            <Route path="/movimientos" element={<Movimientos />} />
-            <Route path="/cajas" element={<Cajas />} />
-            <Route path="/cajas/conciliacion" element={<Conciliacion />} />
-            <Route path="/cheques" element={<Cheques />} />
-            <Route path="/whatsapp" element={<WhatsappBuzon />} />
-            <Route path="/prorrateo" element={<Prorrateo />} />
-            <Route path="/catalogos" element={<Catalogos />} />
-            <Route path="/plantillas" element={<Plantillas />} />
-            <Route path="/reportes" element={<Reportes />} />
-            <Route path="/autorizaciones" element={<Autorizaciones />} />
-            <Route path="/configuracion" element={<Configuracion />} />
-            <Route path="/mobile/comprador" element={<MobileComprador />} />
-            <Route path="/mobile/director" element={<MobileDirector />} />
-            <Route path="/portal/cliente/:id" element={<PortalCliente />} />
-            <Route path="/portal/proveedor" element={<PortalProveedor />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthGate>
+      <BrowserRouter>
+        <Routes>
+          {/* Rutas públicas — sin autenticación (portales para clientes/proveedores) */}
+          <Route path="/portal/cliente/:id" element={<PortalCliente />} />
+          <Route path="/portal/proveedor" element={<PortalProveedor />} />
+          <Route path="/portal/acceso/:token" element={<PortalAcceso />} />
+
+          {/* Rutas internas — requieren autenticación */}
+          <Route path="*" element={
+            <AuthGate>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/obras" element={<Obras />} />
+                <Route path="/obras/:id/presupuesto" element={<ObraPresupuesto />} />
+                <Route path="/obras/:id/gantt" element={<ObraGantt />} />
+                <Route path="/proveedores" element={<Proveedores />} />
+                <Route path="/clientes" element={<Clientes />} />
+                <Route path="/proveedores/:id" element={<ProveedorCC />} />
+                <Route path="/movimientos" element={<Movimientos />} />
+                <Route path="/cajas" element={<Cajas />} />
+                <Route path="/cajas/conciliacion" element={<Conciliacion />} />
+                <Route path="/cheques" element={<Cheques />} />
+                <Route path="/whatsapp" element={<WhatsappBuzon />} />
+                <Route path="/prorrateo" element={<Prorrateo />} />
+                <Route path="/catalogos" element={<Catalogos />} />
+                <Route path="/plantillas" element={<Plantillas />} />
+                <Route path="/reportes" element={<Reportes />} />
+                <Route path="/autorizaciones" element={<Autorizaciones />} />
+                <Route path="/configuracion" element={<Configuracion />} />
+                <Route path="/mobile/comprador" element={<MobileComprador />} />
+                <Route path="/mobile/director" element={<MobileDirector />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </AuthGate>
+          } />
+        </Routes>
+      </BrowserRouter>
     </UsuariosProvider>
     </AlertasProvider>
     </WhatsappPendingProvider>
