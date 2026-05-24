@@ -25,6 +25,170 @@ const navMes   = (m, d) => { const [y, mo] = m.split('-').map(Number); const nd 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const currMes  = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; };
 
+// ── Fila de traspaso ─────────────────────────────────────────────────────────
+function TraspasoRow({ m, cajas, onRemove }) {
+  const [hover, setHover] = useState(false);
+  const origen  = cajas.find(c => c.id === m.cajaId);
+  const destino = cajas.find(c => c.id === m.cajaDestinoId);
+  const isCross = origen && destino && origen.moneda !== destino.moneda;
+  return (
+    <div
+      style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: `1px solid ${T.faint2}`, fontSize: 12, background: hover ? T.faint : 'transparent', transition: 'background .1s', gap: 8 }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}>
+      <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, width: 32, flexShrink: 0 }}>{fmtFecha(m.fecha)}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.descripcion}</div>
+        <div style={{ fontSize: 10, color: T.ink3, display: 'flex', gap: 6, marginTop: 1, alignItems: 'center' }}>
+          <span style={{ background: T.faint2, borderRadius: 2, padding: '0 4px' }}>{origen?.nombre || '—'}</span>
+          <span>→</span>
+          <span style={{ background: T.faint2, borderRadius: 2, padding: '0 4px' }}>{destino?.nombre || '—'}</span>
+          {isCross && m.tcAplicado && <span style={{ color: T.warn }}>· TC {fmtN(m.tcAplicado)}</span>}
+        </div>
+      </div>
+      <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.ink2, flexShrink: 0 }}>
+        ↔ {origen?.moneda === 'USD' ? 'U$S' : '$'} {fmtN(m.monto)}
+      </span>
+      <span style={{ width: 16, flexShrink: 0 }}>
+        {hover && (
+          <span style={{ color: T.ink3, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+            onClick={() => { if (confirm('¿Eliminar este traspaso?')) onRemove(m.id); }}>×</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+// ── Formulario de traspaso inline ─────────────────────────────────────────────
+function TraspasoForm({ cajas, dolarVenta, onSave, onCancel }) {
+  const cajasActivas = cajas.filter(c => c.activa);
+  const todayVal = new Date().toISOString().split('T')[0];
+  const [origenId,  setOrigenId]  = useState(cajasActivas[0]?.id || '');
+  const [destinoId, setDestinoId] = useState(cajasActivas[1]?.id || '');
+  const [monto,     setMonto]     = useState('');
+  const [fecha,     setFecha]     = useState(todayVal);
+  const [concepto,  setConcepto]  = useState('');
+  const [tc,        setTc]        = useState(String(Math.round(dolarVenta || 1070)));
+
+  const origen  = cajas.find(c => c.id === origenId);
+  const destino = cajas.find(c => c.id === destinoId);
+  const montoNum = Math.round(parseFloat(monto.replace(/[^0-9.]/g, '')) || 0);
+  const isCross  = origen && destino && origen.moneda !== destino.moneda;
+  const tcNum    = parseFloat(tc) || dolarVenta || 1070;
+  const montoDestino = isCross && montoNum
+    ? (origen.moneda === 'ARS' ? montoNum / tcNum : montoNum * tcNum)
+    : null;
+  const saldoPost = origen ? (origen.saldo || 0) - montoNum : 0;
+  const canSave = montoNum > 0 && origenId && destinoId && origenId !== destinoId;
+
+  const save = () => {
+    if (!canSave) return;
+    onSave({
+      cajaOrigenId:  origenId,
+      cajaDestinoId: destinoId,
+      monto:         montoNum,
+      fecha,
+      concepto:      concepto.trim() || `Traspaso: ${origen?.nombre} → ${destino?.nombre}`,
+      tcAplicado:    isCross ? tcNum : null,
+    });
+  };
+
+  return (
+    <div style={{ padding: '12px 14px', background: 'rgba(100,100,200,.05)', borderBottom: `1px solid ${T.faint2}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 160 }}>
+          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Caja origen</span>
+          <select style={{ ...inputSt, cursor: 'pointer' }} value={origenId} onChange={e => setOrigenId(e.target.value)}>
+            {cajasActivas.map(c => <option key={c.id} value={c.id}>{c.nombre} · {c.moneda === 'USD' ? 'U$S' : '$'} {fmtN(c.saldo)}</option>)}
+          </select>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 7, fontSize: 18, color: T.ink3 }}>→</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 160 }}>
+          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Caja destino</span>
+          <select style={{ ...inputSt, cursor: 'pointer' }} value={destinoId} onChange={e => setDestinoId(e.target.value)}>
+            {cajasActivas.filter(c => c.id !== origenId).map(c => <option key={c.id} value={c.id}>{c.nombre} · {c.moneda === 'USD' ? 'U$S' : '$'} {fmtN(c.saldo)}</option>)}
+          </select>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 130 }}>
+          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Monto ({origen?.moneda || '—'})</span>
+          <input style={{ ...inputSt, fontFamily: T.fontMono, fontWeight: 700 }} type="number" min="0" placeholder="0" value={monto} onChange={e => setMonto(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onCancel(); }} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Fecha</span>
+          <input type="date" style={inputSt} value={fecha} onChange={e => setFecha(e.target.value)} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 2, minWidth: 180 }}>
+          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Concepto</span>
+          <input style={inputSt} value={concepto} onChange={e => setConcepto(e.target.value)} placeholder={`Traspaso: ${origen?.nombre || '—'} → ${destino?.nombre || '—'}`} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') onCancel(); }} />
+        </div>
+      </div>
+      {isCross && (
+        <div style={{ background: '#f6efd9', border: `1.5px solid ${T.warn}`, borderRadius: 4, padding: '8px 12px', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.warn }}>Traspaso entre monedas ({origen?.moneda} → {destino?.moneda})</span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: T.ink2 }}>TC aplicado</span>
+            <input style={{ ...inputSt, width: 90, fontFamily: T.fontMono, fontWeight: 700 }} type="number" min="1" value={tc} onChange={e => setTc(e.target.value)} />
+          </div>
+          {montoDestino != null && (
+            <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: T.accent }}>
+              = {destino?.moneda === 'USD' ? 'U$S' : '$'} {fmtN(montoDestino)}
+            </span>
+          )}
+        </div>
+      )}
+      {montoNum > 0 && origen && (
+        <div style={{ fontSize: 11, color: saldoPost < 0 ? T.accent : T.ink3 }}>
+          Saldo post-traspaso en {origen.nombre}: {origen.moneda === 'USD' ? 'U$S' : '$'} {fmtN(saldoPost)}
+          {saldoPost < 0 && <span style={{ marginLeft: 6, fontWeight: 700, color: T.accent }}>⚠ saldo insuficiente</span>}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <Btn sm onClick={onCancel}>Cancelar</Btn>
+        <Btn sm fill onClick={save} style={{ opacity: canSave ? 1 : 0.5 }}>↔ Confirmar traspaso</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Panel de traspasos ────────────────────────────────────────────────────────
+function TraspasoPanel({ traspasos, cajas, dolarVenta, onSave, onRemove, mes }) {
+  const [open, setOpen] = useState(false);
+  const sinCajas = cajas.filter(c => c.activa).length < 2;
+  const total = traspasos.reduce((s, m) => s + m.monto, 0);
+  return (
+    <Box style={{ padding: 0, overflow: 'hidden', marginTop: 12 }}>
+      <div style={{ padding: '9px 14px', background: 'rgba(100,100,200,.07)', borderBottom: `2px solid ${T.ink2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontWeight: 800, color: T.ink, fontSize: 14 }}>↔ Traspasos entre cajas</span>
+          <span style={{ fontSize: 11, color: T.ink3 }}>{traspasos.length} registros</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {traspasos.length > 0 && <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: T.ink2, fontSize: 14 }}>$ {fmtN(total)}</span>}
+          <button
+            onClick={() => !sinCajas && setOpen(o => !o)}
+            title={sinCajas ? 'Necesitás al menos 2 cajas activas para hacer un traspaso' : ''}
+            style={{ padding: '4px 12px', borderRadius: 4, border: `1.5px solid ${sinCajas ? T.faint2 : T.ink2}`, background: open ? T.ink2 : 'transparent', color: open ? '#fff' : (sinCajas ? T.ink3 : T.ink), fontFamily: T.font, fontSize: 11, fontWeight: 700, cursor: sinCajas ? 'not-allowed' : 'pointer', opacity: sinCajas ? 0.5 : 1 }}>
+            {open ? '✕ Cerrar' : '+ Traspaso'}
+          </button>
+        </div>
+      </div>
+      {open && !sinCajas && (
+        <TraspasoForm
+          cajas={cajas}
+          dolarVenta={dolarVenta}
+          onSave={(data) => { onSave(data); setOpen(false); }}
+          onCancel={() => setOpen(false)}
+        />
+      )}
+      {traspasos.length === 0 && !open ? (
+        <div style={{ padding: '24px 20px', textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin traspasos en {mesLabel(mes)}</div>
+      ) : (
+        traspasos.map(m => <TraspasoRow key={m.id} m={m} cajas={cajas} onRemove={onRemove} />)
+      )}
+    </Box>
+  );
+}
+
 // ── Fila de movimiento ────────────────────────────────────────────────────────
 function MovRow({ m, cajas, onRemove }) {
   const [hover, setHover] = useState(false);
@@ -528,7 +692,7 @@ function ComprobantesPanel({ movimientos, mes }) {
 
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Movimientos() {
-  const { movimientos, cajas: allCajas, addMovimiento, removeMovimiento } = useMovimientos();
+  const { movimientos, cajas: allCajas, addMovimiento, removeMovimiento, traspasar } = useMovimientos();
   const { obras }          = useObras();
   const { proveedores }    = useProveedores();
   const { clientes }       = useClientes();
@@ -556,8 +720,9 @@ export default function Movimientos() {
       .sort((a, b) => b.fecha.localeCompare(a.fecha)),
     [movimientos, mes, filtroObra]);
 
-  const ingresos = useMemo(() => filtered.filter(m => m.tipo === 'ingreso'), [filtered]);
-  const gastos   = useMemo(() => filtered.filter(m => m.tipo === 'gasto'),   [filtered]);
+  const ingresos   = useMemo(() => filtered.filter(m => m.tipo === 'ingreso'),  [filtered]);
+  const gastos     = useMemo(() => filtered.filter(m => m.tipo === 'gasto'),    [filtered]);
+  const traspasos  = useMemo(() => filtered.filter(m => m.tipo === 'traspaso'), [filtered]);
 
   const totalIngresos = ingresos.reduce((s, m) => s + m.monto, 0);
   const totalGastos   = gastos.reduce((s, m) => s + m.monto, 0);
@@ -604,7 +769,7 @@ export default function Movimientos() {
           { label: 'Ingresos del mes',  value: `$ ${fmtN(totalIngresos)}`, color: T.ok,   sub: `${ingresos.length} registros` },
           { label: 'Gastos del mes',    value: `$ ${fmtN(totalGastos)}`,   color: T.warn, sub: `${gastos.length} registros` },
           { label: 'Neto',              value: `${neto >= 0 ? '+' : '−'}$ ${fmtN(neto)}`, color: neto >= 0 ? T.ok : T.warn, sub: neto >= 0 ? 'superávit' : 'déficit' },
-          { label: 'Total movimientos', value: String(filtered.length), color: T.ink, sub: `en ${mesLabel(mes)}` },
+          { label: 'Total movimientos', value: String(ingresos.length + gastos.length), color: T.ink, sub: `${traspasos.length} traspasos` },
         ].map(s => (
           <Box key={s.label} style={{ padding: '10px 14px' }}>
             <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
@@ -642,6 +807,15 @@ export default function Movimientos() {
           onRemove={removeMovimiento}
         />
       </div>
+
+      <TraspasoPanel
+        traspasos={traspasos}
+        cajas={cajas}
+        dolarVenta={dolarVenta}
+        onSave={traspasar}
+        onRemove={removeMovimiento}
+        mes={mes}
+      />
 
       <ComprobantesPanel movimientos={filtered} mes={mes} />
 
