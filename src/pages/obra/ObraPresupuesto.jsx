@@ -3102,30 +3102,21 @@ export default function ObraPresupuesto() {
       if (!waPhone.startsWith('549')) {
         waPhone = waPhone.startsWith('54') ? '549' + waPhone.slice(2) : '549' + waPhone;
       }
-      const tokens = (await loadSharedData('portal_tokens')) || {};
-      tokens[token] = { obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires, createdAt: new Date().toISOString() };
-      await saveSharedData('portal_tokens', tokens);
       const baseUrl = window.location.origin;
       const link = `${baseUrl}/portal/acceso/${token}`;
       const text = `Hola! Te compartimos el acceso a tu portal de obra *${obra.nombre}*.\n\nPodés ver el avance, las cuotas y los documentos en este enlace:\n${link}\n\n_Kamak Desarrollos_`;
-      const res = await fetch(`https://graph.facebook.com/v18.0/${import.meta.env.VITE_WA_PHONE_ID}/messages`, {
+      const res = await fetch('/api/whatsapp/send-portal', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${import.meta.env.VITE_WA_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messaging_product: 'whatsapp', to: waPhone, type: 'text', text: { body: text } }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, waPhone, text, obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        const errMsg = data.error?.message || data.error?.error_data?.details || `Error ${res.status}`;
-        setPortalMsg(`❌ No se pudo enviar al +${waPhone}: ${errMsg}`);
+        setPortalMsg(`❌ No se pudo enviar al +${waPhone}: ${data.error}`);
         setPortalSending(false);
         return;
       }
-      const wamid = data.messages?.[0]?.id;
-      if (wamid) {
-        tokens[token].wamid = wamid;
-        await saveSharedData('portal_tokens', tokens);
-        setPortalWamid(wamid);
-      }
+      if (data.wamid) setPortalWamid(data.wamid);
       setPortalMsg(`✓ Enviado a +${waPhone}.\nLink: ${link}`);
     } catch (e) {
       setPortalMsg(`❌ Error de red: ${e.message}`);
