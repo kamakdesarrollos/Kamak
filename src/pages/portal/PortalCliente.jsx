@@ -62,8 +62,9 @@ export default function PortalCliente() {
   const mensajes  = detalle.mensajes  || [];
   const fin       = detalle.financiacion || {};
 
-  const totalCuotas   = cuotas.reduce((s, c) => s + c.monto, 0);
-  const pagadoCuotas  = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + c.monto, 0);
+  const cuotaMonto    = c => (c._usd || obra.moneda !== 'USD') ? c.monto : Math.round(c.monto / (dolarVenta || 1));
+  const totalCuotas   = cuotas.reduce((s, c) => s + cuotaMonto(c), 0);
+  const pagadoCuotas  = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
   const countPagadas  = cuotas.filter(c => c.estado === 'pagado').length;
 
   const ventaBase = calcVentaBase(rubros);
@@ -226,7 +227,7 @@ export default function PortalCliente() {
                   ['Dirección',         obra.direccion || '—'],
                   ['Inicio de obra',    fmtD(obra.fechaInicio)],
                   ['Entrega estimada',  fmtD(obra.fechaFinEstim)],
-                  ['Presupuesto total', toUSD(obra.presupuesto)],
+                  ['Presupuesto total', toUSD(totalCliente || obra.presupuesto)],
                 ].map(([k, v]) => (
                   <div key={k}>
                     <div style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 700, marginBottom: 3 }}>{k}</div>
@@ -321,7 +322,7 @@ export default function PortalCliente() {
                         <div style={{ fontSize: 11, color: T.ink2 }}>{fmtD(c.fecha)}</div>
                       </div>
                       <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14, flexShrink: 0, color: isPagado ? T.ok : T.ink }}>
-                        {`U$S ${fmtN(c.monto)}`}
+                        {`U$S ${fmtN(cuotaMonto(c))}`}
                       </div>
                       <Chip ok={isPagado} accent={isProximo} style={{ fontSize: 10, flexShrink: 0 }}>{etiqueta}</Chip>
                     </div>
