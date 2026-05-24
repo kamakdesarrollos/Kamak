@@ -1750,7 +1750,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
   const [cuotaForm, setCuotaForm] = useState({ descripcion: '', monto: '', fecha: '', n: '' });
   const [editCuotaId, setEditCuotaId] = useState(null);
   const [genAuto, setGenAuto] = useState(false);
-  const [genForm, setGenForm] = useState({ n: '6', primerFecha: '', cada: '1', intervalo: 'meses' });
+  const [genForm, setGenForm] = useState({ n: '6', primerFecha: '', intervalo: '1-meses' });
 
   const { venta: ventaBase } = calcObra(detalle.rubros);
   const adicionalCliente = (detalle.adicionales || [])
@@ -1793,12 +1793,13 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
   const togglePago = (id) => patch(d => ({ ...d, cuotas: d.cuotas.map(c => c.id === id ? { ...c, estado: c.estado === 'pagado' ? 'pendiente' : 'pagado' } : c) }));
   const delCuota = (id) => patch(d => ({ ...d, cuotas: d.cuotas.filter(c => c.id !== id) }));
 
-  const agregarFecha = (base, i, cada, intervalo) => {
+  const agregarFecha = (base, i, intervalo) => {
     const d = new Date(base);
-    const c = parseInt(cada) || 1;
-    if (intervalo === 'dias') d.setDate(d.getDate() + i * c);
-    else if (intervalo === 'semanas') d.setDate(d.getDate() + i * c * 7);
-    else d.setMonth(d.getMonth() + i * c);
+    const [c, unit] = intervalo.split('-');
+    const n = parseInt(c) || 1;
+    if (unit === 'dias') d.setDate(d.getDate() + i * n);
+    else if (unit === 'semanas') d.setDate(d.getDate() + i * n * 7);
+    else d.setMonth(d.getMonth() + i * n);
     return d.toISOString().split('T')[0];
   };
 
@@ -1810,7 +1811,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
       id: newId(), n: i + 1,
       descripcion: `Cuota ${i + 1} de ${num}`,
       monto: i === num - 1 ? totalUSD - montoCuota * (num - 1) : montoCuota,
-      fecha: genForm.primerFecha ? agregarFecha(genForm.primerFecha, i, genForm.cada, genForm.intervalo) : '',
+      fecha: genForm.primerFecha ? agregarFecha(genForm.primerFecha, i, genForm.intervalo) : '',
       estado: 'pendiente',
     }));
     patch(d => ({ ...d, cuotas: [...(d.cuotas || []), ...nuevas] }));
@@ -1906,23 +1907,25 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
         {!locked && genAuto && (
           <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.faint2}`, background: T.faint }}>
             <FormPanel title="Generar cuotas automáticamente" onSave={generarAutomatico} onCancel={() => setGenAuto(false)} saveLabel="Generar">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 <FInput label="Cantidad de cuotas" value={genForm.n} onChange={v => setGenForm(p => ({ ...p, n: v }))} type="number" placeholder="6" />
                 <FInput label="Primera fecha de pago" value={genForm.primerFecha} onChange={v => setGenForm(p => ({ ...p, primerFecha: v }))} type="date" />
-                <FInput label="Cada (número)" value={genForm.cada} onChange={v => setGenForm(p => ({ ...p, cada: v }))} type="number" placeholder="1" />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <label style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6 }}>Intervalo</label>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6 }}>Cada</label>
                   <select value={genForm.intervalo} onChange={e => setGenForm(p => ({ ...p, intervalo: e.target.value }))}
                     style={{ padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper }}>
-                    <option value="meses">Meses</option>
-                    <option value="semanas">Semanas</option>
-                    <option value="dias">Días</option>
+                    <option value="7-dias">7 días</option>
+                    <option value="15-dias">15 días</option>
+                    <option value="1-meses">1 mes</option>
+                    <option value="2-meses">2 meses</option>
+                    <option value="3-meses">3 meses</option>
+                    <option value="6-meses">6 meses</option>
                   </select>
                 </div>
               </div>
               {totalUSD > 0 && genForm.n && (
                 <div style={{ marginTop: 8, fontSize: 11, color: T.ink3 }}>
-                  → {genForm.n} cuotas de aprox. {fmtUSD(Math.round(totalUSD / (parseInt(genForm.n) || 1)))} c/u · Total {fmtUSD(totalUSD)}
+                  → {genForm.n} cuotas de aprox. {fmtUSD(Math.round(totalUSD / (parseInt(genForm.n) || 1)))} c/u, cada {genForm.intervalo.replace('-', ' ')} · Total {fmtUSD(totalUSD)}
                 </div>
               )}
             </FormPanel>
