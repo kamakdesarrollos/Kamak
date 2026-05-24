@@ -1805,7 +1805,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
 
   const generarAutomatico = () => {
     const num = parseInt(genForm.n) || 1;
-    if (!totalUSD || !num) return;
+    if (!num) return;
     const montoCuota = Math.round(totalUSD / num);
     const nuevas = Array.from({ length: num }, (_, i) => ({
       id: newId(), n: i + 1,
