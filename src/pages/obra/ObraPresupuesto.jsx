@@ -3130,7 +3130,12 @@ export default function ObraPresupuesto() {
       const tokens = await loadSharedData('portal_tokens');
       const entry = tokens && Object.values(tokens).find(t => t.wamid === portalWamid);
       if (entry?.waStatus) {
-        const label = { read: '✓✓ Leído por el cliente', delivered: '✓✓ Entregado', sent: '✓ Enviado' }[entry.waStatus] || entry.waStatus;
+        const label = {
+          read: '✓✓ Leído por el cliente',
+          delivered: '✓✓ Entregado',
+          sent: '✓ Enviado',
+          failed: `❌ No entregado: ${entry.waError || 'número no está en WhatsApp'}`,
+        }[entry.waStatus] || entry.waStatus;
         setPortalWaStatus(label);
       }
     });
@@ -3203,7 +3208,7 @@ export default function ObraPresupuesto() {
               </div>
             )}
             {portalMsg.startsWith('✓') && (
-              <div style={{ marginTop: 4, padding: '7px 14px', background: portalWaStatus ? '#d1fae5' : '#f0f9ff', borderRadius: 6, fontSize: 12, color: T.ink2 }}>
+              <div style={{ marginTop: 4, padding: '7px 14px', background: portalWaStatus?.startsWith('❌') ? '#fee2e2' : portalWaStatus ? '#d1fae5' : '#f0f9ff', borderRadius: 6, fontSize: 12, color: T.ink2 }}>
                 Estado de entrega: <b style={{ color: T.ink }}>{portalWaStatus || 'aguardando confirmación…'}</b>
               </div>
             )}

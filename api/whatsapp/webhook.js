@@ -1182,17 +1182,19 @@ export default async function handler(req, res) {
 
     const value   = change.value;
 
-    // Delivery status updates (sent/delivered/read)
+    // Delivery status updates (sent/delivered/read/failed)
     const statusEntry = value?.statuses?.[0];
     if (statusEntry) {
-      const { id: wamid, status } = statusEntry;
-      if (wamid && ['sent', 'delivered', 'read'].includes(status)) {
+      const { id: wamid, status, errors } = statusEntry;
+      console.log(`STATUS wamid=${wamid} status=${status} errors=${JSON.stringify(errors)}`);
+      if (wamid && ['sent', 'delivered', 'read', 'failed'].includes(status)) {
         try {
           const tokens = await loadSharedData('portal_tokens');
           if (tokens) {
             const key = Object.keys(tokens).find(k => tokens[k].wamid === wamid);
             if (key) {
-              tokens[key] = { ...tokens[key], waStatus: status };
+              const errMsg = status === 'failed' ? (errors?.[0]?.message || 'No entregado') : null;
+              tokens[key] = { ...tokens[key], waStatus: status, ...(errMsg ? { waError: errMsg } : {}) };
               await saveSharedData('portal_tokens', tokens);
             }
           }
