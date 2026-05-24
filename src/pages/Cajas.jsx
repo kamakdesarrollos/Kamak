@@ -4,6 +4,7 @@ import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip } from '../components/ui';
 import { T } from '../theme';
 import { useMovimientos } from '../store/MovimientosContext';
+import { useProveedores } from '../store/ProveedoresContext';
 import { useDolar } from '../store/DolarContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useCheques } from '../store/ChequesContext';
@@ -21,6 +22,7 @@ const fmtFechaLarga = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.s
 function CajaMovimientosModal({ caja, onClose }) {
   const { movimientos } = useMovimientos();
   const { cheques } = useCheques();
+  const { proveedores } = useProveedores();
   const navigate = useNavigate();
   const [tab, setTab] = useState('movimientos');
 
@@ -112,7 +114,12 @@ function CajaMovimientosModal({ caja, onClose }) {
                               ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { onClose(); navigate(`/obras/${m.obraId}/presupuesto`); }}>{m.obraNombre}</span>
                               : <span>{m.obraNombre}</span>
                           )}
-                          {m.proveedor && <span>· {m.proveedor}</span>}
+                          {m.proveedor && (() => {
+                            const prov = proveedores.find(p => p.nombre === m.proveedor || p.id === m.proveedorId);
+                            return prov
+                              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={e => { e.stopPropagation(); onClose(); navigate(`/proveedores/${prov.id}`); }}>· {m.proveedor}</span>
+                              : <span>· {m.proveedor}</span>;
+                          })()}
                         </div>
                       </div>
                       <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color, textAlign: 'right' }}>
