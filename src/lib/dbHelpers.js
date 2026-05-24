@@ -79,7 +79,8 @@ export async function saveSharedData(key, value) {
       { key, data: value, updated_at: new Date().toISOString() },
       { onConflict: 'key' }
     );
-    if (error) console.error('[saveSharedData] error:', key, error);
-    else broadcastChange(key);
-  } catch (e) { console.error('[saveSharedData] exception:', key, e); }
+    if (error) { console.error('[saveSharedData] error:', key, error); return false; }
+    broadcastChange(key);
+    return true;
+  } catch (e) { console.error('[saveSharedData] exception:', key, e); return false; }
 }

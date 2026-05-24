@@ -3106,10 +3106,15 @@ export default function ObraPresupuesto() {
       const link = `${baseUrl}/portal/acceso/${token}`;
       const tokens = (await loadSharedData('portal_tokens')) || {};
       tokens[token] = { obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires, createdAt: new Date().toISOString() };
-      await saveSharedData('portal_tokens', tokens);
+      const saved = await saveSharedData('portal_tokens', tokens);
+      if (!saved) {
+        setPortalMsg('❌ No se pudo guardar el acceso en la base de datos. Revisá la conexión e intentá de nuevo.');
+        setPortalSending(false);
+        return;
+      }
       const text = `Hola! Te compartimos el acceso a tu portal de obra *${obra.nombre}*.\n\nPodés ver el avance, las cuotas y los documentos en este enlace:\n${link}\n\n_Kamak Desarrollos_`;
       setPortalManualUrl(`https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`);
-      setPortalMsg(`✓ Link generado para +${waPhone}.`);
+      setPortalMsg(`✓ Link generado.\n${link}`);
     } catch (e) {
       setPortalMsg(`❌ Error: ${e.message}`);
     }
