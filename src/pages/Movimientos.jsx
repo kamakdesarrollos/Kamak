@@ -29,6 +29,7 @@ const currMes  = () => { const n = new Date(); return `${n.getFullYear()}-${Stri
 function MovRow({ m, cajas, onRemove }) {
   const [hover, setHover] = useState(false);
   const navigate = useNavigate();
+  const { proveedores: provsList } = useProveedores();
   const caja = cajas.find(c => c.id === m.cajaId);
   const isIngreso = m.tipo === 'ingreso';
   const cajaIsUSD = caja?.moneda === 'USD';
@@ -54,7 +55,12 @@ function MovRow({ m, cajas, onRemove }) {
             <span style={{ background: '#e8f4f0', color: '#1a9b9c', borderRadius: 2, padding: '0 4px', fontWeight: 600 }}>{m.rubroNombre}</span>
           )}
           {caja && <span>{caja.nombre}</span>}
-          {m.proveedor && <span>· {m.proveedor}</span>}
+          {m.proveedor && (() => {
+            const prov = m.proveedorId ? provsList.find(p => p.id === m.proveedorId) : provsList.find(p => p.nombre === m.proveedor);
+            return prov
+              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={e => { e.stopPropagation(); navigate(`/proveedores/${prov.id}`); }}>· {m.proveedor}</span>
+              : <span>· {m.proveedor}</span>;
+          })()}
           {m.medioPago && m.medioPago !== 'Transferencia' && <span>· {m.medioPago}</span>}
           {m.tipoCambio && m.montoDolar && !cajaIsUSD && (
             <span style={{ fontFamily: T.fontMono, color: T.ok }}>

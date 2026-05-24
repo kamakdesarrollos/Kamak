@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
@@ -190,6 +191,8 @@ function FacturaPendiente({ item, onReview, onReject }) {
 function MovimientoPendiente({ item, onApprove, onReject }) {
   const m = item.movimiento || {};
   const esGasto = m.tipo === 'gasto';
+  const navigate = useNavigate();
+  const { proveedores } = useProveedores();
   return (
     <Box style={{ padding: '12px 16px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
       <div style={{ width: 36, height: 36, borderRadius: 6, background: esGasto ? '#fff0e8' : '#e8f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
@@ -200,7 +203,9 @@ function MovimientoPendiente({ item, onApprove, onReject }) {
           <div>
             <div style={{ fontWeight: 700, fontSize: 13 }}>{m.descripcion || '—'}</div>
             <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
-              {item.creadoPor} · {m.obraNombre || 'General'}
+              {item.creadoPor} · {m.obraId
+                ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/obras/${m.obraId}/presupuesto`)}>{m.obraNombre || 'General'}</span>
+                : (m.obraNombre || 'General')}
             </div>
           </div>
           <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 15, color: esGasto ? T.warn : T.ok, flexShrink: 0 }}>
@@ -213,7 +218,12 @@ function MovimientoPendiente({ item, onApprove, onReject }) {
             {m.tipo}
           </span>
           {m.categoria && <span>{m.categoria}</span>}
-          {m.proveedor && <span>{m.proveedor}</span>}
+          {m.proveedor && (() => {
+            const prov = proveedores.find(p => p.nombre === m.proveedor);
+            return prov
+              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${prov.id}`)}>{m.proveedor}</span>
+              : <span>{m.proveedor}</span>;
+          })()}
           {m.fecha     && <span>{fmtFecha(m.fecha)}</span>}
           <span style={{ padding: '1px 6px', borderRadius: 3, background: m.comprobante === 'blanco' ? '#e8f4f0' : '#f5f0e0', color: m.comprobante === 'blanco' ? T.ok : T.ink3, fontWeight: 600 }}>
             {m.comprobante === 'blanco' ? '✓ Con factura' : 'Sin factura'}

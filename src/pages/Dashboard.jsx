@@ -345,9 +345,12 @@ export default function Dashboard() {
                     const pct = o.presupuesto > 0 ? Math.round((o.gastado / o.presupuesto) * 100) : 0;
                     const color = pct > 100 ? T.accent : pct > 90 ? T.warn : T.ok;
                     return (
-                      <div key={o.id}>
+                      <div key={o.id} style={{ cursor: 'pointer' }}
+                        onClick={() => navigate(`/obras/${o.id}/presupuesto`)}
+                        onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
+                        onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                          <span>{o.nombre}</span>
+                          <span style={{ color: T.accent }}>{o.nombre}</span>
                           <span style={{ color, fontFamily: T.fontMono, fontSize: 11 }}>{pct}%</span>
                         </div>
                         <div style={{ position: 'relative', height: 7, background: T.faint, borderRadius: 2, marginTop: 2 }}>

@@ -4,6 +4,7 @@ import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Bar, Stat, Chip } from '../components/ui';
 import { T } from '../theme';
 import { useObras } from '../store/ObrasContext';
+import { useProveedores } from '../store/ProveedoresContext';
 
 const CY = new Date().getFullYear();
 const fmtM = (n) => {
@@ -28,6 +29,7 @@ const fmtFechaCorta = (iso) => { if (!iso) return '—'; const [, m, d] = iso.sp
 export default function Reportes() {
   const navigate = useNavigate();
   const { obras, detalles } = useObras();
+  const { proveedores } = useProveedores();
   const [rubroObraId, setRubroObraId] = useState('');
 
   // ── KPIs ──
@@ -213,16 +215,21 @@ export default function Reportes() {
           {topProveedores.length === 0 && (
             <div style={{ color: T.ink3, fontSize: 12 }}>Sin movimientos de gasto en {CY}</div>
           )}
-          {topProveedores.map(([prov, monto], i) => (
+          {topProveedores.map(([prov, monto], i) => {
+            const provObj = proveedores.find(p => p.nombre === prov);
+            return (
             <div key={prov} style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 10 }}>
               <span style={{ width: 20, fontFamily: T.fontMono, fontSize: 11, color: T.ink3, flexShrink: 0 }}>#{i+1}</span>
-              <span style={{ flex: 2, fontSize: 12 }}>{prov}</span>
+              {provObj
+                ? <span style={{ flex: 2, fontSize: 12, color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${provObj.id}`)}>{prov}</span>
+                : <span style={{ flex: 2, fontSize: 12 }}>{prov}</span>
+              }
               <div style={{ flex: 2, height: 14, background: T.faint2, borderRadius: 7, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${(monto / (topProveedores[0]?.[1] || 1)) * 100}%`, background: T.accent, borderRadius: 7 }} />
               </div>
               <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink2, width: 70, textAlign: 'right', flexShrink: 0 }}>{fmtM(monto)}</span>
             </div>
-          ))}
+          );})}
         </Box>
 
         {/* Descargables + por tipo */}

@@ -137,11 +137,11 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   const toUSD = (n) => moneda === 'ARS' && dolarVenta ? `U$S ${fmtN(Math.round(n / dolarVenta))}` : fmtM(n, moneda);
 
   // Financiación
-  const fin = detalle.financiacion || {};
+  const finPlan = detalle.financiacion || {};
   const adicionalCliente = (detalle.adicionales || [])
     .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
     .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
-  const interesFin = parseFloat(fin.interes) || 0;
+  const interesFin = parseFloat(finPlan.interes) || 0;
   const totalCliente = Math.round((venta + adicionalCliente) * (1 + interesFin / 100));
   const cuotasPlan = detalle.cuotas || [];
   const cuotasPagadas = cuotasPlan.filter(c => c.estado === 'pagado').reduce((s, c) => s + (c.monto || 0), 0);
@@ -1748,6 +1748,8 @@ const todayStrOp = () => new Date().toISOString().split('T')[0];
 
 function ObraMovRow({ m, cajas, onRemove }) {
   const [hover, setHover] = useState(false);
+  const navigate = useNavigate();
+  const { proveedores: provsList } = useProveedores();
   const caja = cajas.find(c => c.id === m.cajaId);
   const isIngreso = m.tipo === 'ingreso';
   const cajaIsUSD = caja?.moneda === 'USD';
@@ -1763,7 +1765,12 @@ function ObraMovRow({ m, cajas, onRemove }) {
         <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.descripcion}</div>
         <div style={{ fontSize: 10, color: T.ink3, display: 'flex', gap: 5, marginTop: 1 }}>
           {caja && <span>{caja.nombre}</span>}
-          {m.proveedor && <span>· {m.proveedor}</span>}
+          {m.proveedor && (() => {
+            const prov = m.proveedorId ? provsList.find(p => p.id === m.proveedorId) : provsList.find(p => p.nombre === m.proveedor);
+            return prov
+              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={e => { e.stopPropagation(); navigate(`/proveedores/${prov.id}`); }}>· {m.proveedor}</span>
+              : <span>· {m.proveedor}</span>;
+          })()}
           {m.medioPago && m.medioPago !== 'Transferencia' && <span>· {m.medioPago}</span>}
         </div>
       </div>
@@ -2057,9 +2064,10 @@ function TabMovimientos({ obra, moneda }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 4: CUENTA CLIENTE
 // ─────────────────────────────────────────────────────────────────────────────
-function TabCuentaCliente({ detalle, patch, moneda }) {
+function TabCuentaCliente({ detalle, patch, moneda, obra }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ descripcion: '', fecha: '', monto: '' });
+  const navigate = useNavigate();
 
   const total = detalle.cuotas.reduce((s, c) => s + c.monto, 0);
   const cobrado = detalle.cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + c.monto, 0);
@@ -2077,6 +2085,15 @@ function TabCuentaCliente({ detalle, patch, moneda }) {
 
   return (
     <div style={{ maxWidth: 700 }}>
+      {obra?.cliente && (
+        <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+          <span style={{ color: T.ink2 }}>Cliente:</span>
+          <span style={{ color: T.accent, cursor: 'pointer', fontWeight: 700, textDecoration: 'underline' }}
+            onClick={() => navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`)}>
+            {obra.cliente}
+          </span>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 14, padding: '10px 14px', background: '#f6efd9', borderRadius: 4, marginBottom: 14 }}>
         <Stat label="Total contratado" value={fmtM(total, moneda)} />
         <Stat label="Cobrado" value={fmtM(cobrado, moneda)} />
@@ -2130,6 +2147,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   const [formError, setFormError] = useState('');
   const [printContrato, setPrintContrato] = useState(null);
   const { proveedores: proveedoresDyn } = useProveedores();
+  const navigate = useNavigate();
 
   const rubros = detalle.rubros || [];
   const contratos = detalle.contratos || [];
@@ -2313,7 +2331,14 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{c.gremio}</div>
-                <div style={{ fontSize: 12, color: T.ink2 }}>{c.proveedor}{c.cuit ? ` · CUIT ${c.cuit}` : ''}</div>
+                <div style={{ fontSize: 12, color: T.ink2 }}>
+                  {(() => {
+                    const prov = proveedoresDyn.find(p => p.nombre === c.proveedor || (c.cuit && p.cuit && p.cuit.replace(/[-\s]/g,'') === c.cuit.replace(/[-\s]/g,'')));
+                    return prov
+                      ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${prov.id}`)}>{c.proveedor}</span>
+                      : c.proveedor;
+                  })()}{c.cuit ? ` · CUIT ${c.cuit}` : ''}
+                </div>
               </div>
               <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 16 }}>{fmtM(monto, moneda)}</div>
               <Chip ok={c.estado === 'activo'} style={{ fontSize: 10 }}>{c.estado}</Chip>
@@ -2883,7 +2908,7 @@ export default function ObraPresupuesto() {
             {obra.estado && <Chip ok={obra.estado === 'activa'} warn={obra.estado === 'pausada'} style={{ fontSize: 10 }}>{obra.estado}</Chip>}
           </div>
           <div style={{ fontSize: 12, color: T.ink2, marginTop: 2 }}>
-            {obra.cliente && <span>{obra.cliente} · </span>}
+            {obra.cliente && <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`)}>{obra.cliente}</span>}{obra.cliente && <span> · </span>}
             <span>{obra.tipo || 'Obra'} · {moneda}</span>
             {obra.fechaFinEstim && <span> · entrega est. {fmtD(obra.fechaFinEstim)}</span>}
           </div>
@@ -2913,7 +2938,7 @@ export default function ObraPresupuesto() {
       {displayTab === 2 && <TabMateriales detalle={detalle} obra={obra} />}
       {displayTab === 3 && <TabAdicionales detalle={detalle} patch={patch} moneda={moneda} />}
       {displayTab === 5 && <TabMovimientos obra={obra} moneda={moneda} />}
-      {displayTab === 6 && <TabCuentaCliente detalle={detalle} patch={patch} moneda={moneda} />}
+      {displayTab === 6 && <TabCuentaCliente detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 7 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 8 && <TabDocumentos detalle={detalle} patch={patch} obraId={id} />}
       {displayTab === 9 && <TabFotos detalle={detalle} patch={patch} obraId={id} />}

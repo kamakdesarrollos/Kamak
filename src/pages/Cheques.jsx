@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
@@ -124,6 +125,7 @@ function ChequesTable({ cheques, onAccion }) {
 
 function ChequeFila({ cheque: c, onAccion }) {
   const [hover, setHover] = useState(false);
+  const navigate = useNavigate();
   const esTercero = c.tipo === 'tercero' || c.tipo === 'echeq_tercero';
   const sinCaja = !c.cajaId;
   const btnAccion = (label, action, style = {}) => (
@@ -166,7 +168,18 @@ function ChequeFila({ cheque: c, onAccion }) {
         )}
       </td>
       <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.faint2}` }}>
-        <span style={{ fontSize: 11, color: T.ink3 }}>{c.obraNombre || '—'}</span>
+        {c.obraId ? (
+          <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+            onClick={() => navigate(`/obras/${c.obraId}/presupuesto`)}>
+            {c.obraNombre || '—'}
+          </span>
+        ) : <span style={{ fontSize: 11, color: T.ink3 }}>{c.obraNombre || '—'}</span>}
+        {c.movimientoId && (
+          <div style={{ fontSize: 10, color: T.accent, cursor: 'pointer', marginTop: 1 }}
+            onClick={() => navigate(c.obraId ? `/obras/${c.obraId}/presupuesto?tab=5` : '/movimientos')}>
+            Ver movimiento →
+          </div>
+        )}
       </td>
       <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.faint2}`, textAlign: 'right', whiteSpace: 'nowrap' }}>
         <span style={{ fontFamily: T.fontMono, fontWeight: 700 }}>$ {fmtN(c.monto)}</span>

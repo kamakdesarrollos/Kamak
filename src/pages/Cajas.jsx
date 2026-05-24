@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip } from '../components/ui';
 import { T } from '../theme';
@@ -20,6 +21,7 @@ const fmtFechaLarga = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.s
 function CajaMovimientosModal({ caja, onClose }) {
   const { movimientos } = useMovimientos();
   const { cheques } = useCheques();
+  const navigate = useNavigate();
   const [tab, setTab] = useState('movimientos');
 
   const movs = useMemo(() =>
@@ -105,7 +107,11 @@ function CajaMovimientosModal({ caja, onClose }) {
                         <div style={{ fontWeight: 600 }}>{m.descripcion}</div>
                         <div style={{ fontSize: 10, color: T.ink3, marginTop: 1, display: 'flex', gap: 5 }}>
                           <span style={{ background: T.faint2, borderRadius: 2, padding: '0 4px' }}>{m.tipo}</span>
-                          {m.obraNombre && m.obraNombre !== 'General' && <span>{m.obraNombre}</span>}
+                          {m.obraNombre && m.obraNombre !== 'General' && (
+                            m.obraId
+                              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { onClose(); navigate(`/obras/${m.obraId}/presupuesto`); }}>{m.obraNombre}</span>
+                              : <span>{m.obraNombre}</span>
+                          )}
                           {m.proveedor && <span>· {m.proveedor}</span>}
                         </div>
                       </div>
