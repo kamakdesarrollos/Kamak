@@ -1513,12 +1513,69 @@ tr.total td{background:#1f2024;color:#fff;font-weight:900;font-family:'JetBrains
 .ok{background:#d1fae5;color:#065f46}
 .warn{background:#fef3c7;color:#92400e}
 .ftr{margin-top:20px;padding-top:8px;border-top:1px solid #e8e4d8;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace}
-@media screen{body{max-width:794px;margin:0 auto}}`;
+.rsm-pg{width:210mm;min-height:297mm;background:#1f2024;color:#fff;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.rsm-pg-after{page-break-after:always;break-after:page}
+.rsm-pg-before{page-break-before:always;break-before:page}
+.rsm-pg-hdr{height:70px;padding:16px 44px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
+.rsm-teal{height:6px;background:#1a9b9c;position:relative;z-index:1}
+.rsm-dc{position:absolute;left:50%;top:-10px;margin-left:-10px;width:20px;height:20px;background:#1a9b9c;transform:rotate(45deg);box-shadow:0 0 0 3px #1f2024}
+.rsm-hero{flex:1;padding:50px 56px 30px;display:flex;flex-direction:column;align-items:center;position:relative;z-index:1}
+.rsm-eyebrow{font-size:10px;letter-spacing:8px;color:#1a9b9c;font-weight:600}
+.rsm-frame{margin-top:22px;width:82%;position:relative;padding:30px 26px}
+.rsm-frame-lbl{position:absolute;top:-2px;left:50%;transform:translateX(-50%);font-size:9px;color:#1a9b9c;letter-spacing:4px;font-family:'JetBrains Mono',monospace;font-weight:700;background:#1f2024;padding:0 12px;white-space:nowrap;z-index:2}
+.rsm-proj{font-weight:900;letter-spacing:2px;font-size:28px;text-align:center;line-height:1.15;color:#fff;text-shadow:0 2px 12px rgba(26,155,156,.25)}
+.rsm-sub-r{margin-top:22px;width:65%;display:flex;align-items:center;gap:14px}
+.rsm-hl{flex:1;height:1px;background:#3a3a3e}
+.rsm-sub-lbl{font-weight:700;font-size:11px;letter-spacing:5px;color:#9a9892;white-space:nowrap}
+.rsm-bot{background:#171818;padding:18px 44px 20px;display:grid;grid-template-columns:1fr 1fr;gap:18px 28px;position:relative;z-index:1}
+.rsm-cl{font-size:10px;color:#1a9b9c;letter-spacing:2px;font-family:'JetBrains Mono',monospace}
+.rsm-cv{font-size:15px;font-weight:700;margin-top:5px;color:#fff;line-height:1.2}
+.rsm-cv-lg{font-size:22px;font-weight:800;margin-top:3px;color:#fff;line-height:1.1}
+.rsm-cv-sub{font-size:11px;color:#9a9892;margin-top:3px}
+.rsm-body{background:#fff}
+@media screen{html{background:#555}body{padding:16px 0;margin:0 auto}.rsm-pg,.rsm-body{width:794px;margin:0 auto 16px;box-shadow:0 4px 24px rgba(0,0,0,.4)}}`;
+
+  const CORNERS = `
+    <div style="position:absolute;top:0;left:0;width:28px;height:28px;border-top:2px solid #1a9b9c;border-left:2px solid #1a9b9c;"></div>
+    <div style="position:absolute;top:0;right:0;width:28px;height:28px;border-top:2px solid #1a9b9c;border-right:2px solid #1a9b9c;"></div>
+    <div style="position:absolute;bottom:0;left:0;width:28px;height:28px;border-bottom:2px solid #1a9b9c;border-left:2px solid #1a9b9c;"></div>
+    <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:2px solid #1a9b9c;border-right:2px solid #1a9b9c;"></div>`;
 
   return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Resumen — ${obra?.nombre || ''}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>${CSS}</style></head><body>
+
+<div class="rsm-pg rsm-pg-after">
+  <div class="kmk-wm">${STRIPES}</div>
+  <div class="rsm-pg-hdr">
+    ${logoHtml}
+    <div style="font-size:8.5px;color:#aaa;text-align:right;font-family:'JetBrains Mono',monospace;line-height:1.6">7630 NECOCHEA<br>BUENOS AIRES · ARGENTINA<br>KAMAKDESARROLLOS@GMAIL.COM</div>
+  </div>
+  <div class="rsm-teal"><div class="rsm-dc"></div></div>
+  <div class="rsm-hero">
+    <div class="rsm-eyebrow">RESUMEN TOTAL DE OBRA</div>
+    <div class="rsm-frame">
+      <div class="rsm-frame-lbl">◆ NOMBRE DE LA OBRA ◆</div>
+      ${CORNERS}
+      <div class="rsm-proj">${(obra?.nombre || 'OBRA').toUpperCase()}</div>
+    </div>
+    <div class="rsm-sub-r">
+      <div class="rsm-hl"></div>
+      <div class="rsm-sub-lbl">RESUMEN TOTAL</div>
+      <div class="rsm-hl"></div>
+    </div>
+    <div style="margin-top:8px;font-size:9.5px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:2px">RES-${new Date().getFullYear()} &nbsp;·&nbsp; ${fechaE()}</div>
+  </div>
+  <div class="rsm-bot">
+    <div><div class="rsm-cl">CLIENTE</div><div class="rsm-cv">${obra?.cliente || '—'}</div></div>
+    <div><div class="rsm-cl">TIPO DE OBRA</div><div class="rsm-cv">${obra?.tipo || '—'}</div></div>
+    <div><div class="rsm-cl">FECHA DE EMISIÓN</div><div class="rsm-cv">${fechaE()}</div></div>
+    <div><div class="rsm-cl">TOTAL (U$S + IVA)</div><div class="rsm-cv-lg">${toUSD(totalCliente)}</div><div class="rsm-cv-sub">TC BNA $${fmtNE(tc)}</div></div>
+  </div>
+</div>
+
+<div class="rsm-body">
 <div class="kmk-hdr">
   <div class="kmk-wm">${STRIPES}</div>
   <div class="kmk-hdr-left">
@@ -1562,6 +1619,47 @@ ${incluirPagos && cuotas.length > 0 ? `
 ${fin.notaPortal ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f7f2;border-left:3px solid #1a9b9c;font-size:10px;color:#5a5a58">📋 ${fin.notaPortal}</div>` : ''}
 <div class="ftr"><span>KAMAK DESARROLLOS</span><span>NO INCLUYE IVA</span><span>${fechaE()}</span></div>
 </div>
+</div>
+
+<div class="rsm-pg rsm-pg-before">
+  <div class="kmk-wm">${STRIPES}</div>
+  <div class="rsm-pg-hdr">
+    ${logoHtml}
+    <div style="font-size:7.5px;color:#9a9892;text-align:right;font-family:'JetBrains Mono',monospace;line-height:1.7">${(obra?.nombre || '').toUpperCase()}<br>${obra?.cliente || ''}<br>${fechaE()}</div>
+  </div>
+  <div class="rsm-teal"><div class="rsm-dc"></div></div>
+  <div style="flex:1;padding:40px 56px;display:flex;flex-direction:column;position:relative;z-index:1">
+    <div style="font-weight:900;font-size:20px;letter-spacing:5px;color:#fff;margin-bottom:8px">CONFORMIDAD</div>
+    <div style="height:1px;background:#1a9b9c;margin-bottom:20px"></div>
+    <div style="font-size:11px;color:#9a9892;line-height:1.9;max-width:430px">
+      El presente resumen es emitido por <b style="color:#fff">Kamak Desarrollos</b> con carácter informativo.<br>
+      Los valores en U$S están calculados al TC BNA $${fmtNE(tc)} vigente a la fecha de emisión.<br>
+      No incluye IVA. Los montos pueden variar según adicionales o ajustes aprobados.
+    </div>
+    <div style="margin-top:auto;display:grid;grid-template-columns:1fr 1fr;gap:44px;padding-top:60px">
+      <div>
+        <div style="height:80px"></div>
+        <div style="height:1px;background:#1a9b9c;margin-bottom:8px"></div>
+        <div style="font-size:8.5px;color:#9a9892;letter-spacing:2px;font-family:'JetBrains Mono',monospace">FIRMA Y SELLO · EMPRESA</div>
+        <div style="font-size:13px;font-weight:700;margin-top:5px;color:#fff">KAMAK DESARROLLOS</div>
+        <div style="font-size:9px;color:#9a9892;margin-top:2px">NECOCHEA, BUENOS AIRES</div>
+      </div>
+      <div>
+        <div style="height:80px"></div>
+        <div style="height:1px;background:#1a9b9c;margin-bottom:8px"></div>
+        <div style="font-size:8.5px;color:#9a9892;letter-spacing:2px;font-family:'JetBrains Mono',monospace">CONFORMIDAD DEL CLIENTE</div>
+        <div style="font-size:13px;font-weight:700;margin-top:5px;color:#fff">${obra?.cliente || '___________________________'}</div>
+        <div style="font-size:9px;color:#9a9892;margin-top:2px">FECHA: ___________________</div>
+      </div>
+    </div>
+  </div>
+  <div style="padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1">
+    <span>7630 NECOCHEA · BUENOS AIRES · ARGENTINA</span>
+    <span>KAMAKDESARROLLOS@GMAIL.COM</span>
+    <span>${fechaE()}</span>
+  </div>
+</div>
+
 </body></html>`;
 }
 
