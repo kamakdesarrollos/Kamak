@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
@@ -27,6 +28,7 @@ const currMes  = () => { const n = new Date(); return `${n.getFullYear()}-${Stri
 // ── Fila de movimiento ────────────────────────────────────────────────────────
 function MovRow({ m, cajas, onRemove }) {
   const [hover, setHover] = useState(false);
+  const navigate = useNavigate();
   const caja = cajas.find(c => c.id === m.cajaId);
   const isIngreso = m.tipo === 'ingreso';
   const cajaIsUSD = caja?.moneda === 'USD';
@@ -42,7 +44,11 @@ function MovRow({ m, cajas, onRemove }) {
         <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.descripcion}</div>
         <div style={{ fontSize: 10, color: T.ink3, display: 'flex', gap: 5, marginTop: 1, flexWrap: 'wrap' }}>
           {m.obraNombre && m.obraNombre !== 'General' && (
-            <span style={{ background: T.faint2, borderRadius: 2, padding: '0 4px' }}>{m.obraNombre}</span>
+            <span
+              style={{ background: T.faint2, borderRadius: 2, padding: '0 4px', cursor: m.obraId ? 'pointer' : 'default', color: m.obraId ? T.accent : undefined }}
+              onClick={e => { if (m.obraId) { e.stopPropagation(); navigate(`/obras/${m.obraId}/presupuesto`); } }}>
+              {m.obraNombre}
+            </span>
           )}
           {m.rubroNombre && (
             <span style={{ background: '#e8f4f0', color: '#1a9b9c', borderRadius: 2, padding: '0 4px', fontWeight: 600 }}>{m.rubroNombre}</span>

@@ -136,7 +136,13 @@ export default function ProveedorCC() {
                       Debe {`$ ${fmtN(debe)}`} · Haber {`$ ${fmtN(haber)}`}
                     </div>
                   )}
-                  <div style={{ fontSize: 10, color: T.ink3, marginTop: 1 }}>{entries.length} movimiento{entries.length !== 1 ? 's' : ''}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
+                    <div style={{ fontSize: 10, color: T.ink3 }}>{entries.length} movimiento{entries.length !== 1 ? 's' : ''}</div>
+                    <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                      onClick={e => { e.stopPropagation(); navigate(`/obras/${o.id}/presupuesto`); }}>
+                      Ver obra →
+                    </span>
+                  </div>
                 </Box>
               );
             })}

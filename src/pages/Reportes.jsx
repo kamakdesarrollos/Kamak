@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Bar, Stat, Chip } from '../components/ui';
 import { T } from '../theme';
@@ -22,7 +23,10 @@ function exportJSON(data, filename) {
   a.click();
 }
 
+const fmtFechaCorta = (iso) => { if (!iso) return '—'; const [, m, d] = iso.split('-'); return `${d}/${m}`; };
+
 export default function Reportes() {
+  const navigate = useNavigate();
   const { obras, detalles } = useObras();
   const [rubroObraId, setRubroObraId] = useState('');
 
@@ -69,6 +73,43 @@ export default function Reportes() {
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6);
   }, [allMovsYTD]);
+
+  // ── Financiación cross-obra ──
+  const adicionalesAprobados = useMemo(() => {
+    const all = [];
+    obras.forEach(o => {
+      (detalles[o.id]?.adicionales || [])
+        .filter(a => a.estado === 'aprobado')
+        .forEach(a => all.push({ ...a, obraNombre: o.nombre, obraId: o.id }));
+    });
+    return all.sort((a, b) =>
+      (b.valorVentaTotal || b.costoTotal || b.monto || 0) - (a.valorVentaTotal || a.costoTotal || a.monto || 0)
+    );
+  }, [obras, detalles]);
+
+  const totalAdicionalesCliente = adicionalesAprobados
+    .filter(a => a.aplicaACliente !== false)
+    .reduce((s, a) => s + (a.valorVentaTotal || a.costoTotal || a.monto || 0), 0);
+
+  const cuotasProximas = useMemo(() => {
+    const hoy = new Date().toISOString().split('T')[0];
+    const limite = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const all = [];
+    obras.forEach(o => {
+      (detalles[o.id]?.cuotas || [])
+        .filter(c => c.estado !== 'pagado' && c.fecha >= hoy && c.fecha <= limite)
+        .forEach(c => all.push({ ...c, obraNombre: o.nombre, obraId: o.id }));
+    });
+    return all.sort((a, b) => a.fecha.localeCompare(b.fecha));
+  }, [obras, detalles]);
+
+  const cuotasTotalesMonto = useMemo(() =>
+    obras.reduce((s, o) => s + (detalles[o.id]?.cuotas || []).reduce((ss, c) => ss + (c.monto || 0), 0), 0),
+    [obras, detalles]);
+
+  const cuotasCobradas = useMemo(() =>
+    obras.reduce((s, o) => s + (detalles[o.id]?.cuotas || []).filter(c => c.estado === 'pagado').reduce((ss, c) => ss + (c.monto || 0), 0), 0),
+    [obras, detalles]);
 
   // ── Resumen por tipo de obra ──
   const tiposMap = useMemo(() => {
@@ -234,6 +275,76 @@ export default function Reportes() {
             ))}
           </div>
         </Box>
+      </div>
+
+      {/* Financiación cross-obra */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
+
+        {/* Adicionales aprobados */}
+        <Box style={{ padding: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Adicionales aprobados</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.ok }}>
+              {adicionalesAprobados.length} · {fmtM(totalAdicionalesCliente)}
+            </div>
+          </div>
+          {adicionalesAprobados.length === 0 ? (
+            <div style={{ color: T.ink3, fontSize: 12 }}>Sin adicionales aprobados</div>
+          ) : adicionalesAprobados.slice(0, 8).map(a => (
+            <div key={a.id}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer' }}
+              onClick={() => navigate(`/obras/${a.obraId}/presupuesto?tab=3`)}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.descripcion}</div>
+                <div style={{ fontSize: 10, color: T.ink3 }}>{a.obraNombre}</div>
+              </div>
+              <span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 800, color: T.ok, flexShrink: 0 }}>
+                {fmtM(a.valorVentaTotal || a.costoTotal || a.monto || 0)}
+              </span>
+            </div>
+          ))}
+          {adicionalesAprobados.length > 8 && (
+            <div style={{ fontSize: 10, color: T.ink3, marginTop: 6, textAlign: 'right' }}>
+              +{adicionalesAprobados.length - 8} más
+            </div>
+          )}
+        </Box>
+
+        {/* Cuotas próximas */}
+        <Box style={{ padding: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>Cuotas (60 días)</div>
+              <div style={{ fontSize: 11, color: T.ink2 }}>
+                Cobrado: {fmtM(cuotasCobradas)} · Total plan: {fmtM(cuotasTotalesMonto)}
+              </div>
+            </div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: cuotasProximas.length > 0 ? T.warn : T.ok }}>
+              {cuotasProximas.length} pendientes
+            </div>
+          </div>
+          {cuotasProximas.length === 0 ? (
+            <div style={{ color: T.ink3, fontSize: 12 }}>Sin cuotas en los próximos 60 días</div>
+          ) : cuotasProximas.map(c => (
+            <div key={c.id}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer' }}
+              onClick={() => navigate(`/obras/${c.obraId}/presupuesto?tab=10`)}>
+              <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, width: 36, flexShrink: 0 }}>
+                {fmtFechaCorta(c.fecha)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {c.descripcion || `Cuota ${c.numero || ''}`}
+                </div>
+                <div style={{ fontSize: 10, color: T.ink3 }}>{c.obraNombre}</div>
+              </div>
+              <span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 800, color: T.warn, flexShrink: 0 }}>
+                {fmtM(c.monto || 0)}
+              </span>
+            </div>
+          ))}
+        </Box>
+
       </div>
     </PageLayout>
   );

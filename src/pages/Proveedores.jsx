@@ -142,7 +142,7 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Proveedores() {
   const navigate = useNavigate();
-  const { proveedores, addProveedor, updateProveedor, removeProveedor, getSaldo } = useProveedores();
+  const { proveedores, addProveedor, updateProveedor, removeProveedor, getSaldo, getObrasProveedor } = useProveedores();
   const [pagoProvId, setPagoProvId] = useState(null);
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editProv, setEditProv] = useState(null);
@@ -233,12 +233,13 @@ export default function Proveedores() {
       {/* ─── Vista lista ────────────────────────────────────────────────────── */}
       {view === 'lista' && filtered.length > 0 && (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.1fr 1fr 1.3fr 0.8fr 1fr 1fr 1fr', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             <span>Proveedor</span>
             <span>Especialidad</span>
             <span style={{ fontFamily: T.fontMono }}>CUIT</span>
             <span>Contacto</span>
             <span>Calif.</span>
+            <span style={{ textAlign: 'center' }}>Obras</span>
             <span style={{ textAlign: 'right' }}>Saldo CC</span>
             <span style={{ textAlign: 'center' }}>Condición</span>
             <span>Acciones</span>
@@ -247,9 +248,10 @@ export default function Proveedores() {
             const saldo = getSaldo(p.id);
             const cat   = getCat(p);
             const phone = (p.telefono || '').replace(/\s/g, '').replace('+', '');
+            const obrasCount = getObrasProveedor(p.id).length;
             return (
               <div key={p.id}
-                style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.1fr 1fr 1.3fr 0.8fr 1fr 1fr 1fr', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
+                style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
                 onMouseEnter={e => e.currentTarget.style.background = T.faint}
                 onMouseLeave={e => e.currentTarget.style.background = ''}
                 onClick={() => navigate(`/proveedores/${p.id}`)}>
@@ -283,6 +285,16 @@ export default function Proveedores() {
                 </span>
                 {/* Calificación */}
                 <span><StarRating value={p.calificacion || 0} size={12} /></span>
+                {/* Obras */}
+                <span style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                  {obrasCount > 0 ? (
+                    <span
+                      style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.accent, cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}
+                      onClick={() => navigate(`/proveedores/${p.id}`)}>
+                      {obrasCount}
+                    </span>
+                  ) : <span style={{ color: T.ink3, fontFamily: T.fontMono }}>0</span>}
+                </span>
                 {/* Saldo */}
                 <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.warn : T.ok }}>
                   {saldo > 0 ? `$ ${fmtN(saldo)}` : '—'}
