@@ -262,9 +262,15 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
 
         {/* Selector proveedor / cliente */}
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1.4, gap: 2 }}>
-          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            {isGasto ? 'Proveedor' : 'Cliente'}
-          </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              {isGasto ? 'Proveedor' : 'Cliente'}
+            </span>
+            {isGasto && contraparteId && (
+              <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={() => navigate(`/proveedores/${contraparteId}`)}>Ver CC →</span>
+            )}
+          </div>
           <select style={{ ...inputSt, cursor: 'pointer', width: '100%' }}
             value={contraparteId} onChange={e => setContraparteId(e.target.value)}>
             <option value="">{isGasto ? '— Sin proveedor' : '— Sin cliente'}</option>

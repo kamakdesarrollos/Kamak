@@ -338,6 +338,8 @@ function buildVisibleTareas(tareas, collapsedSections) {
 // ─────────────────────────────────────────────────────────────────────────────
 function TabPresupuesto({ obra, detalle, patch, moneda }) {
   const { currentUser } = useUsuarios();
+  const navigate = useNavigate();
+  const { proveedores: provListPresu } = useProveedores();
   const verCostos   = currentUser?.permisos?.verCostos   ?? true;
   const verMargenes = currentUser?.permisos?.verMargenes ?? true;
   const puedeEditar = currentUser?.permisos?.editarPresu ?? true;
@@ -667,7 +669,12 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
                 <div className="k-h" style={{ fontSize: 16 }}>{rubro.nombre}</div>
                 <Chip style={{ fontSize: 10 }}>mat {rubro.margenMat}%</Chip>
                 <Chip style={{ fontSize: 10 }}>Sub {rubro.margenMO}%</Chip>
-                {rubro.proveedor && <Chip style={{ fontSize: 10 }}>{rubro.proveedor}</Chip>}
+                {rubro.proveedor && (() => {
+                  const prov = provListPresu.find(p => p.nombre === rubro.proveedor);
+                  return prov
+                    ? <Chip style={{ fontSize: 10, cursor: 'pointer', color: T.accent, borderColor: T.accent }} onClick={e => { e.stopPropagation(); navigate(`/proveedores/${prov.id}`); }}>{rubro.proveedor} ↗</Chip>
+                    : <Chip style={{ fontSize: 10 }}>{rubro.proveedor}</Chip>;
+                })()}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 14, fontFamily: T.fontMono, fontSize: 11 }}>
                   {verCostos   && <span>costo <b>{fmtM(rubro.costo, moneda)}</b></span>}
                   <span>venta <b>{fmtM(rubro.venta, moneda)}</b></span>
@@ -1790,6 +1797,7 @@ function ObraMovRow({ m, cajas, onRemove }) {
 function ObraQuickAddForm({ tipo, cajas, proveedores, clientes, dolarVenta, obraId, obraNombre, obraMoneda, onSave, onCancel }) {
   const isGasto = tipo === 'gasto';
   const color = isGasto ? T.warn : T.ok;
+  const navigate = useNavigate();
 
   const [desc,          setDesc]          = useState('');
   const [monto,         setMonto]         = useState('');
@@ -1893,7 +1901,13 @@ function ObraQuickAddForm({ tipo, cajas, proveedores, clientes, dolarVenta, obra
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1.4, gap: 2 }}>
-          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{isGasto ? 'Proveedor' : 'Cliente'}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{isGasto ? 'Proveedor' : 'Cliente'}</span>
+            {isGasto && contraparteId && (
+              <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={() => navigate(`/proveedores/${contraparteId}`)}>Ver CC →</span>
+            )}
+          </div>
           <select style={{ ...inputStMov, cursor: 'pointer', width: '100%' }}
             value={contraparteId} onChange={e => setContraparteId(e.target.value)}>
             <option value="">{isGasto ? '— Sin proveedor' : '— Sin cliente'}</option>

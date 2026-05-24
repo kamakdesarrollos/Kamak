@@ -7,6 +7,7 @@ import { useMovimientos } from '../store/MovimientosContext';
 import { useObras } from '../store/ObrasContext';
 import { useDolar } from '../store/DolarContext';
 import { useAlertas } from '../store/AlertasContext';
+import { useProveedores } from '../store/ProveedoresContext';
 
 const fmtN = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
 const currMes = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; };
@@ -37,6 +38,7 @@ export default function Dashboard() {
   const { dolarVenta }         = useDolar();
   const navigate               = useNavigate();
   const { alertas: alertasWA, noLeidas, marcarLeida, marcarTodasLeidas } = useAlertas();
+  const { proveedores }        = useProveedores();
 
   const [editMode,       setEditMode]       = useState(false);
   const [enabledWidgets, setEnabledWidgets] = useState(loadWidgets);
@@ -394,13 +396,18 @@ export default function Dashboard() {
             <div style={{ marginTop: 10, fontSize: 12, color: T.ink3 }}>Sin gastos con proveedor registrados este mes</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 8, fontSize: 12 }}>
-              {topProvs.map(([nombre, monto], i) => (
+              {topProvs.map(([nombre, monto], i) => {
+                const provObj = proveedores.find(p => p.nombre === nombre);
+                return (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</span>
+                  {provObj
+                    ? <span style={{ width: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${provObj.id}`)}>{nombre}</span>
+                    : <span style={{ width: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</span>
+                  }
                   <div style={{ flex: 1 }}><Bar pct={Math.round((monto / maxProvMonto) * 100)} h={5} /></div>
                   <span style={{ width: 100, textAlign: 'right', fontFamily: `'JetBrains Mono', monospace`, fontSize: 11 }}>$ {fmtN(monto)}</span>
                 </div>
-              ))}
+              );})}
             </div>
           )}
         </Box>
