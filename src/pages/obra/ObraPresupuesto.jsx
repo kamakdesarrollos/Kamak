@@ -818,10 +818,10 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                           <span style={{ color: T.ink3, cursor: 'grab', userSelect: 'none', fontSize: 10 }}>⋮⋮</span>
                           {tarea.nombre}
                         </div>
-                        <InlineNum field="cantidad" value={tarea.cantidad} flex={0.8} />
+                        {InlineNum({ field: 'cantidad', value: tarea.cantidad, flex: 0.8 })}
                         <div className="k-cell" style={{ flex: 0.6 }}>{tarea.unidad}</div>
-                        <InlineNum field="costoMat" value={tarea.costoMat} flex={1} fmt={v => `$ ${fmtN(v)}`} color="#c0392b" />
-                        <InlineNum field="costoSub" value={tarea.costoSub || 0} flex={1} fmt={v => `$ ${fmtN(v)}`} color="#c0392b" />
+                        {InlineNum({ field: 'costoMat', value: tarea.costoMat, flex: 1, fmt: v => `$ ${fmtN(v)}`, color: '#c0392b' })}
+                        {InlineNum({ field: 'costoSub', value: tarea.costoSub || 0, flex: 1, fmt: v => `$ ${fmtN(v)}`, color: '#c0392b' })}
 
                         {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#c0392b' }}>{`$ ${fmtN(costoUnit)}`}</div>}
                         {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#c0392b' }}>{`$ ${fmtN(costoTotalRow)}`}</div>}
