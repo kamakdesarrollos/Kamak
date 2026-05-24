@@ -9,6 +9,8 @@ import { ProveedoresProvider } from './store/ProveedoresContext';
 import { ClientesProvider } from './store/ClientesContext';
 import { MovimientosProvider } from './store/MovimientosContext';
 import { ChequesProvider } from './store/ChequesContext';
+import { WhatsappPendingProvider } from './store/WhatsappPendingContext';
+import { AlertasProvider } from './store/AlertasContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
 import { AppLoadingProvider, useAppLoading } from './store/AppLoadingContext';
@@ -33,6 +35,8 @@ import Reportes from './pages/Reportes';
 import Autorizaciones from './pages/Autorizaciones';
 import Configuracion from './pages/Configuracion';
 import Cheques from './pages/Cheques';
+import WhatsappBuzon from './pages/WhatsappBuzon';
+import WhatsappVerificationBanner from './components/WhatsappVerificationBanner';
 import MobileComprador from './pages/mobile/MobileComprador';
 import MobileDirector from './pages/mobile/MobileDirector';
 import PortalCliente from './pages/portal/PortalCliente';
@@ -118,6 +122,7 @@ function AuthGate({ children }) {
   return (
     <>
       {children}
+      <WhatsappVerificationBanner />
       {secondsLeft !== null && (
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1a1a1e', color: '#fff', padding: '12px 20px', borderRadius: 8, boxShadow: '0 6px 28px rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', gap: 14, fontSize: 13, border: '1.5px solid #d97706', whiteSpace: 'nowrap' }}>
           <span style={{ color: '#d97706', fontSize: 16 }}>⚠</span>
@@ -143,6 +148,8 @@ export default function App() {
     <ClientesProvider>
     <MovimientosProvider>
     <ChequesProvider>
+    <WhatsappPendingProvider>
+    <AlertasProvider>
     <UsuariosProvider>
       <AuthGate>
         <BrowserRouter>
@@ -158,6 +165,7 @@ export default function App() {
             <Route path="/cajas" element={<Cajas />} />
             <Route path="/cajas/conciliacion" element={<Conciliacion />} />
             <Route path="/cheques" element={<Cheques />} />
+            <Route path="/whatsapp" element={<WhatsappBuzon />} />
             <Route path="/prorrateo" element={<Prorrateo />} />
             <Route path="/catalogos" element={<Catalogos />} />
             <Route path="/plantillas" element={<Plantillas />} />
@@ -173,6 +181,8 @@ export default function App() {
         </BrowserRouter>
       </AuthGate>
     </UsuariosProvider>
+    </AlertasProvider>
+    </WhatsappPendingProvider>
     </ChequesProvider>
     </MovimientosProvider>
     </ClientesProvider>

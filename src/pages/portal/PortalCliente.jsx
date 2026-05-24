@@ -227,18 +227,20 @@ export default function PortalCliente() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
                 {fotos.map((f) => (
-                  <div key={f.id} style={{ background: T.faint, borderRadius: 8, overflow: 'hidden', border: `1.5px solid ${T.faint2}`, cursor: 'pointer', transition: 'box-shadow 0.15s' }}>
-                    <div style={{ background: T.faint2, aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42, color: T.ink3 }}>
-                      🏗
+                  <a key={f.id} href={f.url || undefined} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: T.faint, borderRadius: 8, overflow: 'hidden', border: `1.5px solid ${T.faint2}`, cursor: 'pointer', transition: 'box-shadow 0.15s', display: 'block' }}>
+                    <div style={{ background: T.faint2, aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42, color: T.ink3, overflow: 'hidden' }}>
+                      {f.url ? (
+                        <img src={f.url} alt={f.label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      ) : '🏗'}
                     </div>
                     <div style={{ padding: '10px 12px' }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{f.label}</div>
                       <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>
-                        <span style={{ background: T.faint2, padding: '1px 6px', borderRadius: 3, marginRight: 6 }}>{f.rubro}</span>
+                        {f.rubro && <span style={{ background: T.faint2, padding: '1px 6px', borderRadius: 3, marginRight: 6 }}>{f.rubro}</span>}
                         {fmtD(f.fecha)}
                       </div>
                     </div>
-                  </div>
+                  </a>
                 ))}
               </div>
             )}

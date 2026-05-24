@@ -5,6 +5,7 @@ import { T } from '../theme';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useObras } from '../store/ObrasContext';
 import { useDolar } from '../store/DolarContext';
+import { useAlertas } from '../store/AlertasContext';
 
 const fmtN = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
 const currMes = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; };
@@ -29,6 +30,7 @@ export default function Dashboard() {
   const { movimientos, cajas } = useMovimientos();
   const { obras }              = useObras();
   const { dolarVenta }         = useDolar();
+  const { alertas: alertasWA, noLeidas, marcarLeida, marcarTodasLeidas } = useAlertas();
 
   const [editMode,       setEditMode]       = useState(false);
   const [enabledWidgets, setEnabledWidgets] = useState(loadWidgets);
@@ -194,15 +196,41 @@ export default function Dashboard() {
 
           {on('alertas') && (
             <Box style={{ padding: 13 }}>
-              <Label>Alertas {alertas.length > 0 ? `(${alertas.length})` : ''}</Label>
-              {alertas.length === 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Label style={{ marginBottom: 0 }}>
+                  Alertas {(alertas.length + alertasWA.filter(a => !a.leida).length) > 0
+                    ? `(${alertas.length + alertasWA.filter(a => !a.leida).length})`
+                    : ''}
+                </Label>
+                {alertasWA.some(a => !a.leida) && (
+                  <span style={{ fontSize: 10, color: T.ink3, cursor: 'pointer', textDecoration: 'underline' }} onClick={marcarTodasLeidas}>
+                    Marcar todas leídas
+                  </span>
+                )}
+              </div>
+
+              {alertas.length === 0 && alertasWA.filter(a => !a.leida).length === 0 ? (
                 <div style={{ marginTop: 10, fontSize: 12, color: T.ok }}>✓ Todo en orden</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 6, fontSize: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
+                  {/* Alertas computadas (cajas, presupuesto) */}
                   {alertas.map((a, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 6 }}>
+                    <div key={`c-${i}`} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
                       <Chip accent={a.tipo === 'accent'} warn={a.tipo === 'warn'}>{a.tipo === 'accent' ? '🚨' : '⚠'}</Chip>
-                      <div>{a.texto}</div>
+                      <div style={{ flex: 1 }}>{a.texto}</div>
+                    </div>
+                  ))}
+                  {/* Alertas desde WhatsApp (no leídas) */}
+                  {alertasWA.filter(a => !a.leida).map(a => (
+                    <div key={a.id} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', background: T.faint, borderRadius: 4, padding: '5px 7px' }}>
+                      <Chip accent>{a.tipo === 'exceso' ? '📊' : '⚠'}</Chip>
+                      <div style={{ flex: 1 }}>
+                        <div>{a.texto}</div>
+                        <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>
+                          {a.obra} · {a.creadoPor} · {a.fecha ? new Date(a.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 10, color: T.ink3, cursor: 'pointer', flexShrink: 0, textDecoration: 'underline' }} onClick={() => marcarLeida(a.id)}>✓</span>
                     </div>
                   ))}
                 </div>

@@ -15,6 +15,7 @@ import { PROVEEDORES } from '../../data/proveedores';
 import { useGastosFijos } from '../../store/GastosFijosContext';
 import { useCatalog, calcTarea } from '../../store/CatalogContext';
 import { useUsuarios } from '../../store/UsuariosContext';
+import { supabase } from '../../lib/supabase';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -91,14 +92,14 @@ function FSelect({ label, value, onChange, options }) {
 }
 
 // ── Componente reutilizable de formulario inline ──────────────────────────────
-function FormPanel({ title, children, onSave, onCancel, style }) {
+function FormPanel({ title, children, onSave, onCancel, style, saveLabel = 'Guardar', saveDisabled = false }) {
   return (
     <div style={{ background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 6, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, ...style }}>
       {title && <div style={{ fontWeight: 700, fontSize: 13 }}>{title}</div>}
       {children}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
         <Btn sm onClick={onCancel}>Cancelar</Btn>
-        <Btn sm accent onClick={onSave}>Guardar</Btn>
+        <Btn sm accent onClick={onSave} style={{ opacity: saveDisabled ? 0.5 : 1, pointerEvents: saveDisabled ? 'none' : 'auto' }}>{saveLabel}</Btn>
       </div>
     </div>
   );
@@ -1267,39 +1268,120 @@ function TabMateriales({ detalle, obra }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 3: ADICIONALES
 // ─────────────────────────────────────────────────────────────────────────────
+const fmtU = (n) => n != null && n !== '' ? fmtN(n) : '—';
+
 function TabAdicionales({ detalle, patch, moneda }) {
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ descripcion: '', fecha: new Date().toISOString().split('T')[0], monto: '' });
+  const [editingId, setEditingId] = useState(null);
+  const defaultForm = {
+    descripcion: '', tarea: '', cantidad: '', unidad: '',
+    costoUnit: '', costoTotal: '',
+    valorVentaUnit: '', valorVentaTotal: '',
+    montoProveedor: '',
+    fecha: new Date().toISOString().split('T')[0], estado: 'pendiente',
+  };
+  const [form, setForm] = useState(defaultForm);
+
+  const autoCalc = (f, field, val) => {
+    const updated = { ...f, [field]: val };
+    const cant = parseFloat(updated.cantidad) || 0;
+    if (cant > 0) {
+      if ((field === 'costoUnit' || field === 'cantidad') && updated.costoUnit && !updated.costoTotal)
+        updated.costoTotal = String(Math.round(cant * (parseFloat(updated.costoUnit) || 0)));
+      if ((field === 'valorVentaUnit' || field === 'cantidad') && updated.valorVentaUnit && !updated.valorVentaTotal)
+        updated.valorVentaTotal = String(Math.round(cant * (parseFloat(updated.valorVentaUnit) || 0)));
+    }
+    return updated;
+  };
+  const set = (field) => (val) => setForm(p => autoCalc(p, field, val));
 
   const save = () => {
-    if (!form.descripcion.trim() || !form.monto) return;
-    patch(d => ({ ...d, adicionales: [...d.adicionales, { id: newId(), ...form, monto: +form.monto, estado: 'pendiente' }] }));
+    if (!form.descripcion.trim()) return;
+    const costoTot  = parseFloat(form.costoTotal)  || (parseFloat(form.cantidad || 0) * parseFloat(form.costoUnit || 0)) || null;
+    const ventaTot  = parseFloat(form.valorVentaTotal) || (parseFloat(form.cantidad || 0) * parseFloat(form.valorVentaUnit || 0)) || null;
+    const entry = {
+      id:              editingId || newId(),
+      descripcion:     form.descripcion,
+      tarea:           form.tarea || '',
+      cantidad:        parseFloat(form.cantidad) || null,
+      unidad:          form.unidad || '',
+      costoUnit:       parseFloat(form.costoUnit) || null,
+      costoTotal:      costoTot,
+      valorVentaUnit:  parseFloat(form.valorVentaUnit) || null,
+      valorVentaTotal: ventaTot,
+      montoProveedor:  form.montoProveedor !== '' ? parseFloat(form.montoProveedor) : null,
+      monto:           ventaTot ?? costoTot ?? 0,
+      fecha:           form.fecha,
+      estado:          form.estado || 'pendiente',
+    };
+    if (editingId) {
+      patch(d => ({ ...d, adicionales: d.adicionales.map(a => a.id === editingId ? entry : a) }));
+    } else {
+      patch(d => ({ ...d, adicionales: [...d.adicionales, entry] }));
+    }
     setAdding(false);
-    setForm({ descripcion: '', fecha: new Date().toISOString().split('T')[0], monto: '' });
+    setEditingId(null);
+    setForm(defaultForm);
   };
 
-  const setState = (id, estado) => patch(d => ({ ...d, adicionales: d.adicionales.map(a => a.id === id ? { ...a, estado } : a) }));
+  const startEdit = (a) => {
+    setForm({
+      descripcion: a.descripcion || '', tarea: a.tarea || '',
+      cantidad: a.cantidad ?? '', unidad: a.unidad || '',
+      costoUnit: a.costoUnit ?? '', costoTotal: a.costoTotal ?? '',
+      valorVentaUnit: a.valorVentaUnit ?? '', valorVentaTotal: a.valorVentaTotal ?? '',
+      montoProveedor: a.montoProveedor ?? '',
+      fecha: a.fecha || new Date().toISOString().split('T')[0], estado: a.estado || 'pendiente',
+    });
+    setEditingId(a.id);
+    setAdding(true);
+  };
+
+  const setEstado = (id, estado) => patch(d => ({ ...d, adicionales: d.adicionales.map(a => a.id === id ? { ...a, estado } : a) }));
   const del = (id) => patch(d => ({ ...d, adicionales: d.adicionales.filter(a => a.id !== id) }));
 
-  const total = detalle.adicionales.filter(a => a.estado === 'aprobado').reduce((s, a) => s + a.monto, 0);
+  const aprobados   = detalle.adicionales.filter(a => a.estado === 'aprobado');
+  const totalCosto  = aprobados.reduce((s, a) => s + (a.costoTotal ?? a.monto ?? 0), 0);
+  const totalVenta  = aprobados.reduce((s, a) => s + (a.valorVentaTotal ?? a.monto ?? 0), 0);
+  const totalProv   = aprobados.filter(a => a.montoProveedor != null).reduce((s, a) => s + (a.montoProveedor || 0), 0);
+
+  const colH = { fontSize: 10, fontWeight: 700, color: T.ink3, padding: '5px 8px', textAlign: 'right', borderBottom: `1px solid ${T.faint2}`, whiteSpace: 'nowrap', background: T.faint };
+  const colD = { fontSize: 11, padding: '9px 8px', textAlign: 'right', fontFamily: T.fontMono };
+
+  // Grupos de encabezado
+  const thSpan = (label, cols, align = 'center', accent = false) => (
+    <th colSpan={cols} style={{ fontSize: 9, fontWeight: 700, color: accent ? T.accent : T.ink3, padding: '4px 8px', textAlign: align, borderBottom: `1px solid ${T.faint2}`, background: T.faint, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+      {label}
+    </th>
+  );
 
   return (
-    <div style={{ maxWidth: 760 }}>
+    <div style={{ maxWidth: 1020 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div>
-          <div style={{ fontSize: 13, color: T.ink2 }}>
-            {detalle.adicionales.length} adicionales · aprobados: <b>{fmtM(total, moneda)}</b>
-          </div>
+        <div style={{ fontSize: 12, color: T.ink2, display: 'flex', gap: 16 }}>
+          <span>{detalle.adicionales.length} adicionales</span>
+          {totalCosto > 0 && <span>Costo aprobado: <b>{fmtM(totalCosto, moneda)}</b></span>}
+          {totalVenta > 0 && <span style={{ color: T.ok }}>Venta aprobada: <b>{fmtM(totalVenta, moneda)}</b></span>}
+          {totalProv  > 0 && <span style={{ color: T.ink3 }}>Prov: <b>{fmtM(totalProv, moneda)}</b></span>}
         </div>
-        <Btn sm fill onClick={() => setAdding(true)}>+ Adicional</Btn>
+        <Btn sm fill onClick={() => { setAdding(true); setEditingId(null); setForm(defaultForm); }}>+ Adicional</Btn>
       </div>
 
       {adding && (
-        <FormPanel title="Nuevo adicional" onSave={save} onCancel={() => setAdding(false)} style={{ marginBottom: 14 }}>
+        <FormPanel title={editingId ? 'Editar adicional' : 'Nuevo adicional'} onSave={save} onCancel={() => { setAdding(false); setEditingId(null); setForm(defaultForm); }} style={{ marginBottom: 14 }}>
           <FInput label="Descripción" value={form.descripcion} onChange={v => setForm(p => ({ ...p, descripcion: v }))} placeholder="Ej: Ampliación tablero secundario" />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <FInput label="Monto" value={form.monto} onChange={v => setForm(p => ({ ...p, monto: v }))} type="number" />
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 10 }}>
+            <FInput label="Tarea" value={form.tarea} onChange={v => setForm(p => ({ ...p, tarea: v }))} placeholder="Ej: Pintura interior látex" />
+            <FInput label="Cantidad" value={form.cantidad} onChange={set('cantidad')} type="number" />
+            <FInput label="Unidad" value={form.unidad} onChange={v => setForm(p => ({ ...p, unidad: v }))} placeholder="m², u..." />
             <FInput label="Fecha" value={form.fecha} onChange={v => setForm(p => ({ ...p, fecha: v }))} type="date" />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 10, marginTop: 4 }}>
+            <FInput label="Costo / unidad" value={form.costoUnit} onChange={set('costoUnit')} type="number" />
+            <FInput label="Costo total" value={form.costoTotal} onChange={set('costoTotal')} type="number" />
+            <FInput label="Venta / unidad" value={form.valorVentaUnit} onChange={set('valorVentaUnit')} type="number" />
+            <FInput label="Venta total (cliente)" value={form.valorVentaTotal} onChange={set('valorVentaTotal')} type="number" />
+            <FInput label="Monto proveedor" value={form.montoProveedor} onChange={v => setForm(p => ({ ...p, montoProveedor: v }))} type="number" placeholder="Opcional" />
           </div>
         </FormPanel>
       )}
@@ -1307,24 +1389,62 @@ function TabAdicionales({ detalle, patch, moneda }) {
       {detalle.adicionales.length === 0 ? (
         <div style={{ color: T.ink3, padding: 24, textAlign: 'center' }}>Sin adicionales registrados</div>
       ) : (
-        <Box style={{ padding: 0, overflow: 'hidden' }}>
-          {detalle.adicionales.map((a, i) => (
-            <div key={a.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', borderBottom: i < detalle.adicionales.length - 1 ? `1px solid ${T.faint2}` : 'none', gap: 12 }}>
-              <div style={{ flex: 3 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{a.descripcion}</div>
-                <div style={{ fontSize: 11, color: T.ink2 }}>{fmtD(a.fecha)}</div>
-              </div>
-              <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14 }}>{fmtM(a.monto, moneda)}</div>
-              <Chip ok={a.estado === 'aprobado'} warn={a.estado === 'pendiente'} accent={a.estado === 'rechazado'} style={{ fontSize: 10 }}>{a.estado}</Chip>
-              {a.estado === 'pendiente' && (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <Btn sm onClick={() => setState(a.id, 'aprobado')}>✓ Aprobar</Btn>
-                  <Btn sm style={{ color: T.accent, borderColor: T.accent }} onClick={() => setState(a.id, 'rechazado')}>✕</Btn>
-                </div>
-              )}
-              <span style={{ color: T.accent, cursor: 'pointer', fontSize: 12 }} onClick={() => del(a.id)}>🗑</span>
-            </div>
-          ))}
+        <Box style={{ padding: 0, overflow: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 820 }}>
+            <thead>
+              <tr>
+                {thSpan('', 1, 'left')}
+                {thSpan('Cantidad', 2, 'center')}
+                {thSpan('Costo', 2, 'center')}
+                {thSpan('Venta (cliente)', 2, 'center', true)}
+                {thSpan('Proveedor', 1, 'center')}
+                {thSpan('', 2, 'center')}
+              </tr>
+              <tr>
+                <th style={{ ...colH, textAlign: 'left', minWidth: 180 }}>Descripción / Tarea</th>
+                <th style={colH}>Cant.</th>
+                <th style={colH}>Unidad</th>
+                <th style={colH}>$/u</th>
+                <th style={colH}>Total costo</th>
+                <th style={{ ...colH, color: T.accent }}>$/u</th>
+                <th style={{ ...colH, color: T.accent }}>Total venta</th>
+                <th style={colH}>Monto prov.</th>
+                <th style={{ ...colH, textAlign: 'center' }}>Estado</th>
+                <th style={colH}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {detalle.adicionales.map((a, i) => (
+                <tr key={a.id} style={{ borderBottom: i < detalle.adicionales.length - 1 ? `1px solid ${T.faint2}` : 'none' }}>
+                  <td style={{ ...colD, textAlign: 'left', maxWidth: 200 }}>
+                    <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.descripcion}</div>
+                    {a.tarea && a.tarea !== a.descripcion && <div style={{ fontSize: 10, color: T.ink3 }}>{a.tarea}</div>}
+                    <div style={{ fontSize: 10, color: T.ink3 }}>{fmtD(a.fecha)}</div>
+                  </td>
+                  <td style={colD}>{a.cantidad != null ? fmtU(a.cantidad) : '—'}</td>
+                  <td style={colD}>{a.unidad || '—'}</td>
+                  <td style={colD}>{a.costoUnit != null ? fmtM(a.costoUnit, moneda) : '—'}</td>
+                  <td style={{ ...colD, fontWeight: 600 }}>{a.costoTotal != null ? fmtM(a.costoTotal, moneda) : (a.monto ? fmtM(a.monto, moneda) : '—')}</td>
+                  <td style={{ ...colD, color: T.accent }}>{a.valorVentaUnit != null ? fmtM(a.valorVentaUnit, moneda) : '—'}</td>
+                  <td style={{ ...colD, fontWeight: 700, color: T.accent }}>{a.valorVentaTotal != null ? fmtM(a.valorVentaTotal, moneda) : '—'}</td>
+                  <td style={{ ...colD, color: T.ink2 }}>{a.montoProveedor != null ? fmtM(a.montoProveedor, moneda) : <span style={{ color: T.ink3 }}>—</span>}</td>
+                  <td style={{ ...colD, textAlign: 'center' }}>
+                    <Chip ok={a.estado === 'aprobado'} warn={a.estado === 'pendiente'} accent={a.estado === 'rechazado'} style={{ fontSize: 10 }}>{a.estado}</Chip>
+                  </td>
+                  <td style={{ ...colD, textAlign: 'right' }}>
+                    <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                      {a.estado === 'pendiente' && <>
+                        <Btn sm onClick={() => setEstado(a.id, 'aprobado')}>✓</Btn>
+                        <Btn sm style={{ color: T.accent, borderColor: T.accent }} onClick={() => setEstado(a.id, 'rechazado')}>✕</Btn>
+                      </>}
+                      <Btn sm onClick={() => startEdit(a)}>✎</Btn>
+                      <span style={{ color: T.accent, cursor: 'pointer', fontSize: 11, padding: '2px 4px' }} onClick={() => del(a.id)}>🗑</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </Box>
       )}
     </div>
@@ -1719,7 +1839,9 @@ const FORM_INIT = { rubroId: '', gremio: '', proveedor: '', cuit: '', fechaInici
 function TabContratosMO({ detalle, patch, moneda, obra }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(FORM_INIT);
+  const [formError, setFormError] = useState('');
   const [printContrato, setPrintContrato] = useState(null);
+  const { proveedores: proveedoresDyn } = useProveedores();
 
   const rubros = detalle.rubros || [];
   const contratos = detalle.contratos || [];
@@ -1727,12 +1849,13 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   const rubroSel = rubros.find(r => r.id === form.rubroId) || null;
 
   const tareasDisponibles = rubroSel
-    ? rubroSel.tareas.filter(t => calcTareaContratada(t.id, contratos) < t.cantidad)
+    ? (rubroSel.tareas || []).filter(t => t.tipo !== 'seccion' && calcTareaContratada(t.id, contratos) < (t.cantidad || 0))
     : [];
 
   const onRubroChange = (rubroId) => {
     const r = rubros.find(x => x.id === rubroId);
     setForm(p => ({ ...p, rubroId, gremio: r?.nombre || '', tareasSel: {} }));
+    setFormError('');
   };
 
   const onTareaToggle = (t) => {
@@ -1750,14 +1873,19 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   const totalContrato = Object.values(form.tareasSel).reduce((s, v) => s + (v.cantidad || 0) * (v.precioUnit || 0), 0);
 
   const save = () => {
-    if (!form.rubroId || !form.proveedor.trim()) return;
+    if (!form.rubroId) { setFormError('Seleccioná un rubro'); return; }
+    if (!form.proveedor.trim()) { setFormError('Ingresá el nombre del contratista'); return; }
+    if (!rubroSel) { setFormError('El rubro seleccionado ya no existe'); return; }
+    setFormError('');
     const tareas = Object.entries(form.tareasSel)
       .filter(([, v]) => (v.cantidad || 0) > 0)
       .map(([tareaId, v]) => {
-        const t = rubroSel.tareas.find(x => x.id === tareaId);
+        const t = (rubroSel.tareas || []).find(x => x.id === tareaId);
+        if (!t) return null;
         return { tareaId, rubroId: form.rubroId, nombre: t.nombre, unidad: t.unidad, cantidadTotal: t.cantidad, cantidadContratada: +v.cantidad, precioUnit: +v.precioUnit };
-      });
-    patch(d => ({ ...d, contratos: [...d.contratos, { id: newId(), gremio: form.gremio, rubroId: form.rubroId, proveedor: form.proveedor, cuit: form.cuit, fechaInicio: form.fechaInicio, fechaFin: form.fechaFin, fondoReparo: +form.fondoReparo, formaPago: form.formaPago, estado: 'activo', tareas, monto: totalContrato }] }));
+      })
+      .filter(Boolean);
+    patch(d => ({ ...d, contratos: [...(d.contratos || []), { id: newId(), gremio: form.gremio, rubroId: form.rubroId, proveedor: form.proveedor, cuit: form.cuit, fechaInicio: form.fechaInicio, fechaFin: form.fechaFin, fondoReparo: +form.fondoReparo, formaPago: form.formaPago, estado: 'activo', tareas, monto: totalContrato }] }));
     setAdding(false);
     setForm(FORM_INIT);
   };
@@ -1774,7 +1902,8 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
       </div>
 
       {adding && (
-        <FormPanel title="Nuevo contrato MO" onSave={save} onCancel={() => { setAdding(false); setForm(FORM_INIT); }} style={{ marginBottom: 14 }}>
+        <FormPanel title="Nuevo contrato MO" onSave={save} onCancel={() => { setAdding(false); setForm(FORM_INIT); setFormError(''); }} style={{ marginBottom: 14 }}>
+          {formError && <div style={{ color: '#dc2626', fontSize: 12, fontWeight: 600, padding: '4px 0' }}>{formError}</div>}
           {/* Fila 1: gremio + proveedor + cuit */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             <FRow label="Gremio / rubro">
@@ -1784,14 +1913,19 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
               </select>
             </FRow>
             <FRow label="Proveedor / contratista">
-              <select style={{ ...inputSt, cursor: 'pointer' }} value={form.proveedor}
+              <input
+                list="contrato-prov-list"
+                style={inputSt}
+                placeholder="Nombre del contratista"
+                value={form.proveedor}
                 onChange={e => {
-                  const prov = PROVEEDORES.find(p => p.nombre === e.target.value);
-                  setForm(p => ({ ...p, proveedor: e.target.value, cuit: prov ? prov.cuit : p.cuit }));
-                }}>
-                <option value="">— Seleccionar proveedor —</option>
-                {PROVEEDORES.map(p => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
-              </select>
+                  const prov = proveedoresDyn.find(p => p.nombre === e.target.value);
+                  setForm(p => ({ ...p, proveedor: e.target.value, cuit: prov?.cuit || p.cuit }));
+                }}
+              />
+              <datalist id="contrato-prov-list">
+                {proveedoresDyn.map(p => <option key={p.id} value={p.nombre} />)}
+              </datalist>
             </FRow>
             <FInput label="CUIT contratista" value={form.cuit} onChange={v => setForm(p => ({ ...p, cuit: v }))} placeholder="20-XXXXXXXX-X" />
           </div>
@@ -1951,16 +2085,39 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 6: DOCUMENTOS
 // ─────────────────────────────────────────────────────────────────────────────
-function TabDocumentos({ detalle, patch }) {
-  const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ nombre: '', tipo: 'Contrato', fecha: new Date().toISOString().split('T')[0] });
+function TabDocumentos({ detalle, patch, obraId }) {
+  const [adding,      setAdding]      = useState(false);
+  const [form,        setForm]        = useState({ nombre: '', tipo: 'Contrato', fecha: new Date().toISOString().split('T')[0] });
+  const [pendingFile, setPendingFile] = useState(null);
+  const [uploading,   setUploading]   = useState(false);
+  const [uploadErr,   setUploadErr]   = useState('');
+  const fileRef = useRef(null);
   const TIPOS_DOC = ['Contrato', 'Presupuesto', 'Planos', 'Certificado', 'Factura', 'Permiso', 'Otro'];
 
-  const save = () => {
+  const handleFile = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setPendingFile(f);
+    if (!form.nombre.trim()) setForm(p => ({ ...p, nombre: f.name.replace(/\.[^.]+$/, '') }));
+  };
+
+  const save = async () => {
     if (!form.nombre.trim()) return;
-    patch(d => ({ ...d, documentos: [...d.documentos, { id: newId(), ...form }] }));
+    let url = null;
+    if (pendingFile) {
+      setUploading(true);
+      setUploadErr('');
+      const ext  = pendingFile.name.split('.').pop();
+      const path = `obras/${obraId}/docs/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('kamak-fotos').upload(path, pendingFile, { upsert: true });
+      if (error) { setUploadErr('Error al subir el archivo: ' + error.message); setUploading(false); return; }
+      url = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
+      setUploading(false);
+    }
+    patch(d => ({ ...d, documentos: [...d.documentos, { id: newId(), ...form, url }] }));
     setAdding(false);
     setForm({ nombre: '', tipo: 'Contrato', fecha: new Date().toISOString().split('T')[0] });
+    setPendingFile(null);
   };
 
   const del = (id) => patch(d => ({ ...d, documentos: d.documentos.filter(dc => dc.id !== id) }));
@@ -1972,15 +2129,27 @@ function TabDocumentos({ detalle, patch }) {
       </div>
 
       {adding && (
-        <FormPanel title="Agregar documento" onSave={save} onCancel={() => setAdding(false)} style={{ marginBottom: 14 }}>
+        <FormPanel title="Agregar documento" onSave={save} onCancel={() => { setAdding(false); setPendingFile(null); setUploadErr(''); }}
+          style={{ marginBottom: 14 }} saveLabel={uploading ? 'Subiendo...' : 'Guardar'} saveDisabled={uploading}>
           <FInput label="Nombre del documento" value={form.nombre} onChange={v => setForm(p => ({ ...p, nombre: v }))} placeholder="Ej: Contrato de obra firmado" />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <FSelect label="Tipo" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))} options={TIPOS_DOC} />
             <FInput label="Fecha" value={form.fecha} onChange={v => setForm(p => ({ ...p, fecha: v }))} type="date" />
           </div>
-          <div style={{ background: T.faint, borderRadius: 4, padding: '10px 12px', fontSize: 12, color: T.ink2, textAlign: 'center', cursor: 'pointer', border: `1.5px dashed ${T.faint2}` }}>
-            📎 Arrastrar archivo o hacer click para adjuntar (próximamente)
+          <div style={{ background: T.faint, borderRadius: 4, padding: '10px 12px', border: `1.5px dashed ${T.faint2}`, cursor: 'pointer' }}
+            onClick={() => fileRef.current?.click()}>
+            <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" style={{ display: 'none' }} onChange={handleFile} />
+            {pendingFile ? (
+              <div style={{ fontSize: 12, color: T.ink, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 18 }}>📎</span>
+                <span style={{ fontWeight: 600 }}>{pendingFile.name}</span>
+                <span style={{ color: T.ink3 }}>({(pendingFile.size / 1024).toFixed(0)} KB)</span>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: T.ink2, textAlign: 'center' }}>📎 Clic para seleccionar archivo (PDF, Word, Excel, imágenes)</div>
+            )}
           </div>
+          {uploadErr && <div style={{ fontSize: 11, color: '#dc2626' }}>{uploadErr}</div>}
         </FormPanel>
       )}
 
@@ -1996,7 +2165,10 @@ function TabDocumentos({ detalle, patch }) {
                 <div style={{ fontSize: 11, color: T.ink2 }}>{dc.tipo} · {fmtD(dc.fecha)}</div>
               </div>
               <Chip style={{ fontSize: 10 }}>{dc.tipo}</Chip>
-              <Btn sm>↓ Descargar</Btn>
+              {dc.url
+                ? <a href={dc.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}><Btn sm>↓ Abrir</Btn></a>
+                : <Btn sm style={{ opacity: 0.4, pointerEvents: 'none' }}>Sin archivo</Btn>
+              }
               <span style={{ color: T.accent, cursor: 'pointer', fontSize: 12 }} onClick={() => del(dc.id)}>🗑</span>
             </div>
           ))}
@@ -2009,52 +2181,232 @@ function TabDocumentos({ detalle, patch }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 7: FOTOS
 // ─────────────────────────────────────────────────────────────────────────────
-function TabFotos({ detalle, patch }) {
-  const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ label: '', fecha: new Date().toISOString().split('T')[0], rubro: '' });
+function TabFotos({ detalle, patch, obraId }) {
+  const [adding,      setAdding]      = useState(false);
+  const [form,        setForm]        = useState({ label: '', fecha: new Date().toISOString().split('T')[0], rubro: '' });
+  const [pendingFile, setPendingFile] = useState(null);
+  const [previewUrl,  setPreviewUrl]  = useState(null);
+  const [uploading,   setUploading]   = useState(false);
+  const [uploadErr,   setUploadErr]   = useState('');
+  const fileRef      = useRef(null);
 
-  const save = () => {
-    if (!form.label.trim()) return;
-    patch(d => ({ ...d, fotos: [...d.fotos, { id: newId(), ...form }] }));
+  // ── Modo subida múltiple ──────────────────────────────────────────────────
+  const [multiMode,   setMultiMode]   = useState(false);
+  const [multiFiles,  setMultiFiles]  = useState([]); // { file, previewUrl, label, status }
+  const [multiFecha,  setMultiFecha]  = useState(new Date().toISOString().split('T')[0]);
+  const [multiRubro,  setMultiRubro]  = useState('');
+  const [multiProgress, setMultiProgress] = useState(null); // null | { done, total }
+  const multiRef = useRef(null);
+
+  const handleMultiSelect = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const items = files.map(f => ({
+      file: f,
+      previewUrl: f.type.startsWith('image/') ? URL.createObjectURL(f) : null,
+      label: f.name.replace(/\.[^.]+$/, ''),
+      status: 'pending',
+    }));
+    setMultiFiles(items);
+    e.target.value = '';
+  };
+
+  const cancelMulti = () => {
+    multiFiles.forEach(m => m.previewUrl && URL.revokeObjectURL(m.previewUrl));
+    setMultiFiles([]);
+    setMultiMode(false);
+    setMultiProgress(null);
+  };
+
+  const uploadAll = async () => {
+    if (!multiFiles.length) return;
+    setMultiProgress({ done: 0, total: multiFiles.length });
+    const nuevasFotos = [];
+    for (let i = 0; i < multiFiles.length; i++) {
+      const m = multiFiles[i];
+      setMultiFiles(prev => prev.map((x, idx) => idx === i ? { ...x, status: 'uploading' } : x));
+      let url = null;
+      try {
+        const ext  = m.file.name.split('.').pop() || 'jpg';
+        const path = `obras/${obraId}/fotos/${Date.now()}-${i}.${ext}`;
+        const { error } = await supabase.storage.from('kamak-fotos').upload(path, m.file, { upsert: true });
+        if (!error) url = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
+        setMultiFiles(prev => prev.map((x, idx) => idx === i ? { ...x, status: error ? 'error' : 'done' } : x));
+      } catch {
+        setMultiFiles(prev => prev.map((x, idx) => idx === i ? { ...x, status: 'error' } : x));
+      }
+      nuevasFotos.push({ id: newId(), label: m.label, fecha: multiFecha, rubro: multiRubro, url });
+      setMultiProgress({ done: i + 1, total: multiFiles.length });
+    }
+    patch(d => ({ ...d, fotos: [...d.fotos, ...nuevasFotos] }));
+    cancelMulti();
+  };
+
+  const handleFile = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setPendingFile(f);
+    setPreviewUrl(URL.createObjectURL(f));
+  };
+
+  const cancelAdding = () => {
     setAdding(false);
+    setPendingFile(null);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setUploadErr('');
     setForm({ label: '', fecha: new Date().toISOString().split('T')[0], rubro: '' });
   };
 
+  const save = async () => {
+    if (!form.label.trim()) return;
+    let url = null;
+    if (pendingFile) {
+      setUploading(true);
+      setUploadErr('');
+      const ext  = pendingFile.name.split('.').pop() || 'jpg';
+      const path = `obras/${obraId}/fotos/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('kamak-fotos').upload(path, pendingFile, { upsert: true });
+      if (error) { setUploadErr('Error al subir: ' + error.message); setUploading(false); return; }
+      url = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
+      setUploading(false);
+    }
+    patch(d => ({ ...d, fotos: [...d.fotos, { id: newId(), ...form, url }] }));
+    cancelAdding();
+  };
+
   const del = (id) => patch(d => ({ ...d, fotos: d.fotos.filter(f => f.id !== id) }));
+
+  const statusColor = { pending: T.ink3, uploading: T.accent, done: T.ok, error: '#dc2626' };
+  const statusIcon  = { pending: '⏳', uploading: '⬆', done: '✓', error: '✕' };
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: T.ink2 }}>{detalle.fotos.length} fotos</div>
-        <Btn sm fill onClick={() => setAdding(true)}>📷 Agregar foto</Btn>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn sm onClick={() => { setMultiMode(true); setAdding(false); }}>📁 Subir carpeta</Btn>
+          <Btn sm fill onClick={() => { setAdding(true); setMultiMode(false); }}>📷 Agregar foto</Btn>
+        </div>
       </div>
 
+      {/* ── Subida múltiple ── */}
+      {multiMode && (
+        <div style={{ background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 6, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Subir varias fotos</div>
+
+          {multiFiles.length === 0 ? (
+            <div style={{ border: `1.5px dashed ${T.faint2}`, borderRadius: 6, padding: 24, textAlign: 'center', cursor: 'pointer', background: T.faint }}
+              onClick={() => multiRef.current?.click()}>
+              <input ref={multiRef} type="file" accept="image/*,.pdf" multiple style={{ display: 'none' }} onChange={handleMultiSelect} />
+              <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Seleccionar fotos</div>
+              <div style={{ fontSize: 11, color: T.ink2, marginTop: 4 }}>Podés seleccionar múltiples archivos a la vez</div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                <FRow label="Fecha">
+                  <input style={inputSt} type="date" value={multiFecha} onChange={e => setMultiFecha(e.target.value)} />
+                </FRow>
+                <FRow label="Rubro (común)">
+                  <input style={inputSt} value={multiRubro} onChange={e => setMultiRubro(e.target.value)} placeholder="Ej: Albañilería" />
+                </FRow>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginBottom: 12, maxHeight: 360, overflowY: 'auto' }}>
+                {multiFiles.map((m, i) => (
+                  <div key={i} style={{ position: 'relative', borderRadius: 6, overflow: 'hidden', border: `1.5px solid ${m.status === 'error' ? '#dc2626' : T.faint2}`, background: T.faint2 }}>
+                    {m.previewUrl ? (
+                      <img src={m.previewUrl} alt="" style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', display: 'block' }} />
+                    ) : (
+                      <div style={{ aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>📄</div>
+                    )}
+                    <div style={{ padding: '4px 6px', background: T.paper }}>
+                      <input
+                        style={{ ...inputSt, fontSize: 10, padding: '2px 4px' }}
+                        value={m.label}
+                        onChange={e => setMultiFiles(prev => prev.map((x, idx) => idx === i ? { ...x, label: e.target.value } : x))}
+                        placeholder="Descripción"
+                      />
+                    </div>
+                    <div style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: statusColor[m.status] || 'white', borderRadius: 3, fontSize: 11, padding: '1px 5px', fontWeight: 700 }}>
+                      {statusIcon[m.status]}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {multiProgress && (
+                <div style={{ fontSize: 12, color: T.ink2, marginBottom: 8 }}>
+                  Subiendo {multiProgress.done} / {multiProgress.total}…
+                  <div style={{ height: 4, background: T.faint2, borderRadius: 2, marginTop: 4 }}>
+                    <div style={{ height: '100%', background: T.accent, borderRadius: 2, width: `${(multiProgress.done / multiProgress.total) * 100}%`, transition: 'width 0.2s' }} />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <Btn sm onClick={cancelMulti} disabled={!!multiProgress}>Cancelar</Btn>
+                <Btn sm fill onClick={uploadAll} disabled={!!multiProgress}>
+                  {multiProgress ? 'Subiendo…' : `⬆ Subir ${multiFiles.length} foto${multiFiles.length !== 1 ? 's' : ''}`}
+                </Btn>
+              </div>
+            </>
+          )}
+
+          {!multiFiles.length && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+              <Btn sm onClick={cancelMulti}>Cancelar</Btn>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Agregar foto individual ── */}
       {adding && (
-        <FormPanel title="Agregar foto" onSave={save} onCancel={() => setAdding(false)} style={{ marginBottom: 14, maxWidth: 500 }}>
+        <FormPanel title="Agregar foto" onSave={save} onCancel={cancelAdding}
+          style={{ marginBottom: 14, maxWidth: 500 }} saveLabel={uploading ? 'Subiendo...' : 'Guardar'} saveDisabled={uploading}>
           <FInput label="Descripción" value={form.label} onChange={v => setForm(p => ({ ...p, label: v }))} placeholder="Ej: Tablero instalado" />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <FInput label="Fecha" value={form.fecha} onChange={v => setForm(p => ({ ...p, fecha: v }))} type="date" />
             <FInput label="Rubro" value={form.rubro} onChange={v => setForm(p => ({ ...p, rubro: v }))} placeholder="Ej: Electricidad" />
           </div>
-          <div style={{ background: T.faint, borderRadius: 4, padding: '14px', fontSize: 12, color: T.ink2, textAlign: 'center', cursor: 'pointer', border: `1.5px dashed ${T.faint2}` }}>
-            📷 Tomar foto o seleccionar de galería (próximamente)
+          <div style={{ border: `1.5px dashed ${T.faint2}`, borderRadius: 6, overflow: 'hidden', cursor: 'pointer', background: T.faint }}
+            onClick={() => fileRef.current?.click()}>
+            <input ref={fileRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }} onChange={handleFile} />
+            {previewUrl ? (
+              <img src={previewUrl} alt="" style={{ width: '100%', maxHeight: 200, objectFit: 'cover', display: 'block' }} />
+            ) : (
+              <div style={{ padding: 20, fontSize: 12, color: T.ink2, textAlign: 'center' }}>
+                📷 Clic para seleccionar imagen o PDF
+              </div>
+            )}
           </div>
+          {uploadErr && <div style={{ fontSize: 11, color: '#dc2626' }}>{uploadErr}</div>}
         </FormPanel>
       )}
 
       {detalle.fotos.length === 0 ? (
         <div style={{ color: T.ink3, padding: 40, textAlign: 'center' }}>Sin fotos. Agregá la primera.</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
           {detalle.fotos.map(f => (
-            <div key={f.id} style={{ position: 'relative', group: true }}>
-              <div style={{ background: T.faint2, borderRadius: 6, aspectRatio: '4/3', display: 'flex', alignItems: 'flex-end', overflow: 'hidden', border: `1.5px solid ${T.faint2}` }}>
-                <div style={{ background: 'rgba(0,0,0,0.5)', color: 'white', padding: '5px 8px', width: '100%' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700 }}>{f.label}</div>
-                  <div style={{ fontSize: 9, opacity: 0.8 }}>{fmtD(f.fecha)}{f.rubro ? ` · ${f.rubro}` : ''}</div>
+            <div key={f.id} style={{ position: 'relative' }}>
+              <a href={f.url || undefined} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'block' }}>
+                <div style={{ borderRadius: 6, aspectRatio: '4/3', overflow: 'hidden', border: `1.5px solid ${T.faint2}`, background: T.faint2, position: 'relative' }}>
+                  {f.url ? (
+                    <img src={f.url} alt={f.label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  ) : (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>📷</div>
+                  )}
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.55)', color: 'white', padding: '4px 8px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.label}</div>
+                    <div style={{ fontSize: 9, opacity: 0.8 }}>{fmtD(f.fecha)}{f.rubro ? ` · ${f.rubro}` : ''}</div>
+                  </div>
                 </div>
-              </div>
-              <span style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.5)', color: 'white', borderRadius: 3, fontSize: 10, padding: '1px 5px', cursor: 'pointer' }}
+              </a>
+              <span style={{ position: 'absolute', top: 5, right: 5, background: 'rgba(0,0,0,0.55)', color: 'white', borderRadius: 3, fontSize: 10, padding: '1px 5px', cursor: 'pointer' }}
                 onClick={() => del(f.id)}>✕</span>
             </div>
           ))}
@@ -2157,8 +2509,8 @@ export default function ObraPresupuesto() {
       {displayTab === 5 && <TabMovimientos obra={obra} moneda={moneda} />}
       {displayTab === 6 && <TabCuentaCliente detalle={detalle} patch={patch} moneda={moneda} />}
       {displayTab === 7 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
-      {displayTab === 8 && <TabDocumentos detalle={detalle} patch={patch} />}
-      {displayTab === 9 && <TabFotos detalle={detalle} patch={patch} />}
+      {displayTab === 8 && <TabDocumentos detalle={detalle} patch={patch} obraId={id} />}
+      {displayTab === 9 && <TabFotos detalle={detalle} patch={patch} obraId={id} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
       {showContrato && <ContratoMOModal onClose={() => setShowContrato(false)} />}
