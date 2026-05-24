@@ -18,7 +18,7 @@ const MES_ACTUAL = new Date().toLocaleString('es-AR', { month: 'long', year: 'nu
 
 export default function Prorrateo() {
   const { items, setItems, totalMensual } = useGastosFijos();
-  const { obras } = useObras();
+  const { obras, patchDetalle } = useObras();
   const [criterio, setCriterio]     = useState('mixto');
   const [manualPct, setManualPct]   = useState({});
   const [confirmado, setConfirmado] = useState(false);
@@ -67,15 +67,30 @@ export default function Prorrateo() {
 
   const confirmar = () => {
     if (obrasActivas.length === 0 || totalMensual === 0) return;
-    const resumen = distribuciones.map(d => ({
-      obra: d.o.nombre,
-      monto: Math.round(totalMensual * d.pctAsignado / 100),
-      pct: d.pctAsignado.toFixed(1),
-    }));
-    const detalle = resumen.map(r => `${r.obra}: $${fmtN(r.monto)} (${r.pct}%)`).join('\n');
-    alert(`Prorrateo confirmado:\n\n${detalle}\n\nTotal: $${fmtN(totalMensual)}\n\nEn una implementación completa, se crearían líneas de gasto tipo "Prorrateo administrativo" en cada obra.`);
+    const hoy = new Date().toISOString().split('T')[0];
+    const ts  = Date.now();
+    distribuciones.forEach((d, i) => {
+      const monto = Math.round(totalMensual * d.pctAsignado / 100);
+      if (monto <= 0) return;
+      patchDetalle(d.o.id, det => ({
+        ...det,
+        movimientos: [
+          ...(det.movimientos || []),
+          {
+            id:          `pror-${ts}-${i}`,
+            tipo:        'gasto',
+            descripcion: `Prorrateo administrativo · ${MES_ACTUAL}`,
+            monto,
+            fecha:       hoy,
+            categoria:   'prorrateo',
+            obraId:      d.o.id,
+            obraNombre:  d.o.nombre,
+          },
+        ],
+      }));
+    });
     setConfirmado(true);
-    setTimeout(() => setConfirmado(false), 3000);
+    setTimeout(() => setConfirmado(false), 4000);
   };
 
   return (
