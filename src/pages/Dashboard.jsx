@@ -128,19 +128,43 @@ export default function Dashboard() {
   // ── Alertas ──
   const alertas = useMemo(() => {
     const list = [];
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
     cajas.filter(c => c.activa).forEach(c => {
       const minimo = c.moneda === 'USD' ? 100 : 50000;
       if ((c.saldo || 0) < minimo)
-        list.push({ tipo: 'warn', texto: `Caja "${c.nombre}" tiene saldo bajo` });
+        list.push({ tipo: 'warn', texto: `Caja "${c.nombre}" tiene saldo bajo`, obraId: null });
     });
     obrasActivas.forEach(o => {
       if (o.presupuesto > 0 && o.gastado > o.presupuesto)
-        list.push({ tipo: 'accent', texto: `${o.nombre}: gastos superan el presupuesto` });
+        list.push({ tipo: 'accent', texto: `${o.nombre}: gastos superan el presupuesto`, obraId: o.id });
       else if (o.presupuesto > 0 && o.gastado / o.presupuesto > 0.9)
-        list.push({ tipo: 'warn', texto: `${o.nombre}: gastado > ${Math.round(o.gastado / o.presupuesto * 100)}% del presupuesto` });
+        list.push({ tipo: 'warn', texto: `${o.nombre}: gastado > ${Math.round(o.gastado / o.presupuesto * 100)}% del presupuesto`, obraId: o.id });
+    });
+    // Cuotas vencidas
+    obras.forEach(o => {
+      const det = getDetalle(o.id);
+      const vencidas = (det.cuotas || []).filter(c => {
+        if (c.estado === 'pagado') return false;
+        const f = c.fecha ? new Date(c.fecha + 'T00:00:00') : null;
+        return f && f < hoy;
+      });
+      if (vencidas.length > 0)
+        list.push({ tipo: 'accent', texto: `${o.nombre}: ${vencidas.length} cuota${vencidas.length > 1 ? 's' : ''} vencida${vencidas.length > 1 ? 's' : ''}`, obraId: o.id, tab: 10 });
+    });
+    // Adicionales pendientes más de 7 días
+    obras.forEach(o => {
+      const det = getDetalle(o.id);
+      const viejos = (det.adicionales || []).filter(a => {
+        if (a.estado !== 'pendiente') return false;
+        if (!a.fecha) return false;
+        const dias = Math.floor((hoy - new Date(a.fecha + 'T00:00:00')) / 86400000);
+        return dias > 7;
+      });
+      if (viejos.length > 0)
+        list.push({ tipo: 'warn', texto: `${o.nombre}: ${viejos.length} adicional${viejos.length > 1 ? 'es' : ''} pendiente${viejos.length > 1 ? 's' : ''} sin aprobar`, obraId: o.id, tab: 3 });
     });
     return list;
-  }, [cajas, obrasActivas]);
+  }, [cajas, obrasActivas, obras, getDetalle]);
 
   const fechaStr = today.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -249,11 +273,13 @@ export default function Dashboard() {
                 <div style={{ marginTop: 10, fontSize: 12, color: T.ok }}>✓ Todo en orden</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
-                  {/* Alertas computadas (cajas, presupuesto) */}
+                  {/* Alertas computadas (cajas, presupuesto, cuotas, adicionales) */}
                   {alertas.map((a, i) => (
-                    <div key={`c-${i}`} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <div key={`c-${i}`}
+                      style={{ display: 'flex', gap: 6, alignItems: 'flex-start', cursor: a.obraId ? 'pointer' : 'default' }}
+                      onClick={() => a.obraId && navigate(`/obras/${a.obraId}/presupuesto${a.tab != null ? `?tab=${a.tab}` : ''}`)}>
                       <Chip accent={a.tipo === 'accent'} warn={a.tipo === 'warn'}>{a.tipo === 'accent' ? '🚨' : '⚠'}</Chip>
-                      <div style={{ flex: 1 }}>{a.texto}</div>
+                      <div style={{ flex: 1, color: a.obraId ? T.accent : undefined }}>{a.texto}</div>
                     </div>
                   ))}
                   {/* Alertas desde WhatsApp (no leídas) */}

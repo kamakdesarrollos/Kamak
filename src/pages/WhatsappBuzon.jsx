@@ -21,7 +21,15 @@ function FacturaModal({ item, onConfirm, onClose }) {
   const cajasARS   = cajas.filter(c => c.activa && c.moneda === 'ARS');
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
 
-  const [proveedor,  setProveedor]  = useState(item.proveedor  || '');
+  const [proveedor,  setProveedor]  = useState(() => {
+    if (item.proveedor) return item.proveedor;
+    if (item.cuit) {
+      const clean = (item.cuit || '').replace(/[-\s]/g, '');
+      const match = proveedores.find(p => (p.cuit || '').replace(/[-\s]/g, '') === clean);
+      if (match) return match.nombre;
+    }
+    return '';
+  });
   const [monto,      setMonto]      = useState(item.montoTotal != null ? String(item.montoTotal) : item.monto != null ? String(item.monto) : '');
   const [fecha,      setFecha]      = useState(item.fecha      || new Date().toISOString().split('T')[0]);
   const [concepto,   setConcepto]   = useState(item.concepto   || '');
