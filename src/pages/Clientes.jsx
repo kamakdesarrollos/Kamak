@@ -5,6 +5,7 @@ import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
 import { useClientes } from '../store/ClientesContext';
 import { useObras } from '../store/ObrasContext';
+import { useMovimientos } from '../store/MovimientosContext';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -70,6 +71,7 @@ function NuevoClienteModal({ initial = null, onSave, onClose }) {
 export default function Clientes() {
   const { clientes, addCliente, updateCliente, removeCliente } = useClientes();
   const { obras } = useObras();
+  const { movimientos } = useMovimientos();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [modal, setModal] = useState(false);
@@ -86,6 +88,16 @@ export default function Clientes() {
     clientes.forEach(c => { map[c.id] = obras.filter(o => o.cliente === c.nombre).length; });
     return map;
   }, [clientes, obras]);
+
+  const totalFacturado = useMemo(() => {
+    const map = {};
+    clientes.forEach(c => {
+      map[c.id] = movimientos
+        .filter(m => m.tipo === 'ingreso' && (m.proveedor === c.nombre || m.clienteId === c.id))
+        .reduce((s, m) => s + m.monto, 0);
+    });
+    return map;
+  }, [clientes, movimientos]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -120,10 +132,16 @@ export default function Clientes() {
             {clientes.filter(c => obrasCount[c.id] > 0).length}
           </div>
         </Box>
-        <Box style={{ padding: '10px 16px', flex: 2 }}>
+        <Box style={{ padding: '10px 16px', flex: 1 }}>
           <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total obras</div>
           <div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontMono, marginTop: 2 }}>
             {Object.values(obrasCount).reduce((s, v) => s + v, 0)}
+          </div>
+        </Box>
+        <Box style={{ padding: '10px 16px', flex: 2 }}>
+          <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total facturado</div>
+          <div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontMono, color: T.ok, marginTop: 2 }}>
+            $ {Math.round(Object.values(totalFacturado).reduce((s, v) => s + v, 0)).toLocaleString('es-AR')}
           </div>
         </Box>
       </div>
@@ -139,19 +157,20 @@ export default function Clientes() {
         </Box>
       ) : (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1.5fr 0.6fr 0.8fr', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1.5fr 0.6fr 1fr 0.8fr', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             <span>Cliente</span>
             <span>Empresa</span>
             <span>CUIT</span>
             <span>Contacto</span>
             <span style={{ textAlign: 'center' }}>Obras</span>
+            <span style={{ textAlign: 'right' }}>Facturado</span>
             <span>Acciones</span>
           </div>
           {filtered.map(c => {
             const phone = (c.telefono || '').replace(/\s/g, '').replace('+', '');
             return (
               <div key={c.id}
-                style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1.5fr 0.6fr 0.8fr', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
+                style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1.5fr 0.6fr 1fr 0.8fr', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
                 onMouseEnter={e => e.currentTarget.style.background = T.faint}
                 onMouseLeave={e => e.currentTarget.style.background = ''}
                 onClick={() => setEditCliente(c)}>
@@ -184,6 +203,9 @@ export default function Clientes() {
                       {obrasCount[c.id]}
                     </span>
                   ) : <span style={{ color: T.ink3, fontFamily: T.fontMono }}>0</span>}
+                </span>
+                <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontSize: 11, color: totalFacturado[c.id] > 0 ? T.ok : T.ink3 }}>
+                  {totalFacturado[c.id] > 0 ? `$ ${Math.round(totalFacturado[c.id]).toLocaleString('es-AR')}` : '—'}
                 </span>
                 <span style={{ display: 'flex', gap: 5, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
                   {obrasCount[c.id] > 0 && (
