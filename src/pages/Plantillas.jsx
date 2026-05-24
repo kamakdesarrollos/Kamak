@@ -1,9 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Divider } from '../components/ui';
 import { T } from '../theme';
 import { usePlantillas } from '../store/PlantillasContext';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
+import { useObras } from '../store/ObrasContext';
+import { useClientes } from '../store/ClientesContext';
 
 const newId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const fmtN  = (n) => Math.round(n).toLocaleString('es-AR');
@@ -696,8 +699,72 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
   );
 }
 
+// ── Modal: crear obra desde plantilla ────────────────────────────────────────
+function UsarPlantillaModal({ plantilla, onClose, onCrear }) {
+  const { clientes } = useClientes();
+  const todayStr = () => new Date().toISOString().split('T')[0];
+  const [nombre, setNombre]     = useState('');
+  const [clienteId, setClienteId] = useState('');
+  const [fechaInicio, setFechaInicio] = useState(todayStr());
+  const [fechaFin, setFechaFin] = useState('');
+  const canSave = nombre.trim() && clienteId;
+  const cliente = clientes.find(c => c.id === clienteId);
+
+  const inputSt2 = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
+  const lblSt2  = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
+
+  return (
+    <div className="k-modal-overlay" onClick={onClose}>
+      <div className="k-modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Crear obra desde plantilla</div>
+            <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>{plantilla.nombre}</div>
+          </div>
+          <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
+        </div>
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <label style={lblSt2}>Nombre de la obra <span style={{ color: T.accent }}>*</span></label>
+            <input style={inputSt2} value={nombre} onChange={e => setNombre(e.target.value)} autoFocus placeholder="Ej: Baradero · Shell" />
+          </div>
+          <div>
+            <label style={lblSt2}>Cliente <span style={{ color: T.accent }}>*</span></label>
+            <select style={{ ...inputSt2, cursor: 'pointer' }} value={clienteId} onChange={e => setClienteId(e.target.value)}>
+              <option value="">— Seleccionar —</option>
+              {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={lblSt2}>Fecha inicio</label>
+              <input type="date" style={inputSt2} value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} />
+            </div>
+            <div>
+              <label style={lblSt2}>Fecha fin estimada</label>
+              <input type="date" style={inputSt2} value={fechaFin} onChange={e => setFechaFin(e.target.value)} />
+            </div>
+          </div>
+          <div style={{ background: T.faint, borderRadius: 4, padding: '8px 10px', fontSize: 11, color: T.ink2 }}>
+            Se copiarán <b>{(plantilla.rubros || []).length} rubros</b> y <b>{(plantilla.rubros || []).reduce((s, r) => s + (r.tareas || []).length, 0)} tareas</b> al presupuesto.
+          </div>
+        </div>
+        <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Btn sm onClick={onClose}>Cancelar</Btn>
+          <Btn sm fill style={{ opacity: canSave ? 1 : 0.5 }}
+            onClick={() => canSave && onCrear({ nombre: nombre.trim(), cliente: cliente?.nombre || '', clienteId, fechaInicio, fechaFinEstim: fechaFin })}>
+            Crear obra →
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Plantillas() {
+  const navigate = useNavigate();
+  const { addObra, patchDetalle } = useObras();
   const { plantillas, add, update, remove, duplicate, incrementUso } = usePlantillas();
   const [tipoFilt, setTipoFilt] = useState('Todos');
   const [search,   setSearch]   = useState('');
@@ -706,6 +773,7 @@ export default function Plantillas() {
   const [form,     setForm]     = useState(null);
   const [menuId,   setMenuId]   = useState(null);
   const [flash,    setFlash]    = useState(null);
+  const [usarPlt,  setUsarPlt]  = useState(null);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -744,9 +812,16 @@ export default function Plantillas() {
   const showFlash = (msg) => { setFlash(msg); setTimeout(() => setFlash(null), 2800); };
 
   const handleUsar = (p) => {
-    incrementUso(p.id);
-    showFlash(`"${p.nombre}" marcada. Creá la obra desde Obras → Nueva obra.`);
+    setUsarPlt(p);
     setViewId(null);
+  };
+
+  const handleCrearObra = (datos) => {
+    const obraId = addObra(datos);
+    patchDetalle(obraId, d => ({ ...d, rubros: JSON.parse(JSON.stringify(usarPlt.rubros || [])) }));
+    incrementUso(usarPlt.id);
+    setUsarPlt(null);
+    navigate(`/obras/${obraId}/presupuesto`);
   };
 
   const handleDup = (p) => { duplicate(p.id); showFlash(`"${p.nombre}" duplicada.`); setMenuId(null); };
@@ -862,6 +937,14 @@ export default function Plantillas() {
       )}
 
       {menuId && <div style={{ position: 'fixed', inset: 0, zIndex: 10 }} onClick={() => setMenuId(null)} />}
+
+      {usarPlt && (
+        <UsarPlantillaModal
+          plantilla={usarPlt}
+          onClose={() => setUsarPlt(null)}
+          onCrear={handleCrearObra}
+        />
+      )}
 
       {flash && (
         <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: T.ink, color: 'white', padding: '10px 20px', borderRadius: 6, fontSize: 13, zIndex: 400, maxWidth: 420, textAlign: 'center', pointerEvents: 'none' }}>
