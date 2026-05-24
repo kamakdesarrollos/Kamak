@@ -226,6 +226,68 @@ async function handleLinkingFlow(phone, text, conv) {
   }
 }
 
+// ── Detección de corrección de avance ────────────────────────────────────────
+function extractCorreccion(text, obras, detalles) {
+  if (!text) return null;
+  const t = norm(text);
+
+  const corrRE = /correg|corrijo|me equivoqu|error|en realidad|eran|era\b|no eran|no son|no era\b|cambiar avance|editar avance|modific/i;
+  if (!corrRE.test(t)) return null;
+
+  // Reutilizamos la extracción de avance para sacar obra, tarea y nueva cantidad
+  const base = extractAvanceCompleto(text, obras, detalles);
+  // Para corrección no requerimos la señal de avance, así que si no matcheó por eso
+  // intentamos buscar obra + tarea + número directamente
+  if (base?.obraId && base?.tareaId && base?.cantidadAvance != null) {
+    return { ...base, esCorreccion: true };
+  }
+
+  // Intento directo: número + obra + tarea (sin palabras de avance)
+  const cantRE = /(\d+(?:[.,]\d+)?)\s*(mts?2?|m2|m²|m3|m³|ml|u\b|kg|hs|unid(?:ades?)?)?/i;
+  const cantMatch = text.match(cantRE);
+  if (!cantMatch) return null;
+
+  let obraEncontrada = null;
+  for (const o of obras) {
+    const oNorm = norm(o.nombre);
+    if (t.includes(oNorm)) { obraEncontrada = o; break; }
+    const pals = oNorm.split(/\s+/).filter(p => p.length > 3);
+    if (pals.some(p => t.includes(p))) { obraEncontrada = o; break; }
+  }
+
+  let tareaEncontrada = null, rubroEncontrado = null;
+  const buscar = obraEncontrada ? [obraEncontrada, ...obras.filter(o => o.id !== obraEncontrada.id)] : obras;
+  outer2:
+  for (const o of buscar) {
+    for (const r of (detalles[o.id]?.rubros || []).filter(r => r.tipo !== 'seccion')) {
+      for (const ta of (r.tareas || []).filter(ta => ta.tipo !== 'seccion')) {
+        const taNorm = norm(ta.nombre);
+        const pals = taNorm.split(/\s+/).filter(p => p.length > 2);
+        if (t.includes(taNorm) || pals.some(p => t.includes(p))) {
+          tareaEncontrada = ta; rubroEncontrado = r;
+          if (!obraEncontrada) obraEncontrada = o;
+          break outer2;
+        }
+      }
+    }
+  }
+
+  if (!obraEncontrada || !tareaEncontrada || !cantMatch) return null;
+
+  return {
+    completo:       true,
+    esCorreccion:   true,
+    obraId:         obraEncontrada.id,
+    rubroId:        rubroEncontrado?.id || null,
+    tareaId:        tareaEncontrada.id,
+    cantidadAvance: parseFloat(cantMatch[1].replace(',', '.')),
+    unidad:         cantMatch[2] ? norm(cantMatch[2]) : (tareaEncontrada.unidad || 'u'),
+    descripcion:    text.slice(0, 120),
+    _obra:          obraEncontrada,
+    _tarea:         tareaEncontrada,
+  };
+}
+
 // ── Extracción directa de avance — bypasa Claude cuando todo está en el texto ──
 const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
@@ -657,6 +719,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     }
 
     // Calcular avance y valor a certificar (costoMat + costoSub = valor total del trabajo)
+    const esCorreccion = !!datos.esCorreccion;
     let avanceAgregado = 0;
     let valorCertificado = 0;
     const cantAvance = parseFloat(datos.cantidadAvance) || 0;
@@ -672,13 +735,19 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         valorCertificado = Math.round(costoUnit * (tarea.cantidad || 0) * avanceAgregado / 100);
       }
     }
+    // Para correcciones: SET en vez de ADD
+    const avancePrevio = tarea?.avance || 0;
+    const avanceFinalUncapped = esCorreccion
+      ? Math.round((cantAvance / (tarea?.cantidad || 1)) * 100)
+      : avancePrevio + avanceAgregado;
+    const avanceFinal = Math.min(100, avanceFinalUncapped);
+    if (esCorreccion && tarea) avanceAgregado = avanceFinal - avancePrevio;
 
     // Detectar exceso sobre presupuesto
     let excesoMsg = '';
     let nuevoAdicional = null;
-    if (tarea && avanceAgregado > 0) {
-      const avanceAnterior  = tarea.avance || 0;
-      const nuevoAvanceRaw  = avanceAnterior + avanceAgregado;
+    if (tarea && avanceAgregado !== 0) {
+      const nuevoAvanceRaw = avanceFinalUncapped;
       if (nuevoAvanceRaw > 100) {
         const excesoPct  = nuevoAvanceRaw - 100;
         const costoUnit  = (tarea.costoMat || 0) + (tarea.costoSub || 0);
@@ -710,14 +779,13 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       }
     }
 
-    // Actualizar avance en rubros (capeado a 100%)
+    // Actualizar avance en rubros — SET para correcciones, ADD para avances normales
     let updatedRubros = detalle.rubros;
-    if (rubroIdx >= 0 && tareaIdx >= 0 && tarea && avanceAgregado > 0) {
-      const nuevoAvance = Math.min(100, (tarea.avance || 0) + avanceAgregado);
+    if (rubroIdx >= 0 && tareaIdx >= 0 && tarea && avanceFinal !== avancePrevio) {
       updatedRubros = detalle.rubros.map((r, ri) =>
         ri !== rubroIdx ? r : {
           ...r,
-          tareas: r.tareas.map((t, ti) => ti === tareaIdx ? { ...t, avance: nuevoAvance } : t),
+          tareas: r.tareas.map((t, ti) => ti === tareaIdx ? { ...t, avance: avanceFinal } : t),
         }
       );
     }
@@ -735,7 +803,15 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       ...detalle,
       rubros:     updatedRubros,
       fotos:      [...(detalle.fotos || []), ...(nuevaFoto ? [nuevaFoto] : [])],
-      adicionales: [...(detalle.adicionales || []), ...(nuevoAdicional ? [nuevoAdicional] : [])],
+      adicionales: esCorreccion
+        ? [
+            // Si la corrección ya no excede el 100%, quitar el adicional de exceso previo de esta tarea
+            ...(detalle.adicionales || []).filter(a =>
+              !(avanceFinalUncapped <= 100 && a.descripcion?.includes('Exceso') && a.tarea === tarea?.nombre)
+            ),
+            ...(nuevoAdicional ? [nuevoAdicional] : []),
+          ]
+        : [...(detalle.adicionales || []), ...(nuevoAdicional ? [nuevoAdicional] : [])],
     };
     await fetch(`${SUPABASE_URL}/rest/v1/shared_data`, {
       method: 'POST',
@@ -763,26 +839,57 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         ccMsg = `\n⚠️ Proveedor "*${rubro.proveedor}*" no encontrado en el sistema. Revisá el nombre en el rubro.`;
       } else {
         const ccEntries = provData.ccEntries || [];
-        const cantStr = cantAvance > 0 ? `${cantAvance}${datos.unidad || ''}` : `${avanceAgregado}%`;
-        const nuevaCC = {
-          id:          `cc-${Date.now()}`,
-          proveedorId: prov.id,
-          obraId:      obra.id,
-          obraNombre:  obra.nombre,
-          fecha:       new Date().toISOString().split('T')[0],
-          concepto:    `Cert: ${datos.descripcion || tarea?.nombre || 'Avance'} (${cantStr})`,
-          tipo:        'cert',
-          debe:        valorCertificado,
-          haber:       0,
-        };
+        const cantStr = cantAvance > 0 ? `${cantAvance}${datos.unidad || ''}` : `${Math.abs(avanceAgregado)}%`;
+        let updatedCCEntries;
+        if (esCorreccion) {
+          // Buscar la última cert de este proveedor + obra + tarea y actualizarla
+          const tareaKey = (tarea?.nombre || '').toLowerCase();
+          let lastIdx = -1;
+          for (let i = ccEntries.length - 1; i >= 0; i--) {
+            const e = ccEntries[i];
+            if (e.obraId === obra.id && e.tipo === 'cert' && (e.concepto || '').toLowerCase().includes(tareaKey)) {
+              lastIdx = i; break;
+            }
+          }
+          if (lastIdx >= 0) {
+            updatedCCEntries = ccEntries.map((e, i) => i !== lastIdx ? e : {
+              ...e,
+              fecha:    new Date().toISOString().split('T')[0],
+              concepto: `Corrección: ${tarea?.nombre || 'Avance'} (${cantStr}) — por ${user.user_name}`,
+              debe:     valorCertificado,
+            });
+          } else {
+            updatedCCEntries = [...ccEntries, {
+              id: `cc-${Date.now()}`, proveedorId: prov.id,
+              obraId: obra.id, obraNombre: obra.nombre,
+              fecha: new Date().toISOString().split('T')[0],
+              concepto: `Corrección: ${tarea?.nombre || 'Avance'} (${cantStr})`,
+              tipo: 'cert', debe: valorCertificado, haber: 0,
+            }];
+          }
+        } else {
+          updatedCCEntries = [...ccEntries, {
+            id:          `cc-${Date.now()}`,
+            proveedorId: prov.id,
+            obraId:      obra.id,
+            obraNombre:  obra.nombre,
+            fecha:       new Date().toISOString().split('T')[0],
+            concepto:    `Cert: ${datos.descripcion || tarea?.nombre || 'Avance'} (${cantStr})`,
+            tipo:        'cert',
+            debe:        valorCertificado,
+            haber:       0,
+          }];
+        }
         await fetch(`${SUPABASE_URL}/rest/v1/shared_data`, {
           method: 'POST',
           headers: { ...sbH(), 'Prefer': 'resolution=merge-duplicates' },
-          body: JSON.stringify({ key: 'proveedores', data: { proveedores: provData.proveedores, ccEntries: [...ccEntries, nuevaCC] }, updated_at: new Date().toISOString() }),
+          body: JSON.stringify({ key: 'proveedores', data: { proveedores: provData.proveedores, ccEntries: updatedCCEntries }, updated_at: new Date().toISOString() }),
         });
         await broadcastChange('proveedores');
         const montoFmt = String(valorCertificado).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-        ccMsg = `\n💰 Cert. $${montoFmt} agregada a CC de *${prov.nombre}*`;
+        ccMsg = esCorreccion
+          ? `\n💰 CC de *${prov.nombre}* actualizada → $${montoFmt}`
+          : `\n💰 Cert. $${montoFmt} agregada a CC de *${prov.nombre}*`;
       }
     }
 
@@ -824,10 +931,13 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     }
 
     const tareaMsg  = tarea ? ` · ${tarea.nombre}` : '';
-    const avanceMsg = avanceAgregado > 0 ? ` · +${Math.min(avanceAgregado, 100 - (tarea?.avance || 0))}%` : '';
+    const avanceMsg = esCorreccion
+      ? ` · ${avancePrevio}% → ${avanceFinal}%`
+      : avanceAgregado > 0 ? ` · +${Math.min(avanceAgregado, 100 - avancePrevio)}%` : '';
     // Al que reportó: solo confirmación limpia (sin precios ni alertas)
     const ccOkMsg = ccMsg && ccMsg.startsWith('\n💰') ? ccMsg : '';
-    return `✅ Avance guardado en *${obra.nombre}*${tareaMsg}${avanceMsg}${mediaUrl ? ' · con foto' : ''}${ccOkMsg}`;
+    const accionMsg = esCorreccion ? '🔧 Corrección guardada' : '✅ Avance guardado';
+    return `${accionMsg} en *${obra.nombre}*${tareaMsg}${avanceMsg}${mediaUrl ? ' · con foto' : ''}${ccOkMsg}`;
   }
 
   if (tipo === 'comando') {
@@ -957,6 +1067,25 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     ...conv.history,
     { rol: 'usuario', texto: messageText || '(foto)', ts: Date.now() },
   ];
+
+  // ── BYPASS CORRECCIÓN: "me equivoqué", "corregir avance", etc. ──────────────
+  const correccionDetectada = extractCorreccion(messageText || '', ctx.obras, ctx.detalles);
+  if (correccionDetectada?.completo) {
+    const { _obra, _tarea, cantidadAvance, unidad } = correccionDetectada;
+    const pctNuevo = _tarea.cantidad ? Math.round((cantidadAvance / _tarea.cantidad) * 100) : null;
+    const pctActual = _tarea.avance || 0;
+    const confMsg =
+      `🔧 *Corrección de avance:*\n\n` +
+      `🏗 Obra: *${_obra.nombre}*\n` +
+      `📐 Tarea: *${_tarea.nombre}*\n` +
+      `📊 Avance actual: *${pctActual}%*\n` +
+      `✏️ Nuevo valor: *${cantidadAvance}${unidad}*${pctNuevo != null ? ` → *${Math.min(pctNuevo, 100)}%*` : ''}\n\n` +
+      `Esto *reemplaza* el avance anterior. ¿Confirmás? (sí/no)`;
+    const newHist = [...updatedHistory, { rol: 'asistente', texto: confMsg, ts: Date.now() }];
+    await saveConversation(phone, 'confirmando', { accion: { tipo: 'avance_obra', datos: correccionDetectada }, pendingMediaUrl: mediaUrl }, newHist);
+    await sendWA(phone, confMsg);
+    return;
+  }
 
   // ── BYPASS CLAUDE: extracción directa cuando todo está en el texto ──────────
   // Si detectamos avance + obra + tarea + cantidad del propio mensaje, vamos directo
