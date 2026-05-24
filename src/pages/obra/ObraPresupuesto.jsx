@@ -3104,18 +3104,10 @@ export default function ObraPresupuesto() {
       }
       const baseUrl = window.location.origin;
       const link = `${baseUrl}/portal/acceso/${token}`;
+      const tokens = (await loadSharedData('portal_tokens')) || {};
+      tokens[token] = { obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires, createdAt: new Date().toISOString() };
+      await saveSharedData('portal_tokens', tokens);
       const text = `Hola! Te compartimos el acceso a tu portal de obra *${obra.nombre}*.\n\nPodés ver el avance, las cuotas y los documentos en este enlace:\n${link}\n\n_Kamak Desarrollos_`;
-      const res = await fetch('/api/whatsapp/send-portal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setPortalMsg(`❌ Error al guardar: ${data.error}`);
-        setPortalSending(false);
-        return;
-      }
       setPortalManualUrl(`https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`);
       setPortalMsg(`✓ Link generado para +${waPhone}.`);
     } catch (e) {
