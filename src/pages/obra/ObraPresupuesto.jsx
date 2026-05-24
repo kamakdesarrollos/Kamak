@@ -116,6 +116,12 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   const verCostos   = currentUser?.permisos?.verCostos   ?? true;
   const verMargenes = currentUser?.permisos?.verMargenes ?? true;
   const { costo, venta, margen, rubros: rr } = calcObra(detalle.rubros);
+  // Avance ponderado por venta de cada rubro; si no hay pricing, promedio simple
+  const avanceGeneral = rr.length > 0
+    ? venta > 0
+      ? Math.round(rr.reduce((s, r) => s + r.avance * r.venta, 0) / venta)
+      : Math.round(rr.reduce((s, r) => s + r.avance, 0) / rr.length)
+    : 0;
   const { dolarVenta } = useDolar();
   const { movimientos: allMovs } = useMovimientos();
   const today = new Date();
@@ -133,7 +139,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
 
   const alertas = [];
   if (margen < 0) alertas.push({ tipo: 'danger', msg: `Margen negativo (${margen}%) — sobrecosto detectado` });
-  if (diasRest !== null && diasRest < 30 && obra.avance < 80) alertas.push({ tipo: 'warn', msg: `Quedan ${diasRest} días pero el avance es solo ${obra.avance}%` });
+  if (diasRest !== null && diasRest < 30 && avanceGeneral < 80) alertas.push({ tipo: 'warn', msg: `Quedan ${diasRest} días pero el avance es solo ${avanceGeneral}%` });
   detalle.adicionales.filter(a => a.estado === 'pendiente').forEach(a => alertas.push({ tipo: 'info', msg: `Adicional pendiente de aprobación: "${a.descripcion}"` }));
 
   const tc = dolarVenta || 1;
@@ -165,7 +171,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         {[
-          { label: 'Avance general', value: `${obra.avance}%`, color: obra.avance >= 85 ? T.warn : T.ok, show: true },
+          { label: 'Avance general', value: `${avanceGeneral}%`, color: avanceGeneral >= 85 ? T.warn : T.ok, show: true },
           { label: 'Margen real', value: `${margen}%`, color: margen < 0 ? T.accent : margen < 20 ? T.warn : T.ok, show: verMargenes },
           { label: 'Días al vencimiento', value: diasRest !== null ? diasRest : '—', color: diasRest !== null && diasRest < 30 ? T.warn : T.ink, show: true },
         ].filter(k => k.show).map((k, i) => (
