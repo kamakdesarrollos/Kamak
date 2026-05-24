@@ -4,6 +4,7 @@ import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Label } from '../components/ui';
 import { T } from '../theme';
 import { useProveedores } from '../store/ProveedoresContext';
+import { useMovimientos } from '../store/MovimientosContext';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
@@ -143,6 +144,7 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
 export default function Proveedores() {
   const navigate = useNavigate();
   const { proveedores, addProveedor, updateProveedor, removeProveedor, getSaldo, getObrasProveedor } = useProveedores();
+  const { movimientos } = useMovimientos();
   const [pagoProvId, setPagoProvId] = useState(null);
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editProv, setEditProv] = useState(null);
@@ -155,6 +157,16 @@ export default function Proveedores() {
   const totalDeuda = useMemo(() => conSaldo.reduce((s, p) => s + getSaldo(p.id), 0), [conSaldo, getSaldo]);
   const moCount    = useMemo(() => proveedores.filter(p => getCat(p) === 'Mano de obra').length, [proveedores]);
   const matCount   = useMemo(() => proveedores.filter(p => getCat(p) === 'Materiales').length, [proveedores]);
+
+  const totalPagado = useMemo(() => {
+    const map = {};
+    proveedores.forEach(p => {
+      map[p.id] = movimientos
+        .filter(m => m.tipo === 'gasto' && (m.proveedor === p.nombre || m.proveedorId === p.id))
+        .reduce((s, m) => s + m.monto, 0);
+    });
+    return map;
+  }, [proveedores, movimientos]);
 
   const tabs = [
     { label: 'Todos',        key: 'Todos',        count: proveedores.length },
@@ -211,6 +223,7 @@ export default function Proveedores() {
         <KPI label="Materiales" value={matCount} color="#0ea5e9" />
         <KPI label="Con saldo pendiente" value={conSaldo.length} color={T.warn} />
         <KPI label="Deuda total" value={`$ ${fmtN(totalDeuda)}`} color={T.warn} sub="suma de saldos" />
+        <KPI label="Total pagado" value={`$ ${fmtN(Object.values(totalPagado).reduce((s, v) => s + v, 0))}`} color={T.ok} sub="histórico gastos" />
       </div>
 
       {/* Tabs */}
@@ -233,13 +246,14 @@ export default function Proveedores() {
       {/* ─── Vista lista ────────────────────────────────────────────────────── */}
       {view === 'lista' && filtered.length > 0 && (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr 1fr', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             <span>Proveedor</span>
             <span>Especialidad</span>
             <span style={{ fontFamily: T.fontMono }}>CUIT</span>
             <span>Contacto</span>
             <span>Calif.</span>
             <span style={{ textAlign: 'center' }}>Obras</span>
+            <span style={{ textAlign: 'right' }}>Pagado</span>
             <span style={{ textAlign: 'right' }}>Saldo CC</span>
             <span style={{ textAlign: 'center' }}>Condición</span>
             <span>Acciones</span>
@@ -251,7 +265,7 @@ export default function Proveedores() {
             const obrasCount = getObrasProveedor(p.id).length;
             return (
               <div key={p.id}
-                style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
+                style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr 1fr', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
                 onMouseEnter={e => e.currentTarget.style.background = T.faint}
                 onMouseLeave={e => e.currentTarget.style.background = ''}
                 onClick={() => navigate(`/proveedores/${p.id}`)}>
@@ -294,6 +308,10 @@ export default function Proveedores() {
                       {obrasCount}
                     </span>
                   ) : <span style={{ color: T.ink3, fontFamily: T.fontMono }}>0</span>}
+                </span>
+                {/* Total pagado */}
+                <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontSize: 11, color: totalPagado[p.id] > 0 ? T.ok : T.ink3 }}>
+                  {totalPagado[p.id] > 0 ? `$ ${fmtN(totalPagado[p.id])}` : '—'}
                 </span>
                 {/* Saldo */}
                 <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.warn : T.ok }}>

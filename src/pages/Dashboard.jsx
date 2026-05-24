@@ -222,7 +222,11 @@ export default function Dashboard() {
                     <div className="k-mono" style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>$ {fmtN(totalARS)}</div>
                   </div>
                   {cajas.filter(c => c.activa && c.moneda === 'ARS').map(c => (
-                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: `1px solid ${T.faint2}` }}>
+                    <div key={c.id}
+                      onClick={() => navigate('/cajas')}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer' }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.faint}
+                      onMouseLeave={e => e.currentTarget.style.background = ''}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                         <div style={{ width: 7, height: 7, borderRadius: '50%', background: c.color || T.ink2, flexShrink: 0 }} />
                         <span style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</span>
@@ -241,7 +245,11 @@ export default function Dashboard() {
                     <div className="k-mono" style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>U$S {fmtN(totalUSD)}</div>
                   </div>
                   {cajas.filter(c => c.activa && c.moneda === 'USD').map(c => (
-                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: `1px solid ${T.faint2}` }}>
+                    <div key={c.id}
+                      onClick={() => navigate('/cajas')}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer' }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.faint}
+                      onMouseLeave={e => e.currentTarget.style.background = ''}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                         <div style={{ width: 7, height: 7, borderRadius: '50%', background: c.color || T.ink2, flexShrink: 0 }} />
                         <span style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</span>
@@ -329,9 +337,9 @@ export default function Dashboard() {
                 ))}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 12, color: T.ink2 }}>
-                <span>Ingresos <b style={{ color: T.ok }}>$ {fmtN(totalIngresosMes)}</b></span>
-                <span>Gastos <b style={{ color: T.warn }}>$ {fmtN(totalGastosMes)}</b></span>
-                <span>Neto <b style={{ color: netoMes >= 0 ? T.ok : T.warn }}>{netoMes >= 0 ? '+' : '−'}$ {fmtN(netoMes)}</b></span>
+                <span style={{ cursor: 'pointer' }} onClick={() => navigate('/movimientos')}>Ingresos <b style={{ color: T.ok }}>$ {fmtN(totalIngresosMes)}</b></span>
+                <span style={{ cursor: 'pointer' }} onClick={() => navigate('/movimientos')}>Gastos <b style={{ color: T.warn }}>$ {fmtN(totalGastosMes)}</b></span>
+                <span style={{ cursor: 'pointer' }} onClick={() => navigate('/movimientos')}>Neto <b style={{ color: netoMes >= 0 ? T.ok : T.warn }}>{netoMes >= 0 ? '+' : '−'}$ {fmtN(netoMes)}</b></span>
               </div>
             </Box>
           )}
@@ -373,12 +381,16 @@ export default function Dashboard() {
         <Box style={{ padding: 0, marginBottom: 12, overflow: 'hidden' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
             {[
-              { label: `Ingresos · ${MESES_N[mo - 1]}`, value: `$ ${fmtN(totalIngresosMes)}`, sub: `${ingresosMes.length} cobros`, color: T.ok },
-              { label: `Gastos · ${MESES_N[mo - 1]}`,   value: `$ ${fmtN(totalGastosMes)}`,   sub: `${gastosMes.length} registros`, color: T.warn },
-              { label: `Neto · ${MESES_N[mo - 1]}`,     value: `${netoMes >= 0 ? '+' : '−'} $ ${fmtN(netoMes)}`, sub: netoMes >= 0 ? 'Superávit' : 'Déficit', color: netoMes >= 0 ? T.ok : T.accent },
-              { label: 'Obras activas', value: String(obrasActivas.length), sub: `${obras.filter(o => o.estado === 'en-presupuesto').length} en presupuesto`, color: T.ink },
+              { label: `Ingresos · ${MESES_N[mo - 1]}`, value: `$ ${fmtN(totalIngresosMes)}`, sub: `${ingresosMes.length} cobros`, color: T.ok, to: '/movimientos' },
+              { label: `Gastos · ${MESES_N[mo - 1]}`,   value: `$ ${fmtN(totalGastosMes)}`,   sub: `${gastosMes.length} registros`, color: T.warn, to: '/movimientos' },
+              { label: `Neto · ${MESES_N[mo - 1]}`,     value: `${netoMes >= 0 ? '+' : '−'} $ ${fmtN(netoMes)}`, sub: netoMes >= 0 ? 'Superávit' : 'Déficit', color: netoMes >= 0 ? T.ok : T.accent, to: '/movimientos' },
+              { label: 'Obras activas', value: String(obrasActivas.length), sub: `${obras.filter(o => o.estado === 'en-presupuesto').length} en presupuesto`, color: T.ink, to: '/obras' },
             ].map((k, i, arr) => (
-              <div key={i} style={{ padding: '14px 16px', borderRight: i < arr.length - 1 ? `1px solid ${T.faint2}` : 'none', minWidth: 0 }}>
+              <div key={i}
+                onClick={() => navigate(k.to)}
+                style={{ padding: '14px 16px', borderRight: i < arr.length - 1 ? `1px solid ${T.faint2}` : 'none', minWidth: 0, cursor: 'pointer' }}
+                onMouseEnter={e => e.currentTarget.style.background = T.faint}
+                onMouseLeave={e => e.currentTarget.style.background = ''}>
                 <div style={{ fontSize: 10, color: T.ink3, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.label}</div>
                 <div style={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: k.value.length > 10 ? 14 : 18, fontWeight: 800, color: k.color, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.value}</div>
                 <div style={{ fontSize: 10, color: T.ink3, marginTop: 6, whiteSpace: 'nowrap' }}>{k.sub}</div>
