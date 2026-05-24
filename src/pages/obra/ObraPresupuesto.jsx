@@ -1750,7 +1750,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const [cuotaForm, setCuotaForm] = useState({ descripcion: '', monto: '', fecha: '', n: '' });
   const [editCuotaId, setEditCuotaId] = useState(null);
   const [genAuto, setGenAuto] = useState(false);
-  const [genForm, setGenForm] = useState({ n: '6', primerFecha: '', intervalo: '1-meses' });
+  const [genForm, setGenForm] = useState({ n: '6', primerFecha: '', intervalo: '1-meses', anticipo: '', anticipoFecha: '' });
 
   const { venta: ventaBase } = calcObra(detalle.rubros);
   const adicionalCliente = (detalle.adicionales || [])
@@ -1806,14 +1806,23 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const generarAutomatico = () => {
     const num = parseInt(genForm.n) || 1;
     if (!num) return;
-    const montoCuota = Math.round(totalUSD / num);
-    const nuevas = Array.from({ length: num }, (_, i) => ({
-      id: newId(), n: i + 1,
-      descripcion: `Cuota ${i + 1} de ${num}`,
-      monto: i === num - 1 ? totalUSD - montoCuota * (num - 1) : montoCuota,
-      fecha: genForm.primerFecha ? agregarFecha(genForm.primerFecha, i, genForm.intervalo) : '',
-      estado: 'pendiente',
-    }));
+    const anticipoMonto = parseFloat(genForm.anticipo) || 0;
+    const saldo = totalUSD - anticipoMonto;
+    const nuevas = [];
+    if (anticipoMonto > 0) {
+      nuevas.push({ id: newId(), n: 1, descripcion: 'Adelanto de obra', monto: anticipoMonto, fecha: genForm.anticipoFecha || '', estado: 'pendiente' });
+    }
+    const offset = nuevas.length;
+    const montoCuota = num > 0 ? Math.round(saldo / num) : 0;
+    for (let i = 0; i < num; i++) {
+      nuevas.push({
+        id: newId(), n: offset + i + 1,
+        descripcion: num === 1 ? 'Saldo' : `Cuota ${i + 1} de ${num}`,
+        monto: i === num - 1 ? saldo - montoCuota * (num - 1) : montoCuota,
+        fecha: genForm.primerFecha ? agregarFecha(genForm.primerFecha, i, genForm.intervalo) : '',
+        estado: 'pendiente',
+      });
+    }
     patch(d => ({ ...d, cuotas: nuevas }));
     setGenAuto(false);
   };
@@ -1908,6 +1917,14 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
         {!locked && genAuto && (
           <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.faint2}`, background: T.faint }}>
             <FormPanel title="Generar cuotas automáticamente" onSave={generarAutomatico} onCancel={() => setGenAuto(false)} saveLabel="Generar">
+              <div style={{ marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${T.faint2}` }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>Adelanto de obra (opcional)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <FInput label="Monto adelanto (U$S)" value={genForm.anticipo} onChange={v => setGenForm(p => ({ ...p, anticipo: v }))} type="number" placeholder="0" />
+                  <FInput label="Fecha del adelanto" value={genForm.anticipoFecha} onChange={v => setGenForm(p => ({ ...p, anticipoFecha: v }))} type="date" />
+                </div>
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>Saldo en cuotas</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 <FInput label="Cantidad de cuotas" value={genForm.n} onChange={v => setGenForm(p => ({ ...p, n: v }))} type="number" placeholder="6" />
                 <FInput label="Primera fecha de pago" value={genForm.primerFecha} onChange={v => setGenForm(p => ({ ...p, primerFecha: v }))} type="date" />
@@ -1924,9 +1941,12 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
                   </select>
                 </div>
               </div>
-              {totalUSD > 0 && genForm.n && (
+              {genForm.n && (
                 <div style={{ marginTop: 8, fontSize: 11, color: T.ink3 }}>
-                  → {genForm.n} cuotas de aprox. {fmtUSD(Math.round(totalUSD / (parseInt(genForm.n) || 1)))} c/u, cada {genForm.intervalo.replace('-', ' ')} · Total {fmtUSD(totalUSD)}
+                  {parseFloat(genForm.anticipo) > 0 && <span>Adelanto {fmtUSD(parseFloat(genForm.anticipo))} + </span>}
+                  {genForm.n} cuota{genForm.n !== '1' ? 's' : ''} de aprox. {fmtUSD(Math.round((totalUSD - (parseFloat(genForm.anticipo) || 0)) / (parseInt(genForm.n) || 1)))} c/u
+                  {genForm.intervalo && <span>, cada {genForm.intervalo.replace('-', ' ')}</span>}
+                  {totalUSD > 0 && <span> · Total {fmtUSD(totalUSD)}</span>}
                 </div>
               )}
             </FormPanel>

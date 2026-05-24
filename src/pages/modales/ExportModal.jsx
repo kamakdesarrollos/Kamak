@@ -305,8 +305,8 @@ body{font-family:'Montserrat',sans-serif}
 .firma-sub{font-size:9px;color:#9a9892}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
 @media print{
-  html,body{margin:0!important;padding:0!important;width:210mm}
-  .portada-page,.comp-flow,.cond-page{margin:0!important;box-shadow:none!important}
+  html,body{margin:0!important;padding:0!important;width:100%!important}
+  .portada-page,.comp-flow,.cond-page{margin:0!important;box-shadow:none!important;width:100%!important}
 }
 @media screen{
   html{background:#555}
