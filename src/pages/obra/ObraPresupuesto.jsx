@@ -110,6 +110,7 @@ function FormPanel({ title, children, onSave, onCancel, style, saveLabel = 'Guar
 // TAB 0: RESUMEN
 // ─────────────────────────────────────────────────────────────────────────────
 function TabResumen({ obra, detalle, moneda, onChangeTab }) {
+  const [incluirPagos, setIncluirPagos] = useState(true);
   const { currentUser } = useUsuarios();
   const verCostos   = currentUser?.permisos?.verCostos   ?? true;
   const verMargenes = currentUser?.permisos?.verMargenes ?? true;
@@ -148,6 +149,16 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {/* Botón exportar resumen */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.ink2, cursor: 'pointer' }}>
+          <input type="checkbox" checked={incluirPagos} onChange={e => setIncluirPagos(e.target.checked)} />
+          Incluir plan de pagos
+        </label>
+        <Btn sm onClick={() => abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos }), 'Resumen')}>↗ Exportar resumen total</Btn>
+      </div>
+
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         {[
@@ -336,13 +347,13 @@ function buildVisibleTareas(tareas, collapsedSections) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 1: PRESUPUESTO
 // ─────────────────────────────────────────────────────────────────────────────
-function TabPresupuesto({ obra, detalle, patch, moneda }) {
+function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExport }) {
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const { proveedores: provListPresu } = useProveedores();
   const verCostos   = currentUser?.permisos?.verCostos   ?? true;
   const verMargenes = currentUser?.permisos?.verMargenes ?? true;
-  const puedeEditar = currentUser?.permisos?.editarPresu ?? true;
+  const puedeEditar = (currentUser?.permisos?.editarPresu ?? true) && !frozen;
   const puedeCargarAvance = currentUser?.permisos?.cargarAvance ?? true;
   const [selTask, setSelTask] = useState(null);
   const [selRubroId, setSelRubroId] = useState(null);
@@ -587,7 +598,26 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
   ];
 
   return (
-    <div style={{ display: 'flex', gap: 10, overflow: 'hidden', height: 'calc(100vh - 320px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden', height: 'calc(100vh - 320px)' }}>
+
+      {/* Banner aprobación */}
+      {frozen ? (
+        <div style={{ background: '#1a9b9c18', border: `1.5px solid #1a9b9c`, borderRadius: 6, padding: '9px 14px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <span style={{ fontSize: 16 }}>🔒</span>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontWeight: 700, color: '#1a9b9c', fontSize: 13 }}>Presupuesto aprobado · congelado</span>
+            {detalle.fechaAprobacion && <span style={{ fontSize: 11, color: T.ink3, marginLeft: 10 }}>Aprobado el {fmtD(detalle.fechaAprobacion)} · Para cambios usá la pestaña Adicionales</span>}
+          </div>
+          {onExport && <Btn sm onClick={onExport}>↗ Exportar</Btn>}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 8, flexShrink: 0 }}>
+          {onExport && <Btn sm onClick={onExport}>↗ Exportar presupuesto</Btn>}
+          {onApprove && <Btn sm fill onClick={onApprove} style={{ background: T.ok, borderColor: T.ok, color: '#fff' }}>✓ Aprobar presupuesto</Btn>}
+        </div>
+      )}
+
+    <div style={{ display: 'flex', gap: 10, flex: 1, overflow: 'hidden' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Totals strip */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 8, flexShrink: 0, alignItems: 'stretch' }}>
@@ -1136,6 +1166,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda }) {
         )}
       </Box>
     </div>
+    </div>
   );
 }
 
@@ -1317,7 +1348,160 @@ function TabMateriales({ detalle, obra }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const fmtU = (n) => n != null && n !== '' ? fmtN(n) : '—';
 
-function TabAdicionales({ detalle, patch, moneda }) {
+// ── Export HTML helpers (adicionales + resumen) ───────────────────────────────
+const fmtNE  = (n) => Math.round(n ?? 0).toLocaleString('es-AR');
+const fmtME  = (n, m) => m === 'USD' ? `U$S ${fmtNE(n)}` : `$ ${fmtNE(n)}`;
+const fmtDE  = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
+const fechaE = () => new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+const BASE_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
+@page{size:A4;margin:18mm 16mm}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+body{font-family:'Montserrat',sans-serif;font-size:11px;color:#1f2024;background:#fff}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:10px;border-bottom:3px solid #1a9b9c;margin-bottom:18px}
+.logo{font-weight:900;font-size:20px;letter-spacing:2px;color:#1f2024}
+.hdr-r{text-align:right;font-family:'JetBrains Mono',monospace;font-size:8px;color:#9a9892;line-height:1.7}
+.title{font-weight:900;font-size:16px;letter-spacing:1px;color:#1a9b9c;margin-bottom:2px}
+.obra-info{font-size:10px;color:#5a5a58;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:14px}
+th{background:#1f2024;color:#fff;padding:5px 8px;text-align:left;font-size:8.5px;letter-spacing:.8px;font-family:'JetBrains Mono',monospace;font-weight:700}
+th.r{text-align:right}
+td{padding:5px 8px;border-bottom:1px solid #e8e4d8}
+td.r{text-align:right;font-family:'JetBrains Mono',monospace}
+td.b{font-weight:700}
+tr.alt td{background:#f9f7f2}
+tr.rubro td{background:#1a9b9c18;font-weight:800;font-size:10.5px;color:#1a9b9c}
+tr.subtot td{background:#d6efef;font-weight:800}
+tr.total td{background:#1f2024;color:#fff;font-weight:900;font-family:'JetBrains Mono',monospace;font-size:12px}
+.pill{display:inline-block;padding:1px 7px;border-radius:8px;font-size:8px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.ok{background:#d1fae5;color:#065f46}
+.warn{background:#fef3c7;color:#92400e}
+.accent{background:#fee2e2;color:#991b1b}
+.ftr{margin-top:20px;padding-top:8px;border-top:1px solid #e8e4d8;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace}
+@media screen{body{max-width:794px;margin:0 auto;padding:16px}}`;
+
+function generarHTMLAdicionales({ obra, detalle, moneda }) {
+  const adic = detalle.adicionales || [];
+  const monedaStr = moneda || 'ARS';
+  const aprobados = adic.filter(a => a.estado === 'aprobado');
+  const totalCosto = aprobados.reduce((s, a) => s + (a.costoTotal ?? a.monto ?? 0), 0);
+  const totalVenta = aprobados.reduce((s, a) => s + (a.valorVentaTotal ?? a.monto ?? 0), 0);
+
+  const rows = adic.map((a, i) => {
+    const estadoPill = a.estado === 'aprobado'
+      ? `<span class="pill ok">aprobado</span>`
+      : a.estado === 'rechazado'
+        ? `<span class="pill accent">rechazado</span>`
+        : `<span class="pill warn">pendiente</span>`;
+    return `<tr${i % 2 === 1 ? ' class="alt"' : ''}>
+      <td>${i + 1}</td>
+      <td class="b">${a.descripcion || '—'}</td>
+      <td>${a.tarea || '—'}</td>
+      <td class="r">${a.cantidad != null ? fmtNE(a.cantidad) : '—'}</td>
+      <td class="r">${a.unidad || '—'}</td>
+      <td class="r">${a.costoTotal != null ? fmtME(a.costoTotal, monedaStr) : '—'}</td>
+      <td class="r b" style="color:#1a9b9c">${a.valorVentaTotal != null ? fmtME(a.valorVentaTotal, monedaStr) : '—'}</td>
+      <td>${estadoPill}</td>
+      <td class="r">${fmtDE(a.fecha)}</td>
+    </tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Adicionales — ${obra?.nombre || ''}</title><style>${BASE_CSS}</style></head><body>
+<div class="hdr">
+  <div><div class="logo">KAMAK</div><div style="font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;margin-top:2px">KAMAKDESARROLLOS@GMAIL.COM</div></div>
+  <div class="hdr-r">ADICIONALES DE OBRA<br>${fechaE()}</div>
+</div>
+<div class="title">ADICIONALES</div>
+<div class="obra-info">${(obra?.nombre || '').toUpperCase()}${obra?.cliente ? ' · ' + obra.cliente : ''}${obra?.tipo ? ' · ' + obra.tipo : ''} · ${adic.length} adicionales · ${aprobados.length} aprobados</div>
+<table>
+  <thead><tr>
+    <th>#</th><th>Descripción</th><th>Tarea</th><th class="r">Cant</th><th class="r">Un</th>
+    <th class="r">Costo total</th><th class="r">Venta total</th><th>Estado</th><th class="r">Fecha</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+  ${aprobados.length > 0 ? `<tfoot>
+    <tr class="subtot"><td colspan="5"></td><td class="r">${fmtME(totalCosto, monedaStr)}</td><td class="r" style="color:#1a9b9c">${fmtME(totalVenta, monedaStr)}</td><td colspan="2"></td></tr>
+  </tfoot>` : ''}
+</table>
+<div class="ftr"><span>KAMAK DESARROLLOS</span><span>NO INCLUYE IVA</span><span>${fechaE()}</span></div>
+</body></html>`;
+}
+
+function generarHTMLResumen({ obra, detalle, moneda, incluirPagos }) {
+  const monedaStr = moneda || 'ARS';
+  const rubros = detalle.rubros || [];
+  const adic = (detalle.adicionales || []).filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false);
+  const cuotas = detalle.cuotas || [];
+  const fin = detalle.financiacion || {};
+
+  let ventaBase = 0;
+  const rubroRows = rubros.map((rubro, ri) => {
+    let rubroVenta = 0;
+    const tareaRows = rubro.tareas.filter(t => t.tipo !== 'seccion').map((t, ti) => {
+      const cu = t.costoMat + (t.costoSub || 0);
+      const vu = t.margenLinea != null ? cu * (1 + t.margenLinea / 100) : t.costoMat * (1 + (rubro.margenMat || 0) / 100) + (t.costoSub || 0) * (1 + (rubro.margenMO || 0) / 100);
+      const vt = Math.round(vu * t.cantidad);
+      rubroVenta += vt;
+      return `<tr${ti % 2 === 1 ? ' class="alt"' : ''}><td style="padding-left:20px">${t.nombre}</td><td class="r">${fmtNE(t.cantidad)}</td><td class="r">${t.unidad}</td><td class="r">${fmtME(vt, monedaStr)}</td></tr>`;
+    }).join('');
+    ventaBase += rubroVenta;
+    return `<tr class="rubro"><td colspan="3">RUBRO ${String(ri+1).padStart(2,'0')} · ${rubro.nombre.toUpperCase()}</td><td class="r">${fmtME(rubroVenta, monedaStr)}</td></tr>${tareaRows}`;
+  }).join('');
+
+  const adicRows = adic.map((a, i) => `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td style="padding-left:20px">${a.descripcion}</td><td class="r">${a.cantidad != null ? fmtNE(a.cantidad) : ''}</td><td class="r">${a.unidad || ''}</td><td class="r" style="color:#1a9b9c">${fmtME(a.valorVentaTotal ?? a.monto ?? 0, monedaStr)}</td></tr>`).join('');
+  const totalAdic = adic.reduce((s, a) => s + (a.valorVentaTotal ?? a.monto ?? 0), 0);
+  const interes = parseFloat(fin.interes) || 0;
+  const totalCliente = Math.round((ventaBase + totalAdic) * (1 + interes / 100));
+
+  const cuotaRows = incluirPagos && cuotas.length > 0 ? cuotas.map((c, i) => `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${c.n || i+1}</td><td>${c.descripcion}</td><td class="r">${fmtDE(c.fecha)}</td><td class="r">${fmtME(c.monto, monedaStr)}</td><td><span class="pill ${c.estado === 'pagado' ? 'ok' : 'warn'}">${c.estado === 'pagado' ? 'pagado' : 'pendiente'}</span></td></tr>`).join('') : '';
+  const pagado = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + c.monto, 0);
+  const saldo = totalCliente - pagado;
+
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Resumen — ${obra?.nombre || ''}</title><style>${BASE_CSS}</style></head><body>
+<div class="hdr">
+  <div><div class="logo">KAMAK</div><div style="font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;margin-top:2px">KAMAKDESARROLLOS@GMAIL.COM</div></div>
+  <div class="hdr-r">RESUMEN DE OBRA<br>${fechaE()}</div>
+</div>
+<div class="title">RESUMEN TOTAL DE OBRA</div>
+<div class="obra-info">${(obra?.nombre || '').toUpperCase()}${obra?.cliente ? ' · CLIENTE: ' + obra.cliente : ''}${obra?.tipo ? ' · ' + obra.tipo : ''}</div>
+
+<table>
+  <thead><tr><th>Tarea / Descripción</th><th class="r">Cant</th><th class="r">Un</th><th class="r">Subtotal</th></tr></thead>
+  <tbody>
+    ${rubros.length > 0 ? `<tr class="rubro"><td colspan="4">▸ PRESUPUESTO BASE</td></tr>${rubroRows}
+    <tr class="subtot"><td colspan="3">SUBTOTAL PRESUPUESTO BASE</td><td class="r">${fmtME(ventaBase, monedaStr)}</td></tr>` : ''}
+    ${adic.length > 0 ? `<tr class="rubro"><td colspan="4">▸ ADICIONALES APROBADOS</td></tr>${adicRows}
+    <tr class="subtot"><td colspan="3">SUBTOTAL ADICIONALES</td><td class="r" style="color:#1a9b9c">${fmtME(totalAdic, monedaStr)}</td></tr>` : ''}
+    ${interes > 0 ? `<tr><td colspan="3" style="font-style:italic;color:#9a9892">Interés financiero (${interes}%)</td><td class="r">${fmtME(Math.round((ventaBase + totalAdic) * interes / 100), monedaStr)}</td></tr>` : ''}
+    <tr class="total"><td colspan="3">TOTAL CLIENTE</td><td class="r" style="font-size:14px">${fmtME(totalCliente, monedaStr)}</td></tr>
+  </tbody>
+</table>
+
+${incluirPagos && cuotas.length > 0 ? `
+<div class="title" style="font-size:13px;margin-top:10px;margin-bottom:10px">PLAN DE PAGOS</div>
+<table>
+  <thead><tr><th>#</th><th>Cuota</th><th class="r">Fecha</th><th class="r">Monto</th><th>Estado</th></tr></thead>
+  <tbody>${cuotaRows}</tbody>
+  <tfoot>
+    <tr class="subtot"><td colspan="3">Pagado</td><td class="r">${fmtME(pagado, monedaStr)}</td><td></td></tr>
+    <tr class="total"><td colspan="3">Saldo pendiente</td><td class="r">${fmtME(Math.max(0, saldo), monedaStr)}</td><td></td></tr>
+  </tfoot>
+</table>` : ''}
+
+${fin.notaPortal ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f7f2;border-left:3px solid #1a9b9c;font-size:10px;color:#5a5a58">📋 ${fin.notaPortal}</div>` : ''}
+<div class="ftr"><span>KAMAK DESARROLLOS</span><span>NO INCLUYE IVA</span><span>${fechaE()}</span></div>
+</body></html>`;
+}
+
+function abrirExport(html, titulo) {
+  const w = window.open('', '_blank', 'width=794,height=1000,scrollbars=yes');
+  w.document.open(); w.document.write(html); w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 800);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+function TabAdicionales({ detalle, patch, moneda, obra }) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const defaultForm = {
@@ -1437,6 +1621,7 @@ function TabAdicionales({ detalle, patch, moneda }) {
           {totalVenta > 0 && <span style={{ color: T.ok }}>Venta aprobada: <b>{fmtM(totalVenta, moneda)}</b></span>}
           {totalProv  > 0 && <span style={{ color: T.ink3 }}>Prov: <b>{fmtM(totalProv, moneda)}</b></span>}
         </div>
+        <Btn sm onClick={() => abrirExport(generarHTMLAdicionales({ obra, detalle, moneda }), 'Adicionales')}>↗ Exportar</Btn>
         <Btn sm fill onClick={() => { setAdding(true); setEditingId(null); setForm(defaultForm); }}>+ Adicional</Btn>
       </div>
 
@@ -2848,7 +3033,7 @@ export default function ObraPresupuesto() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { obras, getDetalle, patchDetalle } = useObras();
+  const { obras, getDetalle, patchDetalle, updateObra } = useObras();
   const { currentUser } = useUsuarios();
   const tabsOcultos = currentUser?.tabsOcultos ?? [];
   const [activeTab, setActiveTab] = useState(() => {
@@ -2891,6 +3076,13 @@ export default function ObraPresupuesto() {
   };
 
   const estadoColor = { activa: T.ok, 'en-presupuesto': T.ink2, pausada: T.warn, finalizada: T.accent, archivada: T.ink3 };
+
+  const handleApprove = () => {
+    if (!confirm('¿Aprobar y congelar el presupuesto?\n\nUna vez aprobado no podrás modificar rubros ni tareas.\nLos cambios futuros van en la pestaña Adicionales.')) return;
+    patch(d => ({ ...d, presupuestoAprobado: true, fechaAprobacion: new Date().toISOString().split('T')[0] }));
+    if (obra.estado === 'en-presupuesto') updateObra(obra.id, { estado: 'activa' });
+    handleTab(10);
+  };
 
   const sendPortalAccess = async () => {
     const phone = portalPhone.replace(/\D/g, '');
@@ -2936,7 +3128,6 @@ export default function ObraPresupuesto() {
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <Btn sm onClick={() => navigate('/obras')}>← Obras</Btn>
-          <Btn sm onClick={() => setShowExport(true)}>↗ Exportar</Btn>
           <Btn sm onClick={() => { setShowPortalAccess(true); setPortalMsg(''); setPortalPhone(obra.clienteWhatsapp || ''); }}>🔗 Acceso cliente</Btn>
           <Btn sm fill onClick={() => setShowContrato(true)}>Contrato MO</Btn>
         </div>
@@ -2955,9 +3146,9 @@ export default function ObraPresupuesto() {
 
       {/* Content */}
       {displayTab === 0 && <TabResumen obra={obra} detalle={detalle} moneda={moneda} onChangeTab={handleTab} />}
-      {displayTab === 1 && <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} />}
+      {displayTab === 1 && <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} frozen={!!detalle.presupuestoAprobado} onApprove={handleApprove} onExport={() => setShowExport(true)} />}
       {displayTab === 2 && <TabMateriales detalle={detalle} obra={obra} />}
-      {displayTab === 3 && <TabAdicionales detalle={detalle} patch={patch} moneda={moneda} />}
+      {displayTab === 3 && <TabAdicionales detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 5 && <TabMovimientos obra={obra} moneda={moneda} />}
       {displayTab === 6 && <TabCuentaCliente detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 7 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
