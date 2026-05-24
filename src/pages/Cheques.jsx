@@ -126,6 +126,8 @@ function ChequesTable({ cheques, onAccion }) {
 function ChequeFila({ cheque: c, onAccion }) {
   const [hover, setHover] = useState(false);
   const navigate = useNavigate();
+  const { proveedores } = useProveedores();
+  const { clientes }    = useClientes();
   const esTercero = c.tipo === 'tercero' || c.tipo === 'echeq_tercero';
   const sinCaja = !c.cajaId;
   const btnAccion = (label, action, style = {}) => (
@@ -155,7 +157,25 @@ function ChequeFila({ cheque: c, onAccion }) {
       </td>
       <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.faint2}`, maxWidth: 180 }}>
         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {esTercero ? (c.titular || c.clienteNombre || '—') : (c.proveedorNombre || '—')}
+          {esTercero ? (() => {
+            const nombre = c.titular || c.clienteNombre || '';
+            const cli = nombre ? clientes.find(cl => cl.nombre === nombre || cl.nombre === c.clienteNombre) : null;
+            return nombre
+              ? <span style={{ color: cli ? T.accent : undefined, cursor: cli ? 'pointer' : 'default', textDecoration: cli ? 'underline' : 'none' }}
+                  onClick={() => cli && navigate(`/clientes?q=${encodeURIComponent(nombre)}`)}>
+                  {nombre}
+                </span>
+              : '—';
+          })() : (() => {
+            const nombre = c.proveedorNombre || '';
+            const prov = nombre ? proveedores.find(p => p.nombre === nombre) : null;
+            return nombre
+              ? <span style={{ color: prov ? T.accent : undefined, cursor: prov ? 'pointer' : 'default', textDecoration: prov ? 'underline' : 'none' }}
+                  onClick={() => prov && navigate(`/proveedores/${prov.id}`)}>
+                  {nombre}
+                </span>
+              : '—';
+          })()}
         </div>
         {c.estado === 'endosado' && c.endosadoA && (
           <div style={{ fontSize: 10, color: '#d97706' }}>→ {c.endosadoA}</div>
