@@ -722,7 +722,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                     : <Chip style={{ fontSize: 10 }}>{rubro.proveedor}</Chip>;
                 })()}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 14, fontFamily: T.fontMono, fontSize: 11 }}>
-                  {verCostos   && <span>costo <b>$ {fmtN(rubro.costo)}</b></span>}
+                  {verCostos   && <span>costo <b>{fmtVenta(rubro.costo)}</b></span>}
                   <span>venta <b>{fmtVenta(rubro.venta)}</b></span>
                   {verMargenes && <span style={{ color: rubro.margen > 0 ? T.ok : T.accent }}><b>{rubro.margen > 0 ? '+' : ''}{rubro.margen}%</b></span>}
                 </span>
@@ -736,13 +736,13 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                     <div className="k-cell" style={{ flex: 3 }}>Tarea</div>
                     <div className="k-cell" style={{ flex: 0.8, textAlign: 'right' }}>{puedeCargarAvance ? 'Cant / Av ✏' : 'Cant'}</div>
                     <div className="k-cell" style={{ flex: 0.6 }}>Un</div>
-                    {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>{puedeEditar ? '$ Mat ✏' : '$ Mat'}</div>}
-                    {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>{puedeEditar ? '$ Sub ✏' : '$ Sub'}</div>}
-                    {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>$ Costo u</div>}
-                    {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>$ Costo T</div>}
+                    {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Mat ✏` : `${viewUSD?'U$S':'$'} Mat`}</div>}
+                    {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Sub ✏` : `${viewUSD?'U$S':'$'} Sub`}</div>}
+                    {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>{viewUSD?'U$S':'$'} Costo u</div>}
+                    {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>{viewUSD?'U$S':'$'} Costo T</div>}
                     {cols.margenL   && <div className="k-cell" style={{ flex: 0.9, textAlign: 'right', color: T.ok }}>Margen % {puedeEditar ? '✏' : ''}</div>}
-                    {cols.ventaUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: T.accent }}>U$S Venta u</div>}
-                    {cols.ventaTotal && <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', color: T.accent }}>U$S Venta T</div>}
+                    {cols.ventaUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: T.accent }}>{viewUSD?'U$S':'$'} Venta u</div>}
+                    {cols.ventaTotal && <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', color: T.accent }}>{viewUSD?'U$S':'$'} Venta T</div>}
                     <div className="k-cell" style={{ flex: 0.4 }}></div>
                   </div>
 
@@ -835,11 +835,11 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                         </div>
                         {InlineNum({ field: 'cantidad', value: tarea.cantidad, flex: 0.8 })}
                         <div className="k-cell" style={{ flex: 0.6 }}>{tarea.unidad}</div>
-                        {InlineNum({ field: 'costoMat', value: tarea.costoMat, flex: 1, fmt: v => `$ ${fmtN(v)}`, color: '#c0392b' })}
-                        {InlineNum({ field: 'costoSub', value: tarea.costoSub || 0, flex: 1, fmt: v => `$ ${fmtN(v)}`, color: '#c0392b' })}
+                        {InlineNum({ field: 'costoMat', value: tarea.costoMat, flex: 1, fmt: v => fmtVenta(v), color: '#c0392b' })}
+                        {InlineNum({ field: 'costoSub', value: tarea.costoSub || 0, flex: 1, fmt: v => fmtVenta(v), color: '#c0392b' })}
 
-                        {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#c0392b' }}>{`$ ${fmtN(costoUnit)}`}</div>}
-                        {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#c0392b' }}>{`$ ${fmtN(costoTotalRow)}`}</div>}
+                        {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#c0392b' }}>{fmtVenta(costoUnit)}</div>}
+                        {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#c0392b' }}>{fmtVenta(costoTotalRow)}</div>}
 
                         {cols.margenL && (
                           <div className="k-cell" style={{ flex: 0.9, textAlign: 'right', padding: '2px 6px' }}
