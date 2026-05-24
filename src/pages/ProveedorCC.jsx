@@ -69,10 +69,23 @@ export default function ProveedorCC() {
           <Avatar nombre={proveedor.nombre} />
           <div>
             <div className="k-h" style={{ fontSize: 24 }}>{proveedor.nombre}</div>
-            <div style={{ fontSize: 12, color: T.ink2 }}>
-              {proveedor.cuit && `CUIT ${proveedor.cuit} · `}
-              {proveedor.tipo}
-              {proveedor.condicion && ` · ${proveedor.condicion}`}
+            <div style={{ fontSize: 12, color: T.ink2, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+              {proveedor.cuit && <span>CUIT {proveedor.cuit}</span>}
+              {proveedor.tipo && <span>· {proveedor.tipo}</span>}
+              {proveedor.condicion && <span>· {proveedor.condicion}</span>}
+              {proveedor.telefono && (
+                <a href={`https://wa.me/${(proveedor.telefono).replace(/\s/g,'').replace('+','')}`}
+                  target="_blank" rel="noopener noreferrer"
+                  style={{ color: '#25d366', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  📱 {proveedor.telefono}
+                </a>
+              )}
+              {proveedor.email && (
+                <a href={`mailto:${proveedor.email}`}
+                  style={{ color: T.accent, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  ✉ {proveedor.email}
+                </a>
+              )}
             </div>
           </div>
         </div>
@@ -224,17 +237,27 @@ export default function ProveedorCC() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
             {[
               ['Nombre / Razón social', proveedor.nombre],
-              ['Tipo de trabajo', proveedor.tipo],
+              ['Tipo de trabajo', proveedor.tipo || '—'],
               ['CUIT', proveedor.cuit || '—'],
               ['Condición AFIP', proveedor.condicion || '—'],
-              ['Teléfono', proveedor.telefono || '—'],
-              ['Email', proveedor.email || '—'],
             ].map(([k, v]) => (
               <div key={k}>
                 <div style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 2 }}>{k}</div>
                 <div style={{ fontWeight: 600 }}>{v}</div>
               </div>
             ))}
+            <div>
+              <div style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 2 }}>Teléfono</div>
+              {proveedor.telefono
+                ? <a href={`https://wa.me/${(proveedor.telefono).replace(/\s/g,'').replace('+','')}`} target="_blank" rel="noopener noreferrer" style={{ color: '#25d366', fontWeight: 600, textDecoration: 'none' }}>📱 {proveedor.telefono}</a>
+                : <span style={{ fontWeight: 600 }}>—</span>}
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 2 }}>Email</div>
+              {proveedor.email
+                ? <a href={`mailto:${proveedor.email}`} style={{ color: T.accent, fontWeight: 600, textDecoration: 'none' }}>✉ {proveedor.email}</a>
+                : <span style={{ fontWeight: 600 }}>—</span>}
+            </div>
           </div>
           {proveedor.notas && (
             <div style={{ marginTop: 12, fontSize: 12, color: T.ink2, borderTop: `1px solid ${T.faint2}`, paddingTop: 10 }}>

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Label } from '../components/ui';
 import { T } from '../theme';
@@ -17,6 +18,7 @@ const CRITERIOS = [
 const MES_ACTUAL = new Date().toLocaleString('es-AR', { month: 'long', year: 'numeric' });
 
 export default function Prorrateo() {
+  const navigate = useNavigate();
   const { items, setItems, totalMensual } = useGastosFijos();
   const { obras, patchDetalle } = useObras();
   const [criterio, setCriterio]     = useState('mixto');
@@ -200,7 +202,8 @@ export default function Prorrateo() {
               const monto = totalMensual * pctAsignado / 100;
               return (
                 <div key={o.id} style={{ display: 'flex', padding: '9px 12px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, background: i % 2 === 1 ? T.faint : 'transparent' }}>
-                  <span style={{ flex: 2, fontWeight: 700 }}>{o.nombre}</span>
+                  <span style={{ flex: 2, fontWeight: 700, color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                    onClick={() => navigate(`/obras/${o.id}/presupuesto`)}>{o.nombre}</span>
                   <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>
                     {o.moneda === 'USD' ? `U$S ${fmtN(o.presupuesto)}` : `$ ${fmtN(o.presupuesto)}`}
                   </span>
