@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useObras } from '../../store/ObrasContext';
+import { useAuth } from '../../store/AuthContext';
 import { Box, Btn, Chip, Stat, Bar } from '../../components/ui';
 import { T } from '../../theme';
 
@@ -33,6 +34,7 @@ export default function PortalCliente() {
   const navigate = useNavigate();
   const { obras, getDetalle, patchDetalle } = useObras();
 
+  const { user } = useAuth();
   const [tab, setTab] = useState(0);
   const [msg, setMsg] = useState('');
 
@@ -116,12 +118,14 @@ export default function PortalCliente() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, position: 'relative' }}>
-          <button
-            onClick={() => navigate(`/obras/${id}/presupuesto`)}
-            style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 5, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}
-          >
-            ← Volver a obra
-          </button>
+          {user && (
+            <button
+              onClick={() => navigate(`/obras/${id}/presupuesto`)}
+              style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 5, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: T.font, fontWeight: 600 }}
+            >
+              ← Volver a obra
+            </button>
+          )}
           <div style={{ width: 32, height: 32, borderRadius: 16, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: 14 }}>
             {(obra.cliente || '?')[0].toUpperCase()}
           </div>
