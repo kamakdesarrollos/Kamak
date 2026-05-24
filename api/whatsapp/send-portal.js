@@ -34,6 +34,11 @@ export default async function handler(req, res) {
   const { token, waPhone, text, obraId, obraNombre, cliente, phone, expires } = req.body;
   if (!token || !waPhone || !text) return res.status(400).json({ error: 'Faltan parámetros' });
 
+  // Always save token first so the link works even if WA send fails
+  const tokens = (await loadSharedData('portal_tokens')) || {};
+  tokens[token] = { obraId, obraNombre, cliente, phone, expires, createdAt: new Date().toISOString() };
+  await saveSharedData('portal_tokens', tokens);
+
   try {
     const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
       method: 'POST',
@@ -44,19 +49,21 @@ export default async function handler(req, res) {
     const data = await r.json();
 
     if (!r.ok || data.error) {
+      const errCode = data.error?.code;
       const errMsg = data.error?.message || data.error?.error_data?.details || `Error ${r.status}`;
-      return res.status(400).json({ error: errMsg });
+      // 131047 = re-engagement: contact hasn't messaged in 24h, need manual send
+      const reengagement = errCode === 131047;
+      return res.status(200).json({ error: errMsg, reengagement, tokenSaved: true });
     }
 
     const wamid = data.messages?.[0]?.id;
-
-    // Save token with wamid for delivery tracking
-    const tokens = (await loadSharedData('portal_tokens')) || {};
-    tokens[token] = { obraId, obraNombre, cliente, phone, expires, createdAt: new Date().toISOString(), ...(wamid ? { wamid } : {}) };
-    await saveSharedData('portal_tokens', tokens);
+    if (wamid) {
+      tokens[token].wamid = wamid;
+      await saveSharedData('portal_tokens', tokens);
+    }
 
     return res.status(200).json({ ok: true, wamid });
   } catch (e) {
-    return res.status(500).json({ error: e.message });
+    return res.status(200).json({ error: e.message, tokenSaved: true });
   }
 }

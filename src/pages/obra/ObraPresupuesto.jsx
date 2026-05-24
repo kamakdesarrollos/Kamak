@@ -3049,6 +3049,7 @@ export default function ObraPresupuesto() {
   const [portalMsg, setPortalMsg] = useState('');
   const [portalWamid, setPortalWamid] = useState('');
   const [portalWaStatus, setPortalWaStatus] = useState('');
+  const [portalManualUrl, setPortalManualUrl] = useState('');
 
   const obra = obras.find(o => o.id === id) ?? { id, nombre: id, cliente: '', moneda: 'ARS', presupuesto: 0, avance: 0 };
   const detalle = getDetalle(id);
@@ -3111,8 +3112,14 @@ export default function ObraPresupuesto() {
         body: JSON.stringify({ token, waPhone, text, obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires }),
       });
       const data = await res.json();
-      if (!res.ok || data.error) {
-        setPortalMsg(`❌ No se pudo enviar al +${waPhone}: ${data.error}`);
+      if (data.error) {
+        if (data.reengagement) {
+          const waUrl = `https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`;
+          setPortalManualUrl(waUrl);
+          setPortalMsg(`✓ Link generado para +${waPhone}.\nLink: ${link}`);
+        } else {
+          setPortalMsg(`❌ No se pudo enviar al +${waPhone}: ${data.error}`);
+        }
         setPortalSending(false);
         return;
       }
@@ -3207,13 +3214,22 @@ export default function ObraPresupuesto() {
                 {portalMsg}
               </div>
             )}
-            {portalMsg.startsWith('✓') && (
+            {portalManualUrl && (
+              <div style={{ marginTop: 8, padding: '10px 14px', background: '#fffbeb', border: `1px solid #f59e0b`, borderRadius: 6, fontSize: 12 }}>
+                <div style={{ fontWeight: 700, marginBottom: 6, color: T.ink }}>⚠ El número no inició conversación con el bot — enviá el link manualmente:</div>
+                <a href={portalManualUrl} target="_blank" rel="noreferrer"
+                  style={{ display: 'inline-block', padding: '6px 14px', background: '#25D366', color: 'white', borderRadius: 6, fontWeight: 700, textDecoration: 'none', fontSize: 13 }}>
+                  📲 Abrir WhatsApp y enviar
+                </a>
+              </div>
+            )}
+            {!portalManualUrl && portalMsg.startsWith('✓') && (
               <div style={{ marginTop: 4, padding: '7px 14px', background: portalWaStatus?.startsWith('❌') ? '#fee2e2' : portalWaStatus ? '#d1fae5' : '#f0f9ff', borderRadius: 6, fontSize: 12, color: T.ink2 }}>
                 Estado de entrega: <b style={{ color: T.ink }}>{portalWaStatus || 'aguardando confirmación…'}</b>
               </div>
             )}
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-              <Btn sm onClick={() => { setShowPortalAccess(false); setPortalMsg(''); setPortalWamid(''); setPortalWaStatus(''); }}>Cancelar</Btn>
+              <Btn sm onClick={() => { setShowPortalAccess(false); setPortalMsg(''); setPortalWamid(''); setPortalWaStatus(''); setPortalManualUrl(''); }}>Cancelar</Btn>
               <Btn sm fill onClick={sendPortalAccess} disabled={portalSending}>
                 {portalSending ? 'Enviando…' : '📲 Generar y enviar acceso'}
               </Btn>
