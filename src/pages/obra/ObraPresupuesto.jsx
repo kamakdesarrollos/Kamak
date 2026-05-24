@@ -159,7 +159,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
           <input type="checkbox" checked={incluirPagos} onChange={e => setIncluirPagos(e.target.checked)} />
           Incluir plan de pagos
         </label>
-        <Btn sm onClick={() => abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos }), 'Resumen')}>↗ Exportar resumen total</Btn>
+        <Btn sm onClick={() => { const origin = window.location.origin; abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight: `${origin}/assets/kamak-logo-light.png` }), 'Resumen'); }}>↗ Exportar resumen total</Btn>
       </div>
 
       {/* KPIs */}
@@ -631,7 +631,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
               {[
                 { label: 'Total venta', val: fmtVenta(venta), color: T.ink, show: true },
-                { label: 'Total costo', val: `$ ${fmtN(costo)}`, color: T.ink, show: verCostos },
+                { label: 'Total costo', val: fmtVenta(costo), color: T.ink, show: verCostos },
                 { label: 'Margen', val: `${margen}%`, sub: fmtVenta(venta - costo), color: margen < 0 ? '#dc2626' : margen < 15 ? T.warn : T.ok, show: verMargenes },
               ].filter(s => s.show).map((s, i, arr) => (
                 <div key={i} style={{ padding: '8px 14px', textAlign: 'center', borderRight: i < 2 ? `1px solid ${T.faint2}` : 'none' }}>
@@ -644,9 +644,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderTop: `1px solid ${T.faint2}` }}>
               {[
-                { label: 'Materiales', val: `$ ${fmtN(cMat)}` },
-                { label: 'Subcontratos', val: `$ ${fmtN(cSub)}` },
-                { label: `Gastos fijos (${durMeses}m ÷ ${obrasActivas.length})`, val: gastosFijosObra > 0 ? fmtM(gastosFijosObra, moneda) : '—', warn: gastosFijosObra > 0 },
+                { label: 'Materiales', val: fmtVenta(cMat) },
+                { label: 'Subcontratos', val: fmtVenta(cSub) },
+                { label: `Gastos fijos (${durMeses}m ÷ ${obrasActivas.length})`, val: gastosFijosObra > 0 ? fmtVenta(gastosFijosObra) : '—', warn: gastosFijosObra > 0 },
               ].map((s, i) => (
                 <div key={i} style={{ padding: '4px 14px', borderRight: i < 2 ? `1px solid ${T.faint2}` : 'none', display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
                   <span style={{ color: T.ink2 }}>{s.label}</span>
@@ -668,7 +668,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
         <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
           <span onClick={() => setViewUSD(v => !v)}
             style={{ padding: '3px 10px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none', fontWeight: 700, border: `1px solid ${T.accent}`, background: T.accentSoft, color: T.accent, marginRight: 4 }}>
-            Venta: {viewUSD ? 'U$S' : '$'}
+            Ver totales: {viewUSD ? 'U$S' : '$'}
           </span>
           <span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 2 }}>Columnas</span>
           {COLS_DEF.filter(c => {
@@ -1438,8 +1438,11 @@ function generarHTMLAdicionales({ obra, detalle, moneda }) {
 </body></html>`;
 }
 
-function generarHTMLResumen({ obra, detalle, moneda, incluirPagos }) {
-  const monedaStr = moneda || 'ARS';
+function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight }) {
+  const tc = dolarVenta || 1;
+  const toUSD = n => `U$S ${fmtNE(Math.round(n / tc))}`;
+  const cuotaMonto = c => (c._usd || (moneda || 'ARS') !== 'USD') ? c.monto : Math.round(c.monto / tc);
+
   const rubros = detalle.rubros || [];
   const adic = (detalle.adicionales || []).filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false);
   const cuotas = detalle.cuotas || [];
@@ -1453,49 +1456,79 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos }) {
       const vu = t.margenLinea != null ? cu * (1 + t.margenLinea / 100) : t.costoMat * (1 + (rubro.margenMat || 0) / 100) + (t.costoSub || 0) * (1 + (rubro.margenMO || 0) / 100);
       const vt = Math.round(vu * t.cantidad);
       rubroVenta += vt;
-      return `<tr${ti % 2 === 1 ? ' class="alt"' : ''}><td style="padding-left:20px">${t.nombre}</td><td class="r">${fmtNE(t.cantidad)}</td><td class="r">${t.unidad}</td><td class="r">${fmtME(vt, monedaStr)}</td></tr>`;
+      return `<tr${ti % 2 === 1 ? ' class="alt"' : ''}><td style="padding-left:20px">${t.nombre}</td><td class="r">${fmtNE(t.cantidad)}</td><td class="r">${t.unidad}</td><td class="r">${toUSD(vt)}</td></tr>`;
     }).join('');
     ventaBase += rubroVenta;
-    return `<tr class="rubro"><td colspan="3">RUBRO ${String(ri+1).padStart(2,'0')} · ${rubro.nombre.toUpperCase()}</td><td class="r">${fmtME(rubroVenta, monedaStr)}</td></tr>${tareaRows}`;
+    return `<tr class="rubro"><td colspan="3">RUBRO ${String(ri+1).padStart(2,'0')} · ${rubro.nombre.toUpperCase()}</td><td class="r">${toUSD(rubroVenta)}</td></tr>${tareaRows}`;
   }).join('');
 
-  const adicRows = adic.map((a, i) => `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td style="padding-left:20px">${a.descripcion}</td><td class="r">${a.cantidad != null ? fmtNE(a.cantidad) : ''}</td><td class="r">${a.unidad || ''}</td><td class="r" style="color:#1a9b9c">${fmtME(a.valorVentaTotal ?? a.monto ?? 0, monedaStr)}</td></tr>`).join('');
+  const adicRows = adic.map((a, i) => `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td style="padding-left:20px">${a.descripcion}</td><td class="r">${a.cantidad != null ? fmtNE(a.cantidad) : ''}</td><td class="r">${a.unidad || ''}</td><td class="r" style="color:#1a9b9c">${toUSD(a.valorVentaTotal ?? a.monto ?? 0)}</td></tr>`).join('');
   const totalAdic = adic.reduce((s, a) => s + (a.valorVentaTotal ?? a.monto ?? 0), 0);
   const interes = parseFloat(fin.interes) || 0;
   const totalCliente = Math.round((ventaBase + totalAdic) * (1 + interes / 100));
 
-  const cuotaRows = incluirPagos && cuotas.length > 0 ? cuotas.map((c, i) => `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${c.n || i+1}</td><td>${c.descripcion}</td><td class="r">${fmtDE(c.fecha)}</td><td class="r">${fmtME(c.monto, monedaStr)}</td><td><span class="pill ${c.estado === 'pagado' ? 'ok' : 'warn'}">${c.estado === 'pagado' ? 'pagado' : 'pendiente'}</span></td></tr>`).join('') : '';
-  const pagado = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + c.monto, 0);
-  const saldo = totalCliente - pagado;
+  const cuotaRows = incluirPagos && cuotas.length > 0 ? cuotas.map((c, i) => {
+    const m = cuotaMonto(c);
+    return `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${c.n || i+1}</td><td>${c.descripcion}</td><td class="r">${fmtDE(c.fecha)}</td><td class="r">${toUSD(m)}</td><td><span class="pill ${c.estado === 'pagado' ? 'ok' : 'warn'}">${c.estado === 'pagado' ? 'pagado' : 'pendiente'}</span></td></tr>`;
+  }).join('') : '';
+  const pagado = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
+  const saldo = Math.round(totalCliente / tc) - pagado;
 
-  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Resumen — ${obra?.nombre || ''}</title><style>${BASE_CSS}</style></head><body>
-<div class="hdr">
-  <div><div class="logo">KAMAK</div><div style="font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;margin-top:2px">KAMAKDESARROLLOS@GMAIL.COM</div></div>
-  <div class="hdr-r">RESUMEN DE OBRA<br>${fechaE()}</div>
+  const logoHtml = logoLight
+    ? `<img src="${logoLight}" style="height:26px;object-fit:contain;display:block" onerror="this.style.display='none';document.getElementById('kmk-txt').style.display='block'" /><span id="kmk-txt" style="display:none;font-weight:900;font-size:18px;letter-spacing:2px;color:#fff">KAMAK</span>`
+    : `<span style="font-weight:900;font-size:18px;letter-spacing:2px;color:#fff">KAMAK</span>`;
+
+  const STRIPES = `<svg viewBox="0 0 620 620" width="620" height="620" style="display:block"><rect x="-64" y="245" width="900" height="50" fill="#1a9b9c" transform="rotate(62 386 270)"/><rect x="-140" y="285" width="900" height="50" fill="#1a9b9c" transform="rotate(62 310 310)"/><rect x="-216" y="325" width="900" height="50" fill="#1a9b9c" transform="rotate(62 234 350)"/></svg>`;
+
+  const EXTRA_CSS = `
+.kmk-hdr{background:#1f2024;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden;margin:-18mm -16mm 0}
+.kmk-wm{position:absolute;top:-160px;right:-160px;opacity:.07;pointer-events:none}
+.kmk-hdr-left{display:flex;align-items:center;gap:12px;position:relative;z-index:1}
+.kmk-hdr-sep{color:rgba(255,255,255,0.25);font-size:20px;line-height:1}
+.kmk-hdr-label{color:rgba(255,255,255,0.9);font-weight:800;font-size:11px;letter-spacing:1px}
+.kmk-hdr-sub{color:#1a9b9c;font-size:7.5px;font-family:'JetBrains Mono',monospace;letter-spacing:.8px;margin-top:2px}
+.kmk-hdr-right{text-align:right;font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#9a9892;line-height:1.7;position:relative;z-index:1}
+.kmk-rule{height:4px;background:#1a9b9c;margin:0 -16mm 20px;position:relative}
+.kmk-diamond{position:absolute;left:50%;top:-6px;margin-left:-6px;width:12px;height:12px;background:#1a9b9c;transform:rotate(45deg)}
+.kmk-tc{font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;margin-bottom:14px;text-align:right}`;
+
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Resumen — ${obra?.nombre || ''}</title><style>${BASE_CSS}${EXTRA_CSS}</style></head><body>
+<div class="kmk-hdr">
+  <div class="kmk-wm">${STRIPES}</div>
+  <div class="kmk-hdr-left">
+    ${logoHtml}
+    <div class="kmk-hdr-sep">|</div>
+    <div>
+      <div class="kmk-hdr-label">RESUMEN TOTAL DE OBRA</div>
+      <div class="kmk-hdr-sub">KAMAKDESARROLLOS@GMAIL.COM · NECOCHEA, BUENOS AIRES</div>
+    </div>
+  </div>
+  <div class="kmk-hdr-right">${(obra?.nombre || '').toUpperCase()}<br>${obra?.cliente ? obra.cliente + ' · ' : ''}${obra?.tipo || ''}<br>${fechaE()}</div>
 </div>
-<div class="title">RESUMEN TOTAL DE OBRA</div>
-<div class="obra-info">${(obra?.nombre || '').toUpperCase()}${obra?.cliente ? ' · CLIENTE: ' + obra.cliente : ''}${obra?.tipo ? ' · ' + obra.tipo : ''}</div>
+<div class="kmk-rule"><div class="kmk-diamond"></div></div>
+
+<div class="kmk-tc">TC BNA $${fmtNE(tc)} · Todos los precios en dólares estadounidenses (U$S)</div>
 
 <table>
   <thead><tr><th>Tarea / Descripción</th><th class="r">Cant</th><th class="r">Un</th><th class="r">Subtotal</th></tr></thead>
   <tbody>
     ${rubros.length > 0 ? `<tr class="rubro"><td colspan="4">▸ PRESUPUESTO BASE</td></tr>${rubroRows}
-    <tr class="subtot"><td colspan="3">SUBTOTAL PRESUPUESTO BASE</td><td class="r">${fmtME(ventaBase, monedaStr)}</td></tr>` : ''}
+    <tr class="subtot"><td colspan="3">SUBTOTAL PRESUPUESTO BASE</td><td class="r">${toUSD(ventaBase)}</td></tr>` : ''}
     ${adic.length > 0 ? `<tr class="rubro"><td colspan="4">▸ ADICIONALES APROBADOS</td></tr>${adicRows}
-    <tr class="subtot"><td colspan="3">SUBTOTAL ADICIONALES</td><td class="r" style="color:#1a9b9c">${fmtME(totalAdic, monedaStr)}</td></tr>` : ''}
-    ${interes > 0 ? `<tr><td colspan="3" style="font-style:italic;color:#9a9892">Interés financiero (${interes}%)</td><td class="r">${fmtME(Math.round((ventaBase + totalAdic) * interes / 100), monedaStr)}</td></tr>` : ''}
-    <tr class="total"><td colspan="3">TOTAL CLIENTE</td><td class="r" style="font-size:14px">${fmtME(totalCliente, monedaStr)}</td></tr>
+    <tr class="subtot"><td colspan="3">SUBTOTAL ADICIONALES</td><td class="r" style="color:#1a9b9c">${toUSD(totalAdic)}</td></tr>` : ''}
+    ${interes > 0 ? `<tr><td colspan="3" style="font-style:italic;color:#9a9892">Interés financiero (${interes}%)</td><td class="r">${toUSD(Math.round((ventaBase + totalAdic) * interes / 100))}</td></tr>` : ''}
+    <tr class="total"><td colspan="3">TOTAL CLIENTE</td><td class="r" style="font-size:14px">${toUSD(totalCliente)}</td></tr>
   </tbody>
 </table>
 
 ${incluirPagos && cuotas.length > 0 ? `
 <div class="title" style="font-size:13px;margin-top:10px;margin-bottom:10px">PLAN DE PAGOS</div>
 <table>
-  <thead><tr><th>#</th><th>Cuota</th><th class="r">Fecha</th><th class="r">Monto</th><th>Estado</th></tr></thead>
+  <thead><tr><th>#</th><th>Cuota</th><th class="r">Fecha</th><th class="r">Monto (U$S)</th><th>Estado</th></tr></thead>
   <tbody>${cuotaRows}</tbody>
   <tfoot>
-    <tr class="subtot"><td colspan="3">Pagado</td><td class="r">${fmtME(pagado, monedaStr)}</td><td></td></tr>
-    <tr class="total"><td colspan="3">Saldo pendiente</td><td class="r">${fmtME(Math.max(0, saldo), monedaStr)}</td><td></td></tr>
+    <tr class="subtot"><td colspan="3">Pagado</td><td class="r">${toUSD(pagado)}</td><td></td></tr>
+    <tr class="total"><td colspan="3">Saldo pendiente</td><td class="r">${toUSD(Math.max(0, saldo))}</td><td></td></tr>
   </tfoot>
 </table>` : ''}
 

@@ -184,23 +184,18 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
           <div class="cond-totales">
             <div class="dmnd-corner"></div>
             <div class="totales-grid-sm">
-              <span>Subtotal mat.</span><span class="mono">${fmtM(totalMat, moneda)}</span>
-              <span>Subtotal sub.</span><span class="mono">${fmtM(totalSub, moneda)}</span>
+              <span>Subtotal mat.</span><span class="mono">$ ${fmtN(totalMat)}</span>
+              <span>Subtotal sub.</span><span class="mono">$ ${fmtN(totalSub)}</span>
             </div>
             <div class="totales-rule"></div>
             <div class="total-final">
               <span>TOTAL</span>
-              <span class="total-val">${fmtM(totalVenta, moneda)} <span class="iva">+ IVA</span></span>
+              <span class="total-val">U$S ${toUSD(totalVenta)} <span class="iva">+ IVA</span></span>
             </div>
-            ${dolarVenta && moneda === 'ARS' ? `
-            <div style="margin-top:8px;border-top:1px solid #2a4a4a;padding-top:7px">
-              <div style="font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;margin-bottom:4px">EQUIVALENTE EN DÓLARES</div>
-              <div style="display:flex;justify-content:space-between;align-items:baseline">
-                <span style="font-size:8.5px;color:#9a9892;font-family:'JetBrains Mono',monospace">TC BNA $${Math.round(dolarVenta).toLocaleString('es-AR')}</span>
-                <span style="font-size:15px;font-weight:800;color:#1a9b9c;font-family:'JetBrains Mono',monospace">U$S ${Math.round(totalVenta / dolarVenta).toLocaleString('es-AR')}</span>
-              </div>
-              <div style="font-size:8px;color:#9a9892;margin-top:3px;line-height:1.4">Los pagos se realizan en pesos argentinos<br>al tipo de cambio vigente.</div>
-            </div>` : ''}
+            <div style="margin-top:6px;padding-top:6px;border-top:1px solid #2a4a4a;display:flex;justify-content:space-between;align-items:baseline">
+              <span style="font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace">TC BNA $${Math.round(tc).toLocaleString('es-AR')}</span>
+              <span style="font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace">$ ${fmtN(totalVenta)} ARS</span>
+            </div>
           </div>
           ${nota ? `<div class="cond-nota">${nota}</div>` : ''}
         </div>
@@ -331,9 +326,9 @@ ${condicionesPage}
 }
 
 // ── Mini portada preview (React, portrait ratio) ──────────────────────────────
-function PortadaPreview({ obra, vigencia, totalVenta, moneda }) {
+function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta }) {
   const fecha = fmtFecha();
-  const fmtV = (n) => moneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
+  const fmtV = (n) => `U$S ${fmtN(Math.round(n / (dolarVenta || 1)))}`;
   const W = 560, H = 792; // A4 portrait ratio ~1:1.414
 
   return (
@@ -420,12 +415,14 @@ export default function ExportModal({ onClose, obra, detalle }) {
   const [formaPago, setFormaPago] = useState(() => {
     const cuotas = detalle?.cuotas || [];
     if (!cuotas.length) return FORMA_PAGO_DEFAULT;
+    const tc = dolarVenta || 1;
+    const cuotaMonto = c => (c._usd || obra?.moneda !== 'USD') ? c.monto : Math.round(c.monto / tc);
     const fmtDLocal = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
     const lines = cuotas.map(c => {
       const fecha = c.fecha ? ` (${fmtDLocal(c.fecha)})` : '';
-      return `${c.descripcion}: U$S ${Math.round(c.monto).toLocaleString('es-AR')}${fecha}`;
+      return `${c.descripcion}: U$S ${Math.round(cuotaMonto(c)).toLocaleString('es-AR')}${fecha}`;
     });
-    const total = cuotas.reduce((s, c) => s + (c.monto || 0), 0);
+    const total = cuotas.reduce((s, c) => s + cuotaMonto(c), 0);
     if (total > 0) lines.push(`Total: U$S ${Math.round(total).toLocaleString('es-AR')}`);
     return lines.join('\n');
   });
@@ -434,7 +431,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
   const totalTareas = rr.reduce((s, r) => s + (r.tareas?.length || 0), 0);
   const moneda = obra?.moneda || 'ARS';
-  const totalUSD = moneda === 'ARS' && dolarVenta ? totalVenta / dolarVenta : null;
+  const tc = dolarVenta || 1;
 
   const imprimir = () => {
     const origin = window.location.origin;
@@ -518,8 +515,8 @@ export default function ExportModal({ onClose, obra, detalle }) {
               <div style={{ fontWeight: 700, marginBottom: 5 }}>Resumen del documento</div>
               <div style={{ color: T.ink2, lineHeight: 1.7 }}>
                 <div>{rr.length} rubro{rr.length !== 1 ? 's' : ''} · {totalTareas} tareas</div>
-                <div style={{ fontWeight: 700, color: T.accent }}>Total: {fmtM(totalVenta, moneda)}</div>
-                {totalUSD != null && <div style={{ fontSize: 10, color: T.ink2 }}>≈ U$S {fmtN(totalUSD)} (TC $ {fmtN(dolarVenta)})</div>}
+                <div style={{ fontWeight: 700, color: T.accent }}>Total: U$S {fmtN(Math.round(totalVenta / tc))}</div>
+                <div style={{ fontSize: 10, color: T.ink2 }}>TC BNA $ {fmtN(tc)} · $ {fmtN(totalVenta)}</div>
                 <div style={{ color: T.ink3, fontSize: 10 }}>{condiciones ? 3 : 2} páginas · A4 vertical · vigencia {vigencia} días</div>
               </div>
             </div>
@@ -532,7 +529,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
             {/* Scaled portada (portrait) */}
             <div style={{ width: PW * PREVIEW_SCALE, height: PH * PREVIEW_SCALE, overflow: 'hidden', position: 'relative', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', flexShrink: 0, borderRadius: 2 }}>
               <div style={{ transform: `scale(${PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
-                <PortadaPreview obra={obra} vigencia={vigencia} totalVenta={totalVenta} moneda={moneda} />
+                <PortadaPreview obra={obra} vigencia={vigencia} totalVenta={totalVenta} dolarVenta={dolarVenta} />
               </div>
             </div>
 
