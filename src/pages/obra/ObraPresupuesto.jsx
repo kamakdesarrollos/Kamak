@@ -17,6 +17,7 @@ import { useCatalog, calcTarea } from '../../store/CatalogContext';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { supabase } from '../../lib/supabase';
 import { loadSharedData, saveSharedData } from '../../lib/dbHelpers';
+import { onRemoteChange } from '../../lib/syncBus';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -3046,6 +3047,8 @@ export default function ObraPresupuesto() {
   const [portalPhone, setPortalPhone] = useState('');
   const [portalSending, setPortalSending] = useState(false);
   const [portalMsg, setPortalMsg] = useState('');
+  const [portalWamid, setPortalWamid] = useState('');
+  const [portalWaStatus, setPortalWaStatus] = useState('');
 
   const obra = obras.find(o => o.id === id) ?? { id, nombre: id, cliente: '', moneda: 'ARS', presupuesto: 0, avance: 0 };
   const detalle = getDetalle(id);
@@ -3085,31 +3088,62 @@ export default function ObraPresupuesto() {
   };
 
   const sendPortalAccess = async () => {
-    const phone = portalPhone.replace(/\D/g, '');
-    if (!phone) return;
-    setPortalSending(true); setPortalMsg('');
+    const rawPhone = portalPhone.replace(/\D/g, '');
+    if (rawPhone.length < 10) {
+      setPortalMsg('❌ Número inválido. Ingresá al menos 10 dígitos (ej: 5492262530655).');
+      return;
+    }
+    setPortalSending(true); setPortalMsg(''); setPortalWamid(''); setPortalWaStatus('');
     try {
       const token = `pt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+      // Argentine mobile: needs '549' prefix (not just '54')
+      let waPhone = rawPhone;
+      if (!waPhone.startsWith('549')) {
+        waPhone = waPhone.startsWith('54') ? '549' + waPhone.slice(2) : '549' + waPhone;
+      }
       const tokens = (await loadSharedData('portal_tokens')) || {};
-      tokens[token] = { obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone, expires, createdAt: new Date().toISOString() };
+      tokens[token] = { obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires, createdAt: new Date().toISOString() };
       await saveSharedData('portal_tokens', tokens);
       const baseUrl = window.location.origin;
       const link = `${baseUrl}/portal/acceso/${token}`;
-      // Send via WA through the webhook API
-      const waPhone = phone.startsWith('549') ? phone : phone.startsWith('54') ? phone : `549${phone}`;
       const text = `Hola! Te compartimos el acceso a tu portal de obra *${obra.nombre}*.\n\nPodés ver el avance, las cuotas y los documentos en este enlace:\n${link}\n\n_Kamak Desarrollos_`;
-      await fetch(`https://graph.facebook.com/v18.0/${import.meta.env.VITE_WA_PHONE_ID}/messages`, {
+      const res = await fetch(`https://graph.facebook.com/v18.0/${import.meta.env.VITE_WA_PHONE_ID}/messages`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${import.meta.env.VITE_WA_TOKEN}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ messaging_product: 'whatsapp', to: waPhone, type: 'text', text: { body: text } }),
       });
-      setPortalMsg(`✓ Acceso enviado a +${phone}.\nLink: ${link}`);
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        const errMsg = data.error?.message || data.error?.error_data?.details || `Error ${res.status}`;
+        setPortalMsg(`❌ No se pudo enviar al +${waPhone}: ${errMsg}`);
+        setPortalSending(false);
+        return;
+      }
+      const wamid = data.messages?.[0]?.id;
+      if (wamid) {
+        tokens[token].wamid = wamid;
+        await saveSharedData('portal_tokens', tokens);
+        setPortalWamid(wamid);
+      }
+      setPortalMsg(`✓ Enviado a +${waPhone}.\nLink: ${link}`);
     } catch (e) {
-      setPortalMsg(`Error: ${e.message}`);
+      setPortalMsg(`❌ Error de red: ${e.message}`);
     }
     setPortalSending(false);
   };
+
+  useEffect(() => {
+    if (!portalWamid) return;
+    return onRemoteChange('portal_tokens', async () => {
+      const tokens = await loadSharedData('portal_tokens');
+      const entry = tokens && Object.values(tokens).find(t => t.wamid === portalWamid);
+      if (entry?.waStatus) {
+        const label = { read: '✓✓ Leído por el cliente', delivered: '✓✓ Entregado', sent: '✓ Enviado' }[entry.waStatus] || entry.waStatus;
+        setPortalWaStatus(label);
+      }
+    });
+  }, [portalWamid]);
 
   return (
     <PageLayout breadcrumb={['Obras', obra.nombre, tabLabels[displayTab]]} active="Obras">
@@ -3177,8 +3211,13 @@ export default function ObraPresupuesto() {
                 {portalMsg}
               </div>
             )}
+            {portalMsg.startsWith('✓') && (
+              <div style={{ marginTop: 4, padding: '7px 14px', background: portalWaStatus ? '#d1fae5' : '#f0f9ff', borderRadius: 6, fontSize: 12, color: T.ink2 }}>
+                Estado de entrega: <b style={{ color: T.ink }}>{portalWaStatus || 'aguardando confirmación…'}</b>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-              <Btn sm onClick={() => { setShowPortalAccess(false); setPortalMsg(''); }}>Cancelar</Btn>
+              <Btn sm onClick={() => { setShowPortalAccess(false); setPortalMsg(''); setPortalWamid(''); setPortalWaStatus(''); }}>Cancelar</Btn>
               <Btn sm fill onClick={sendPortalAccess} disabled={portalSending}>
                 {portalSending ? 'Enviando…' : '📲 Generar y enviar acceso'}
               </Btn>

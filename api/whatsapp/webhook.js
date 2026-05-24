@@ -36,6 +36,15 @@ async function loadSharedData(key) {
   return rows[0]?.data ?? null;
 }
 
+async function saveSharedData(key, value) {
+  await fetch(`${SUPABASE_URL}/rest/v1/shared_data`, {
+    method: 'POST',
+    headers: { ...sbH(), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ key, data: value, updated_at: new Date().toISOString() }),
+  });
+  await broadcastChange(key);
+}
+
 // ── Helpers Meta API ──────────────────────────────────────────────────────────
 async function sendWA(to, body) {
   try {
@@ -1172,6 +1181,28 @@ export default async function handler(req, res) {
     if (change?.field !== 'messages') return res.status(200).json({ ok: true });
 
     const value   = change.value;
+
+    // Delivery status updates (sent/delivered/read)
+    const statusEntry = value?.statuses?.[0];
+    if (statusEntry) {
+      const { id: wamid, status } = statusEntry;
+      if (wamid && ['sent', 'delivered', 'read'].includes(status)) {
+        try {
+          const tokens = await loadSharedData('portal_tokens');
+          if (tokens) {
+            const key = Object.keys(tokens).find(k => tokens[k].wamid === wamid);
+            if (key) {
+              tokens[key] = { ...tokens[key], waStatus: status };
+              await saveSharedData('portal_tokens', tokens);
+            }
+          }
+        } catch (e) {
+          console.error('status update error:', e.message);
+        }
+      }
+      return res.status(200).json({ ok: true });
+    }
+
     const message = value?.messages?.[0];
     if (!message) return res.status(200).json({ ok: true });
 
