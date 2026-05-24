@@ -3094,11 +3094,10 @@ export default function ObraPresupuesto() {
       setPortalMsg('❌ Número inválido. Ingresá al menos 10 dígitos (ej: 5492262530655).');
       return;
     }
-    setPortalSending(true); setPortalMsg(''); setPortalWamid(''); setPortalWaStatus('');
+    setPortalSending(true); setPortalMsg(''); setPortalWamid(''); setPortalWaStatus(''); setPortalManualUrl('');
     try {
       const token = `pt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-      // Argentine mobile: needs '549' prefix (not just '54')
       let waPhone = rawPhone;
       if (!waPhone.startsWith('549')) {
         waPhone = waPhone.startsWith('54') ? '549' + waPhone.slice(2) : '549' + waPhone;
@@ -3109,24 +3108,18 @@ export default function ObraPresupuesto() {
       const res = await fetch('/api/whatsapp/send-portal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, waPhone, text, obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires }),
+        body: JSON.stringify({ token, obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires }),
       });
       const data = await res.json();
-      if (data.error) {
-        if (data.reengagement) {
-          const waUrl = `https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`;
-          setPortalManualUrl(waUrl);
-          setPortalMsg(`✓ Link generado para +${waPhone}.\nLink: ${link}`);
-        } else {
-          setPortalMsg(`❌ No se pudo enviar al +${waPhone}: ${data.error}`);
-        }
+      if (!res.ok || data.error) {
+        setPortalMsg(`❌ Error al guardar: ${data.error}`);
         setPortalSending(false);
         return;
       }
-      if (data.wamid) setPortalWamid(data.wamid);
-      setPortalMsg(`✓ Enviado a +${waPhone}.\nLink: ${link}`);
+      setPortalManualUrl(`https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`);
+      setPortalMsg(`✓ Link generado para +${waPhone}.`);
     } catch (e) {
-      setPortalMsg(`❌ Error de red: ${e.message}`);
+      setPortalMsg(`❌ Error: ${e.message}`);
     }
     setPortalSending(false);
   };
@@ -3231,7 +3224,7 @@ export default function ObraPresupuesto() {
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
               <Btn sm onClick={() => { setShowPortalAccess(false); setPortalMsg(''); setPortalWamid(''); setPortalWaStatus(''); setPortalManualUrl(''); }}>Cancelar</Btn>
               <Btn sm fill onClick={sendPortalAccess} disabled={portalSending}>
-                {portalSending ? 'Enviando…' : '📲 Generar y enviar acceso'}
+                {portalSending ? 'Generando…' : '🔗 Generar acceso'}
               </Btn>
             </div>
           </div>
