@@ -78,7 +78,7 @@ function FRow({ label, children }) {
 function FInput({ label, value, onChange, type = 'text', placeholder }) {
   return (
     <FRow label={label}>
-      <input style={inputSt} type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
+      <input style={inputSt} type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} step={type === 'number' ? 'any' : undefined} />
     </FRow>
   );
 }
@@ -745,7 +745,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                       <div className="k-cell" style={{ flex, textAlign: 'right', padding: '2px 6px' }}
                         onClick={e => { e.stopPropagation(); setInlineEdit({ taskId: tarea.id, field, value: String(value) }); }}>
                         {ie?.field === field
-                          ? <input autoFocus type="number" min="0" step="1" style={inlineInputSt} value={ie.value}
+                          ? <input autoFocus type="number" min="0" step="any" style={inlineInputSt} value={ie.value}
                               onFocus={e => e.target.select()}
                               onChange={e => setInlineEdit(x => ({ ...x, value: e.target.value }))}
                               onBlur={saveInlineCost}
@@ -829,7 +829,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                           <div className="k-cell" style={{ flex: 0.9, textAlign: 'right', padding: '2px 6px' }}
                             onClick={e => { e.stopPropagation(); setInlineEdit({ taskId: tarea.id, field: 'margenLinea', value: tarea.margenLinea != null ? String(tarea.margenLinea) : '' }); }}>
                             {ie?.field === 'margenLinea'
-                              ? <input autoFocus type="number" min="0" step="0.5" style={{ ...inlineInputSt, width: 56 }} value={ie.value}
+                              ? <input autoFocus type="number" min="0" step="any" style={{ ...inlineInputSt, width: 56 }} value={ie.value}
                                   placeholder={`${rubro.margenMat}/${rubro.margenMO}`}
                                   onFocus={e => e.target.select()}
                                   onChange={e => setInlineEdit(x => ({ ...x, value: e.target.value }))}
@@ -1090,7 +1090,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                           {['General', 'Logística', 'Estructura', 'Terminaciones', 'Herramientas', 'Otro'].map(c => <option key={c}>{c}</option>)}
                         </select>
                         <span style={{ fontSize: 9, color: T.ink3 }}>$</span>
-                        <input type="number" min="0" value={m.costoUnit} style={{ width: 60, fontSize: 10, padding: '1px 4px', border: `1px solid ${T.faint2}`, borderRadius: 2, fontFamily: T.fontMono, textAlign: 'right' }}
+                        <input type="number" min="0" step="any" value={m.costoUnit} style={{ width: 60, fontSize: 10, padding: '1px 4px', border: `1px solid ${T.faint2}`, borderRadius: 2, fontFamily: T.fontMono, textAlign: 'right' }}
                           onChange={e => {
                             const mats = selTask.receta.materiales.map((x, xi) => xi === mi ? { ...x, costoUnit: +e.target.value || 0 } : x);
                             patchTaskReceta(selTask.id, { ...selTask.receta, materiales: mats });

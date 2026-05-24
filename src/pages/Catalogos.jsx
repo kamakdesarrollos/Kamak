@@ -722,7 +722,7 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
                 <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{m.nombre}</div>
                 <span style={{ fontSize: 11, color: T.ink2 }}>por hora</span>
                 {moEdit?.id === m.id ? (
-                  <input autoFocus type="number" min="0"
+                  <input autoFocus type="number" min="0" step="any"
                     style={{ ...inputSt, width: 100, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700 }}
                     value={moEdit.value}
                     onChange={e => setMoEdit(x => ({ ...x, value: e.target.value }))}

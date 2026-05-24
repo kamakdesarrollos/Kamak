@@ -586,7 +586,7 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
                               style={cellInSt(false)} />
                           </div>
                           <div className="k-cell" style={{ flex: 0.8 }}>
-                            <input type="number" min="0" value={t.cantidad || 1}
+                            <input type="number" min="0" step="any" value={t.cantidad || 1}
                               onChange={e => updTarea(rubro.id, t.id, { cantidad: +e.target.value })}
                               style={cellInSt(true)} />
                           </div>
@@ -596,12 +596,12 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
                               style={cellInSt(false)} />
                           </div>
                           <div className="k-cell" style={{ flex: 1 }}>
-                            <input type="number" min="0" value={t.costoMat || 0}
+                            <input type="number" min="0" step="any" value={t.costoMat || 0}
                               onChange={e => updTarea(rubro.id, t.id, { costoMat: +e.target.value })}
                               style={cellInSt(true, '#c0392b')} />
                           </div>
                           <div className="k-cell" style={{ flex: 1 }}>
-                            <input type="number" min="0" value={t.costoSub || 0}
+                            <input type="number" min="0" step="any" value={t.costoSub || 0}
                               onChange={e => updTarea(rubro.id, t.id, { costoSub: +e.target.value })}
                               style={cellInSt(true, '#c0392b')} />
                           </div>
