@@ -25,7 +25,7 @@ const PERM_COLS = [
 
 const TABS_OCULTOS_OPTS = [
   'Resumen', 'Presupuesto', 'Materiales', 'Adicionales', 'Gantt',
-  'Movimientos', 'Cuenta cliente', 'Contratos MO', 'Documentos', 'Fotos',
+  'Movimientos', 'Cuenta cliente', 'Contratos MO', 'Documentos', 'Fotos', 'Financiación',
 ];
 
 function PermToggle({ on, onChange }) {

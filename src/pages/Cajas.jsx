@@ -5,6 +5,7 @@ import { T } from '../theme';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useDolar } from '../store/DolarContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useCheques } from '../store/ChequesContext';
 import TraspasoModal from './modales/TraspasoModal';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
@@ -14,18 +15,34 @@ const fmtN = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
 const TIPO_LABEL = { efectivo: 'Efectivo', banco: 'Banco', billetera: 'Billetera', obra: 'Caja de obra', rendicion: 'Rendición' };
 const fmtFecha = (iso) => { if (!iso) return ''; const [, m, d] = iso.split('-'); return `${d}/${m}`; };
 
+const fmtFechaLarga = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
+
 function CajaMovimientosModal({ caja, onClose }) {
-  const { movimientos, cajas } = useMovimientos();
+  const { movimientos } = useMovimientos();
+  const { cheques } = useCheques();
+  const [tab, setTab] = useState('movimientos');
+
   const movs = useMemo(() =>
     movimientos.filter(m => m.cajaId === caja.id || m.cajaDestinoId === caja.id)
       .sort((a, b) => b.fecha.localeCompare(a.fecha)),
     [movimientos, caja.id]
   );
+
+  const chequesEnCaja = useMemo(() =>
+    cheques.filter(c => c.cajaId === caja.id && c.estado === 'cartera')
+      .sort((a, b) => (a.fechaVencimiento || '').localeCompare(b.fechaVencimiento || '')),
+    [cheques, caja.id]
+  );
+
   const isUSD = caja.moneda === 'USD';
   const simbolo = isUSD ? 'USD' : '$';
+  const totalCheques = chequesEnCaja.reduce((s, c) => s + (c.monto || 0), 0);
+
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 560, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: 580, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 17, fontFamily: T.font }}>{caja.nombre}</div>
@@ -35,51 +52,109 @@ function CajaMovimientosModal({ caja, onClose }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, opacity: 0.6 }}>Saldo actual</div>
+              <div style={{ fontSize: 10, opacity: 0.6 }}>Saldo</div>
               <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: (caja.saldo || 0) < 0 ? '#ef4444' : T.accent }}>
                 {simbolo} {fmtN(caja.saldo || 0)}
               </div>
             </div>
+            {chequesEnCaja.length > 0 && (
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, opacity: 0.6 }}>Cheques en cartera</div>
+                <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: '#1a9b9c' }}>
+                  $ {fmtN(totalCheques)}
+                </div>
+              </div>
+            )}
             <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
           </div>
         </div>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', borderBottom: `2px solid ${T.faint2}`, flexShrink: 0 }}>
+          {[
+            { key: 'movimientos', label: `Movimientos (${movs.length})` },
+            { key: 'cheques',     label: `Cheques en cartera (${chequesEnCaja.length})` },
+          ].map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              style={{ padding: '8px 16px', border: 'none', background: 'transparent', fontFamily: T.font, fontSize: 12, fontWeight: tab === t.key ? 700 : 400, color: tab === t.key ? T.accent : T.ink2, cursor: 'pointer', borderBottom: tab === t.key ? `2px solid ${T.accent}` : '2px solid transparent', marginBottom: -2 }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
         <div style={{ overflow: 'auto', flex: 1 }}>
-          {movs.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: T.ink3, fontSize: 13 }}>
-              Sin movimientos registrados para esta caja
-            </div>
-          ) : (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 90px', padding: '6px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                <span>Fecha</span>
-                <span>Descripción</span>
-                <span style={{ textAlign: 'right' }}>Importe</span>
-              </div>
-              {movs.map(m => {
-                const isIngreso = m.tipo === 'ingreso';
-                const isDestino = m.cajaDestinoId === caja.id;
-                const color = (isIngreso || isDestino) ? T.ok : T.warn;
-                const signo = (isIngreso || isDestino) ? '+' : '−';
-                return (
-                  <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 90px', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12 }}>
-                    <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3 }}>{fmtFecha(m.fecha)}</span>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{m.descripcion}</div>
-                      <div style={{ fontSize: 10, color: T.ink3, marginTop: 1, display: 'flex', gap: 5 }}>
-                        <span style={{ background: T.faint2, borderRadius: 2, padding: '0 4px' }}>{m.tipo}</span>
-                        {m.obraNombre && m.obraNombre !== 'General' && <span>{m.obraNombre}</span>}
-                        {m.proveedor && <span>· {m.proveedor}</span>}
+
+          {tab === 'movimientos' && (
+            movs.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: T.ink3, fontSize: 13 }}>Sin movimientos registrados</div>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 90px', padding: '6px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  <span>Fecha</span><span>Descripción</span><span style={{ textAlign: 'right' }}>Importe</span>
+                </div>
+                {movs.map(m => {
+                  const isIngreso = m.tipo === 'ingreso';
+                  const isDestino = m.cajaDestinoId === caja.id;
+                  const color = (isIngreso || isDestino) ? T.ok : T.warn;
+                  const signo = (isIngreso || isDestino) ? '+' : '−';
+                  return (
+                    <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 90px', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12 }}>
+                      <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3 }}>{fmtFecha(m.fecha)}</span>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{m.descripcion}</div>
+                        <div style={{ fontSize: 10, color: T.ink3, marginTop: 1, display: 'flex', gap: 5 }}>
+                          <span style={{ background: T.faint2, borderRadius: 2, padding: '0 4px' }}>{m.tipo}</span>
+                          {m.obraNombre && m.obraNombre !== 'General' && <span>{m.obraNombre}</span>}
+                          {m.proveedor && <span>· {m.proveedor}</span>}
+                        </div>
                       </div>
+                      <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color, textAlign: 'right' }}>
+                        {signo}{simbolo} {fmtN(m.monto)}
+                      </span>
                     </div>
-                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color, textAlign: 'right' }}>
-                      {signo}{simbolo} {fmtN(m.monto)}
+                  );
+                })}
+              </>
+            )
+          )}
+
+          {tab === 'cheques' && (
+            chequesEnCaja.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: T.ink3, fontSize: 13 }}>Sin cheques en cartera para esta caja</div>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 90px', padding: '6px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  <span>Cobro</span><span>Banco / N°</span><span>Emisor</span><span style={{ textAlign: 'right' }}>Monto</span>
+                </div>
+                {chequesEnCaja.map(c => (
+                  <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 90px', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: T.fontMono, fontSize: 11 }}>{fmtFechaLarga(c.fechaVencimiento)}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{c.banco || '—'}</div>
+                      <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{c.numero || '—'}</div>
+                    </div>
+                    <div style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {c.titular || c.clienteNombre || c.proveedorNombre || '—'}
+                    </div>
+                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: '#1a9b9c', textAlign: 'right' }}>
+                      $ {fmtN(c.monto)}
                     </span>
                   </div>
-                );
-              })}
-            </>
+                ))}
+                <div style={{ padding: '8px 14px', background: '#e8f4f0', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end' }}>
+                  <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: '#1a9b9c' }}>
+                    Total: $ {fmtN(totalCheques)}
+                  </span>
+                </div>
+              </>
+            )
           )}
+
         </div>
+
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, textAlign: 'right' }}>
           <Btn sm onClick={onClose}>Cerrar</Btn>
         </div>
@@ -90,18 +165,25 @@ function CajaMovimientosModal({ caja, onClose }) {
 
 function NuevaCajaModal({ onClose }) {
   const { addCaja } = useMovimientos();
+  const { usuarios } = useUsuarios();
   const [nombre, setNombre] = useState('');
   const [tipo, setTipo] = useState('efectivo');
   const [moneda, setMoneda] = useState('ARS');
   const [propietario, setPropietario] = useState('');
+  const [usuarioId, setUsuarioId] = useState('');
   const [saldoInicial, setSaldoInicial] = useState('');
 
+  const esEfectivo = tipo === 'efectivo';
+  const canSave = nombre.trim() && (!esEfectivo || usuarioId);
+
   const confirmar = () => {
-    if (!nombre.trim()) return;
+    if (!canSave) return;
+    const usuarioSel = esEfectivo ? usuarios.find(u => u.email === usuarioId) : null;
     addCaja({
       nombre: nombre.trim(),
       tipo, moneda,
-      propietario: propietario.trim(),
+      propietario: esEfectivo ? (usuarioSel?.nombre || '') : propietario.trim(),
+      usuarioId: esEfectivo ? usuarioId : '',
       color: T.ink2,
       saldo: parseFloat(saldoInicial) || 0,
     });
@@ -123,7 +205,7 @@ function NuevaCajaModal({ onClose }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div>
               <label style={labelSt}>Tipo</label>
-              <select style={{ ...inputSt, cursor: 'pointer' }} value={tipo} onChange={e => setTipo(e.target.value)}>
+              <select style={{ ...inputSt, cursor: 'pointer' }} value={tipo} onChange={e => { setTipo(e.target.value); setUsuarioId(''); setPropietario(''); }}>
                 {Object.entries(TIPO_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
@@ -135,10 +217,22 @@ function NuevaCajaModal({ onClose }) {
               </select>
             </div>
           </div>
-          <div>
-            <label style={labelSt}>Propietario / asignado a</label>
-            <input style={inputSt} value={propietario} onChange={e => setPropietario(e.target.value)} placeholder="Opcional" />
-          </div>
+          {esEfectivo ? (
+            <div>
+              <label style={labelSt}>Usuario responsable <span style={{ color: '#dc2626' }}>*</span></label>
+              <select style={{ ...inputSt, cursor: 'pointer', borderColor: !usuarioId ? '#dc2626' : undefined }}
+                value={usuarioId} onChange={e => setUsuarioId(e.target.value)}>
+                <option value="">— Seleccioná un usuario —</option>
+                {usuarios.map(u => <option key={u.email} value={u.email}>{u.nombre}</option>)}
+              </select>
+              {!usuarioId && <div style={{ fontSize: 10, color: '#dc2626', marginTop: 3 }}>Las cajas de efectivo deben tener un usuario asignado</div>}
+            </div>
+          ) : (
+            <div>
+              <label style={labelSt}>Propietario / asignado a</label>
+              <input style={inputSt} value={propietario} onChange={e => setPropietario(e.target.value)} placeholder="Opcional" />
+            </div>
+          )}
           <div>
             <label style={labelSt}>Saldo inicial</label>
             <input style={{ ...inputSt, fontFamily: T.fontMono, fontWeight: 700 }}
@@ -147,34 +241,62 @@ function NuevaCajaModal({ onClose }) {
         </div>
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn sm onClick={onClose}>Cancelar</Btn>
-          <Btn sm fill onClick={confirmar} style={{ opacity: nombre.trim() ? 1 : 0.5 }}>Crear caja</Btn>
+          <Btn sm fill onClick={confirmar} style={{ opacity: canSave ? 1 : 0.5 }}>Crear caja</Btn>
         </div>
       </div>
     </div>
   );
 }
 
-function CajaCard({ caja, onTraspaso, onRemove, onClick }) {
-  const isNeg = (caja.saldo || 0) < 0;
-  const isLow = caja.tipo === 'obra' && (caja.saldo || 0) < 30000;
+function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0 }) {
+  const isARS = caja.moneda === 'ARS';
+  const saldo = caja.saldo || 0;
+  const efectivo = saldo - saldoCheques;
+  const tieneChecks = isARS && saldoCheques > 0;
+  const isLow = caja.tipo === 'obra' && saldo < 30000;
+
   return (
-    <Box style={{ padding: 11, borderLeft: `3px solid ${caja.color || T.ink2}`, cursor: 'pointer' }} onClick={onClick}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${caja.color || T.ink2}`, cursor: 'pointer' }} onClick={onClick}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
         <div>
-          <div style={{ fontWeight: 700 }}>{caja.nombre}</div>
-          <div style={{ fontSize: 11, color: T.ink2 }}>{TIPO_LABEL[caja.tipo] || caja.tipo}{caja.propietario ? ` · ${caja.propietario}` : ''}</div>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{caja.nombre}</div>
+          <div style={{ fontSize: 11, color: T.ink2 }}>
+            {TIPO_LABEL[caja.tipo] || caja.tipo}{caja.propietario ? ` · ${caja.propietario}` : ''}
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           {isLow && <Chip warn style={{ fontSize: 9 }}>⚠ bajo</Chip>}
-          <span style={{ color: T.accent, cursor: 'pointer', fontSize: 13, opacity: 0.6 }}
+          <span style={{ color: T.ink3, cursor: 'pointer', fontSize: 16, opacity: 0.4, lineHeight: 1 }}
             onClick={e => { e.stopPropagation(); onRemove(); }}>×</span>
         </div>
       </div>
-      <div className="k-stat-sm" style={{ marginTop: 6, color: isNeg ? T.accent : T.ink }}>
-        {caja.moneda === 'USD' ? 'U$S' : '$'} {fmtN(caja.saldo || 0)}
-      </div>
-      <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{caja.moneda}</div>
-      <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+
+      {tieneChecks ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr', alignItems: 'stretch', marginBottom: 10 }}>
+          <div style={{ paddingRight: 12 }}>
+            <div style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Efectivo</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 16, color: efectivo < 0 ? T.warn : T.ink, lineHeight: 1 }}>
+              {efectivo < 0 ? '-' : ''}$ {fmtN(efectivo)}
+            </div>
+          </div>
+          <div style={{ background: T.faint2 }} />
+          <div style={{ paddingLeft: 12 }}>
+            <div style={{ fontSize: 9, color: '#1a9b9c', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Cheques</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 16, color: '#1a9b9c', lineHeight: 1 }}>
+              $ {fmtN(saldoCheques)}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginBottom: 10 }}>
+          <div className="k-stat-sm" style={{ color: saldo < 0 ? T.warn : T.ink }}>
+            {isARS ? '$' : 'U$S'} {fmtN(saldo)}
+          </div>
+          {!isARS && <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono, marginTop: 2 }}>{caja.moneda}</div>}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 4 }}>
         <Btn sm onClick={e => { e.stopPropagation(); onTraspaso(); }}>↔ Traspasar</Btn>
         <span style={{ fontSize: 10, color: T.ink3, alignSelf: 'center', marginLeft: 2 }}>Ver movimientos →</span>
       </div>
@@ -186,6 +308,17 @@ export default function Cajas() {
   const { cajas, removeCaja } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
+  const { cheques } = useCheques();
+
+  const chequesPorCaja = useMemo(() => {
+    const map = {};
+    cheques.forEach(c => {
+      if (c.estado === 'cartera' && c.cajaId && c.moneda === 'ARS') {
+        map[c.cajaId] = (map[c.cajaId] || 0) + (c.monto || 0);
+      }
+    });
+    return map;
+  }, [cheques]);
   const [traspaso, setTraspaso] = useState(false);
   const [nuevaCaja, setNuevaCaja] = useState(false);
   const [cajaSel, setCajaSel] = useState(null);
@@ -247,7 +380,7 @@ export default function Cajas() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
             {cajasARS.map(c => (
-              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} />
+              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} saldoCheques={chequesPorCaja[c.id] || 0} />
             ))}
           </div>
         </>

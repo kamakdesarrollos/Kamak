@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Bar, Label, ImgPh } from '../components/ui';
 import { T } from '../theme';
@@ -385,10 +385,17 @@ export default function Obras() {
 
   const getStats = (obra) => computeStats(obra, detalles[obra.id] || EMPTY_DETALLE);
 
+  const [searchParams] = useSearchParams();
   const [tabIdx, setTabIdx] = useState(0);
   const [showNueva, setShowNueva] = useState(false);
-  const [editando, setEditando] = useState(null); // obra a editar
-  const [busqueda, setBusqueda] = useState('');
+  const [editando, setEditando] = useState(null);
+  const [busqueda, setBusqueda] = useState(() => searchParams.get('q') || '');
+
+  // Sync busqueda from URL param (e.g. navigating from Clientes)
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q) setBusqueda(q);
+  }, [searchParams]);
 
   const activas      = byEstado('activa').filter(puedeVer);
   const enPresu      = byEstado('en-presupuesto').filter(puedeVer);

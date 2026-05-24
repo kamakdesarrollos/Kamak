@@ -204,12 +204,14 @@ function ChequeFila({ cheque: c, onAccion }) {
 // ── Modal: registrar / editar cheque ─────────────────────────────────────────
 function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
   const esEdicion = !!cheque?.id;
+  const cajasARS = cajas.filter(c => c.activa && c.moneda === 'ARS');
   const [tipo, setTipo]               = useState(cheque?.tipo || 'tercero');
   const [numero, setNumero]           = useState(cheque?.numero || '');
   const [banco, setBanco]             = useState(cheque?.banco || '');
   const [titular, setTitular]         = useState(cheque?.titular || '');
   const [monto, setMonto]             = useState(cheque?.monto ? String(cheque.monto) : '');
   const [moneda, setMoneda]           = useState(cheque?.moneda || 'ARS');
+  const [cajaId, setCajaId]           = useState(cheque?.cajaId || cajasARS[0]?.id || '');
   const [fechaIngreso, setFechaIngreso] = useState(cheque?.fechaIngreso || todayStr());
   const [fechaVencimiento, setFechaVencimiento] = useState(cheque?.fechaVencimiento || '');
   const [obraId, setObraId]           = useState(cheque?.obraId || '');
@@ -225,6 +227,7 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
     if (!canSave) return;
     onSave({
       tipo, numero, banco, titular, monto: montoNum, moneda,
+      cajaId: cajaId || null,
       fechaIngreso, fechaVencimiento,
       obraId: obraId || null,
       obraNombre: obras.find(o => o.id === obraId)?.nombre || '',
@@ -301,6 +304,14 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
                 <option value="USD">USD</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label style={labelSt}>Caja *</label>
+            <select style={{ ...inputSt, cursor: 'pointer' }} value={cajaId} onChange={e => setCajaId(e.target.value)}>
+              <option value="">— Sin caja —</option>
+              {cajasARS.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -673,8 +684,9 @@ export default function Cheques() {
     closeModal();
   };
 
-  const handleTraspasar = ({ traspasadoA, fecha, nota }) => {
+  const handleTraspasar = ({ traspasadoA, cajaDestinoId, fecha, nota }) => {
     updateCheque(modal.cheque.id, {
+      cajaId: cajaDestinoId,
       traspasoA: traspasadoA,
       fechaTraspaso: fecha,
       observacion: nota || modal.cheque.observacion,

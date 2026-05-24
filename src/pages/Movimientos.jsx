@@ -65,6 +65,13 @@ function MovRow({ m, cajas, onRemove }) {
       <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: isIngreso ? T.ok : T.warn, flexShrink: 0 }}>
         {isIngreso ? '+' : '−'}{simbolo} {fmtN(m.monto)}
       </span>
+      {m.comprobanteUrl && (
+        <a href={m.comprobanteUrl} target="_blank" rel="noreferrer"
+          style={{ fontSize: 13, lineHeight: 1, flexShrink: 0, textDecoration: 'none', opacity: 0.7 }}
+          title="Ver comprobante" onClick={e => e.stopPropagation()}>
+          {m.comprobanteUrl.endsWith('.pdf') ? '📄' : '🖼'}
+        </a>
+      )}
       <span style={{ width: 16, flexShrink: 0 }}>
         {hover && (
           <span style={{ color: T.ink3, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
@@ -424,6 +431,83 @@ function Panel({ tipo, movs, cajas, obras, proveedores, clientes, dolarVenta, to
   );
 }
 
+// ── Panel comprobantes del mes ────────────────────────────────────────────────
+function ComprobantesPanel({ movimientos, mes }) {
+  const [open,        setOpen]        = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const conFoto = movimientos.filter(m => m.comprobanteUrl);
+  if (!conFoto.length) return null;
+
+  const sanitize = s => (s || '').replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _-]/g, '').slice(0, 40).trim();
+
+  const downloadZip = async () => {
+    setDownloading(true);
+    try {
+      const { default: JSZip } = await import('jszip');
+      const zip = new JSZip();
+      await Promise.all(conFoto.map(async m => {
+        try {
+          const res = await fetch(m.comprobanteUrl);
+          if (!res.ok) return;
+          const blob = await res.blob();
+          const ext  = m.comprobanteUrl.endsWith('.pdf') ? 'pdf' : 'jpg';
+          zip.file(`${m.fecha}_${sanitize(m.descripcion)}_${Math.round(m.monto)}.${ext}`, blob);
+        } catch { /* omitir si falla */ }
+      }));
+      const content = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(content);
+      a.download = `comprobantes_${mes}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <Box style={{ marginTop: 14 }}>
+      <div style={{ padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+        onClick={() => setOpen(o => !o)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>Comprobantes del mes</span>
+          <span style={{ fontSize: 11, background: T.faint2, borderRadius: 10, padding: '1px 8px', color: T.ink2 }}>{conFoto.length}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Btn sm fill onClick={e => { e.stopPropagation(); downloadZip(); }} style={{ opacity: downloading ? 0.6 : 1, pointerEvents: downloading ? 'none' : 'auto' }}>
+            {downloading ? 'Preparando...' : '↓ Descargar ZIP'}
+          </Btn>
+          <span style={{ color: T.ink3, fontSize: 11 }}>{open ? '▲' : '▼'}</span>
+        </div>
+      </div>
+
+      {open && (
+        <div style={{ padding: '0 14px 14px', borderTop: `1px solid ${T.faint2}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8, marginTop: 12 }}>
+            {conFoto.map(m => (
+              <a key={m.id} href={m.comprobanteUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: T.ink }}>
+                <div style={{ border: `1.5px solid ${T.faint2}`, borderRadius: 6, overflow: 'hidden', background: T.paper }}>
+                  {m.comprobanteUrl.endsWith('.pdf') ? (
+                    <div style={{ height: 86, background: '#f5f0e8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>📄</div>
+                  ) : (
+                    <img src={m.comprobanteUrl} alt="" style={{ width: '100%', height: 86, objectFit: 'cover', display: 'block' }} />
+                  )}
+                  <div style={{ padding: '5px 7px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: T.ink }}>{m.descripcion}</div>
+                    <div style={{ fontSize: 11, fontFamily: T.fontMono, fontWeight: 800, color: T.warn, marginTop: 1 }}>$ {fmtN(m.monto)}</div>
+                    <div style={{ fontSize: 9, color: T.ink3, marginTop: 1 }}>{fmtFecha(m.fecha)} · {m.obraNombre || 'General'}</div>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </Box>
+  );
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Movimientos() {
   const { movimientos, cajas: allCajas, addMovimiento, removeMovimiento } = useMovimientos();
@@ -534,6 +618,9 @@ export default function Movimientos() {
           onRemove={removeMovimiento}
         />
       </div>
+
+      <ComprobantesPanel movimientos={filtered} mes={mes} />
+
     </PageLayout>
   );
 }

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
@@ -69,6 +70,7 @@ function NuevoClienteModal({ initial = null, onSave, onClose }) {
 export default function Clientes() {
   const { clientes, addCliente, updateCliente, removeCliente } = useClientes();
   const { obras } = useObras();
+  const navigate = useNavigate();
   const [modal, setModal] = useState(false);
   const [editCliente, setEditCliente] = useState(null);
   const [search, setSearch] = useState('');
@@ -168,10 +170,19 @@ export default function Clientes() {
                   )}
                   {!c.telefono && !c.email && <span style={{ color: T.ink3 }}>—</span>}
                 </span>
-                <span style={{ textAlign: 'center', fontFamily: T.fontMono, fontWeight: 700, color: obrasCount[c.id] > 0 ? T.ok : T.ink3 }}>
-                  {obrasCount[c.id] || 0}
+                <span style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                  {obrasCount[c.id] > 0 ? (
+                    <span
+                      onClick={() => navigate(`/obras?q=${encodeURIComponent(c.nombre)}`)}
+                      style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.ok, cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>
+                      {obrasCount[c.id]}
+                    </span>
+                  ) : <span style={{ color: T.ink3, fontFamily: T.fontMono }}>0</span>}
                 </span>
                 <span style={{ display: 'flex', gap: 5, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                  {obrasCount[c.id] > 0 && (
+                    <Btn sm onClick={() => navigate(`/obras?q=${encodeURIComponent(c.nombre)}`)}>🏗</Btn>
+                  )}
                   <Btn sm onClick={() => setEditCliente(c)}>✏</Btn>
                   <span style={{ color: T.warn, cursor: 'pointer', fontSize: 16, padding: '0 2px', lineHeight: 1 }}
                     onClick={() => { if (confirm(`¿Eliminar ${c.nombre}?`)) removeCliente(c.id); }}>×</span>
