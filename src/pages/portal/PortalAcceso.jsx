@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { loadSharedData } from '../../lib/dbHelpers';
 import { T } from '../../theme';
 
 export default function PortalAcceso() {
@@ -10,14 +9,14 @@ export default function PortalAcceso() {
 
   useEffect(() => {
     if (!token) { setEstado('invalido'); return; }
-    loadSharedData('portal_tokens').then(data => {
-      if (!data) { setEstado('invalido'); return; }
-      const entry = data[token];
-      if (!entry) { setEstado('invalido'); return; }
-      if (entry.expires && new Date(entry.expires) < new Date()) { setEstado('expirado'); return; }
-      // Token válido — redirigir al portal de la obra
-      navigate(`/portal/cliente/${entry.obraId}`, { replace: true });
-    });
+    fetch(`/api/portal/validate-token?token=${encodeURIComponent(token)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error === 'expired') { setEstado('expirado'); return; }
+        if (data.error || !data.obraId) { setEstado('invalido'); return; }
+        navigate(`/portal/cliente/${data.obraId}`, { replace: true });
+      })
+      .catch(() => setEstado('invalido'));
   }, [token, navigate]);
 
   const msgs = {
