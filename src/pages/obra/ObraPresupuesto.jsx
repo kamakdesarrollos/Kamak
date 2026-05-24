@@ -1739,7 +1739,7 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 10: FINANCIACIÓN
 // ─────────────────────────────────────────────────────────────────────────────
-function TabFinanciacion({ obra, detalle, patch, moneda }) {
+function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const fin = detalle.financiacion || {};
   const { dolarVenta } = useDolar();
   const locked = !!fin.propuestaEnviada;
@@ -1820,6 +1820,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda }) {
 
   const enviarPropuesta = () => {
     patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), propuestaEnviada: true, fechaPropuesta: new Date().toISOString().split('T')[0] } }));
+    onExport?.();
   };
   const reabrirNegociacion = () => {
     patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), propuestaEnviada: false } }));
@@ -3264,7 +3265,7 @@ export default function ObraPresupuesto() {
       {displayTab === 7 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 8 && <TabDocumentos detalle={detalle} patch={patch} obraId={id} />}
       {displayTab === 9 && <TabFotos detalle={detalle} patch={patch} obraId={id} />}
-      {displayTab === 10 && <TabFinanciacion obra={obra} detalle={detalle} patch={patch} moneda={moneda} />}
+      {displayTab === 10 && <TabFinanciacion obra={obra} detalle={detalle} patch={patch} moneda={moneda} onExport={() => setShowExport(true)} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
       {showContrato && <ContratoMOModal onClose={() => setShowContrato(false)} />}
