@@ -14,9 +14,11 @@ const fmtN     = (n) => n != null ? Math.round(n).toLocaleString('es-AR') : '—
 const fmtFecha = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
 
 // ── Modal revisión de FACTURA ─────────────────────────────────────────────────
+const newAdicId = () => `adic-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+
 function FacturaModal({ item, onConfirm, onClose }) {
   const { cajas, addMovimiento } = useMovimientos();
-  const { obras }                = useObras();
+  const { obras, patchDetalle }  = useObras();
   const { proveedores }          = useProveedores();
 
   const cajasARS   = cajas.filter(c => c.activa && c.moneda === 'ARS');
@@ -34,8 +36,9 @@ function FacturaModal({ item, onConfirm, onClose }) {
   const [monto,      setMonto]      = useState(item.montoTotal != null ? String(item.montoTotal) : item.monto != null ? String(item.monto) : '');
   const [fecha,      setFecha]      = useState(item.fecha      || new Date().toISOString().split('T')[0]);
   const [concepto,   setConcepto]   = useState(item.concepto   || '');
-  const [obraId,     setObraId]     = useState('');
-  const [cajaId,     setCajaId]     = useState(cajasARS[0]?.id || '');
+  const [obraId,      setObraId]     = useState('');
+  const [cajaId,      setCajaId]     = useState(cajasARS[0]?.id || '');
+  const [esAdicional, setEsAdicional] = useState(false);
 
   const montoNum = Math.round(parseFloat(monto.replace(/[^0-9.]/g, '')) || 0);
   const canSave  = montoNum > 0 && proveedor.trim() && cajaId;
@@ -44,9 +47,10 @@ function FacturaModal({ item, onConfirm, onClose }) {
     if (!canSave) return;
     const obra    = obrasActivas.find(o => o.id === obraId);
     const cajaNom = cajas.find(c => c.id === cajaId)?.nombre || '';
+    const descripcion = concepto.trim() || `Factura ${item.tipoFactura || ''} ${item.numeroFactura || ''} · ${proveedor}`.trim();
     addMovimiento({
       tipo:           'gasto',
-      descripcion:    concepto.trim() || `Factura ${item.tipoFactura || ''} ${item.numeroFactura || ''} · ${proveedor}`.trim(),
+      descripcion,
       monto:          montoNum,
       fecha,
       obraId:         obraId || null,
@@ -61,6 +65,22 @@ function FacturaModal({ item, onConfirm, onClose }) {
       comprobanteUrl: item.mediaUrl || null,
       fondoReparo:    false,
     });
+    if (esAdicional && obraId) {
+      patchDetalle(obraId, d => ({
+        ...d,
+        adicionales: [...(d.adicionales || []), {
+          id: newAdicId(),
+          descripcion,
+          tarea: '', cantidad: null, unidad: '',
+          costoUnit: null, costoTotal: montoNum,
+          valorVentaUnit: null, valorVentaTotal: null,
+          montoProveedor: montoNum, cantidadProveedor: null, costoUnitProveedor: null,
+          aplicadoAContrato: false,
+          monto: montoNum, fecha, estado: 'pendiente',
+          aplicaACliente: true, aplicaAProveedor: false,
+        }],
+      }));
+    }
     onConfirm();
   };
 
@@ -126,6 +146,13 @@ function FacturaModal({ item, onConfirm, onClose }) {
               </select>
             </div>
           </div>
+
+          {obraId && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', color: T.ink2, userSelect: 'none', marginTop: 2 }}>
+              <input type="checkbox" checked={esAdicional} onChange={e => setEsAdicional(e.target.checked)} />
+              Registrar también como <b style={{ color: T.accent }}>adicional pendiente</b> de {obrasActivas.find(o => o.id === obraId)?.nombre || 'la obra'}
+            </label>
+          )}
         </div>
 
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -193,6 +220,7 @@ function MovimientoPendiente({ item, onApprove, onReject }) {
   const esGasto = m.tipo === 'gasto';
   const navigate = useNavigate();
   const { proveedores } = useProveedores();
+  const [esAdicional, setEsAdicional] = useState(false);
   return (
     <Box style={{ padding: '12px 16px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
       <div style={{ width: 36, height: 36, borderRadius: 6, background: esGasto ? '#fff0e8' : '#e8f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
@@ -242,8 +270,14 @@ function MovimientoPendiente({ item, onApprove, onReject }) {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
-        <Btn sm fill onClick={onApprove} style={{ background: '#25803a', fontSize: 11 }}>Aprobar</Btn>
+        <Btn sm fill onClick={() => onApprove(esAdicional)} style={{ background: '#25803a', fontSize: 11 }}>Aprobar</Btn>
         <Btn sm onClick={onReject} style={{ fontSize: 11, color: T.ink3 }}>Rechazar</Btn>
+        {esGasto && m.obraId && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, cursor: 'pointer', color: T.ink2, userSelect: 'none' }}>
+            <input type="checkbox" checked={esAdicional} onChange={e => setEsAdicional(e.target.checked)} />
+            + Adicional
+          </label>
+        )}
       </div>
     </Box>
   );
@@ -253,6 +287,7 @@ function MovimientoPendiente({ item, onApprove, onReject }) {
 export default function WhatsappBuzon() {
   const { pending, reload, rejectItem, confirmItem } = useWhatsappPending();
   const { addMovimiento } = useMovimientos();
+  const { patchDetalle } = useObras();
   const [review, setReview] = useState(null);
 
   const facturas    = pending.filter(p => p.tipoPendiente !== 'movimiento');
@@ -262,7 +297,7 @@ export default function WhatsappBuzon() {
     if (window.confirm('¿Descartás esta factura? No se guardará como gasto.')) rejectItem(id);
   };
 
-  const handleApproveMovimiento = (item) => {
+  const handleApproveMovimiento = (item, esAdicional) => {
     const m = item.movimiento;
     if (!m) return;
     addMovimiento({
@@ -281,6 +316,22 @@ export default function WhatsappBuzon() {
       comprobanteUrl: m.comprobanteUrl || null,
       fondoReparo:    false,
     });
+    if (esAdicional && m.obraId) {
+      patchDetalle(m.obraId, d => ({
+        ...d,
+        adicionales: [...(d.adicionales || []), {
+          id: newAdicId(),
+          descripcion: m.descripcion,
+          tarea: '', cantidad: null, unidad: '',
+          costoUnit: null, costoTotal: m.monto,
+          valorVentaUnit: null, valorVentaTotal: null,
+          montoProveedor: m.monto, cantidadProveedor: null, costoUnitProveedor: null,
+          aplicadoAContrato: false,
+          monto: m.monto, fecha: m.fecha, estado: 'pendiente',
+          aplicaACliente: true, aplicaAProveedor: false,
+        }],
+      }));
+    }
     confirmItem(item.id);
   };
 
@@ -325,7 +376,7 @@ export default function WhatsappBuzon() {
                   <MovimientoPendiente
                     key={item.id}
                     item={item}
-                    onApprove={() => handleApproveMovimiento(item)}
+                    onApprove={(esAdic) => handleApproveMovimiento(item, esAdic)}
                     onReject={() => handleRejectMovimiento(item.id)}
                   />
                 ))}

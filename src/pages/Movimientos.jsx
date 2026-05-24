@@ -261,12 +261,15 @@ function MovRow({ m, cajas, onRemove }) {
 // ── Formulario rápido inline ──────────────────────────────────────────────────
 const BANCOS_QUICK = ['Banco Nación', 'Banco Galicia', 'Banco Provincia', 'Santander', 'BBVA', 'Macro', 'Supervielle', 'Credicoop', 'Comafi', 'Itaú', 'HSBC', 'Otro'];
 
+const newAdicId = () => `adic-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+
 function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, onSave, onCancel }) {
   const isGasto  = tipo === 'gasto';
   const color    = isGasto ? T.warn : T.ok;
   const { catalog } = useCatalog();
   const { config } = useConfiguracion();
   const { addCheque } = useCheques();
+  const { patchDetalle } = useObras();
   const mediosDePago = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
 
   const [desc,          setDesc]          = useState('');
@@ -282,6 +285,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const [cheqBanco,      setCheqBanco]      = useState('');
   const [cheqTitular,    setCheqTitular]    = useState('');
   const [cheqVencimiento,setCheqVencimiento]= useState('');
+  const [esAdicional,    setEsAdicional]    = useState(false);
   const isCheckPayment = medio === 'Cheque' || medio === 'E-cheq';
 
   // Moneda: 'ARS', 'USD' (directo a caja USD), 'USD_ARS' (pesos recibidos con ref USD, solo ingresos)
@@ -353,6 +357,23 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       ...extra,
     });
 
+    if (esAdicional && obraId) {
+      patchDetalle(obraId, d => ({
+        ...d,
+        adicionales: [...(d.adicionales || []), {
+          id: newAdicId(),
+          descripcion: desc.trim(),
+          tarea: '', cantidad: null, unidad: '',
+          costoUnit: null, costoTotal: montoFinal,
+          valorVentaUnit: null, valorVentaTotal: null,
+          montoProveedor: montoFinal, cantidadProveedor: null, costoUnitProveedor: null,
+          aplicadoAContrato: false,
+          monto: montoFinal, fecha, estado: 'pendiente',
+          aplicaACliente: true, aplicaAProveedor: false,
+        }],
+      }));
+    }
+
     if (isCheckPayment && cheqVencimiento) {
       const tipoCheck = isGasto
         ? (medio === 'E-cheq' ? 'echeq_propio' : 'propio')
@@ -376,7 +397,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       });
     }
 
-    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId('');
+    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false);
     setCheqNumero(''); setCheqBanco(''); setCheqTitular(''); setCheqVencimiento('');
   };
 
@@ -539,6 +560,13 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
             <input type="date" style={{ ...inputSt }} value={cheqVencimiento} onChange={e => setCheqVencimiento(e.target.value)} />
           </div>
         </div>
+      )}
+
+      {isGasto && obraId && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', color: T.ink2, userSelect: 'none' }}>
+          <input type="checkbox" checked={esAdicional} onChange={e => setEsAdicional(e.target.checked)} />
+          Registrar también como <b style={{ color: T.accent }}>adicional pendiente</b> de {obras.find(o => o.id === obraId)?.nombre || 'la obra'}
+        </label>
       )}
 
       <div style={{ fontSize: 10, color: T.ink3 }}>Enter guarda · Esc cierra · el formulario queda abierto para cargar varios seguidos</div>
