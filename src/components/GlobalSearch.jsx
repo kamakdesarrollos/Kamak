@@ -102,18 +102,18 @@ export default function GlobalSearch() {
         items.push({
           id: `cli-${c.id}`, type: 'cliente', icon: '👤',
           title: c.nombre, sub: `Cliente · ${c.email || c.telefono || '—'}`,
-          ruta: `/clientes`,
+          ruta: `/clientes?q=${encodeURIComponent(c.nombre)}`,
         });
       }
     });
 
     // Movimientos
     (movimientos || []).forEach(m => {
-      if (norm(m.descripcion).includes(q) || norm(m.proveedor).includes(q) || norm(m.obra).includes(q)) {
+      if (norm(m.descripcion).includes(q) || norm(m.proveedor).includes(q) || norm(m.obraNombre).includes(q)) {
         items.push({
           id: `mov-${m.id}`, type: 'movimiento', icon: m.tipo === 'ingreso' ? '💚' : '💸',
-          title: m.descripcion || m.proveedor, sub: `${m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'} · ${m.obra || '—'} · ${fmtM(m.monto)}`,
-          ruta: `/movimientos`,
+          title: m.descripcion || m.proveedor, sub: `${m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'} · ${m.obraNombre || '—'} · ${fmtM(m.monto)}`,
+          ruta: m.obraId ? `/obras/${m.obraId}/presupuesto?tab=5` : `/movimientos`,
         });
       }
     });

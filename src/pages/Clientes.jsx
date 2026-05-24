@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
@@ -71,9 +71,15 @@ export default function Clientes() {
   const { clientes, addCliente, updateCliente, removeCliente } = useClientes();
   const { obras } = useObras();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [modal, setModal] = useState(false);
   const [editCliente, setEditCliente] = useState(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('q') || '');
+
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q) setSearch(q);
+  }, [searchParams]);
 
   const obrasCount = useMemo(() => {
     const map = {};
