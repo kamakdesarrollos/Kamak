@@ -135,6 +135,7 @@ function ObraMenu({ obra, onTransicion, onEditar, onEliminar }) {
 // ── Card: obra activa ─────────────────────────────────────────────────────────
 function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar }) {
   const [hover, setHover] = useState(false);
+  const navigate = useNavigate();
   const { presupuesto, gastado, avance, margen } = stats;
   const sobrec = margen < 0;
   const alertCerrar = avance >= 85;
@@ -151,7 +152,15 @@ function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar }
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="k-h" style={{ fontSize: 19, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{obra.nombre}</div>
-          <div style={{ fontSize: 12, color: T.ink2, marginTop: 1 }}>{obra.cliente}</div>
+          <div style={{ fontSize: 12, color: T.ink2, marginTop: 1 }}>
+            {obra.cliente
+              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                  onClick={e => { e.stopPropagation(); navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`); }}>
+                  {obra.cliente}
+                </span>
+              : '—'
+            }
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, flexShrink: 0 }}>
           {sobrec && <Chip accent style={{ fontSize: 9 }}>sobrecosto</Chip>}
@@ -217,12 +226,21 @@ function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar }
 
 // ── Card: en presupuesto ──────────────────────────────────────────────────────
 function CardPresupuesto({ obra, onClick, onTransicion, onEditar, onEliminar }) {
+  const navigate = useNavigate();
   return (
     <Box style={{ padding: 13, borderStyle: 'dashed', cursor: 'pointer', position: 'relative' }} onClick={onClick}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div className="k-h" style={{ fontSize: 19 }}>{obra.nombre}</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>{obra.cliente}</div>
+          <div style={{ fontSize: 12, color: T.ink2 }}>
+            {obra.cliente
+              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                  onClick={e => { e.stopPropagation(); navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`); }}>
+                  {obra.cliente}
+                </span>
+              : '—'
+            }
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
           <Chip style={{ fontSize: 9 }}>borrador</Chip>
@@ -260,12 +278,21 @@ function CardPresupuesto({ obra, onClick, onTransicion, onEditar, onEliminar }) 
 // ── Card: pausada ─────────────────────────────────────────────────────────────
 function CardPausada({ obra, stats, onClick, onTransicion, onEditar, onEliminar }) {
   const { presupuesto, gastado, avance, margen } = stats;
+  const navigate = useNavigate();
   return (
     <Box style={{ padding: 13, position: 'relative', opacity: 0.9 }} onClick={onClick}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div className="k-h" style={{ fontSize: 19, color: T.ink2 }}>{obra.nombre}</div>
-          <div style={{ fontSize: 12, color: T.ink3 }}>{obra.cliente}</div>
+          <div style={{ fontSize: 12, color: T.ink3 }}>
+            {obra.cliente
+              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                  onClick={e => { e.stopPropagation(); navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`); }}>
+                  {obra.cliente}
+                </span>
+              : '—'
+            }
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
           <Chip warn style={{ fontSize: 9 }}>⏸ pausada</Chip>
@@ -305,13 +332,22 @@ function CardPausada({ obra, stats, onClick, onTransicion, onEditar, onEliminar 
 // ── Card: finalizada ──────────────────────────────────────────────────────────
 function CardFinalizada({ obra, stats, onClick, onTransicion, onEditar }) {
   const { presupuesto, gastado, margen: margenFinal } = stats;
+  const navigate = useNavigate();
 
   return (
     <Box style={{ padding: 13, cursor: 'pointer' }} onClick={onClick}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div className="k-h" style={{ fontSize: 17 }}>{obra.nombre}</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>{obra.cliente}</div>
+          <div style={{ fontSize: 12, color: T.ink2 }}>
+            {obra.cliente
+              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                  onClick={e => { e.stopPropagation(); navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`); }}>
+                  {obra.cliente}
+                </span>
+              : '—'
+            }
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
           <Chip ok style={{ fontSize: 9 }}>✓ finalizada</Chip>
@@ -349,6 +385,7 @@ function CardFinalizada({ obra, stats, onClick, onTransicion, onEditar }) {
 
 // ── Fila: archivada (lista compacta) ─────────────────────────────────────────
 function FilaArchivada({ obra, onClick, onTransicion, onEliminar }) {
+  const navigate = useNavigate();
   return (
     <div
       style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer', gap: 10 }}
@@ -358,7 +395,15 @@ function FilaArchivada({ obra, onClick, onTransicion, onEliminar }) {
     >
       <div style={{ flex: 1.5 }}>
         <div style={{ fontWeight: 700, fontSize: 13 }}>{obra.nombre}</div>
-        <div style={{ fontSize: 11, color: T.ink2 }}>{obra.cliente}</div>
+        <div style={{ fontSize: 11, color: T.ink2 }}>
+          {obra.cliente
+            ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={e => { e.stopPropagation(); navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`); }}>
+                {obra.cliente}
+              </span>
+            : '—'
+          }
+        </div>
       </div>
       <div style={{ flex: 1, fontSize: 11, color: T.ink2 }}>{obra.tipo}</div>
       <div style={{ flex: 1, fontFamily: T.fontMono, fontSize: 12 }}>{fmt(obra.presupuesto, obra.moneda)}</div>

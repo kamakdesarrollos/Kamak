@@ -196,7 +196,8 @@ export default function Reportes() {
           )}
           {obrasConMargen.map(o => (
             <div key={o.id} style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 10 }}>
-              <span style={{ width: 90, fontSize: 12, flexShrink: 0 }}>{o.nombre}</span>
+              <span style={{ width: 90, fontSize: 12, flexShrink: 0, color: T.accent, cursor: 'pointer', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                onClick={() => navigate(`/obras/${o.id}/presupuesto`)}>{o.nombre}</span>
               <div style={{ flex: 1, height: 16, background: T.faint2, borderRadius: 8, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, Math.abs(o.margen) * 2.5))}%`, background: margenColor(o.margen), borderRadius: 8 }} />
               </div>
