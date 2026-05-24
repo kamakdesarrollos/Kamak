@@ -242,12 +242,11 @@ export default function NuevaObraModal({ obra, onSave, onClose }) {
             <Select label="Tipo de obra" value={form.tipo} onChange={set('tipo')} options={TIPOS} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Select label="Moneda" value={form.moneda} onChange={set('moneda')} options={['ARS', 'USD']} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
             <Input
-              label={`Presupuesto estimado (${form.moneda})`}
+              label="Presupuesto estimado ($)"
               value={form.presupuesto} onChange={set('presupuesto')}
-              placeholder={form.moneda === 'ARS' ? 'Ej: 18500000' : 'Ej: 145000'}
+              placeholder="Ej: 18500000"
               type="text"
             />
           </div>
