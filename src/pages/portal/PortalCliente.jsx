@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useObras } from '../../store/ObrasContext';
 import { useAuth } from '../../store/AuthContext';
+import { useDolar } from '../../store/DolarContext';
 import { Box, Btn, Chip, Stat, Bar } from '../../components/ui';
 import { T } from '../../theme';
 
@@ -35,6 +36,8 @@ export default function PortalCliente() {
   const { obras, getDetalle, patchDetalle } = useObras();
 
   const { user } = useAuth();
+  const { dolarVenta } = useDolar();
+  const toUSD = n => `U$S ${fmtN(Math.round(n / (dolarVenta || 1)))}`;
   const [tab, setTab] = useState(0);
   const [msg, setMsg] = useState('');
 
@@ -223,8 +226,7 @@ export default function PortalCliente() {
                   ['Dirección',         obra.direccion || '—'],
                   ['Inicio de obra',    fmtD(obra.fechaInicio)],
                   ['Entrega estimada',  fmtD(obra.fechaFinEstim)],
-                  ['Presupuesto total', fmtM(obra.presupuesto, obra.moneda)],
-                  ['Moneda',            obra.moneda === 'USD' ? 'Dólares (USD)' : 'Pesos (ARS)'],
+                  ['Presupuesto total', toUSD(obra.presupuesto)],
                 ].map(([k, v]) => (
                   <div key={k}>
                     <div style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 700, marginBottom: 3 }}>{k}</div>
@@ -283,9 +285,9 @@ export default function PortalCliente() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Summary bar */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, background: T.faint, borderRadius: 8, padding: '16px 20px' }}>
-              <Stat label="Total presupuestado" value={fmtM(totalCuotas, obra.moneda)} />
-              <Stat label="Cobrado"             value={fmtM(pagadoCuotas, obra.moneda)} />
-              <Stat label="Saldo"               value={fmtM(totalCuotas - pagadoCuotas, obra.moneda)} />
+              <Stat label="Total presupuestado" value={`U$S ${fmtN(totalCuotas)}`} />
+              <Stat label="Cobrado"             value={`U$S ${fmtN(pagadoCuotas)}`} />
+              <Stat label="Saldo"               value={`U$S ${fmtN(totalCuotas - pagadoCuotas)}`} />
               <Stat label="Cuotas pagadas"       value={`${countPagadas} / ${cuotas.length}`} />
             </div>
 
@@ -295,8 +297,8 @@ export default function PortalCliente() {
               </div>
               {totalCliente > 0 && (
             <div style={{ padding: '10px 16px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-              <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total acordado</span><div style={{ fontWeight: 800, fontFamily: T.fontMono, color: T.ink }}>{fmtM(totalCliente, obra.moneda)}</div></div>
-              {adicionalCliente > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Incluye adicionales</span><div style={{ fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{fmtM(adicionalCliente, obra.moneda)}</div></div>}
+              <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total acordado</span><div style={{ fontWeight: 800, fontFamily: T.fontMono, color: T.ink }}>{toUSD(totalCliente)}</div></div>
+              {adicionalCliente > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Incluye adicionales</span><div style={{ fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{toUSD(adicionalCliente)}</div></div>}
               {interes > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Interés aplicado</span><div style={{ fontWeight: 700, color: T.ink2 }}>{interes}%</div></div>}
             </div>
           )}
@@ -319,7 +321,7 @@ export default function PortalCliente() {
                         <div style={{ fontSize: 11, color: T.ink2 }}>{fmtD(c.fecha)}</div>
                       </div>
                       <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14, flexShrink: 0, color: isPagado ? T.ok : T.ink }}>
-                        {fmtM(c.monto, obra.moneda)}
+                        {`U$S ${fmtN(c.monto)}`}
                       </div>
                       <Chip ok={isPagado} accent={isProximo} style={{ fontSize: 10, flexShrink: 0 }}>{etiqueta}</Chip>
                     </div>

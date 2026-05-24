@@ -136,7 +136,8 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   if (diasRest !== null && diasRest < 30 && obra.avance < 80) alertas.push({ tipo: 'warn', msg: `Quedan ${diasRest} días pero el avance es solo ${obra.avance}%` });
   detalle.adicionales.filter(a => a.estado === 'pendiente').forEach(a => alertas.push({ tipo: 'info', msg: `Adicional pendiente de aprobación: "${a.descripcion}"` }));
 
-  const toUSD = (n) => moneda === 'ARS' && dolarVenta ? `U$S ${fmtN(Math.round(n / dolarVenta))}` : fmtM(n, moneda);
+  const tc = dolarVenta || 1;
+  const toUSD = (n) => `U$S ${fmtN(Math.round(n / tc))}`;
 
   // Financiación
   const finPlan = detalle.financiacion || {};
@@ -180,8 +181,8 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
           <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${T.accent}`, cursor: 'pointer' }}
             onClick={() => onChangeTab?.(10)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Total cliente</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.accent }}>{fmtM(totalCliente, moneda)}</div>
-            {adicionalCliente > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>incl. {fmtM(adicionalCliente, moneda)} adicionales</div>}
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.accent }}>{toUSD(totalCliente)}</div>
+            {adicionalCliente > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>incl. {toUSD(adicionalCliente)} adicionales</div>}
             <div style={{ fontSize: 10, color: T.accent, marginTop: 4 }}>Ver plan de cuotas →</div>
           </Box>
         )}
@@ -190,7 +191,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
           <Box style={{ padding: '12px 14px', cursor: 'pointer' }}
             onClick={() => onChangeTab?.(10)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Cuotas cobradas</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.ok }}>{fmtM(cuotasPagadas, moneda)}</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.ok }}>{`U$S ${fmtN(cuotasPagadas)}`}</div>
             <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{cuotasPlan.filter(c => c.estado === 'pagado').length} / {cuotasPlan.length} cuotas</div>
           </Box>
         )}

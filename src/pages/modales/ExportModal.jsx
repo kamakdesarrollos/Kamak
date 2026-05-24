@@ -38,6 +38,8 @@ const CORNER_BRACKETS = `
 
 // ── HTML generator ────────────────────────────────────────────────────────────
 function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta }) {
+  const tc = dolarVenta || 1;
+  const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
   const rubros = detalle?.rubros || [];
   const rr = rubros.map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
@@ -82,7 +84,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       <div><div class="cell-lbl">CLIENTE</div><div class="cell-val">${obra?.cliente || '—'}</div></div>
       <div><div class="cell-lbl">TIPO DE OBRA</div><div class="cell-val">${obra?.tipo || '—'}</div></div>
       <div><div class="cell-lbl">FECHA · VIGENCIA</div><div class="cell-val">${fecha}</div><div class="cell-sub">Vigencia: ${vigencia} días</div></div>
-      <div><div class="cell-lbl">MONTO TOTAL</div><div class="cell-val-lg">${fmtM(totalVenta, moneda)}</div>${dolarVenta && moneda === 'ARS' ? `<div style="font-size:13px;font-weight:800;color:#1a9b9c;font-family:'JetBrains Mono',monospace;margin-top:4px">U$S ${Math.round(totalVenta / dolarVenta).toLocaleString('es-AR')} <span style="font-size:9px;letter-spacing:1px;font-weight:700">+ IVA</span></div>` : ''}<div class="cell-sub">+ IVA</div></div>
+      <div><div class="cell-lbl">MONTO TOTAL</div><div class="cell-val-lg">U$S ${toUSD(totalVenta)}</div><div class="cell-sub">+ IVA</div></div>
     </div>
   </div>`;
 
@@ -94,8 +96,8 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div class="tc tc-name">${t.nombre}${t.codigo ? ` <span class="t-code">[${t.codigo}]</span>` : ''}</div>
         <div class="tc tc-un">${t.unidad}</div>
         <div class="tc tc-num">${fmtN(t.cantidad)}</div>
-        <div class="tc tc-num">${fmtN(vu)}</div>
-        <div class="tc tc-num bold">${fmtN(vu * t.cantidad)}</div>
+        <div class="tc tc-num">U$S ${toUSD(vu)}</div>
+        <div class="tc tc-num bold">U$S ${toUSD(vu * t.cantidad)}</div>
       </div>`;
     }).join('');
 
@@ -105,14 +107,14 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div class="tc tc-name">TAREA / DESCRIPCIÓN</div>
         <div class="tc tc-un">UN</div>
         <div class="tc tc-num">CANT</div>
-        <div class="tc tc-num">$ UNIT</div>
-        <div class="tc tc-num">SUBTOTAL</div>
+        <div class="tc tc-num">U$S UNIT</div>
+        <div class="tc tc-num">U$S SUBTOTAL</div>
       </div>
       ${taskRows}
       <div class="rubro-sub">
         <div class="tc tc-name">SUBTOTAL RUBRO ${String(ri + 1).padStart(2, '0')}</div>
         <div class="tc tc-num gray" style="flex:1.5;">${rubro.tareas.length} tareas</div>
-        <div class="tc tc-num bold-lg">${fmtM(rubro.venta, moneda)}</div>
+        <div class="tc tc-num bold-lg">U$S ${toUSD(rubro.venta)}</div>
       </div>
     </div>`;
   }).join('');
@@ -136,19 +138,15 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div class="dmnd-corner"></div>
         <div class="totales-lbl">MONTOS TOTALES</div>
         <div class="totales-grid">
-          <span>Subtotal materiales</span><span class="mono">${fmtM(totalMat, moneda)}</span>
-          <span>Subtotal subcontratos</span><span class="mono">${fmtM(totalSub, moneda)}</span>
+          <span>Subtotal materiales</span><span class="mono">$ ${fmtN(totalMat)}</span>
+          <span>Subtotal subcontratos</span><span class="mono">$ ${fmtN(totalSub)}</span>
         </div>
         <div class="totales-rule"></div>
         <div class="total-final">
-          <span>TOTAL ${moneda}</span>
-          <span class="total-val">${fmtM(totalVenta, moneda)} <span class="iva">+ IVA</span></span>
+          <span>TOTAL USD</span>
+          <span class="total-val">U$S ${toUSD(totalVenta)} <span class="iva">+ IVA</span></span>
         </div>
-        ${dolarVenta && moneda === 'ARS' ? `
-        <div style="margin-top:6px;border-top:1px solid #2a4a4a;padding-top:6px;display:flex;justify-content:space-between;align-items:baseline">
-          <span style="font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1px">TC BNA $${Math.round(dolarVenta).toLocaleString('es-AR')}</span>
-          <span style="font-size:13px;font-weight:800;color:#1a9b9c;font-family:'JetBrains Mono',monospace">U$S ${Math.round(totalVenta / dolarVenta).toLocaleString('es-AR')} <span style="font-size:8px;letter-spacing:1px;font-weight:700">+ IVA</span></span>
-        </div>` : ''}
+        <div style="margin-top:4px;font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1px;text-align:right">TC BNA $${Math.round(tc).toLocaleString('es-AR')}</div>
         ${nota ? `<div class="nota-pie">${nota}</div>` : ''}
       </div>
     </div>
