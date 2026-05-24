@@ -3108,7 +3108,13 @@ export default function ObraPresupuesto() {
       tokens[token] = { obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires, createdAt: new Date().toISOString() };
       const saved = await saveSharedData('portal_tokens', tokens);
       if (!saved) {
-        setPortalMsg('❌ No se pudo guardar el acceso en la base de datos. Revisá la conexión e intentá de nuevo.');
+        setPortalMsg('❌ Error al guardar en base de datos (saveSharedData falló).');
+        setPortalSending(false);
+        return;
+      }
+      const verify = await loadSharedData('portal_tokens');
+      if (!verify?.[token]) {
+        setPortalMsg(`❌ El token se guardó pero no se puede leer de vuelta. Posible problema de RLS en Supabase (shared_data).\nToken: ${token}`);
         setPortalSending(false);
         return;
       }
