@@ -2184,6 +2184,8 @@ function TabDocumentos({ detalle, patch, obraId }) {
 function TabFotos({ detalle, patch, obraId }) {
   const [adding,      setAdding]      = useState(false);
   const [form,        setForm]        = useState({ label: '', fecha: new Date().toISOString().split('T')[0], rubro: '' });
+  const [editingFoto, setEditingFoto] = useState(null);   // foto being edited
+  const [editForm,    setEditForm]    = useState({});
   const [pendingFile, setPendingFile] = useState(null);
   const [previewUrl,  setPreviewUrl]  = useState(null);
   const [uploading,   setUploading]   = useState(false);
@@ -2276,6 +2278,40 @@ function TabFotos({ detalle, patch, obraId }) {
   };
 
   const del = (id) => patch(d => ({ ...d, fotos: d.fotos.filter(f => f.id !== id) }));
+
+  const startEditFoto = (f) => {
+    // Buscar el avance actual de la tarea asociada a esta foto
+    let avanceActual = null;
+    for (const r of detalle.rubros) {
+      for (const t of (r.tareas || [])) {
+        if (t.nombre === f.rubro || t.id === f.tareaId) { avanceActual = t.avance ?? 0; break; }
+      }
+      if (avanceActual !== null) break;
+    }
+    setEditingFoto(f);
+    setEditForm({ label: f.label || '', fecha: f.fecha || '', rubro: f.rubro || '', avance: avanceActual !== null ? avanceActual : '' });
+  };
+
+  const saveEditFoto = () => {
+    const nuevoAvance = editForm.avance !== '' ? Math.min(100, Math.max(0, parseInt(editForm.avance) || 0)) : null;
+    patch(d => ({
+      ...d,
+      fotos: d.fotos.map(f => f.id === editingFoto.id
+        ? { ...f, label: editForm.label, fecha: editForm.fecha, rubro: editForm.rubro }
+        : f
+      ),
+      // Si cambió el avance, actualizar la tarea que tenga el mismo nombre de rubro
+      rubros: nuevoAvance !== null ? d.rubros.map(r => ({
+        ...r,
+        tareas: (r.tareas || []).map(t =>
+          (t.nombre === editingFoto.rubro || t.id === editingFoto.tareaId)
+            ? { ...t, avance: nuevoAvance }
+            : t
+        ),
+      })) : d.rubros,
+    }));
+    setEditingFoto(null);
+  };
 
   const statusColor = { pending: T.ink3, uploading: T.accent, done: T.ok, error: '#dc2626' };
   const statusIcon  = { pending: '⏳', uploading: '⬆', done: '✓', error: '✕' };
@@ -2387,6 +2423,46 @@ function TabFotos({ detalle, patch, obraId }) {
         </FormPanel>
       )}
 
+      {/* Modal de edición de foto */}
+      {editingFoto && (
+        <FormPanel
+          title="Editar foto / avance"
+          onSave={saveEditFoto}
+          onCancel={() => setEditingFoto(null)}
+          style={{ marginBottom: 14, maxWidth: 500 }}
+        >
+          <FInput label="Descripción" value={editForm.label} onChange={v => setEditForm(p => ({ ...p, label: v }))} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <FInput label="Fecha" value={editForm.fecha} onChange={v => setEditForm(p => ({ ...p, fecha: v }))} type="date" />
+            <FInput label="Tarea / Rubro" value={editForm.rubro} onChange={v => setEditForm(p => ({ ...p, rubro: v }))} />
+          </div>
+          {editForm.avance !== '' && (
+            <div>
+              <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>
+                Avance de tarea <b style={{ color: T.ink }}>{editForm.rubro}</b>
+                <span style={{ color: T.ink3 }}> — Corregir si la cantidad era incorrecta</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="range" min={0} max={100} step={1}
+                  value={editForm.avance}
+                  onChange={e => setEditForm(p => ({ ...p, avance: +e.target.value }))}
+                  style={{ flex: 1, accentColor: T.accent }}
+                />
+                <input
+                  type="number" min={0} max={100}
+                  value={editForm.avance}
+                  onChange={e => setEditForm(p => ({ ...p, avance: +e.target.value }))}
+                  style={{ width: 58, padding: '4px 6px', border: `1px solid ${T.faint2}`, borderRadius: 4, fontSize: 12, textAlign: 'center', fontFamily: T.fontMono }}
+                />
+                <span style={{ fontSize: 12, color: T.ink2 }}>%</span>
+              </div>
+              <Bar pct={editForm.avance} ok={editForm.avance === 100} style={{ marginTop: 4 }} />
+            </div>
+          )}
+        </FormPanel>
+      )}
+
       {detalle.fotos.length === 0 ? (
         <div style={{ color: T.ink3, padding: 40, textAlign: 'center' }}>Sin fotos. Agregá la primera.</div>
       ) : (
@@ -2406,8 +2482,17 @@ function TabFotos({ detalle, patch, obraId }) {
                   </div>
                 </div>
               </a>
-              <span style={{ position: 'absolute', top: 5, right: 5, background: 'rgba(0,0,0,0.55)', color: 'white', borderRadius: 3, fontSize: 10, padding: '1px 5px', cursor: 'pointer' }}
-                onClick={() => del(f.id)}>✕</span>
+              {/* Botones editar / eliminar */}
+              <div style={{ position: 'absolute', top: 5, right: 5, display: 'flex', gap: 4 }}>
+                <span
+                  title="Editar"
+                  style={{ background: 'rgba(0,0,0,0.6)', color: 'white', borderRadius: 3, fontSize: 10, padding: '2px 6px', cursor: 'pointer' }}
+                  onClick={() => startEditFoto(f)}>✎</span>
+                <span
+                  title="Eliminar"
+                  style={{ background: 'rgba(0,0,0,0.6)', color: 'white', borderRadius: 3, fontSize: 10, padding: '2px 6px', cursor: 'pointer' }}
+                  onClick={() => del(f.id)}>✕</span>
+              </div>
             </div>
           ))}
           <div style={{ background: T.faint, borderRadius: 6, aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink3, cursor: 'pointer', border: `1.5px dashed ${T.faint2}` }}
