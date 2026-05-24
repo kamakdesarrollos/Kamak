@@ -1861,14 +1861,12 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 16 }}>
-          <div style={statSt}><div style={kSt}>Presupuesto venta</div><div style={vSt}>{fmtM(ventaBase, moneda)}</div></div>
-          <div style={statSt}><div style={kSt}>Adicionales (cliente)</div><div style={{ ...vSt, color: adicionalCliente > 0 ? T.accent : T.ink }}>{fmtM(adicionalCliente, moneda)}</div></div>
+          <div style={statSt}><div style={kSt}>Presupuesto venta</div><div style={vSt}>{fmtUSD(moneda === 'USD' ? ventaBase : Math.round(ventaBase / tc))}</div></div>
+          <div style={statSt}><div style={kSt}>Adicionales (cliente)</div><div style={{ ...vSt, color: adicionalCliente > 0 ? T.accent : T.ink }}>{fmtUSD(moneda === 'USD' ? adicionalCliente : Math.round(adicionalCliente / tc))}</div></div>
           <div style={statSt}><div style={kSt}>Interés aplicado</div><div style={{ ...vSt, color: interes > 0 ? T.warn : T.ink3 }}>{interes > 0 ? `${interes}%` : '—'}</div></div>
-          {moneda === 'ARS' && dolarVenta && (
-            <div style={statSt}><div style={kSt}>TC venta</div><div style={{ ...vSt, fontSize: 12, color: T.ink2 }}>${fmtN(dolarVenta)}</div></div>
-          )}
+          {moneda === 'ARS' && <div style={statSt}><div style={kSt}>TC BNA (venta)</div><div style={{ ...vSt, fontSize: 12, color: T.ink2 }}>${fmtN(tc)}</div></div>}
           <div style={{ ...statSt, borderLeft: `3px solid ${T.accent}`, paddingLeft: 12 }}>
-            <div style={kSt}>Total cliente (USD)</div>
+            <div style={kSt}>Total cliente</div>
             <div style={{ ...vSt, color: T.accent, fontSize: 20 }}>{fmtUSD(totalUSD)}</div>
           </div>
         </div>
