@@ -1440,7 +1440,8 @@ function generarHTMLAdicionales({ obra, detalle, moneda }) {
 
 function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight }) {
   const tc = dolarVenta || 1;
-  const toUSD = n => `U$S ${fmtNE(Math.round(n / tc))}`;
+  const toUSD  = n => `U$S ${fmtNE(Math.round(n / tc))}`; // ARS → USD display
+  const fmtUSD = n => `U$S ${fmtNE(n)}`;                  // already-USD display
   const cuotaMonto = c => (c._usd || (moneda || 'ARS') !== 'USD') ? c.monto : Math.round(c.monto / tc);
 
   const rubros = detalle.rubros || [];
@@ -1468,31 +1469,56 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, l
   const totalCliente = Math.round((ventaBase + totalAdic) * (1 + interes / 100));
 
   const cuotaRows = incluirPagos && cuotas.length > 0 ? cuotas.map((c, i) => {
-    const m = cuotaMonto(c);
-    return `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${c.n || i+1}</td><td>${c.descripcion}</td><td class="r">${fmtDE(c.fecha)}</td><td class="r">${toUSD(m)}</td><td><span class="pill ${c.estado === 'pagado' ? 'ok' : 'warn'}">${c.estado === 'pagado' ? 'pagado' : 'pendiente'}</span></td></tr>`;
+    const m = cuotaMonto(c); // already USD
+    return `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${c.n || i+1}</td><td>${c.descripcion}</td><td class="r">${fmtDE(c.fecha)}</td><td class="r">${fmtUSD(m)}</td><td><span class="pill ${c.estado === 'pagado' ? 'ok' : 'warn'}">${c.estado === 'pagado' ? 'pagado' : 'pendiente'}</span></td></tr>`;
   }).join('') : '';
   const pagado = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
   const saldo = Math.round(totalCliente / tc) - pagado;
 
   const logoHtml = logoLight
-    ? `<img src="${logoLight}" style="height:26px;object-fit:contain;display:block" onerror="this.style.display='none';document.getElementById('kmk-txt').style.display='block'" /><span id="kmk-txt" style="display:none;font-weight:900;font-size:18px;letter-spacing:2px;color:#fff">KAMAK</span>`
+    ? `<img src="${logoLight}" style="height:26px;object-fit:contain;display:block" />`
     : `<span style="font-weight:900;font-size:18px;letter-spacing:2px;color:#fff">KAMAK</span>`;
 
   const STRIPES = `<svg viewBox="0 0 620 620" width="620" height="620" style="display:block"><rect x="-64" y="245" width="900" height="50" fill="#1a9b9c" transform="rotate(62 386 270)"/><rect x="-140" y="285" width="900" height="50" fill="#1a9b9c" transform="rotate(62 310 310)"/><rect x="-216" y="325" width="900" height="50" fill="#1a9b9c" transform="rotate(62 234 350)"/></svg>`;
 
-  const EXTRA_CSS = `
-.kmk-hdr{background:#1f2024;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden;margin:-18mm -16mm 0}
+  const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
+@page{size:A4;margin:0}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+body{font-family:'Montserrat',sans-serif;font-size:11px;color:#1f2024;background:#fff}
+.kmk-hdr{background:#1f2024;padding:14px 18mm;display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden}
 .kmk-wm{position:absolute;top:-160px;right:-160px;opacity:.07;pointer-events:none}
 .kmk-hdr-left{display:flex;align-items:center;gap:12px;position:relative;z-index:1}
 .kmk-hdr-sep{color:rgba(255,255,255,0.25);font-size:20px;line-height:1}
-.kmk-hdr-label{color:rgba(255,255,255,0.9);font-weight:800;font-size:11px;letter-spacing:1px}
+.kmk-hdr-label{color:#fff;font-weight:800;font-size:11px;letter-spacing:1px}
 .kmk-hdr-sub{color:#1a9b9c;font-size:7.5px;font-family:'JetBrains Mono',monospace;letter-spacing:.8px;margin-top:2px}
 .kmk-hdr-right{text-align:right;font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#9a9892;line-height:1.7;position:relative;z-index:1}
-.kmk-rule{height:4px;background:#1a9b9c;margin:0 -16mm 20px;position:relative}
+.kmk-rule{height:4px;background:#1a9b9c;position:relative;margin-bottom:0}
 .kmk-diamond{position:absolute;left:50%;top:-6px;margin-left:-6px;width:12px;height:12px;background:#1a9b9c;transform:rotate(45deg)}
-.kmk-tc{font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;margin-bottom:14px;text-align:right}`;
+.kmk-content{padding:16px 18mm 20mm}
+.tc-ref{font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;margin-bottom:14px;text-align:right}
+.title{font-weight:900;font-size:16px;letter-spacing:1px;color:#1a9b9c;margin-bottom:2px}
+.obra-info{font-size:10px;color:#5a5a58;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:14px}
+th{background:#1f2024;color:#fff;padding:5px 8px;text-align:left;font-size:8.5px;letter-spacing:.8px;font-family:'JetBrains Mono',monospace;font-weight:700}
+th.r{text-align:right}
+td{padding:5px 8px;border-bottom:1px solid #e8e4d8}
+td.r{text-align:right;font-family:'JetBrains Mono',monospace}
+td.b{font-weight:700}
+tr.alt td{background:#f9f7f2}
+tr.rubro td{background:#1a9b9c18;font-weight:800;font-size:10.5px;color:#1a9b9c}
+tr.subtot td{background:#d6efef;font-weight:800}
+tr.total td{background:#1f2024;color:#fff;font-weight:900;font-family:'JetBrains Mono',monospace;font-size:12px}
+.pill{display:inline-block;padding:1px 7px;border-radius:8px;font-size:8px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.ok{background:#d1fae5;color:#065f46}
+.warn{background:#fef3c7;color:#92400e}
+.ftr{margin-top:20px;padding-top:8px;border-top:1px solid #e8e4d8;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace}
+@media screen{body{max-width:794px;margin:0 auto}}`;
 
-  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Resumen — ${obra?.nombre || ''}</title><style>${BASE_CSS}${EXTRA_CSS}</style></head><body>
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Resumen — ${obra?.nombre || ''}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>${CSS}</style></head><body>
 <div class="kmk-hdr">
   <div class="kmk-wm">${STRIPES}</div>
   <div class="kmk-hdr-left">
@@ -1503,11 +1529,12 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, l
       <div class="kmk-hdr-sub">KAMAKDESARROLLOS@GMAIL.COM · NECOCHEA, BUENOS AIRES</div>
     </div>
   </div>
-  <div class="kmk-hdr-right">${(obra?.nombre || '').toUpperCase()}<br>${obra?.cliente ? obra.cliente + ' · ' : ''}${obra?.tipo || ''}<br>${fechaE()}</div>
+  <div class="kmk-hdr-right">${(obra?.nombre || '').toUpperCase()}<br>${obra?.cliente ? obra.cliente + (obra?.tipo ? ' · ' + obra.tipo : '') : (obra?.tipo || '')}<br>${fechaE()}</div>
 </div>
 <div class="kmk-rule"><div class="kmk-diamond"></div></div>
+<div class="kmk-content">
 
-<div class="kmk-tc">TC BNA $${fmtNE(tc)} · Todos los precios en dólares estadounidenses (U$S)</div>
+<div class="tc-ref">TC BNA $${fmtNE(tc)} · Todos los precios en dólares estadounidenses (U$S)</div>
 
 <table>
   <thead><tr><th>Tarea / Descripción</th><th class="r">Cant</th><th class="r">Un</th><th class="r">Subtotal</th></tr></thead>
@@ -1527,13 +1554,14 @@ ${incluirPagos && cuotas.length > 0 ? `
   <thead><tr><th>#</th><th>Cuota</th><th class="r">Fecha</th><th class="r">Monto (U$S)</th><th>Estado</th></tr></thead>
   <tbody>${cuotaRows}</tbody>
   <tfoot>
-    <tr class="subtot"><td colspan="3">Pagado</td><td class="r">${toUSD(pagado)}</td><td></td></tr>
-    <tr class="total"><td colspan="3">Saldo pendiente</td><td class="r">${toUSD(Math.max(0, saldo))}</td><td></td></tr>
+    <tr class="subtot"><td colspan="3">Pagado</td><td class="r">${fmtUSD(pagado)}</td><td></td></tr>
+    <tr class="total"><td colspan="3">Saldo pendiente</td><td class="r">${fmtUSD(Math.max(0, saldo))}</td><td></td></tr>
   </tfoot>
 </table>` : ''}
 
 ${fin.notaPortal ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f7f2;border-left:3px solid #1a9b9c;font-size:10px;color:#5a5a58">📋 ${fin.notaPortal}</div>` : ''}
 <div class="ftr"><span>KAMAK DESARROLLOS</span><span>NO INCLUYE IVA</span><span>${fechaE()}</span></div>
+</div>
 </body></html>`;
 }
 
