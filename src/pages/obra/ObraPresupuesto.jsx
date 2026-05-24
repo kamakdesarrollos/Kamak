@@ -147,7 +147,8 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   const interesFin = parseFloat(finPlan.interes) || 0;
   const totalCliente = Math.round((venta + adicionalCliente) * (1 + interesFin / 100));
   const cuotasPlan = detalle.cuotas || [];
-  const cuotasPagadas = cuotasPlan.filter(c => c.estado === 'pagado').reduce((s, c) => s + (c.monto || 0), 0);
+  const cuotaMontoPlan = c => (c._usd || obra.moneda !== 'USD') ? c.monto : Math.round(c.monto / tc);
+  const cuotasPagadas = cuotasPlan.filter(c => c.estado === 'pagado').reduce((s, c) => s + cuotaMontoPlan(c), 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1770,10 +1771,12 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const tc = dolarVenta || 1;
   const totalUSD = Math.round(totalConInteres / tc);
   const fmtUSD = n => `U$S ${fmtN(n)}`;
+  // cuotas antiguas en obras moneda:USD tenían monto en ARS; _usd:true marca las nuevas
+  const cuotaMonto = c => (c._usd || moneda !== 'USD') ? c.monto : Math.round(c.monto / tc);
 
   const cuotas = detalle.cuotas || [];
-  const totalCuotas = cuotas.reduce((s, c) => s + (c.monto || 0), 0);
-  const cuotasPagadas = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + (c.monto || 0), 0);
+  const totalCuotas = cuotas.reduce((s, c) => s + cuotaMonto(c), 0);
+  const cuotasPagadas = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
   const saldoCuotas = totalCuotas - cuotasPagadas;
   const diferencia = totalUSD - totalCuotas;
 
@@ -1784,7 +1787,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
 
   const saveCuota = () => {
     const n = parseInt(cuotaForm.n) || cuotas.length + 1;
-    const entry = { id: editCuotaId || newId(), n, descripcion: cuotaForm.descripcion || `Cuota ${n}`, monto: parseFloat(cuotaForm.monto) || 0, fecha: cuotaForm.fecha || '', estado: 'pendiente' };
+    const entry = { id: editCuotaId || newId(), n, descripcion: cuotaForm.descripcion || `Cuota ${n}`, monto: parseFloat(cuotaForm.monto) || 0, fecha: cuotaForm.fecha || '', estado: 'pendiente', _usd: true };
     if (editCuotaId) {
       patch(d => ({ ...d, cuotas: d.cuotas.map(c => c.id === editCuotaId ? { ...c, ...entry } : c) }));
     } else {
@@ -1818,7 +1821,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
     const saldo = totalUSD - anticipoMonto;
     const nuevas = [];
     if (anticipoMonto > 0) {
-      nuevas.push({ id: newId(), n: 1, descripcion: 'Adelanto de obra', monto: anticipoMonto, fecha: genForm.anticipoFecha || '', estado: 'pendiente' });
+      nuevas.push({ id: newId(), n: 1, descripcion: 'Adelanto de obra', monto: anticipoMonto, fecha: genForm.anticipoFecha || '', estado: 'pendiente', _usd: true });
     }
     const offset = nuevas.length;
     const montoCuota = num > 0 ? Math.round(saldo / num) : 0;
@@ -1828,7 +1831,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
         descripcion: num === 1 ? 'Saldo' : `Cuota ${i + 1} de ${num}`,
         monto: i === num - 1 ? saldo - montoCuota * (num - 1) : montoCuota,
         fecha: genForm.primerFecha ? agregarFecha(genForm.primerFecha, i, genForm.intervalo) : '',
-        estado: 'pendiente',
+        estado: 'pendiente', _usd: true,
       });
     }
     patch(d => ({ ...d, cuotas: nuevas }));
@@ -1994,7 +1997,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
                 <tr key={c.id} style={{ borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none' }}>
                   <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: T.ink2 }}>{c.n}</td>
                   <td style={{ padding: '10px 12px', fontSize: 12, color: T.ink }}>{c.descripcion}</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 700, color: c.estado === 'pagado' ? T.ok : T.ink }}>{fmtUSD(c.monto)}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 700, color: c.estado === 'pagado' ? T.ok : T.ink }}>{fmtUSD(cuotaMonto(c))}</td>
                   <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, color: T.ink3 }}>{fmtD(c.fecha)}</td>
                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                     <Chip ok={c.estado === 'pagado'} warn={c.estado === 'pendiente'} accent={c.estado === 'proximo'} style={{ fontSize: 10, cursor: 'pointer' }} onClick={() => togglePago(c.id)}>
