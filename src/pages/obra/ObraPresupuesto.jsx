@@ -387,6 +387,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
   const { totalMensual: gfMensual } = useGastosFijos();
   const { catalog } = useCatalog();
   const { dolarVenta } = useDolar();
+  const tc = dolarVenta || 1;
+  const [viewUSD, setViewUSD] = useState(true);
+  const fmtVenta = n => viewUSD ? `U$S ${fmtN(Math.round(n / tc))}` : `$ ${fmtN(n)}`;
 
   // Drag state ─ rubros
   const dragRubroRef = useRef(null);
@@ -626,9 +629,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
           <div style={{ flex: 1, background: '#f6efd9', borderRadius: 4, border: `1px solid ${T.faint2}`, overflow: 'hidden' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
               {[
-                { label: 'Total venta', val: `U$S ${fmtN(Math.round(venta / dolarVenta))}`, color: T.ink, show: true },
+                { label: 'Total venta', val: fmtVenta(venta), color: T.ink, show: true },
                 { label: 'Total costo', val: `$ ${fmtN(costo)}`, color: T.ink, show: verCostos },
-                { label: 'Margen', val: `${margen}%`, sub: `$ ${fmtN(venta - costo)}`, color: margen < 0 ? '#dc2626' : margen < 15 ? T.warn : T.ok, show: verMargenes },
+                { label: 'Margen', val: `${margen}%`, sub: fmtVenta(venta - costo), color: margen < 0 ? '#dc2626' : margen < 15 ? T.warn : T.ok, show: verMargenes },
               ].filter(s => s.show).map((s, i, arr) => (
                 <div key={i} style={{ padding: '8px 14px', textAlign: 'center', borderRight: i < 2 ? `1px solid ${T.faint2}` : 'none' }}>
                   <div style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>{s.label}</div>
@@ -640,8 +643,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderTop: `1px solid ${T.faint2}` }}>
               {[
-                { label: 'Materiales', val: fmtM(cMat, moneda) },
-                { label: 'Subcontratos', val: fmtM(cSub, moneda) },
+                { label: 'Materiales', val: `$ ${fmtN(cMat)}` },
+                { label: 'Subcontratos', val: `$ ${fmtN(cSub)}` },
                 { label: `Gastos fijos (${durMeses}m ÷ ${obrasActivas.length})`, val: gastosFijosObra > 0 ? fmtM(gastosFijosObra, moneda) : '—', warn: gastosFijosObra > 0 },
               ].map((s, i) => (
                 <div key={i} style={{ padding: '4px 14px', borderRight: i < 2 ? `1px solid ${T.faint2}` : 'none', display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
@@ -662,6 +665,10 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
 
         {/* Column visibility toggles */}
         <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+          <span onClick={() => setViewUSD(v => !v)}
+            style={{ padding: '3px 10px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none', fontWeight: 700, border: `1px solid ${T.accent}`, background: T.accentSoft, color: T.accent, marginRight: 4 }}>
+            Venta: {viewUSD ? 'U$S' : '$'}
+          </span>
           <span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 2 }}>Columnas</span>
           {COLS_DEF.filter(c => {
             if ((c.key === 'costoUnit' || c.key === 'costoTotal') && !verCostos) return false;
@@ -709,7 +716,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                 })()}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 14, fontFamily: T.fontMono, fontSize: 11 }}>
                   {verCostos   && <span>costo <b>$ {fmtN(rubro.costo)}</b></span>}
-                  <span>venta <b>U$S {fmtN(Math.round(rubro.venta / dolarVenta))}</b></span>
+                  <span>venta <b>{fmtVenta(rubro.venta)}</b></span>
                   {verMargenes && <span style={{ color: rubro.margen > 0 ? T.ok : T.accent }}><b>{rubro.margen > 0 ? '+' : ''}{rubro.margen}%</b></span>}
                 </span>
                 {puedeEditar && <span style={{ color: T.accent, fontSize: 11, cursor: 'pointer' }}
@@ -855,8 +862,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                           </div>
                         )}
 
-                        {cols.ventaUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: T.accent }}>{`U$S ${fmtN(Math.round(ventaUnitRow / dolarVenta))}`}</div>}
-                        {cols.ventaTotal && <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: T.accent }}>{`U$S ${fmtN(Math.round(ventaTotalRow / dolarVenta))}`}</div>}
+                        {cols.ventaUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: T.accent }}>{fmtVenta(ventaUnitRow)}</div>}
+                        {cols.ventaTotal && <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: T.accent }}>{fmtVenta(ventaTotalRow)}</div>}
 
                         <div className="k-cell" style={{ flex: 0.4, padding: '0 4px' }}>
                           <span style={{ color: T.accent, fontSize: 11, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); deleteTarea(rubro.id, tarea.id); }}>🗑</span>
@@ -1761,7 +1768,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const baseTotal = ventaBase + adicionalCliente;
   const totalConInteres = Math.round(baseTotal * (1 + interes / 100));
   const tc = dolarVenta || 1;
-  const totalUSD = moneda === 'USD' ? totalConInteres : Math.round(totalConInteres / tc);
+  const totalUSD = Math.round(totalConInteres / tc);
   const fmtUSD = n => `U$S ${fmtN(n)}`;
 
   const cuotas = detalle.cuotas || [];
@@ -1862,8 +1869,8 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 16 }}>
-          <div style={statSt}><div style={kSt}>Presupuesto venta</div><div style={vSt}>{fmtUSD(moneda === 'USD' ? ventaBase : Math.round(ventaBase / tc))}</div></div>
-          <div style={statSt}><div style={kSt}>Adicionales (cliente)</div><div style={{ ...vSt, color: adicionalCliente > 0 ? T.accent : T.ink }}>{fmtUSD(moneda === 'USD' ? adicionalCliente : Math.round(adicionalCliente / tc))}</div></div>
+          <div style={statSt}><div style={kSt}>Presupuesto venta</div><div style={vSt}>{fmtUSD(Math.round(ventaBase / tc))}</div></div>
+          <div style={statSt}><div style={kSt}>Adicionales (cliente)</div><div style={{ ...vSt, color: adicionalCliente > 0 ? T.accent : T.ink }}>{fmtUSD(Math.round(adicionalCliente / tc))}</div></div>
           <div style={statSt}><div style={kSt}>Interés aplicado</div><div style={{ ...vSt, color: interes > 0 ? T.warn : T.ink3 }}>{interes > 0 ? `${interes}%` : '—'}</div></div>
           {moneda === 'ARS' && <div style={statSt}><div style={kSt}>TC BNA (venta)</div><div style={{ ...vSt, fontSize: 12, color: T.ink2 }}>${fmtN(tc)}</div></div>}
           <div style={{ ...statSt, borderLeft: `3px solid ${T.accent}`, paddingLeft: 12 }}>
