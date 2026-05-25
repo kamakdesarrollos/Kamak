@@ -307,8 +307,12 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
                   onClick={() => startEdit(item)}>
                   {cols.map(c => <td key={c.key} style={{ padding: '7px 10px', fontFamily: c.mono ? T.fontMono : T.font, textAlign: c.align||'left' }}>{c.render ? c.render(item[c.key], item) : item[c.key]}</td>)}
                   <td style={{ padding: '4px 8px', textAlign: 'right' }}>
-                    <span style={{ color: T.accent, cursor: 'pointer', fontSize: 12 }}
-                      onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar?')) onDelete(item.id); }}>🗑</span>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                      <span title="Duplicar" style={{ color: T.ink2, cursor: 'pointer', fontSize: 13 }}
+                        onClick={e => { e.stopPropagation(); onAdd({ ...item, nombre: `Copia de ${item.nombre}` }); }}>⧉</span>
+                      <span style={{ color: T.accent, cursor: 'pointer', fontSize: 12 }}
+                        onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar?')) onDelete(item.id); }}>🗑</span>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -515,6 +519,16 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
     setEditMode(true);
   };
   const cancel = () => { setEditMode(false); setForm(null); setEditId(null); };
+  const duplicate = (t) => {
+    onAdd({
+      ...t,
+      nombre: `Copia de ${t.nombre}`,
+      materiales:   (t.materiales||[]).map(m => ({ ...m, id: newId() })),
+      subcontratos: (t.subcontratos||[]).map(s => ({ ...s, id: newId() })),
+      mo:           (t.mo||[]).map(m => ({ ...m, id: newId() })),
+      generales:    (t.generales||[]).map(g => ({ ...g, id: newId() })),
+    });
+  };
 
   const handleImport = ({ nombre, subRubro, unidad, rubroNombre, mats, subs, gens }) => {
     const match = (list, item) => list.find(c => c.nombre.trim().toLowerCase() === item.nombre.trim().toLowerCase());
@@ -614,8 +628,9 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
                     <td style={{ padding: '7px 10px', fontFamily: T.fontMono, textAlign: 'right' }}>$ {fmtN(c.sub)}</td>
                     <td style={{ padding: '7px 10px', fontFamily: T.fontMono, fontWeight: 800, textAlign: 'right', color: T.accent }}>$ {fmtN(c.total)}</td>
                     <td style={{ padding: '4px 8px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
                         <span style={{ fontSize: 11, color: T.ink2, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); startEdit(t); }}>✏</span>
+                        <span title="Duplicar" style={{ fontSize: 13, color: T.ink2, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); duplicate(t); }}>⧉</span>
                         <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar?')) onDelete(t.id); }}>🗑</span>
                       </div>
                     </td>
