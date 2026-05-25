@@ -106,7 +106,7 @@ export function CatalogProvider({ children }) {
     };
     setCatalog(next);
     localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
-    saveSharedData('catalog', next);
+    saveSharedData('catalog', next, { silent: true });
   };
 
   return (

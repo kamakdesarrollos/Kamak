@@ -73,14 +73,14 @@ export async function loadSharedData(key) {
   } catch (e) { console.error('[loadSharedData] exception:', key, e); return null; }
 }
 
-export async function saveSharedData(key, value) {
+export async function saveSharedData(key, value, { silent = false } = {}) {
   try {
     const { error } = await supabase.from('shared_data').upsert(
       { key, data: value, updated_at: new Date().toISOString() },
       { onConflict: 'key' }
     );
     if (error) { console.error('[saveSharedData] error:', key, error); return false; }
-    broadcastChange(key);
+    if (!silent) broadcastChange(key);
     return true;
   } catch (e) { console.error('[saveSharedData] exception:', key, e); return false; }
 }
