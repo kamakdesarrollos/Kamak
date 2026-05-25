@@ -1031,21 +1031,33 @@ export default function Catalogos() {
   const [tab, setTab] = useState(4);
   const { catalog, add, update, remove } = useCatalog();
 
+  const [seedStatus, setSeedStatus] = useState('');
   const cargarDemoData = async () => {
-    const current = await loadSharedData('catalog') || catalog;
-    const existMats = new Set((current.materiales||[]).map(m => m.nombre));
-    const existSubs = new Set((current.subcontratos||[]).map(s => s.nombre));
-    const existTar  = new Set((current.tareas||[]).map(t => t.nombre));
-    const ts = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
-    const next = {
-      ...current,
-      materiales:   [...(current.materiales||[]),   ...SEED_MATS.filter(m => !existMats.has(m.nombre)).map(i => ({ id: ts(), ...i, updatedAt: today() }))],
-      subcontratos: [...(current.subcontratos||[]), ...SEED_SUBS.filter(s => !existSubs.has(s.nombre)).map(i => ({ id: ts(), ...i, updatedAt: today() }))],
-      tareas:       [...(current.tareas||[]),       ...SEED_TAREAS.filter(t => !existTar.has(t.nombre)).map(i => ({ id: ts(), ...i, updatedAt: today() }))],
-    };
-    await saveSharedData('catalog', next, { silent: true });
-    localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
-    window.location.reload();
+    setSeedStatus('Cargando...');
+    try {
+      const current = await loadSharedData('catalog') || catalog;
+      const existMats = new Set((current.materiales||[]).map(m => m.nombre));
+      const existSubs = new Set((current.subcontratos||[]).map(s => s.nombre));
+      const existTar  = new Set((current.tareas||[]).map(t => t.nombre));
+      const ts = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+      const newMats = SEED_MATS.filter(m => !existMats.has(m.nombre));
+      const newSubs = SEED_SUBS.filter(s => !existSubs.has(s.nombre));
+      const newTars = SEED_TAREAS.filter(t => !existTar.has(t.nombre));
+      const next = {
+        ...current,
+        materiales:   [...(current.materiales||[]),   ...newMats.map(i => ({ id: ts(), ...i, updatedAt: today() }))],
+        subcontratos: [...(current.subcontratos||[]), ...newSubs.map(i => ({ id: ts(), ...i, updatedAt: today() }))],
+        tareas:       [...(current.tareas||[]),       ...newTars.map(i => ({ id: ts(), ...i, updatedAt: today() }))],
+      };
+      setSeedStatus(`Guardando ${newMats.length} mats, ${newSubs.length} subs, ${newTars.length} APUs...`);
+      const ok = await saveSharedData('catalog', next, { silent: true });
+      if (!ok) { setSeedStatus('ERROR al guardar en Supabase'); return; }
+      localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
+      setSeedStatus('OK, recargando...');
+      setTimeout(() => window.location.reload(), 800);
+    } catch(e) {
+      setSeedStatus('ERROR: ' + e.message);
+    }
   };
 
   const tabLabel = (i) => {
@@ -1066,6 +1078,7 @@ export default function Catalogos() {
         <div className="k-h" style={{ fontSize: 26 }}>Catálogo de precios · APU</div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Btn sm onClick={cargarDemoData}>⚡ Cargar datos de prueba</Btn>
+          {seedStatus && <span style={{ fontSize: 11, color: seedStatus.startsWith('ERROR') ? 'red' : T.accent, fontWeight: 700 }}>{seedStatus}</span>}
           <Btn sm onClick={() => {
             const data = JSON.stringify(catalog, null, 2);
             const a = document.createElement('a'); a.href = 'data:text/json,' + encodeURIComponent(data); a.download = 'kamak_catalog.json'; a.click();
