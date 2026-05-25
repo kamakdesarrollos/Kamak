@@ -2554,7 +2554,6 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
   const tc = dolarVenta || 1070;
   const navigate = useNavigate();
   const [expandedId, setExpandedId] = useState(null);
-  const { movimientos: allMovs } = useMovimientos();
 
   const fmt = n => moneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
 
@@ -2569,24 +2568,14 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
   const ventaDisplay = moneda === 'USD' ? Math.round(ventaBase / tc) : ventaBase;
   const adicDisplay  = moneda === 'USD' ? Math.round(adicionalCliente / tc) : adicionalCliente;
 
-  // Cobrado real: suma de ingresos registrados en Movimientos para esta obra
-  const { cajas: cajasMovs } = useMovimientos();
-  const cajasMap = useMemo(() => Object.fromEntries(cajasMovs.map(c => [c.id, c])), [cajasMovs]);
-  const movsIngreso = useMemo(
-    () => allMovs.filter(m => m.obraId === obra.id && m.tipo === 'ingreso'),
-    [allMovs, obra.id]
-  );
-  const totalCobrado = useMemo(() => {
-    return movsIngreso.reduce((s, m) => {
-      const movMoneda = m.moneda || cajasMap[m.cajaId]?.moneda || 'ARS';
-      if (movMoneda === 'USD') return s + (m.monto || 0);
-      if (m.montoDolar) return s + m.montoDolar;
-      const useTc = (m.tipoCambio && m.tipoCambio > 100) ? m.tipoCambio : tc;
-      return s + Math.round((m.monto || 0) / useTc);
-    }, 0);
-  }, [movsIngreso, cajasMap, tc]);
-
   const cuotas = detalle.cuotas || [];
+
+  // Cobrado real: suma de pagos registrados en las cuotas (fuente de verdad)
+  const totalCobrado = useMemo(
+    () => cuotas.reduce((s, c) => s + cuotaCobrado(c, moneda, tc), 0),
+    [cuotas, moneda, tc]
+  );
+
   const saldoPendiente = Math.max(0, total - totalCobrado);
   const cuotasPagadas = cuotas.filter(c => cuotaEstadoCalc(c, moneda, tc) === 'pagado').length;
 
