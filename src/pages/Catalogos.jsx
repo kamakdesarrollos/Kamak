@@ -1028,15 +1028,17 @@ const SEED_TAREAS = [
 
 export default function Catalogos() {
   const [tab, setTab] = useState(4);
-  const { catalog, add, update, remove } = useCatalog();
+  const { catalog, add, update, remove, bulkSeed } = useCatalog();
 
   const cargarDemoData = () => {
     const existMats = new Set((catalog.materiales||[]).map(m => m.nombre));
     const existSubs = new Set((catalog.subcontratos||[]).map(s => s.nombre));
     const existTar  = new Set((catalog.tareas||[]).map(t => t.nombre));
-    SEED_MATS.filter(m => !existMats.has(m.nombre)).forEach(m => add('materiales', { ...m, updatedAt: today() }));
-    SEED_SUBS.filter(s => !existSubs.has(s.nombre)).forEach(s => add('subcontratos', { ...s, updatedAt: today() }));
-    SEED_TAREAS.filter(t => !existTar.has(t.nombre)).forEach(t => add('tareas', { ...t, updatedAt: today() }));
+    bulkSeed({
+      materiales:   SEED_MATS.filter(m => !existMats.has(m.nombre)),
+      subcontratos: SEED_SUBS.filter(s => !existSubs.has(s.nombre)),
+      tareas:       SEED_TAREAS.filter(t => !existTar.has(t.nombre)),
+    });
   };
 
   const tabLabel = (i) => {

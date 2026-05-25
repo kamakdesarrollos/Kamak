@@ -94,12 +94,18 @@ export function CatalogProvider({ children }) {
     return () => clearTimeout(t);
   }, [catalog]);
 
-  const add    = (coll, item)        => setCatalog(c => ({ ...c, [coll]: [...c[coll], { id: newId(), ...item, updatedAt: today() }] }));
+  const add    = (coll, item)        => setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), { id: newId(), ...item, updatedAt: today() }] }));
   const update = (coll, id, changes) => setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...changes, updatedAt: today() } : i) }));
   const remove = (coll, id)          => setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) }));
+  const bulkSeed = (additions) => setCatalog(c => ({
+    ...c,
+    materiales:   [...(c.materiales||[]),   ...(additions.materiales||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
+    subcontratos: [...(c.subcontratos||[]), ...(additions.subcontratos||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
+    tareas:       [...(c.tareas||[]),       ...(additions.tareas||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
+  }));
 
   return (
-    <CatalogContext.Provider value={{ catalog, add, update, remove }}>
+    <CatalogContext.Provider value={{ catalog, add, update, remove, bulkSeed }}>
       {children}
     </CatalogContext.Provider>
   );
