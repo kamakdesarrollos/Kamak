@@ -798,9 +798,99 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 const TABS = ['Materiales', 'Sub contratos', 'Mano de Obra', 'Generales', 'Tareas (APU)', 'Rubros / Gremios'];
 
+const SEED_MATS = [
+  { codigo: 'MAT-001', nombre: 'Cemento Portland 50kg', unidad: 'bol', precio: 13500, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'MAT-002', nombre: 'Arena fina cribada', unidad: 'm³', precio: 38000, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'MAT-003', nombre: 'Ladrillo común 18x9x6', unidad: 'u', precio: 520, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'MAT-004', nombre: 'Cal hidráulica 25kg', unidad: 'bol', precio: 8800, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'MAT-005', nombre: 'Hierro ADN ø12 x 12m', unidad: 'u', precio: 45000, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'MAT-006', nombre: 'Cerámica 45x45 nacional', unidad: 'm²', precio: 22500, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'MAT-007', nombre: 'Adhesivo cerámico Klaukol 30kg', unidad: 'bol', precio: 7200, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'MAT-008', nombre: 'Membrana asfáltica 4kg 4mm', unidad: 'm²', precio: 11500, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'MAT-009', nombre: 'Caño PVC 110mm x 3m', unidad: 'u', precio: 9200, rubro: 'PLOMERIA' },
+  { codigo: 'MAT-010', nombre: 'Cable unipolar 2.5mm²', unidad: 'm', precio: 2100, rubro: 'ELECTRICIDAD' },
+];
+const SEED_SUBS = [
+  { codigo: 'SC-001', nombre: 'Colocación piso cerámico', unidad: 'm²', precio: 16500, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'SC-002', nombre: 'Punto eléctrico iluminación', unidad: 'u', precio: 42000, rubro: 'ELECTRICIDAD' },
+  { codigo: 'SC-003', nombre: 'Mampostería ladrillo 15cm MO', unidad: 'm²', precio: 24000, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'SC-004', nombre: 'Revoque grueso MO', unidad: 'm²', precio: 19500, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'SC-005', nombre: 'Impermeabilización cubierta MO', unidad: 'm²', precio: 30000, rubro: 'ALBAÑILERÍA' },
+  { codigo: 'SC-006', nombre: 'Cañería cloacal 110mm MO', unidad: 'm', precio: 18000, rubro: 'PLOMERIA' },
+  { codigo: 'SC-007', nombre: 'Pintura látex 2 manos MO', unidad: 'm²', precio: 14500, rubro: 'PINTURA' },
+];
+const mkId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+const SEED_TAREAS = [
+  {
+    nombre: 'Mampostería ladrillo común 15cm', codigo: 'APU-001', unidad: 'm²', rubroNombre: 'ALBAÑILERÍA',
+    materiales: [
+      { id: mkId(), nombre: 'Cemento Portland 50kg',  unidad: 'bol', cantidad: 0.015, precio: 13500 },
+      { id: mkId(), nombre: 'Arena fina cribada',     unidad: 'm³',  cantidad: 0.03,  precio: 38000 },
+      { id: mkId(), nombre: 'Ladrillo común 18x9x6', unidad: 'u',   cantidad: 63,    precio: 520   },
+      { id: mkId(), nombre: 'Cal hidráulica 25kg',    unidad: 'bol', cantidad: 0.01,  precio: 8800  },
+    ],
+    subcontratos: [{ id: mkId(), nombre: 'Mampostería ladrillo 15cm MO', unidad: 'm²', cantidad: 1, precio: 24000 }],
+    mo: [], generales: [],
+  },
+  {
+    nombre: 'Revoque grueso', codigo: 'APU-002', unidad: 'm²', rubroNombre: 'ALBAÑILERÍA',
+    materiales: [
+      { id: mkId(), nombre: 'Cemento Portland 50kg', unidad: 'bol', cantidad: 0.01, precio: 13500 },
+      { id: mkId(), nombre: 'Arena fina cribada',    unidad: 'm³',  cantidad: 0.02, precio: 38000 },
+      { id: mkId(), nombre: 'Cal hidráulica 25kg',   unidad: 'bol', cantidad: 0.008, precio: 8800 },
+    ],
+    subcontratos: [{ id: mkId(), nombre: 'Revoque grueso MO', unidad: 'm²', cantidad: 1, precio: 19500 }],
+    mo: [], generales: [],
+  },
+  {
+    nombre: 'Contraiso + membrana asfáltica', codigo: 'APU-003', unidad: 'm²', rubroNombre: 'ALBAÑILERÍA',
+    materiales: [
+      { id: mkId(), nombre: 'Membrana asfáltica 4kg 4mm', unidad: 'm²',  cantidad: 1,    precio: 11500 },
+      { id: mkId(), nombre: 'Cemento Portland 50kg',      unidad: 'bol', cantidad: 0.01, precio: 13500 },
+      { id: mkId(), nombre: 'Arena fina cribada',         unidad: 'm³',  cantidad: 0.02, precio: 38000 },
+    ],
+    subcontratos: [{ id: mkId(), nombre: 'Impermeabilización cubierta MO', unidad: 'm²', cantidad: 1, precio: 30000 }],
+    mo: [], generales: [],
+  },
+  {
+    nombre: 'Piso cerámico 45x45', codigo: 'APU-004', unidad: 'm²', rubroNombre: 'ALBAÑILERÍA',
+    materiales: [
+      { id: mkId(), nombre: 'Cerámica 45x45 nacional',       unidad: 'm²',  cantidad: 1.05, precio: 22500 },
+      { id: mkId(), nombre: 'Adhesivo cerámico Klaukol 30kg', unidad: 'bol', cantidad: 0.4,  precio: 7200  },
+    ],
+    subcontratos: [{ id: mkId(), nombre: 'Colocación piso cerámico', unidad: 'm²', cantidad: 1, precio: 16500 }],
+    mo: [], generales: [],
+  },
+  {
+    nombre: 'Punto eléctrico iluminación', codigo: 'APU-005', unidad: 'u', rubroNombre: 'ELECTRICIDAD',
+    materiales: [
+      { id: mkId(), nombre: 'Cable unipolar 2.5mm²', unidad: 'm', cantidad: 8, precio: 2100 },
+    ],
+    subcontratos: [{ id: mkId(), nombre: 'Punto eléctrico iluminación', unidad: 'u', cantidad: 1, precio: 42000 }],
+    mo: [], generales: [],
+  },
+  {
+    nombre: 'Cañería cloacal PVC 110mm', codigo: 'APU-006', unidad: 'm', rubroNombre: 'PLOMERIA',
+    materiales: [
+      { id: mkId(), nombre: 'Caño PVC 110mm x 3m', unidad: 'u', cantidad: 0.35, precio: 9200 },
+    ],
+    subcontratos: [{ id: mkId(), nombre: 'Cañería cloacal 110mm MO', unidad: 'm', cantidad: 1, precio: 18000 }],
+    mo: [], generales: [],
+  },
+];
+
 export default function Catalogos() {
   const [tab, setTab] = useState(4);
   const { catalog, add, update, remove } = useCatalog();
+
+  const cargarDemoData = () => {
+    const existMats = new Set((catalog.materiales||[]).map(m => m.nombre));
+    const existSubs = new Set((catalog.subcontratos||[]).map(s => s.nombre));
+    const existTar  = new Set((catalog.tareas||[]).map(t => t.nombre));
+    SEED_MATS.filter(m => !existMats.has(m.nombre)).forEach(m => add('materiales', { ...m, updatedAt: today() }));
+    SEED_SUBS.filter(s => !existSubs.has(s.nombre)).forEach(s => add('subcontratos', { ...s, updatedAt: today() }));
+    SEED_TAREAS.filter(t => !existTar.has(t.nombre)).forEach(t => add('tareas', { ...t, updatedAt: today() }));
+  };
 
   const tabLabel = (i) => {
     const counts = [
@@ -818,10 +908,13 @@ export default function Catalogos() {
     <PageLayout breadcrumb={['Catálogos', TABS[tab]]} active="Catálogos">
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
         <div className="k-h" style={{ fontSize: 26 }}>Catálogo de precios · APU</div>
-        <Btn sm onClick={() => {
-          const data = JSON.stringify(catalog, null, 2);
-          const a = document.createElement('a'); a.href = 'data:text/json,' + encodeURIComponent(data); a.download = 'kamak_catalog.json'; a.click();
-        }}>↓ Exportar JSON</Btn>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn sm onClick={cargarDemoData}>⚡ Cargar datos de prueba</Btn>
+          <Btn sm onClick={() => {
+            const data = JSON.stringify(catalog, null, 2);
+            const a = document.createElement('a'); a.href = 'data:text/json,' + encodeURIComponent(data); a.download = 'kamak_catalog.json'; a.click();
+          }}>↓ Exportar JSON</Btn>
+        </div>
       </div>
 
       <div className="k-tabs" style={{ marginBottom: 10 }}>
