@@ -1033,6 +1033,7 @@ export default function Catalogos() {
 
   const [seedStatus, setSeedStatus] = useState('');
   const cargarDemoData = async () => {
+    alert('⚡ Iniciando carga...');
     setSeedStatus('Cargando...');
     try {
       const current = await loadSharedData('catalog') || catalog;
