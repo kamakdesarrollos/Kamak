@@ -2578,9 +2578,11 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
   );
   const totalCobrado = useMemo(() => {
     return movsIngreso.reduce((s, m) => {
-      if (cajasMap[m.cajaId]?.moneda === 'USD') return s + m.monto;           // caja USD
-      if (m.montoDolar) return s + m.montoDolar;                              // ARS con ref USD
-      return s + Math.round(m.monto / (m.tipoCambio || tc));                  // ARS sin ref
+      const movMoneda = m.moneda || cajasMap[m.cajaId]?.moneda || 'ARS';
+      if (movMoneda === 'USD') return s + (m.monto || 0);
+      if (m.montoDolar) return s + m.montoDolar;
+      const useTc = (m.tipoCambio && m.tipoCambio > 100) ? m.tipoCambio : tc;
+      return s + Math.round((m.monto || 0) / useTc);
     }, 0);
   }, [movsIngreso, cajasMap, tc]);
 

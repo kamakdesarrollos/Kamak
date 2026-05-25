@@ -52,7 +52,7 @@ export default function PortalCliente() {
 
   const { user } = useAuth();
   const { dolarVenta } = useDolar();
-  const toUSD = n => `U$S ${fmtN(Math.round(n / (dolarVenta || 1)))}`;
+  const toUSD = n => `U$S ${fmtN(Math.round(n / (dolarVenta || 1070)))}`;
   const [tab, setTab] = useState(0);
   const [msg, setMsg] = useState('');
 
