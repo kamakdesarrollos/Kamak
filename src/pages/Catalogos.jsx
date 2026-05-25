@@ -3,6 +3,7 @@ import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Divider } from '../components/ui';
 import { T } from '../theme';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
+import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 
 const newId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -1028,17 +1029,23 @@ const SEED_TAREAS = [
 
 export default function Catalogos() {
   const [tab, setTab] = useState(4);
-  const { catalog, add, update, remove, bulkSeed } = useCatalog();
+  const { catalog, add, update, remove } = useCatalog();
 
-  const cargarDemoData = () => {
-    const existMats = new Set((catalog.materiales||[]).map(m => m.nombre));
-    const existSubs = new Set((catalog.subcontratos||[]).map(s => s.nombre));
-    const existTar  = new Set((catalog.tareas||[]).map(t => t.nombre));
-    bulkSeed({
-      materiales:   SEED_MATS.filter(m => !existMats.has(m.nombre)),
-      subcontratos: SEED_SUBS.filter(s => !existSubs.has(s.nombre)),
-      tareas:       SEED_TAREAS.filter(t => !existTar.has(t.nombre)),
-    });
+  const cargarDemoData = async () => {
+    const current = await loadSharedData('catalog') || catalog;
+    const existMats = new Set((current.materiales||[]).map(m => m.nombre));
+    const existSubs = new Set((current.subcontratos||[]).map(s => s.nombre));
+    const existTar  = new Set((current.tareas||[]).map(t => t.nombre));
+    const ts = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+    const next = {
+      ...current,
+      materiales:   [...(current.materiales||[]),   ...SEED_MATS.filter(m => !existMats.has(m.nombre)).map(i => ({ id: ts(), ...i, updatedAt: today() }))],
+      subcontratos: [...(current.subcontratos||[]), ...SEED_SUBS.filter(s => !existSubs.has(s.nombre)).map(i => ({ id: ts(), ...i, updatedAt: today() }))],
+      tareas:       [...(current.tareas||[]),       ...SEED_TAREAS.filter(t => !existTar.has(t.nombre)).map(i => ({ id: ts(), ...i, updatedAt: today() }))],
+    };
+    await saveSharedData('catalog', next, { silent: true });
+    localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
+    window.location.reload();
   };
 
   const tabLabel = (i) => {
