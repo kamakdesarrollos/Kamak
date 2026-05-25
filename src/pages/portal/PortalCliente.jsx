@@ -30,6 +30,21 @@ const calcVentaBase = (rubros) => {
   return Math.round(v);
 };
 
+const cuotaMontoFn = (c, moneda, tc) =>
+  (c._usd || moneda !== 'USD') ? (c.monto || 0) : Math.round((c.monto || 0) / tc);
+const cuotaCobradoFn = (c, moneda, tc) =>
+  (c.pagos || []).reduce((s, p) =>
+    moneda === 'USD'
+      ? s + (p.moneda === 'ARS' ? Math.round((p.monto || 0) / (p.tc || tc)) : (p.monto || 0))
+      : s + (p.moneda === 'USD' ? Math.round((p.monto || 0) * (p.tc || tc)) : (p.monto || 0))
+  , 0);
+const cuotaEstadoCalc = (c, moneda, tc) => {
+  const cob = cuotaCobradoFn(c, moneda, tc);
+  if (cob <= 0) return 'pendiente';
+  if (cob >= cuotaMontoFn(c, moneda, tc)) return 'pagado';
+  return 'parcial';
+};
+
 export default function PortalCliente() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -62,10 +77,12 @@ export default function PortalCliente() {
   const mensajes  = detalle.mensajes  || [];
   const fin       = detalle.financiacion || {};
 
-  const cuotaMonto    = c => (c._usd || obra.moneda !== 'USD') ? c.monto : Math.round(c.monto / (dolarVenta || 1));
+  const tc = dolarVenta || 1070;
+  const obraM = obra.moneda || 'ARS';
+  const cuotaMonto    = c => cuotaMontoFn(c, obraM, tc);
   const totalCuotas   = cuotas.reduce((s, c) => s + cuotaMonto(c), 0);
-  const pagadoCuotas  = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
-  const countPagadas  = cuotas.filter(c => c.estado === 'pagado').length;
+  const pagadoCuotas  = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
+  const countPagadas  = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').length;
 
   const ventaBase = calcVentaBase(rubros);
   const adicionalCliente = (detalle.adicionales || [])
@@ -85,7 +102,7 @@ export default function PortalCliente() {
     setMsg('');
   };
 
-  const tabs = ['Resumen', 'Avance', 'Cuotas', 'Documentos', `Mensajes${mensajes.length > 0 ? ' · ' + mensajes.length : ''}`];
+  const tabs = ['Resumen', 'Avance', 'Plan de pagos', 'Documentos', `Mensajes${mensajes.length > 0 ? ' · ' + mensajes.length : ''}`];
 
   // Estado chip colors
   const estadoChip = {
@@ -294,7 +311,7 @@ export default function PortalCliente() {
 
             <Box style={{ padding: 0, overflow: 'hidden' }}>
               <div style={{ padding: '12px 16px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}` }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Plan de cuotas</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Plan de pagos</div>
               </div>
               {totalCliente > 0 && (
             <div style={{ padding: '10px 16px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
@@ -307,11 +324,13 @@ export default function PortalCliente() {
                 <div style={{ color: T.ink3, fontSize: 13, textAlign: 'center', padding: '40px 0' }}>Sin cuotas registradas.</div>
               ) : (
                 cuotas.map((c, i) => {
-                  const isPagado = c.estado === 'pagado';
-                  const isProximo = c.estado === 'proximo';
-                  const dotBg = isPagado ? T.ok : isProximo ? T.accent : T.faint2;
-                  const dotColor = (isPagado || isProximo) ? 'white' : T.ink3;
-                  const etiqueta = isPagado ? 'pagado' : isProximo ? 'próximo' : 'pendiente';
+                  const estadoCuota = cuotaEstadoCalc(c, obraM, tc);
+                  const isPagado = estadoCuota === 'pagado';
+                  const isParcial = estadoCuota === 'parcial';
+                  const isProximo = !isPagado && c.estado === 'proximo';
+                  const dotBg = isPagado ? T.ok : (isParcial || isProximo) ? T.accent : T.faint2;
+                  const dotColor = (isPagado || isParcial || isProximo) ? 'white' : T.ink3;
+                  const etiqueta = isPagado ? 'pagado' : isParcial ? 'parcial' : isProximo ? 'próximo' : 'pendiente';
                   return (
                     <div key={c.id} style={{ display: 'flex', alignItems: 'center', padding: '13px 16px', borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none', gap: 14 }}>
                       <div style={{ width: 32, height: 32, borderRadius: 16, background: dotBg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: dotColor, fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
@@ -324,7 +343,7 @@ export default function PortalCliente() {
                       <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14, flexShrink: 0, color: isPagado ? T.ok : T.ink }}>
                         {`U$S ${fmtN(cuotaMonto(c))}`}
                       </div>
-                      <Chip ok={isPagado} accent={isProximo} style={{ fontSize: 10, flexShrink: 0 }}>{etiqueta}</Chip>
+                      <Chip ok={isPagado} accent={isParcial || isProximo} style={{ fontSize: 10, flexShrink: 0 }}>{etiqueta}</Chip>
                     </div>
                   );
                 })

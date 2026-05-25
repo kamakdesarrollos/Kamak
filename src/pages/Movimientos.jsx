@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
@@ -12,9 +12,25 @@ import { useUsuarios } from '../store/UsuariosContext';
 import { useCatalog } from '../store/CatalogContext';
 import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useCheques } from '../store/ChequesContext';
+import { supabase } from '../lib/supabase';
 
 const DEFAULT_MEDIOS = ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débito', 'Tarjeta'];
 const MEDIOS_NO_USD = new Set(['Cheque', 'E-cheq', 'Débito']);
+
+const newPagoId = () => `pago-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+const cuotaMontoFn = (c, moneda, tc) => (c._usd || moneda !== 'USD') ? (c.monto||0) : Math.round((c.monto||0)/tc);
+const cuotaCobradoFn = (c, moneda, tc) =>
+  (c.pagos||[]).reduce((s,p) =>
+    moneda==='USD'
+      ? s+(p.moneda==='ARS' ? Math.round((p.monto||0)/(p.tc||tc)) : (p.monto||0))
+      : s+(p.moneda==='USD' ? Math.round((p.monto||0)*(p.tc||tc)) : (p.monto||0))
+  , 0);
+const cuotaEstado = (c, moneda, tc) => {
+  const cob = cuotaCobradoFn(c, moneda, tc);
+  if (cob<=0) return 'pendiente';
+  if (cob>=cuotaMontoFn(c, moneda, tc)) return 'pagado';
+  return 'parcial';
+};
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none' };
 const fmtN   = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
@@ -270,7 +286,9 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const { catalog } = useCatalog();
   const { config } = useConfiguracion();
   const { addCheque } = useCheques();
-  const { patchDetalle } = useObras();
+  const { patchDetalle, getDetalle } = useObras();
+  const { currentUser } = useUsuarios();
+  const fotoRef = useRef(null);
   const mediosDePago = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
 
   const [desc,          setDesc]          = useState('');
@@ -287,6 +305,15 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const [cheqTitular,    setCheqTitular]    = useState('');
   const [cheqVencimiento,setCheqVencimiento]= useState('');
   const [esAdicional,    setEsAdicional]    = useState(false);
+  const [cuotaId,        setCuotaId]        = useState('');
+  const [fotoFile,       setFotoFile]       = useState(null);
+  const [fotoUploading,  setFotoUploading]  = useState(false);
+
+  // Moneda: 'ARS', 'USD' (directo a caja USD), 'USD_ARS' (pesos recibidos con ref USD, solo ingresos)
+  const [monedaIngreso, setMonedaIngreso] = useState('ARS');
+  const [monedaGasto,   setMonedaGasto]   = useState('ARS');
+  const [tipoCambio,    setTipoCambio]    = useState(() => String(Math.round(dolarVenta || 1070)));
+
   const isCheckPayment = medio === 'Cheque' || medio === 'E-cheq';
   const mediosDisponibles = isGasto && monedaGasto === 'USD'
     ? mediosDePago.filter(m => !MEDIOS_NO_USD.has(m))
@@ -296,10 +323,23 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
     if (isGasto && monedaGasto === 'USD' && MEDIOS_NO_USD.has(medio)) setMedio('Transferencia');
   }, [monedaGasto]);
 
-  // Moneda: 'ARS', 'USD' (directo a caja USD), 'USD_ARS' (pesos recibidos con ref USD, solo ingresos)
-  const [monedaIngreso, setMonedaIngreso] = useState('ARS');
-  const [monedaGasto,   setMonedaGasto]   = useState('ARS');
-  const [tipoCambio,    setTipoCambio]    = useState(() => String(Math.round(dolarVenta || 1070)));
+  useEffect(() => {
+    if (isGasto || !obraId) { setCuotaId(''); return; }
+    const det = getDetalle(obraId);
+    const obraM = obras.find(o => o.id === obraId)?.moneda || 'ARS';
+    const tc = dolarVenta || 1070;
+    const cuotas = det?.cuotas || [];
+    const first = cuotas.find(c => cuotaEstado(c, obraM, tc) !== 'pagado');
+    setCuotaId(first?.id || '');
+  }, [obraId, isGasto]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (isGasto || !obraId) return;
+    const obra = obras.find(o => o.id === obraId);
+    if (!obra?.cliente) return;
+    const match = clientes.find(c => c.nombre === obra.cliente);
+    if (match) setContraparteId(match.id);
+  }, [obraId, isGasto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // La moneda activa determina qué cajas mostrar
   const monedaActual     = isGasto ? monedaGasto : (monedaIngreso === 'USD' ? 'USD' : 'ARS');
@@ -324,9 +364,46 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
     : 0;
 
   const effectiveCajaId = cajasMoneda.find(c => c.id === cajaId) ? cajaId : cajasMoneda[0]?.id || '';
-  const canSave = montoFinal > 0 && desc.trim().length > 0 && effectiveCajaId && (!isCheckPayment || cheqVencimiento);
+  const canSave = montoFinal > 0 && desc.trim().length > 0 && effectiveCajaId && (!isCheckPayment || cheqVencimiento) && !fotoUploading;
 
-  const save = () => {
+  // Cuotas disponibles para vincular (después de parsedTC)
+  const obraSelObj = obras.find(o => o.id === obraId);
+  const obraMoneda = obraSelObj?.moneda || 'ARS';
+  const detalleCuotas = !isGasto && obraId ? (getDetalle(obraId)?.cuotas || []) : [];
+  const cuotasPendientes = detalleCuotas.filter(c => cuotaEstado(c, obraMoneda, parsedTC) !== 'pagado');
+
+  const pagoMoneda = !isGasto && monedaIngreso === 'USD' ? 'USD' : 'ARS';
+  const distribucionPrev = useMemo(() => {
+    if (isGasto || !cuotaId || !obraId || montoFinal <= 0) return [];
+    const result = [];
+    let remaining = montoFinal;
+    let idx = detalleCuotas.findIndex(c => c.id === cuotaId);
+    if (idx < 0) return [];
+    while (remaining > 0 && idx < detalleCuotas.length) {
+      const c = detalleCuotas[idx];
+      const montoC   = cuotaMontoFn(c, obraMoneda, parsedTC);
+      const cobradoC = cuotaCobradoFn(c, obraMoneda, parsedTC);
+      const saldoC   = montoC - cobradoC;
+      if (saldoC <= 0) { idx++; continue; }
+      const remEnObra = obraMoneda === 'USD' && pagoMoneda === 'ARS'
+        ? Math.round(remaining / parsedTC)
+        : obraMoneda === 'ARS' && pagoMoneda === 'USD'
+        ? Math.round(remaining * parsedTC)
+        : remaining;
+      const aplicar = Math.min(remEnObra, saldoC);
+      const pagoMonto = obraMoneda === 'USD' && pagoMoneda === 'ARS'
+        ? Math.round(aplicar * parsedTC)
+        : obraMoneda === 'ARS' && pagoMoneda === 'USD'
+        ? Math.round(aplicar / parsedTC)
+        : aplicar;
+      result.push({ cuota: c, aplicar, saldoPost: saldoC - aplicar });
+      remaining -= pagoMonto;
+      idx++;
+    }
+    return result;
+  }, [cuotaId, montoFinal, detalleCuotas, obraMoneda, parsedTC, pagoMoneda, isGasto]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = async () => {
     if (!canSave) return;
     const obra = obras.find(o => o.id === obraId);
 
@@ -346,6 +423,18 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
         extra.tipoCambio = parsedTC;
         extra.montoDolar = refUSD;
       }
+      if (cuotaId) extra.cuotaId = cuotaId;
+    }
+
+    // Subir comprobante si hay foto
+    let fotoUrl = null;
+    if (fotoFile) {
+      setFotoUploading(true);
+      const ext = fotoFile.name.split('.').pop();
+      const path = `cobros/${obraId || 'general'}/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('kamak-fotos').upload(path, fotoFile, { upsert: true });
+      if (!error) fotoUrl = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
+      setFotoUploading(false);
     }
 
     const movId = onSave({
@@ -362,6 +451,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       medioPago:     medio,
       referencia:    cheqNumero || '',
       fondoReparo:   false,
+      comprobanteUrl: fotoUrl,
       ...extra,
     });
 
@@ -380,6 +470,52 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           aplicaACliente: true, aplicaAProveedor: false,
         }],
       }));
+    }
+
+    // Vincular pago a cuota(s)
+    if (!isGasto && cuotaId && obraId) {
+      const cobradoPor = currentUser?.nombre || currentUser?.email || '';
+      patchDetalle(obraId, d => {
+        const cuotas = [...(d.cuotas || [])];
+        let remaining = montoFinal; // en pagoMoneda
+        let idx = cuotas.findIndex(c => c.id === cuotaId);
+        while (remaining > 0 && idx < cuotas.length) {
+          const c = cuotas[idx];
+          const montoC = cuotaMontoFn(c, obraMoneda, parsedTC);
+          const cobradoC = cuotaCobradoFn(c, obraMoneda, parsedTC);
+          const saldoC = montoC - cobradoC; // en obraMoneda
+          if (saldoC <= 0) { idx++; continue; }
+          // Convertir remaining a obraMoneda para comparar
+          const remainingEnObra = obraMoneda === 'USD' && pagoMoneda === 'ARS'
+            ? Math.round(remaining / parsedTC)
+            : obraMoneda === 'ARS' && pagoMoneda === 'USD'
+            ? Math.round(remaining * parsedTC)
+            : remaining;
+          const aplicar = Math.min(remainingEnObra, saldoC);
+          // Convertir aplicar de obraMoneda a pagoMoneda para el pago
+          const pagoMonto = obraMoneda === 'USD' && pagoMoneda === 'ARS'
+            ? Math.round(aplicar * parsedTC)
+            : obraMoneda === 'ARS' && pagoMoneda === 'USD'
+            ? Math.round(aplicar / parsedTC)
+            : aplicar;
+          cuotas[idx] = {
+            ...c,
+            pagos: [...(c.pagos||[]), {
+              id: newPagoId(),
+              movimientoId: movId || null,
+              monto: pagoMonto,
+              moneda: pagoMoneda,
+              tc: pagoMoneda === 'ARS' ? parsedTC : null,
+              fecha,
+              cobradoPor,
+              fotoUrl,
+            }],
+          };
+          remaining -= pagoMonto;
+          idx++;
+        }
+        return { ...d, cuotas };
+      });
     }
 
     if (isCheckPayment && cheqVencimiento) {
@@ -407,6 +543,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
 
     setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false);
     setCheqNumero(''); setCheqBanco(''); setCheqTitular(''); setCheqVencimiento('');
+    setCuotaId(''); setFotoFile(null); if (fotoRef.current) fotoRef.current.value = '';
   };
 
   const onKey = (e) => {
@@ -575,6 +712,48 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           <input type="checkbox" checked={esAdicional} onChange={e => setEsAdicional(e.target.checked)} />
           Registrar también como <b style={{ color: T.accent }}>adicional pendiente</b> de {obras.find(o => o.id === obraId)?.nombre || 'la obra'}
         </label>
+      )}
+
+      {/* Distribución automática de cuotas + comprobante */}
+      {!isGasto && obraId && cuotasPendientes.length > 0 && (
+        <div style={{ padding: '8px 10px', background: 'rgba(61,122,74,.06)', borderRadius: 4, border: `1px dashed ${T.ok}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: T.ok, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Distribución automática de cuotas
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input ref={fotoRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }}
+                onChange={e => setFotoFile(e.target.files?.[0] || null)} />
+              <Btn sm onClick={() => fotoRef.current?.click()}>
+                {fotoFile ? `📎 ${fotoFile.name.slice(0, 14)}…` : '📎 Comprobante'}
+              </Btn>
+              {fotoFile && <span style={{ fontSize: 10, color: T.ink3, cursor: 'pointer' }} onClick={() => { setFotoFile(null); if (fotoRef.current) fotoRef.current.value = ''; }}>✕</span>}
+              {fotoUploading && <span style={{ fontSize: 10, color: T.ink2 }}>Subiendo…</span>}
+            </div>
+          </div>
+          {distribucionPrev.length === 0 ? (
+            <div style={{ fontSize: 11, color: T.ink3 }}>
+              {montoFinal > 0 ? 'Sin cuotas pendientes desde la primera.' : 'Ingresá el monto para ver cómo se distribuye.'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {distribucionPrev.map(({ cuota, aplicar, saldoPost }) => {
+                const fmtC = n => obraMoneda === 'USD' ? `U$S ${Math.round(n).toLocaleString('es-AR')}` : `$ ${Math.round(n).toLocaleString('es-AR')}`;
+                const isPagado = saldoPost <= 0;
+                return (
+                  <div key={cuota.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                    <span style={{ background: isPagado ? T.ok : T.warn, color: '#fff', borderRadius: 3, padding: '1px 7px', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                      {isPagado ? '✓ Pago' : '~ Parcial'}
+                    </span>
+                    <span style={{ color: T.ink, flex: 1 }}>{cuota.descripcion}</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: isPagado ? T.ok : T.warn }}>{fmtC(aplicar)}</span>
+                    {!isPagado && <span style={{ fontSize: 10, color: T.ink3 }}>· resta {fmtC(saldoPost)}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       <div style={{ fontSize: 10, color: T.ink3 }}>Enter guarda · Esc cierra · el formulario queda abierto para cargar varios seguidos</div>

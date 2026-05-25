@@ -26,6 +26,21 @@ const fmtM = (n, moneda) => moneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`
 const fmtQ = (n) => { if (!n) return '0'; const r = Math.round(n * 1000) / 1000; return r.toLocaleString('es-AR', { maximumFractionDigits: 3 }); };
 const fmtD = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
 
+// ── Helpers de cuotas (usados en TabCuentaCliente y TabFinanciacion) ───────────
+const cuotaMontoFn = (c, moneda, tc) =>
+  (c._usd || moneda !== 'USD') ? (c.monto || 0) : Math.round((c.monto || 0) / tc);
+const cuotaCobrado = (c, moneda, tc) =>
+  (c.pagos || []).reduce((s, p) => {
+    if (moneda === 'USD') return s + (p.moneda === 'ARS' ? Math.round((p.monto||0) / (p.tc||tc)) : (p.monto||0));
+    return s + (p.moneda === 'USD' ? Math.round((p.monto||0) * (p.tc||tc)) : (p.monto||0));
+  }, 0);
+const cuotaEstadoCalc = (c, moneda, tc) => {
+  const cobrado = cuotaCobrado(c, moneda, tc);
+  if (cobrado <= 0) return 'pendiente';
+  if (cobrado >= cuotaMontoFn(c, moneda, tc)) return 'pagado';
+  return 'parcial';
+};
+
 const tareaVentaUnit = (t, rubro) => {
   const costoUnit = t.costoMat + (t.costoSub || 0);
   if (t.margenLinea != null) return costoUnit * (1 + t.margenLinea / 100);
@@ -142,7 +157,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   if (diasRest !== null && diasRest < 30 && avanceGeneral < 80) alertas.push({ tipo: 'warn', msg: `Quedan ${diasRest} días pero el avance es solo ${avanceGeneral}%` });
   detalle.adicionales.filter(a => a.estado === 'pendiente').forEach(a => alertas.push({ tipo: 'info', msg: `Adicional pendiente de aprobación: "${a.descripcion}"` }));
 
-  const tc = dolarVenta || 1;
+  const tc = dolarVenta || 1070;
   const toUSD = (n) => `U$S ${fmtN(Math.round(n / tc))}`;
 
   // Financiación
@@ -154,7 +169,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   const totalCliente = Math.round((venta + adicionalCliente) * (1 + interesFin / 100));
   const cuotasPlan = detalle.cuotas || [];
   const cuotaMontoPlan = c => (c._usd || obra.moneda !== 'USD') ? c.monto : Math.round(c.monto / tc);
-  const cuotasPagadas = cuotasPlan.filter(c => c.estado === 'pagado').reduce((s, c) => s + cuotaMontoPlan(c), 0);
+  const cuotasPagadas = cuotasPlan.filter(c => cuotaEstadoCalc(c, obra.moneda || 'ARS', tc) === 'pagado').reduce((s, c) => s + cuotaMontoPlan(c), 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -186,7 +201,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
         {/* KPI: Total cliente */}
         {verCostos && totalCliente > 0 && (
           <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${T.accent}`, cursor: 'pointer' }}
-            onClick={() => onChangeTab?.(10)}>
+            onClick={() => onChangeTab?.(1)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Total cliente</div>
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.accent }}>{toUSD(totalCliente)}</div>
             {adicionalCliente > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>incl. {toUSD(adicionalCliente)} adicionales</div>}
@@ -196,10 +211,10 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
         {/* KPI: Cuotas */}
         {cuotasPlan.length > 0 && (
           <Box style={{ padding: '12px 14px', cursor: 'pointer' }}
-            onClick={() => onChangeTab?.(10)}>
+            onClick={() => onChangeTab?.(1)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Cuotas cobradas</div>
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.ok }}>{`U$S ${fmtN(cuotasPagadas)}`}</div>
-            <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{cuotasPlan.filter(c => c.estado === 'pagado').length} / {cuotasPlan.length} cuotas</div>
+            <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{cuotasPlan.filter(c => cuotaEstadoCalc(c, obra.moneda || 'ARS', tc) === 'pagado').length} / {cuotasPlan.length} cuotas cobradas</div>
           </Box>
         )}
       </div>
@@ -232,8 +247,6 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
               ['Costo total (presu)', toUSD(costo), T.ink, true],
               ['Margen bruto (presu)', toUSD(venta - costo), margen < 0 ? T.accent : T.ok, verMargenes],
               ['Gastado real', toUSD(totalGastadoReal), totalGastadoReal > costo ? T.accent : T.ink, true],
-              ['Cobrado (movimientos)', toUSD(totalCobradoReal), T.ok, true],
-              ['Falta cobrar', toUSD(faltaCobrar), faltaCobrar > 0 ? T.warn : T.ok, true],
             ].filter(([,,, show]) => show).map(([l, v, c], i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${T.faint2}`, fontSize: 12 }}>
                 <span style={{ color: T.ink2 }}>{l}</span>
@@ -394,7 +407,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
   const { totalMensual: gfMensual } = useGastosFijos();
   const { catalog } = useCatalog();
   const { dolarVenta } = useDolar();
-  const tc = dolarVenta || 1;
+  const tc = dolarVenta || 1070;
   const [viewUSD, setViewUSD] = useState(true);
   const fmtVenta = n => viewUSD ? `U$S ${fmtN(Math.round(n / tc))}` : `$ ${fmtN(n)}`;
 
@@ -453,7 +466,10 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
   const saveInlineCost = () => {
     if (!inlineEdit) return;
     const { taskId, field, value } = inlineEdit;
-    const parsed = field === 'margenLinea' ? (value === '' ? null : +value) : (+value || 0);
+    const isCostField = field === 'costoMat' || field === 'costoSub';
+    const parsed = field === 'margenLinea'
+      ? (value === '' ? null : +value)
+      : (viewUSD && isCostField ? Math.round((+value || 0) * tc) : (+value || 0));
     patch(d => ({ ...d, rubros: d.rubros.map(r => ({ ...r, tareas: r.tareas.map(t => t.id === taskId ? { ...t, [field]: parsed } : t) })) }));
     if (selTask?.id === taskId) setSelTask(prev => ({ ...prev, [field]: parsed }));
     setInlineEdit(null);
@@ -610,86 +626,53 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden', height: 'calc(100vh - 320px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden', height: 'calc(100vh - 190px)' }}>
 
-      {/* Banner aprobación */}
-      {frozen ? (
-        <div style={{ background: '#1a9b9c18', border: `1.5px solid #1a9b9c`, borderRadius: 6, padding: '9px 14px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <span style={{ fontSize: 16 }}>🔒</span>
-          <div style={{ flex: 1 }}>
-            <span style={{ fontWeight: 700, color: '#1a9b9c', fontSize: 13 }}>Presupuesto aprobado · congelado</span>
-            {detalle.fechaAprobacion && <span style={{ fontSize: 11, color: T.ink3, marginLeft: 10 }}>Aprobado el {fmtD(detalle.fechaAprobacion)} · Para cambios usá la pestaña Adicionales</span>}
-          </div>
-          {onExport && <Btn sm onClick={onExport}>↗ Exportar</Btn>}
-        </div>
-      ) : (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 8, flexShrink: 0 }}>
-          {onExport && <Btn sm onClick={onExport}>↗ Exportar presupuesto</Btn>}
-          {onApprove && <Btn sm fill onClick={onApprove} style={{ background: T.ok, borderColor: T.ok, color: '#fff' }}>✓ Aprobar presupuesto</Btn>}
-        </div>
-      )}
+      {/* ── Barra compacta única ──────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexShrink: 0, flexWrap: 'wrap', padding: '6px 10px', background: T.faint, borderRadius: 6, border: `1px solid ${T.faint2}` }}>
+
+        {/* Totales inline */}
+        <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.accent }}>Venta: {fmtVenta(venta)}</span>
+        {verCostos && <><span style={{ color: T.faint2 }}>·</span><span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#c0392b' }}>Costo: {fmtVenta(costo)}</span></>}
+        {verMargenes && <><span style={{ color: T.faint2 }}>·</span><span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: venta - costo < 0 ? '#dc2626' : T.ok }}>Ganancia: {fmtVenta(venta - costo)}</span></>}
+
+        <span style={{ width: 1, height: 16, background: T.faint2, flexShrink: 0, margin: '0 2px' }} />
+
+        {/* Toggle moneda */}
+        <span onClick={() => setViewUSD(v => !v)}
+          style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none', fontWeight: 700, border: `1px solid ${T.accent}`, background: T.accentSoft, color: T.accent }}>
+          {viewUSD ? 'U$S' : '$'}
+        </span>
+
+        {/* Column toggles */}
+        {COLS_DEF.filter(c => {
+          if ((c.key === 'costoUnit' || c.key === 'costoTotal') && !verCostos) return false;
+          if (c.key === 'margenL' && !verMargenes) return false;
+          return true;
+        }).map(c => (
+          <span key={c.key} onClick={() => setColsUser(s => ({ ...s, [c.key]: !s[c.key] }))}
+            style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none', transition: 'all 0.12s',
+              background: cols[c.key] ? T.accent : T.paper, color: cols[c.key] ? 'white' : T.ink3,
+              fontWeight: cols[c.key] ? 700 : 400, border: `1px solid ${cols[c.key] ? T.accent : T.faint2}` }}>
+            {c.label}
+          </span>
+        ))}
+
+        <div style={{ flex: 1 }} />
+
+        {/* Acciones */}
+        {frozen
+          ? <span style={{ fontSize: 11, color: '#1a9b9c', fontWeight: 700 }}>🔒 Aprobado{detalle.fechaAprobacion ? ` ${fmtD(detalle.fechaAprobacion)}` : ''}</span>
+          : onApprove && <Btn sm fill onClick={onApprove} style={{ background: T.ok, borderColor: T.ok, color: '#fff' }}>✓ Aprobar</Btn>
+        }
+        {onExport && <Btn sm onClick={onExport}>↗</Btn>}
+        {puedeEditar && <Btn sm fill onClick={() => setAddingRubro(true)}>+ Rubro</Btn>}
+        {puedeEditar && <Btn sm onClick={() => setShowPlantillas(true)}>📋</Btn>}
+        {puedeEditar && <Btn sm onClick={() => { setSavePlantillaForm({ nombre: obra.nombre || '', tipo: 'Comercial', descripcion: '' }); setShowSavePlantilla(true); }}>💾</Btn>}
+      </div>
 
     <div style={{ display: 'flex', gap: 10, flex: 1, overflow: 'hidden' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Totals strip */}
-        <div style={{ display: 'flex', gap: 10, marginBottom: 8, flexShrink: 0, alignItems: 'stretch' }}>
-          <div style={{ flex: 1, background: '#f6efd9', borderRadius: 4, border: `1px solid ${T.faint2}`, overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
-              {[
-                { label: 'Total venta', val: fmtVenta(venta), color: T.ink, show: true },
-                { label: 'Total costo', val: fmtVenta(costo), color: T.ink, show: verCostos },
-                { label: 'Margen', val: `${margen}%`, sub: fmtVenta(venta - costo), color: margen < 0 ? '#dc2626' : margen < 15 ? T.warn : T.ok, show: verMargenes },
-              ].filter(s => s.show).map((s, i, arr) => (
-                <div key={i} style={{ padding: '8px 14px', textAlign: 'center', borderRight: i < 2 ? `1px solid ${T.faint2}` : 'none' }}>
-                  <div style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>{s.label}</div>
-                  <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 17, color: s.color }}>{s.val}</div>
-                  {s.sub && <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink, marginTop: 2 }}>{s.sub}</div>}
-                  {s.usd != null && <div style={{ fontFamily: T.fontMono, fontSize: 10, color: '#1a9b9c', marginTop: 2 }}>U$S {s.usd.toLocaleString('es-AR')}</div>}
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderTop: `1px solid ${T.faint2}` }}>
-              {[
-                { label: 'Materiales', val: fmtVenta(cMat) },
-                { label: 'Subcontratos', val: fmtVenta(cSub) },
-                { label: `Gastos fijos (${durMeses}m ÷ ${obrasActivas.length})`, val: gastosFijosObra > 0 ? fmtVenta(gastosFijosObra) : '—', warn: gastosFijosObra > 0 },
-              ].map((s, i) => (
-                <div key={i} style={{ padding: '4px 14px', borderRight: i < 2 ? `1px solid ${T.faint2}` : 'none', display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-                  <span style={{ color: T.ink2 }}>{s.label}</span>
-                  <span style={{ fontFamily: T.fontMono, color: s.warn ? T.warn : T.ink }}>{s.val}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          {puedeEditar && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center', flexShrink: 0 }}>
-              <Btn sm fill onClick={() => setAddingRubro(true)}>+ Rubro</Btn>
-              <Btn sm onClick={() => setShowPlantillas(true)}>📋 Desde plantilla</Btn>
-              <Btn sm onClick={() => { setSavePlantillaForm({ nombre: obra.nombre || '', tipo: 'Comercial', descripcion: '' }); setShowSavePlantilla(true); }}>💾 Guardar como plantilla</Btn>
-            </div>
-          )}
-        </div>
-
-        {/* Column visibility toggles */}
-        <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-          <span onClick={() => setViewUSD(v => !v)}
-            style={{ padding: '3px 10px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none', fontWeight: 700, border: `1px solid ${T.accent}`, background: T.accentSoft, color: T.accent, marginRight: 4 }}>
-            Ver totales: {viewUSD ? 'U$S' : '$'}
-          </span>
-          <span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 2 }}>Columnas</span>
-          {COLS_DEF.filter(c => {
-            if ((c.key === 'costoUnit' || c.key === 'costoTotal') && !verCostos) return false;
-            if (c.key === 'margenL' && !verMargenes) return false;
-            return true;
-          }).map(c => (
-            <span key={c.key} onClick={() => setColsUser(s => ({ ...s, [c.key]: !s[c.key] }))}
-              style={{ padding: '3px 10px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none', transition: 'all 0.12s',
-                background: cols[c.key] ? T.accent : T.faint2, color: cols[c.key] ? 'white' : T.ink2,
-                fontWeight: cols[c.key] ? 700 : 400, border: `1px solid ${cols[c.key] ? T.accent2 : T.faint2}` }}>
-              {c.label}
-            </span>
-          ))}
-        </div>
 
         {/* Rubros */}
         <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -835,8 +818,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                         </div>
                         {InlineNum({ field: 'cantidad', value: tarea.cantidad, flex: 0.8 })}
                         <div className="k-cell" style={{ flex: 0.6 }}>{tarea.unidad}</div>
-                        {InlineNum({ field: 'costoMat', value: tarea.costoMat, flex: 1, fmt: v => fmtVenta(v), color: '#c0392b' })}
-                        {InlineNum({ field: 'costoSub', value: tarea.costoSub || 0, flex: 1, fmt: v => fmtVenta(v), color: '#c0392b' })}
+                        {InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#c0392b' })}
+                        {InlineNum({ field: 'costoSub', value: viewUSD ? Math.round((tarea.costoSub || 0) / tc) : (tarea.costoSub || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#c0392b' })}
 
                         {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#c0392b' }}>{fmtVenta(costoUnit)}</div>}
                         {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#c0392b' }}>{fmtVenta(costoTotalRow)}</div>}
@@ -1445,7 +1428,7 @@ function generarHTMLAdicionales({ obra, detalle, moneda }) {
 }
 
 function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight }) {
-  const tc = dolarVenta || 1;
+  const tc = dolarVenta || 1070;
   const toUSD  = n => `U$S ${fmtNE(Math.round(n / tc))}`; // ARS → USD display
   const fmtUSD = n => `U$S ${fmtNE(n)}`;                  // already-USD display
   const cuotaMonto = c => (c._usd || (moneda || 'ARS') !== 'USD') ? c.monto : Math.round(c.monto / tc);
@@ -1916,7 +1899,9 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
 function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const fin = detalle.financiacion || {};
   const { dolarVenta } = useDolar();
-  const locked = !!fin.propuestaEnviada;
+  const enviada    = !!fin.propuestaEnviada;
+  const confirmada = !!fin.propuestaConfirmada;
+  const locked     = enviada || confirmada;
 
   const [editingFin, setEditingFin] = useState(false);
   const [finForm, setFinForm] = useState({ interes: String(fin.interes || 0), notaPortal: fin.notaPortal || '' });
@@ -1933,7 +1918,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const interes = parseFloat(fin.interes) || 0;
   const baseTotal = ventaBase + adicionalCliente;
   const totalConInteres = Math.round(baseTotal * (1 + interes / 100));
-  const tc = dolarVenta || 1;
+  const tc = dolarVenta || 1070;
   const totalUSD = Math.round(totalConInteres / tc);
   const fmtUSD = n => `U$S ${fmtN(n)}`;
   // cuotas antiguas en obras moneda:USD tenían monto en ARS; _usd:true marca las nuevas
@@ -1941,7 +1926,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
 
   const cuotas = detalle.cuotas || [];
   const totalCuotas = cuotas.reduce((s, c) => s + cuotaMonto(c), 0);
-  const cuotasPagadas = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
+  const cuotasPagadas = cuotas.filter(c => cuotaEstadoCalc(c, moneda, tc) === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
   const saldoCuotas = totalCuotas - cuotasPagadas;
   const diferencia = totalUSD - totalCuotas;
 
@@ -2007,8 +1992,11 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
     patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), propuestaEnviada: true, fechaPropuesta: new Date().toISOString().split('T')[0] } }));
     onExport?.();
   };
+  const confirmarPropuesta = () => {
+    patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), propuestaConfirmada: true, fechaConfirmacion: new Date().toISOString().split('T')[0] } }));
+  };
   const reabrirNegociacion = () => {
-    patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), propuestaEnviada: false } }));
+    patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), propuestaEnviada: false, propuestaConfirmada: false } }));
   };
 
   const statSt = { display: 'flex', flexDirection: 'column', gap: 3 };
@@ -2018,14 +2006,28 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   return (
     <div style={{ maxWidth: 860, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* Banner propuesta enviada */}
-      {locked && (
+      {/* Banner estado propuesta */}
+      {confirmada && (
+        <div style={{ padding: '12px 16px', background: '#064e3b', borderRadius: 7, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#6ee7b7' }}>✓ Propuesta confirmada — financiación aprobada</div>
+            <div style={{ fontSize: 11, color: 'rgba(110,231,183,.6)', marginTop: 2 }}>
+              {fin.fechaConfirmacion ? `Confirmada el ${fmtD(fin.fechaConfirmacion)}` : ''}{fin.fechaPropuesta ? ` · Enviada el ${fmtD(fin.fechaPropuesta)}` : ''}
+            </div>
+          </div>
+          <Btn sm onClick={reabrirNegociacion} style={{ background: 'rgba(255,255,255,.1)', color: '#6ee7b7', border: 'none' }}>↩ Reabrir negociación</Btn>
+        </div>
+      )}
+      {enviada && !confirmada && (
         <div style={{ padding: '10px 16px', background: '#0f5132', borderRadius: 7, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#d1fae5' }}>✓ Propuesta enviada{fin.fechaPropuesta ? ` el ${fmtD(fin.fechaPropuesta)}` : ''}</div>
-            <div style={{ fontSize: 11, color: 'rgba(209,250,229,.6)', marginTop: 2 }}>La financiación está bloqueada. Reabrí la negociación para modificarla.</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#d1fae5' }}>📤 Propuesta enviada{fin.fechaPropuesta ? ` el ${fmtD(fin.fechaPropuesta)}` : ''}</div>
+            <div style={{ fontSize: 11, color: 'rgba(209,250,229,.6)', marginTop: 2 }}>Esperando confirmación del cliente. Confirmá cuando acepte.</div>
           </div>
-          <Btn sm onClick={reabrirNegociacion} style={{ background: 'rgba(255,255,255,.12)', color: '#d1fae5', border: 'none' }}>↩ Reabrir negociación</Btn>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Btn sm fill onClick={confirmarPropuesta} style={{ background: '#6ee7b7', color: '#064e3b', border: 'none', fontWeight: 800 }}>✓ Confirmar aceptada</Btn>
+            <Btn sm onClick={reabrirNegociacion} style={{ background: 'rgba(255,255,255,.12)', color: '#d1fae5', border: 'none' }}>↩ Reabrir</Btn>
+          </div>
         </div>
       )}
 
@@ -2158,15 +2160,17 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
               </tr>
             </thead>
             <tbody>
-              {cuotas.map((c, i) => (
+              {cuotas.map((c, i) => {
+                const est = cuotaEstadoCalc(c, moneda, tc);
+                return (
                 <tr key={c.id} style={{ borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none' }}>
                   <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: T.ink2 }}>{c.n}</td>
                   <td style={{ padding: '10px 12px', fontSize: 12, color: T.ink }}>{c.descripcion}</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 700, color: c.estado === 'pagado' ? T.ok : T.ink }}>{fmtUSD(cuotaMonto(c))}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 700, color: est === 'pagado' ? T.ok : T.ink }}>{fmtUSD(cuotaMonto(c))}</td>
                   <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, color: T.ink3 }}>{fmtD(c.fecha)}</td>
                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                    <Chip ok={c.estado === 'pagado'} warn={c.estado === 'pendiente'} accent={c.estado === 'proximo'} style={{ fontSize: 10, cursor: 'pointer' }} onClick={() => togglePago(c.id)}>
-                      {c.estado === 'pagado' ? '✓ pagado' : c.estado === 'proximo' ? 'próximo' : 'pendiente'}
+                    <Chip ok={est === 'pagado'} warn={est === 'parcial'} accent={!['pagado','parcial'].includes(est) && c.estado === 'proximo'} style={{ fontSize: 10 }}>
+                      {est === 'pagado' ? '✓ pagado' : est === 'parcial' ? '~ parcial' : c.estado === 'proximo' ? 'próximo' : 'pendiente'}
                     </Chip>
                   </td>
                   <td style={{ padding: '10px 12px', textAlign: 'right' }}>
@@ -2178,7 +2182,8 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             {cuotas.length > 1 && (
               <tfoot>
@@ -2193,10 +2198,11 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
         )}
       </Box>
 
-      {/* Botón enviar propuesta */}
+      {/* Botones de acción */}
       {!locked && cuotas.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <Btn fill onClick={enviarPropuesta} style={{ padding: '10px 24px', fontSize: 14 }}>📤 Enviar propuesta</Btn>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Btn onClick={() => onExport?.()} style={{ padding: '8px 18px' }}>↗ Generar propuesta</Btn>
+          <Btn fill onClick={enviarPropuesta} style={{ padding: '8px 18px', fontSize: 13 }}>📤 Guardar como enviada</Btn>
         </div>
       )}
     </div>
@@ -2543,29 +2549,62 @@ function TabMovimientos({ obra, moneda }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 4: CUENTA CLIENTE
 // ─────────────────────────────────────────────────────────────────────────────
-function TabCuentaCliente({ detalle, patch, moneda, obra }) {
-  const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ descripcion: '', fecha: '', monto: '' });
+function TabCuentaCliente({ detalle, moneda, obra }) {
+  const { dolarVenta } = useDolar();
+  const tc = dolarVenta || 1070;
   const navigate = useNavigate();
+  const [expandedId, setExpandedId] = useState(null);
+  const { movimientos: allMovs } = useMovimientos();
 
-  const total = detalle.cuotas.reduce((s, c) => s + c.monto, 0);
-  const cobrado = detalle.cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + c.monto, 0);
+  const fmt = n => moneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
 
-  const save = () => {
-    if (!form.descripcion.trim() || !form.monto) return;
-    const n = detalle.cuotas.length + 1;
-    patch(d => ({ ...d, cuotas: [...d.cuotas, { id: newId(), n, ...form, monto: +form.monto, estado: 'pendiente' }] }));
-    setAdding(false);
-    setForm({ descripcion: '', fecha: '', monto: '' });
-  };
+  // Totales financieros
+  const { venta: ventaBase } = calcObra(detalle.rubros || []);
+  const adicionalCliente = (detalle.adicionales || [])
+    .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
+    .reduce((s, a) => s + (a.monto || 0), 0);
+  const interes = parseFloat((detalle.financiacion || {}).interes) || 0;
+  const totalARS = Math.round((ventaBase + adicionalCliente) * (1 + interes / 100));
+  const total = moneda === 'USD' ? Math.round(totalARS / tc) : totalARS;
+  const ventaDisplay = moneda === 'USD' ? Math.round(ventaBase / tc) : ventaBase;
+  const adicDisplay  = moneda === 'USD' ? Math.round(adicionalCliente / tc) : adicionalCliente;
 
-  const marcarPagado = (id) => patch(d => ({ ...d, cuotas: d.cuotas.map(c => c.id === id ? { ...c, estado: 'pagado' } : c) }));
-  const del = (id) => patch(d => ({ ...d, cuotas: d.cuotas.filter(c => c.id !== id) }));
+  // Cobrado real: suma de ingresos registrados en Movimientos para esta obra
+  const { cajas: cajasMovs } = useMovimientos();
+  const cajasMap = useMemo(() => Object.fromEntries(cajasMovs.map(c => [c.id, c])), [cajasMovs]);
+  const movsIngreso = useMemo(
+    () => allMovs.filter(m => m.obraId === obra.id && m.tipo === 'ingreso'),
+    [allMovs, obra.id]
+  );
+  const totalCobrado = useMemo(() => {
+    return movsIngreso.reduce((s, m) => {
+      if (cajasMap[m.cajaId]?.moneda === 'USD') return s + m.monto;           // caja USD
+      if (m.montoDolar) return s + m.montoDolar;                              // ARS con ref USD
+      return s + Math.round(m.monto / (m.tipoCambio || tc));                  // ARS sin ref
+    }, 0);
+  }, [movsIngreso, cajasMap, tc]);
+
+  const cuotas = detalle.cuotas || [];
+  const saldoPendiente = Math.max(0, total - totalCobrado);
+  const cuotasPagadas = cuotas.filter(c => cuotaEstadoCalc(c, moneda, tc) === 'pagado').length;
+
+  const rowSt = (i) => ({
+    display: 'flex', alignItems: 'center', padding: '11px 14px', gap: 12,
+    borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none',
+    cursor: 'pointer', background: 'transparent',
+  });
+  const numSt = (estado) => ({
+    width: 28, height: 28, borderRadius: 14, flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontWeight: 800, fontSize: 12,
+    background: estado === 'pagado' ? T.ok : estado === 'parcial' ? T.warn : T.faint2,
+    color: estado !== 'pendiente' ? '#fff' : T.ink3,
+  });
 
   return (
-    <div style={{ maxWidth: 700 }}>
+    <div style={{ maxWidth: 820 }}>
       {obra?.cliente && (
-        <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
           <span style={{ color: T.ink2 }}>Cliente:</span>
           <span style={{ color: T.accent, cursor: 'pointer', fontWeight: 700, textDecoration: 'underline' }}
             onClick={() => navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`)}>
@@ -2573,44 +2612,90 @@ function TabCuentaCliente({ detalle, patch, moneda, obra }) {
           </span>
         </div>
       )}
-      <div style={{ display: 'flex', gap: 14, padding: '10px 14px', background: '#f6efd9', borderRadius: 4, marginBottom: 14 }}>
-        <Stat label="Total contratado" value={fmtM(total, moneda)} />
-        <Stat label="Cobrado" value={fmtM(cobrado, moneda)} />
-        <Stat label="Pendiente" value={fmtM(total - cobrado, moneda)} accent={total - cobrado > 0} />
-        <Stat label="Cuotas" value={`${detalle.cuotas.filter(c => c.estado === 'pagado').length} / ${detalle.cuotas.length}`} />
-      </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-        <Btn sm fill onClick={() => setAdding(true)}>+ Cuota</Btn>
-      </div>
-
-      {adding && (
-        <FormPanel title="Nueva cuota" onSave={save} onCancel={() => setAdding(false)} style={{ marginBottom: 12 }}>
-          <FInput label="Descripción" value={form.descripcion} onChange={v => setForm(p => ({ ...p, descripcion: v }))} placeholder="Ej: Al 70% de avance" />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <FInput label="Monto" value={form.monto} onChange={v => setForm(p => ({ ...p, monto: v }))} type="number" />
-            <FInput label="Fecha estimada" value={form.fecha} onChange={v => setForm(p => ({ ...p, fecha: v }))} type="date" />
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+        <Box style={{ padding: '14px 18px', borderLeft: `4px solid ${T.accent}` }}>
+          <div style={{ fontSize: 10, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Total a cobrar</div>
+          <div style={{ fontSize: 26, fontWeight: 800, fontFamily: T.fontMono, color: T.accent }}>{fmt(total)}</div>
+          <div style={{ fontSize: 10, color: T.ink3, marginTop: 4 }}>
+            Venta {fmt(ventaDisplay)}{adicDisplay > 0 ? ` + Adic. ${fmt(adicDisplay)}` : ''}{interes > 0 ? ` + ${interes}% interés` : ''}
           </div>
-        </FormPanel>
+          <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{cuotasPagadas} / {cuotas.length} cuotas cobradas</div>
+        </Box>
+        <Box style={{ padding: '14px 18px' }}>
+          <div style={{ fontSize: 10, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Cobrado</div>
+          <div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontMono, color: T.ok }}>{fmt(totalCobrado)}</div>
+        </Box>
+        <Box style={{ padding: '14px 18px', borderLeft: saldoPendiente > 0 ? `4px solid ${T.warn}` : `4px solid ${T.ok}` }}>
+          <div style={{ fontSize: 10, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Saldo pendiente</div>
+          <div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontMono, color: saldoPendiente > 0 ? T.warn : T.ok }}>{fmt(saldoPendiente)}</div>
+        </Box>
+      </div>
+
+      {/* Lista de cuotas */}
+      {cuotas.length === 0 ? (
+        <Box style={{ padding: '32px 20px', textAlign: 'center', color: T.ink3, fontSize: 13 }}>
+          Sin cuotas definidas. Configurá el plan de pagos en la pestaña Financiación.
+        </Box>
+      ) : (
+        <Box style={{ padding: 0, overflow: 'hidden' }}>
+          {cuotas.map((c, i) => {
+            const estado = cuotaEstadoCalc(c, moneda, tc);
+            const monto  = cuotaMontoFn(c, moneda, tc);
+            const cobrado = cuotaCobrado(c, moneda, tc);
+            const saldo  = Math.max(0, monto - cobrado);
+            const pagos  = c.pagos || [];
+            const isOpen = expandedId === c.id;
+            return (
+              <div key={c.id}>
+                <div style={rowSt(i)} onClick={() => setExpandedId(isOpen ? null : c.id)}>
+                  <div style={numSt(estado)}>{c.n}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{c.descripcion}</div>
+                    {c.fecha && <div style={{ fontSize: 11, color: T.ink2 }}>{fmtD(c.fecha)}</div>}
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 13 }}>{fmt(monto)}</div>
+                    {estado === 'parcial' && (
+                      <div style={{ fontSize: 10, color: T.warn }}>cobrado {fmt(cobrado)} · falta {fmt(saldo)}</div>
+                    )}
+                  </div>
+                  <Chip ok={estado === 'pagado'} warn={estado === 'parcial'} style={{ fontSize: 10, flexShrink: 0 }}>{estado}</Chip>
+                  <span style={{ fontSize: 10, color: T.ink3, flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>
+                </div>
+
+                {/* Detalle de pagos */}
+                {isOpen && (
+                  <div style={{ background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
+                    {pagos.length === 0 ? (
+                      <div style={{ padding: '10px 14px 10px 54px', fontSize: 11, color: T.ink3 }}>Sin cobros registrados aún</div>
+                    ) : pagos.map((p, pi) => (
+                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: `${pi === 0 ? 10 : 6}px 14px ${pi === pagos.length - 1 ? 10 : 6}px 54px`, borderTop: pi > 0 ? `1px solid ${T.faint2}` : 'none' }}>
+                        <span style={{ fontSize: 11, color: T.ink2, flexShrink: 0 }}>{fmtD(p.fecha)}</span>
+                        <span style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 12, color: T.ok }}>
+                          {p.moneda === 'USD' ? `U$S ${fmtN(p.monto)}` : `$ ${fmtN(p.monto)}`}
+                        </span>
+                        {p.moneda === 'ARS' && p.tc > 0 && (
+                          <span style={{ fontSize: 10, color: T.ink3 }}>≈ U$S {fmtN(Math.round(p.monto / p.tc))}</span>
+                        )}
+                        {p.cobradoPor && <span style={{ fontSize: 11, color: T.ink2 }}>{p.cobradoPor}</span>}
+                        {p.fotoUrl && (
+                          <a href={p.fotoUrl} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 10, color: T.accent, textDecoration: 'underline', flexShrink: 0 }}
+                            onClick={e => e.stopPropagation()}>
+                            Ver comprobante →
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </Box>
       )}
-
-      <Box style={{ padding: 0, overflow: 'hidden' }}>
-        {detalle.cuotas.length === 0 ? <div style={{ padding: 20, color: T.ink3, fontSize: 12, textAlign: 'center' }}>Sin cuotas</div> : detalle.cuotas.map((c, i) => (
-          <div key={c.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', borderBottom: i < detalle.cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none', gap: 12 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 14, background: c.estado === 'pagado' ? T.ok : c.estado === 'proximo' ? T.accent : T.faint2, display: 'flex', alignItems: 'center', justifyContent: 'center', color: c.estado !== 'pendiente' ? 'white' : T.ink3, fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{c.n}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{c.descripcion}</div>
-              {c.fecha && <div style={{ fontSize: 11, color: T.ink2 }}>{fmtD(c.fecha)}</div>}
-            </div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14 }}>{fmtM(c.monto, moneda)}</div>
-            <Chip ok={c.estado === 'pagado'} accent={c.estado === 'proximo'} style={{ fontSize: 10 }}>{c.estado}</Chip>
-            {(c.estado === 'pendiente' || c.estado === 'proximo') && (
-              <Btn sm onClick={() => marcarPagado(c.id)}>✓ Marcar pagado</Btn>
-            )}
-            <span style={{ color: T.accent, cursor: 'pointer', fontSize: 12 }} onClick={() => del(c.id)}>🗑</span>
-          </div>
-        ))}
-      </Box>
     </div>
   );
 }
@@ -3300,7 +3385,7 @@ function TabFotos({ detalle, patch, obraId }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
-const TABS_DEF = ['Resumen', 'Presupuesto', 'Materiales', 'Adicionales', 'Gantt', 'Movimientos', 'Cuenta cliente', 'Contratos MO', 'Documentos', 'Fotos', 'Financiación', 'Portal cliente'];
+const TABS_DEF = ['Resumen', 'Presupuesto', 'Materiales', 'Adicionales', 'Gantt', 'Movimientos', 'Contratos MO', 'Documentos', 'Fotos', 'Portal cliente'];
 
 export default function ObraPresupuesto() {
   const { id } = useParams();
@@ -3315,6 +3400,7 @@ export default function ObraPresupuesto() {
   });
   const [showExport, setShowExport] = useState(false);
   const [showContrato, setShowContrato] = useState(false);
+  const [showFinanciacion, setShowFinanciacion] = useState(false);
   const [showPortalAccess, setShowPortalAccess] = useState(false);
   const [portalPhone, setPortalPhone] = useState('');
   const [portalSending, setPortalSending] = useState(false);
@@ -3332,12 +3418,12 @@ export default function ObraPresupuesto() {
   const gastado = detalle.movimientos.filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0);
 
   const tabLabels = TABS_DEF.map((t, i) => {
+    if (i === 1) return 'Presupuesto';
     if (i === 3) return `Adicionales${detalle.adicionales.length > 0 ? ' · ' + detalle.adicionales.length : ''}`;
     if (i === 5) return `Movimientos${detalle.movimientos.length > 0 ? ' · ' + detalle.movimientos.length : ''}`;
-    if (i === 7) return `Contratos MO${detalle.contratos.length > 0 ? ' · ' + detalle.contratos.length : ''}`;
-    if (i === 8) return `Docs${detalle.documentos.length > 0 ? ' · ' + detalle.documentos.length : ''}`;
-    if (i === 9) return `Fotos${detalle.fotos.length > 0 ? ' · ' + detalle.fotos.length : ''}`;
-    if (i === 10) { const cuotas = detalle.cuotas || []; return `Financiación${cuotas.length > 0 ? ' · ' + cuotas.length + ' cuotas' : ''}`; }
+    if (i === 6) return `Contratos MO${detalle.contratos.length > 0 ? ' · ' + detalle.contratos.length : ''}`;
+    if (i === 7) return `Docs${detalle.documentos.length > 0 ? ' · ' + detalle.documentos.length : ''}`;
+    if (i === 8) return `Fotos${detalle.fotos.length > 0 ? ' · ' + detalle.fotos.length : ''}`;
     return t;
   });
 
@@ -3357,7 +3443,7 @@ export default function ObraPresupuesto() {
     if (!confirm('¿Aprobar y congelar el presupuesto?\n\nUna vez aprobado no podrás modificar rubros ni tareas.\nLos cambios futuros van en la pestaña Adicionales.')) return;
     patch(d => ({ ...d, presupuestoAprobado: true, fechaAprobacion: new Date().toISOString().split('T')[0] }));
     if (obra.estado === 'en-presupuesto') updateObra(obra.id, { estado: 'activa' });
-    handleTab(10);
+    handleTab(1);
   };
 
   const sendPortalAccess = async () => {
@@ -3450,16 +3536,36 @@ export default function ObraPresupuesto() {
       </div>
 
       {/* Content */}
-      {displayTab === 0 && <TabResumen obra={obra} detalle={detalle} moneda={moneda} onChangeTab={handleTab} />}
-      {displayTab === 1 && <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} frozen={!!detalle.presupuestoAprobado} onApprove={handleApprove} onExport={() => setShowExport(true)} />}
+      {displayTab === 0 && <>
+        <TabResumen obra={obra} detalle={detalle} moneda={moneda} onChangeTab={handleTab} />
+        <div style={{ marginTop: 24, borderTop: `2px solid ${T.faint2}`, paddingTop: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 12 }}>Cuenta del cliente</div>
+          <TabCuentaCliente detalle={detalle} moneda="USD" obra={obra} />
+        </div>
+      </>}
+      {displayTab === 1 && <>
+        <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} frozen={!!detalle.presupuestoAprobado} onApprove={handleApprove} onExport={() => setShowExport(true)} />
+        <div style={{ marginTop: 20, border: `1.5px solid ${T.ink}`, borderRadius: 6, overflow: 'hidden' }}>
+          <div
+            onClick={() => setShowFinanciacion(v => !v)}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 14px', cursor: 'pointer', userSelect: 'none', background: T.faint, borderBottom: showFinanciacion ? `1.5px solid ${T.ink}` : 'none' }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Plan de financiación y cuotas</div>
+            <span style={{ fontSize: 12, color: T.ink3, fontWeight: 600 }}>{showFinanciacion ? '▲ Cerrar' : '▼ Ver'}</span>
+          </div>
+          {showFinanciacion && (
+            <div style={{ padding: '4px 4px 8px' }}>
+              <TabFinanciacion obra={obra} detalle={detalle} patch={patch} moneda="USD" onExport={() => setShowExport(true)} />
+            </div>
+          )}
+        </div>
+      </>}
       {displayTab === 2 && <TabMateriales detalle={detalle} obra={obra} />}
       {displayTab === 3 && <TabAdicionales detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 5 && <TabMovimientos obra={obra} moneda={moneda} />}
-      {displayTab === 6 && <TabCuentaCliente detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
-      {displayTab === 7 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
-      {displayTab === 8 && <TabDocumentos detalle={detalle} patch={patch} obraId={id} />}
-      {displayTab === 9 && <TabFotos detalle={detalle} patch={patch} obraId={id} />}
-      {displayTab === 10 && <TabFinanciacion obra={obra} detalle={detalle} patch={patch} moneda={moneda} onExport={() => setShowExport(true)} />}
+      {displayTab === 6 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
+      {displayTab === 7 && <TabDocumentos detalle={detalle} patch={patch} obraId={id} />}
+      {displayTab === 8 && <TabFotos detalle={detalle} patch={patch} obraId={id} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
       {showContrato && <ContratoMOModal onClose={() => setShowContrato(false)} />}

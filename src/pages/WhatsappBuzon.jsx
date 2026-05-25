@@ -1,17 +1,33 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
-import { Box, Btn } from '../components/ui';
+import { Box, Btn, Chip } from '../components/ui';
 import { T } from '../theme';
 import { useWhatsappPending } from '../store/WhatsappPendingContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useObras } from '../store/ObrasContext';
 import { useProveedores } from '../store/ProveedoresContext';
+import { useDolar } from '../store/DolarContext';
+import { useUsuarios } from '../store/UsuariosContext';
 
 const inputSt  = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt  = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
 const fmtN     = (n) => n != null ? Math.round(n).toLocaleString('es-AR') : '—';
 const fmtFecha = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
+const newPagoId = () => `pago-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+const cuotaMontoFn   = (c, moneda, tc) => (c._usd || moneda !== 'USD') ? (c.monto||0) : Math.round((c.monto||0)/tc);
+const cuotaCobradoFn = (c, moneda, tc) =>
+  (c.pagos||[]).reduce((s,p) =>
+    moneda==='USD'
+      ? s+(p.moneda==='ARS' ? Math.round((p.monto||0)/(p.tc||tc)) : (p.monto||0))
+      : s+(p.moneda==='USD' ? Math.round((p.monto||0)*(p.tc||tc)) : (p.monto||0))
+  , 0);
+const cuotaEstado = (c, moneda, tc) => {
+  const cob = cuotaCobradoFn(c, moneda, tc);
+  if (cob<=0) return 'pendiente';
+  if (cob>=cuotaMontoFn(c, moneda, tc)) return 'pagado';
+  return 'parcial';
+};
 
 // ── Modal revisión de FACTURA ─────────────────────────────────────────────────
 const newAdicId = () => `adic-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
@@ -220,7 +236,22 @@ function MovimientoPendiente({ item, onApprove, onReject }) {
   const esGasto = m.tipo === 'gasto';
   const navigate = useNavigate();
   const { proveedores } = useProveedores();
+  const { obras, getDetalle } = useObras();
+  const { dolarVenta } = useDolar();
+  const tc = dolarVenta || 1070;
   const [esAdicional, setEsAdicional] = useState(false);
+  const [cuotaId, setCuotaId] = useState('');
+
+
+  const obraObj    = obras.find(o => o.id === m.obraId);
+  const obraMoneda = obraObj?.moneda || 'ARS';
+  const cuotas     = !esGasto && m.obraId ? (getDetalle(m.obraId)?.cuotas || []) : [];
+  const cuotasPend = cuotas.filter(c => cuotaEstado(c, obraMoneda, tc) !== 'pagado');
+  const totalCuotas    = cuotas.reduce((s, c) => s + cuotaMontoFn(c, obraMoneda, tc), 0);
+  const totalCobrado   = cuotas.reduce((s, c) => s + cuotaCobradoFn(c, obraMoneda, tc), 0);
+  const saldoPendiente = Math.max(0, totalCuotas - totalCobrado);
+  const fmtC = n => obraMoneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
+
   return (
     <Box style={{ padding: '12px 16px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
       <div style={{ width: 36, height: 36, borderRadius: 6, background: esGasto ? '#fff0e8' : '#e8f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
@@ -267,10 +298,41 @@ function MovimientoPendiente({ item, onApprove, onReject }) {
             </a>
           )}
         </div>
+
+        {/* Estado de cobros de la obra (solo ingresos con obra) */}
+        {!esGasto && m.obraId && cuotas.length > 0 && (
+          <div style={{ marginTop: 8, padding: '8px 10px', background: '#e8f4f0', borderRadius: 5, fontSize: 11 }}>
+            <div style={{ fontWeight: 700, color: T.ok, marginBottom: 4 }}>Estado cobros de la obra</div>
+            <div style={{ display: 'flex', gap: 16 }}>
+              <span>Cobrado: <b style={{ fontFamily: 'monospace' }}>{fmtC(totalCobrado)}</b></span>
+              <span>Pendiente: <b style={{ fontFamily: 'monospace', color: saldoPendiente > 0 ? T.warn : T.ok }}>{fmtC(saldoPendiente)}</b></span>
+              <span style={{ color: T.ink3 }}>de {fmtC(totalCuotas)} total</span>
+            </div>
+            {cuotasPend.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                <label style={{ fontSize: 10, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Vincular a cuota</label>
+                <select value={cuotaId} onChange={e => setCuotaId(e.target.value)}
+                  style={{ ...inputSt, marginTop: 3, fontSize: 11 }}>
+                  <option value="">— Sin vincular —</option>
+                  {cuotasPend.map(c => {
+                    const montoC  = cuotaMontoFn(c, obraMoneda, tc);
+                    const cobC    = cuotaCobradoFn(c, obraMoneda, tc);
+                    const est     = cuotaEstado(c, obraMoneda, tc);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {`${c.n ? `#${c.n} · ` : ''}${c.descripcion} · ${est === 'parcial' ? `saldo ${fmtC(montoC-cobC)}` : fmtC(montoC)}`}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
-        <Btn sm fill onClick={() => onApprove(esAdicional)} style={{ background: '#25803a', fontSize: 11 }}>Aprobar</Btn>
+        <Btn sm fill onClick={() => onApprove(esAdicional, cuotaId)} style={{ background: '#25803a', fontSize: 11 }}>Aprobar</Btn>
         <Btn sm onClick={onReject} style={{ fontSize: 11, color: T.ink3 }}>Rechazar</Btn>
         {esGasto && m.obraId && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, cursor: 'pointer', color: T.ink2, userSelect: 'none' }}>
@@ -286,8 +348,10 @@ function MovimientoPendiente({ item, onApprove, onReject }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function WhatsappBuzon() {
   const { pending, reload, rejectItem, confirmItem } = useWhatsappPending();
-  const { addMovimiento } = useMovimientos();
-  const { patchDetalle } = useObras();
+  const { addMovimiento, cajas } = useMovimientos();
+  const { obras, patchDetalle, getDetalle } = useObras();
+  const { currentUser } = useUsuarios();
+  const { dolarVenta } = useDolar();
   const [review, setReview] = useState(null);
 
   const facturas    = pending.filter(p => p.tipoPendiente !== 'movimiento');
@@ -297,17 +361,44 @@ export default function WhatsappBuzon() {
     if (window.confirm('¿Descartás esta factura? No se guardará como gasto.')) rejectItem(id);
   };
 
-  const handleApproveMovimiento = (item, esAdicional) => {
+  const resolveCaja = (item, m) => {
+    if (m.cajaId) return m.cajaId;
+    const sender  = (item.creadoPor || '').toLowerCase().trim();
+    const moneda  = m.moneda || 'ARS';
+    const activas = cajas.filter(c => c.activa);
+
+    if (m.tipo === 'ingreso') {
+      // Caja automática: propietario del sender + moneda
+      const exact   = activas.find(c => (c.propietario || '').toLowerCase() === sender && c.moneda === moneda);
+      if (exact) return exact.id;
+      const partial = activas.find(c => (c.propietario || '').toLowerCase().includes(sender) && c.moneda === moneda);
+      return partial?.id || activas.find(c => c.moneda === moneda)?.id || null;
+    } else {
+      // Gasto: el bot pregunta y manda cajaTipo ('personal' o 'banco')
+      if (m.cajaTipo === 'personal') {
+        const exact   = activas.find(c => (c.propietario || '').toLowerCase() === sender && c.moneda === moneda);
+        if (exact) return exact.id;
+        return activas.find(c => (c.propietario || '').toLowerCase().includes(sender) && c.moneda === moneda)?.id || null;
+      }
+      if (m.cajaTipo === 'banco') {
+        return activas.find(c => c.tipo === 'banco' && c.moneda === moneda)?.id || null;
+      }
+      return null;
+    }
+  };
+
+  const handleApproveMovimiento = (item, esAdicional, cuotaId) => {
     const m = item.movimiento;
     if (!m) return;
-    addMovimiento({
+    const cajaResuelta = resolveCaja(item, m);
+    const movId = addMovimiento({
       tipo:           m.tipo,
       descripcion:    m.descripcion,
       monto:          m.monto,
       fecha:          m.fecha,
       obraId:         m.obraId || null,
       obraNombre:     m.obraNombre || 'General',
-      cajaId:         m.cajaId,
+      cajaId:         cajaResuelta,
       cajaDestinoId:  null,
       proveedor:      m.proveedor || '',
       categoria:      m.categoria || 'general',
@@ -315,7 +406,44 @@ export default function WhatsappBuzon() {
       comprobante:    m.comprobante || 'negro',
       comprobanteUrl: m.comprobanteUrl || null,
       fondoReparo:    false,
+      cuotaId:        cuotaId || null,
     });
+
+    // Aplicar pago a cuota si fue vinculado
+    if (m.tipo === 'ingreso' && cuotaId && m.obraId) {
+      const tc = dolarVenta || 1070;
+      const obraMoneda = obras.find(o => o.id === m.obraId)?.moneda || 'ARS';
+      const cobradoPor = currentUser?.nombre || currentUser?.email || '';
+      patchDetalle(m.obraId, d => {
+        const cuotas = [...(d.cuotas || [])];
+        let remaining = m.monto;
+        let idx = cuotas.findIndex(c => c.id === cuotaId);
+        while (remaining > 0 && idx < cuotas.length) {
+          const c = cuotas[idx];
+          const montoC  = cuotaMontoFn(c, obraMoneda, tc);
+          const cobC    = cuotaCobradoFn(c, obraMoneda, tc);
+          const saldoC  = montoC - cobC;
+          if (saldoC <= 0) { idx++; continue; }
+          const toApply = Math.min(remaining, saldoC);
+          cuotas[idx] = {
+            ...c,
+            pagos: [...(c.pagos||[]), {
+              id: newPagoId(),
+              movimientoId: movId || null,
+              monto: toApply,
+              moneda: 'ARS',
+              tc,
+              fecha: m.fecha,
+              cobradoPor,
+              fotoUrl: m.comprobanteUrl || null,
+            }],
+          };
+          remaining -= toApply;
+          idx++;
+        }
+        return { ...d, cuotas };
+      });
+    }
     if (esAdicional && m.obraId) {
       patchDetalle(m.obraId, d => ({
         ...d,
@@ -376,7 +504,7 @@ export default function WhatsappBuzon() {
                   <MovimientoPendiente
                     key={item.id}
                     item={item}
-                    onApprove={(esAdic) => handleApproveMovimiento(item, esAdic)}
+                    onApprove={(esAdic, cuotaId) => handleApproveMovimiento(item, esAdic, cuotaId)}
                     onReject={() => handleRejectMovimiento(item.id)}
                   />
                 ))}
