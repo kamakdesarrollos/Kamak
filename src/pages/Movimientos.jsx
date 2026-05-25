@@ -14,6 +14,7 @@ import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useCheques } from '../store/ChequesContext';
 
 const DEFAULT_MEDIOS = ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débito', 'Tarjeta'];
+const MEDIOS_NO_USD = new Set(['Cheque', 'E-cheq', 'Débito']);
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none' };
 const fmtN   = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
@@ -287,6 +288,13 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const [cheqVencimiento,setCheqVencimiento]= useState('');
   const [esAdicional,    setEsAdicional]    = useState(false);
   const isCheckPayment = medio === 'Cheque' || medio === 'E-cheq';
+  const mediosDisponibles = isGasto && monedaGasto === 'USD'
+    ? mediosDePago.filter(m => !MEDIOS_NO_USD.has(m))
+    : mediosDePago;
+
+  useEffect(() => {
+    if (isGasto && monedaGasto === 'USD' && MEDIOS_NO_USD.has(medio)) setMedio('Transferencia');
+  }, [monedaGasto]);
 
   // Moneda: 'ARS', 'USD' (directo a caja USD), 'USD_ARS' (pesos recibidos con ref USD, solo ingresos)
   const [monedaIngreso, setMonedaIngreso] = useState('ARS');
@@ -527,7 +535,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Medio de pago</span>
           <select style={{ ...inputSt, width: 120, cursor: 'pointer' }} value={medio} onChange={e => setMedio(e.target.value)}>
-            {mediosDePago.map(v => <option key={v}>{v}</option>)}
+            {mediosDisponibles.map(v => <option key={v}>{v}</option>)}
           </select>
         </div>
 

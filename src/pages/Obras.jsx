@@ -67,14 +67,7 @@ function ObraMenu({ obra, onTransicion, onEditar, onEliminar }) {
       { label: 'Eliminar',        fn: 'eliminar',      icon: '🗑', danger: true },
     ],
     activa: [
-      { label: 'Pausar obra',     next: 'pausada',     icon: '⏸' },
       { label: 'Marcar finalizada', next: 'finalizada', icon: '✓' },
-      { label: 'Editar',          fn: 'editar',        icon: '✎' },
-    ],
-    pausada: [
-      { label: 'Reactivar',       next: 'activa',      icon: '▶' },
-      { label: 'Finalizar',       next: 'finalizada',  icon: '✓' },
-      { label: 'Archivar',        next: 'archivada',   icon: '📁' },
       { label: 'Editar',          fn: 'editar',        icon: '✎' },
     ],
     finalizada: [
@@ -444,14 +437,12 @@ export default function Obras() {
 
   const activas      = byEstado('activa').filter(puedeVer);
   const enPresu      = byEstado('en-presupuesto').filter(puedeVer);
-  const pausadas     = byEstado('pausada').filter(puedeVer);
   const finalizadas  = byEstado('finalizada').filter(puedeVer);
   const archivadas   = byEstado('archivada').filter(puedeVer);
 
   const TABS = [
     { label: 'Activas',        count: activas.length },
     { label: 'En presupuesto', count: enPresu.length },
-    { label: 'Pausadas',       count: pausadas.length },
     { label: 'Finalizadas',    count: finalizadas.length },
     { label: 'Archivadas',     count: archivadas.length },
   ];
@@ -474,9 +465,8 @@ export default function Obras() {
     setEstado(id, nuevoEstado);
     // Si la obra activa se pasa a 'activa' y estábamos en pestaña en-presupuesto → saltar a activas
     if (nuevoEstado === 'activa' && tabIdx === 1) setTabIdx(0);
-    if (nuevoEstado === 'pausada' && tabIdx === 0) setTabIdx(2);
-    if (nuevoEstado === 'finalizada') setTabIdx(3);
-    if (nuevoEstado === 'archivada') setTabIdx(4);
+    if (nuevoEstado === 'finalizada') setTabIdx(2);
+    if (nuevoEstado === 'archivada') setTabIdx(3);
   };
 
   const handleEliminar = (id) => {
@@ -576,31 +566,8 @@ export default function Obras() {
         </div>
       )}
 
-      {/* ── TAB 2: Pausadas ── */}
+      {/* ── TAB 2: Finalizadas ── */}
       {tabIdx === 2 && (
-        <div>
-          {filtrar(pausadas).length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 260, color: T.ink3, gap: 8 }}>
-              <div style={{ fontSize: 40 }}>⏸</div>
-              <div style={{ fontSize: 15 }}>No hay obras pausadas</div>
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-              {filtrar(pausadas).map(o => (
-                <CardPausada key={o.id} obra={o} stats={getStats(o)}
-                  onClick={() => goObra(o)}
-                  onTransicion={(est) => handleTransicion(o.id, est)}
-                  onEditar={() => setEditando(o)}
-                  onEliminar={() => handleEliminar(o.id)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── TAB 3: Finalizadas ── */}
-      {tabIdx === 3 && (
         <div>
           {filtrar(finalizadas).length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 260, color: T.ink3, gap: 8 }}>
@@ -621,8 +588,8 @@ export default function Obras() {
         </div>
       )}
 
-      {/* ── TAB 4: Archivadas ── */}
-      {tabIdx === 4 && (
+      {/* ── TAB 3: Archivadas ── */}
+      {tabIdx === 3 && (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
           {/* header tabla */}
           <div style={{ display: 'flex', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 11, fontWeight: 700, color: T.ink2, gap: 10 }}>
