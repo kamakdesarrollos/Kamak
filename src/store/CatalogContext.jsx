@@ -97,12 +97,19 @@ export function CatalogProvider({ children }) {
   const add    = (coll, item)        => setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), { id: newId(), ...item, updatedAt: today() }] }));
   const update = (coll, id, changes) => setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...changes, updatedAt: today() } : i) }));
   const remove = (coll, id)          => setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) }));
-  const bulkSeed = (additions) => setCatalog(c => ({
-    ...c,
-    materiales:   [...(c.materiales||[]),   ...(additions.materiales||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
-    subcontratos: [...(c.subcontratos||[]), ...(additions.subcontratos||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
-    tareas:       [...(c.tareas||[]),       ...(additions.tareas||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
-  }));
+  const bulkSeed = (additions) => {
+    setCatalog(c => {
+      const next = {
+        ...c,
+        materiales:   [...(c.materiales||[]),   ...(additions.materiales||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
+        subcontratos: [...(c.subcontratos||[]), ...(additions.subcontratos||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
+        tareas:       [...(c.tareas||[]),       ...(additions.tareas||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
+      };
+      localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
+      saveSharedData('catalog', next);
+      return next;
+    });
+  };
 
   return (
     <CatalogContext.Provider value={{ catalog, add, update, remove, bulkSeed }}>
