@@ -23,7 +23,7 @@ const SEED = {
   tareas:       [],
 };
 
-const SISMAT_SEED_VERSION = '3';
+const SISMAT_SEED_VERSION = '4';
 
 async function fetchSismatSeed() {
   try {
