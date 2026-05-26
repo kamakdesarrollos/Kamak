@@ -340,9 +340,9 @@ function TaskAutocomplete({ value, onChange, suggestions, onSelect }) {
               style={{ padding: '6px 10px', cursor: 'pointer', background: i === focused ? T.accentSoft : 'transparent', borderBottom: `1px solid ${T.faint2}` }}>
               <div style={{ fontWeight: 700, fontSize: 12 }}>{s.nombre}</div>
               <div style={{ fontSize: 10, color: T.ink2, display: 'flex', gap: 8, marginTop: 1 }}>
-                <span style={{ background: T.faint, padding: '1px 5px', borderRadius: 3 }}>{s.unidad}</span>
                 {s.costoMat > 0 && <span>mat $ {fmtN(s.costoMat)}</span>}
                 {s.costoSub > 0 && <span>sub $ {fmtN(s.costoSub)}</span>}
+                <span style={{ background: T.faint, padding: '1px 5px', borderRadius: 3 }}>{s.unidad}</span>
                 <span style={{ marginLeft: 'auto', color: s.fuente === 'Catálogo' ? T.accent : T.ok, fontWeight: 600 }}>{s.fuente}</span>
               </div>
             </div>

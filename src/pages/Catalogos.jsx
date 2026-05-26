@@ -120,7 +120,7 @@ function InsumoSearch({ items, onSelect, placeholder }) {
               onMouseDown={() => select(item)}
               style={{ padding: '8px 12px', cursor: 'pointer', background: i === idx ? T.accentSoft : 'transparent', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 12, fontWeight: 600 }}>{item.nombre}</span>
-              <span style={{ fontSize: 11, color: T.ink2, fontFamily: T.fontMono }}>{item.unidad} · $ {fmtN(item.precio ?? item.precioHora ?? 0)}</span>
+              <span style={{ fontSize: 11, color: T.ink2, fontFamily: T.fontMono }}>$ {fmtN(item.precio ?? item.precioHora ?? 0)} {item.unidad}</span>
             </div>
           ))}
         </div>
@@ -868,8 +868,8 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
                   <div style={{ fontSize: 12, fontWeight: 600 }}>{s.nombre}</div>
                   {s.codigo && <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{s.codigo}</div>}
                 </div>
-                <span style={{ fontSize: 11, color: T.ink2 }}>/{s.unidad}</span>
                 <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.accent }}>$ {fmtN(s.precio)}</div>
+                <span style={{ fontSize: 11, color: T.ink2 }}>{s.unidad}</span>
               </div>
             ))}
           </div>
@@ -889,11 +889,11 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
                     <div style={{ fontSize: 12, fontWeight: 600 }}>{t.nombre}</div>
                     {t.codigo && <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{t.codigo}</div>}
                   </div>
-                  <span style={{ fontSize: 11, color: T.ink2 }}>/{t.unidad}</span>
-                  <div style={{ display: 'flex', gap: 12, fontSize: 11, fontFamily: T.fontMono }}>
+                  <div style={{ display: 'flex', gap: 12, fontSize: 11, fontFamily: T.fontMono, alignItems: 'center' }}>
                     <span style={{ color: T.ink2 }}>Mat: $ {fmtN(c.mat)}</span>
                     <span style={{ color: T.ink2 }}>Sub: $ {fmtN(c.sub)}</span>
                     <span style={{ fontWeight: 800, color: T.accent }}>$ {fmtN(c.total)}</span>
+                    <span style={{ fontFamily: T.font, fontSize: 10, color: T.ink3 }}>{t.unidad}</span>
                   </div>
                 </div>
               );
