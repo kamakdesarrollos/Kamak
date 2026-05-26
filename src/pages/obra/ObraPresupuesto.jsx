@@ -175,14 +175,16 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-      {/* Botón exportar resumen */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.ink2, cursor: 'pointer' }}>
-          <input type="checkbox" checked={incluirPagos} onChange={e => setIncluirPagos(e.target.checked)} />
-          Incluir plan de pagos
-        </label>
-        <Btn sm onClick={() => { const origin = window.location.origin; abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight: `${origin}/assets/kamak-logo-light.png` }), 'Resumen'); }}>↗ Exportar resumen total</Btn>
-      </div>
+      {/* Botón exportar resumen — solo admin (el PDF incluye precios de venta) */}
+      {isAdmin && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.ink2, cursor: 'pointer' }}>
+            <input type="checkbox" checked={incluirPagos} onChange={e => setIncluirPagos(e.target.checked)} />
+            Incluir plan de pagos
+          </label>
+          <Btn sm onClick={() => { const origin = window.location.origin; abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight: `${origin}/assets/kamak-logo-light.png` }), 'Resumen'); }}>↗ Exportar resumen total</Btn>
+        </div>
+      )}
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
@@ -209,8 +211,8 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
             <div style={{ fontSize: 10, color: T.accent, marginTop: 4 }}>Ver plan de cuotas →</div>
           </Box>
         )}
-        {/* KPI: Cuotas */}
-        {cuotasPlan.length > 0 && (
+        {/* KPI: Cuotas — solo admin (montos cobrados al cliente) */}
+        {isAdmin && cuotasPlan.length > 0 && (
           <Box style={{ padding: '12px 14px', cursor: 'pointer' }}
             onClick={() => onChangeTab?.(1)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Cuotas cobradas</div>
@@ -271,8 +273,8 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
         </Box>
       )}
 
-      {/* Últimos movimientos */}
-      {detalle.movimientos.length > 0 && (
+      {/* Últimos movimientos — solo admin (no-admin los ve filtrados por cajasVisibles en tab Movimientos) */}
+      {isAdmin && detalle.movimientos.length > 0 && (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '8px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 700, fontSize: 13 }}>Últimos movimientos</span>
@@ -3680,10 +3682,13 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
       {/* Content */}
       {displayTab === 0 && <>
         <TabResumen obra={obra} detalle={detalle} moneda={moneda} onChangeTab={handleTab} />
-        <div style={{ marginTop: 24, borderTop: `2px solid ${T.faint2}`, paddingTop: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 12 }}>Cuenta del cliente</div>
-          <TabCuentaCliente detalle={detalle} moneda="USD" obra={obra} />
-        </div>
+        {/* Cuenta del cliente — solo admin (cliente, total a cobrar, saldo, cuotas) */}
+        {isAdmin && (
+          <div style={{ marginTop: 24, borderTop: `2px solid ${T.faint2}`, paddingTop: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 12 }}>Cuenta del cliente</div>
+            <TabCuentaCliente detalle={detalle} moneda="USD" obra={obra} />
+          </div>
+        )}
       </>}
       {displayTab === 1 && <>
         <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} frozen={!!detalle.presupuestoAprobado} onApprove={handleApprove} onExport={() => setShowExport(true)} />
