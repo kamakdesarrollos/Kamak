@@ -687,31 +687,30 @@ export default function Cheques() {
     closeModal();
   };
 
-  const handleAcreditar = ({ cajaId, fecha }) => {
-    const c = modal.cheque;
-    const caja = cajas.find(x => x.id === cajaId);
-    depositarCheque(c.id, { cajaDestinoId: cajaId, cajaDestinoNombre: caja?.nombre || '', fechaDeposito: fecha, movimientoId: c.movimientoId || null });
-    closeModal();
-  };
+  // handleAcreditar era identico a handleDepositar — unificado.
 
-  const handleEndosar = ({ endosadoA, fecha, cajaId, obraId, concepto }) => {
+  const handleEndosar = ({ endosadoA, fecha, obraId, concepto }) => {
     const c = modal.cheque;
-    const caja = cajas.find(x => x.id === cajaId);
     const obra = obrasActivas.find(o => o.id === obraId);
     const esEcheq = c.tipo === 'echeq_tercero' || c.tipo === 'echeq_propio';
     const desc = concepto.trim() ||
       `Endoso ${esEcheq ? 'ECheq' : 'Cheque'}${c.numero ? ` #${c.numero}` : ''} a ${endosadoA}`;
 
+    // Bug previo: creaba un movimiento tipo 'gasto' que debitaba la caja
+    // donde supuestamente estaba el cheque. Pero el cheque NUNCA entro en
+    // efectivo — endosar es solo transferir el papel a un tercero.
+    // Ahora creamos un movimiento tipo 'endoso' que NO toca saldo de cajas
+    // (ver applyEfectoEnCajas en MovimientosContext).
     addMovimiento({
-      tipo: 'gasto',
+      tipo: 'endoso',
       descripcion: desc,
       monto: c.monto,
       fecha,
-      cajaId,
+      cajaId: null,
       obraId: obraId || null,
       obraNombre: obra?.nombre || 'General',
       proveedor: endosadoA,
-      categoria: 'subcontrato',
+      categoria: 'endoso',
       medioPago: esEcheq ? 'E-cheq' : 'Cheque',
       referencia: c.numero || '',
       fondoReparo: false,
@@ -793,7 +792,7 @@ export default function Cheques() {
         <DepositarModal cheque={modal.cheque} cajas={cajas} onConfirm={handleDepositar} onClose={closeModal} />
       )}
       {modal?.action === 'acreditar' && (
-        <DepositarModal cheque={modal.cheque} cajas={cajas} onConfirm={handleAcreditar} onClose={closeModal} />
+        <DepositarModal cheque={modal.cheque} cajas={cajas} onConfirm={handleDepositar} onClose={closeModal} />
       )}
       {modal?.action === 'endosar' && (
         <EndosarModal cheque={modal.cheque} cajas={cajas} obras={obrasActivas} onConfirm={handleEndosar} onClose={closeModal} />

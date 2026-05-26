@@ -44,6 +44,8 @@ export default function TraspasoModal({ onClose }) {
       cajaOrigenId: origenId,
       cajaDestinoId: destinoId,
       monto: montoNum,
+      // Si las cajas son de distinta moneda, mandamos el monto convertido.
+      montoDestino: isCross && montoDestino != null ? Math.round(montoDestino) : null,
       fecha,
       concepto: concepto.trim() || `Traspaso: ${origen?.nombre} → ${destino?.nombre}`,
       tcAplicado: isCross ? tc : null,

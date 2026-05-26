@@ -69,8 +69,15 @@ export function DolarProvider({ children }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (!json?.compra && !json?.venta) throw new Error('Respuesta inesperada de dolarapi.com');
-      const compra = json.compra || json.venta;
-      const venta = (json.venta && json.venta >= json.compra) ? json.venta : json.compra * 1.005;
+      // Bug previo: usaba json.compra (no la variable local). Si la API solo
+      // mandaba venta, json.compra era undefined y daba NaN.
+      const compra = Number(json.compra) || Number(json.venta);
+      const venta  = (Number(json.venta) && Number(json.venta) >= compra)
+        ? Number(json.venta)
+        : compra * 1.005;
+      if (!Number.isFinite(compra) || !Number.isFinite(venta)) {
+        throw new Error('Cotizacion invalida desde dolarapi.com');
+      }
       patch(prev => ({ ...prev, compra, venta, updatedAt: new Date().toISOString(), manual: false }));
     } catch (e) {
       setError(`No se pudo obtener el dólar BNA: ${e.message}`);

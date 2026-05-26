@@ -2523,7 +2523,8 @@ function TabMovimientos({ obra, moneda }) {
   const movsObra = useMemo(() =>
     movimientos.filter(m => {
       if (m.obraId !== obra.id) return false;
-      if (!isAdmin && cv !== '*' && m.cajaId && !cajaIdsMias.includes(m.cajaId)) return false;
+      // Fail-closed: si no-admin tiene cajas restringidas, exigir cajaId valido.
+      if (!isAdmin && cv !== '*' && (!m.cajaId || !cajaIdsMias.includes(m.cajaId))) return false;
       return true;
     }).sort((a, b) => b.fecha.localeCompare(a.fecha)),
     [movimientos, obra.id, isAdmin, cv, cajaIdsMias]);

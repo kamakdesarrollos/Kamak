@@ -361,8 +361,11 @@ export default function WhatsappBuzon() {
   const { dolarVenta } = useDolar();
   const [review, setReview] = useState(null);
 
-  const facturas    = pending.filter(p => p.tipoPendiente !== 'movimiento');
-  const movimientos = pending.filter(p => p.tipoPendiente === 'movimiento');
+  // Solo items pendientes (excluir los ya aprobados/rechazados — se conservan
+  // para auditoria pero no se muestran en el buzon activo).
+  const activos     = pending.filter(p => !p.status || (p.status !== 'rejected' && p.status !== 'confirmed'));
+  const facturas    = activos.filter(p => p.tipoPendiente !== 'movimiento');
+  const movimientos = activos.filter(p => p.tipoPendiente === 'movimiento');
 
   const handleRejectFactura = (id) => {
     if (window.confirm('¿Descartás esta factura? No se guardará como gasto.')) rejectItem(id);

@@ -1034,8 +1034,10 @@ export default function Movimientos() {
         if (!m.fecha.startsWith(mes)) return false;
         if (filtroObra && m.obraId !== filtroObra) return false;
         if (!isAdmin && cv !== '*') {
-          // Only show movements in accessible cajas (or movements without cajaId that belong to the user's obras)
-          if (m.cajaId && !cajaIdsMias.includes(m.cajaId)) return false;
+          // Fail-closed: si el mov no tiene cajaId, o su caja NO esta entre
+          // las visibles del usuario, lo ocultamos. (Antes los movs sin cajaId
+          // se filtraban — leak para no-admins.)
+          if (!m.cajaId || !cajaIdsMias.includes(m.cajaId)) return false;
         }
         return true;
       })
@@ -1051,12 +1053,20 @@ export default function Movimientos() {
   const neto          = totalIngresos - totalGastos;
 
   const exportCSV = () => {
-    const rows = [['Fecha','Tipo','Descripción','Monto','Obra','Caja','Medio']];
+    // Escape CSV: envolver en "..." y duplicar comillas internas.
+    // Prefijar con ' valores que arrancan con = @ + - (CSV injection en Excel).
+    const csvCell = (v) => {
+      let s = v == null ? '' : String(v);
+      if (/^[=@+\-]/.test(s)) s = "'" + s;
+      if (/[";\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    };
+    const rows = [['Fecha','Tipo','Descripcion','Monto','Obra','Caja','Medio']];
     filtered.forEach(m => {
       const c = cajas.find(c => c.id === m.cajaId);
       rows.push([m.fecha, m.tipo, m.descripcion, m.monto, m.obraNombre || '', c?.nombre || '', m.medioPago || '']);
     });
-    const csv = rows.map(r => r.join(';')).join('\n');
+    const csv = rows.map(r => r.map(csvCell).join(';')).join('\n');
     const a = document.createElement('a');
     a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
     a.download = `movimientos_${mes}.csv`;

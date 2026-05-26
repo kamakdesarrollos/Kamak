@@ -118,19 +118,22 @@ export function MovimientosProvider({ children }) {
   }, []);
 
   // ── Movimientos CRUD ──────────────────────────────────────────────────────
+  // Helper: aplica el efecto de un mov sobre las cajas (sign=+1 al crear, -1 al borrar).
+  const applyEfectoEnCajas = (m, sign, list) => list.map(c => {
+    if (m.tipo === 'ingreso' && c.id === m.cajaId) return { ...c, saldo: (c.saldo || 0) + sign * (m.monto || 0) };
+    if (m.tipo === 'gasto'   && c.id === m.cajaId) return { ...c, saldo: (c.saldo || 0) - sign * (m.monto || 0) };
+    if (m.tipo === 'traspaso') {
+      if (c.id === m.cajaId)        return { ...c, saldo: (c.saldo || 0) - sign * (m.monto || 0) };
+      if (c.id === m.cajaDestinoId) return { ...c, saldo: (c.saldo || 0) + sign * (m.montoDestino ?? m.monto ?? 0) };
+    }
+    // Otros tipos (endoso, etc.) no tocan saldo.
+    return c;
+  });
+
   const addMovimiento = useCallback((data) => {
     const nuevo = { ...data, id: newId(), fecha: data.fecha || today() };
     setCajas(prev => {
-      const next = prev.map(c => {
-        if (c.id === data.cajaId) {
-          const delta = data.tipo === 'ingreso' ? data.monto : -data.monto;
-          return { ...c, saldo: (c.saldo || 0) + delta };
-        }
-        if (data.tipo === 'traspaso' && c.id === data.cajaDestinoId) {
-          return { ...c, saldo: (c.saldo || 0) + data.monto };
-        }
-        return c;
-      });
+      const next = applyEfectoEnCajas(nuevo, +1, prev);
       persist(LS_CAJAS, next);
       return next;
     });
@@ -138,56 +141,59 @@ export function MovimientosProvider({ children }) {
     return nuevo.id;
   }, []);
 
+  // Bug previo: solo cambiaba el objeto, no recalculaba el saldo de la caja.
+  // Si editabas monto/cajaId/tipo, las cajas quedaban con plata fantasma.
   const updateMovimiento = useCallback((id, changes) => {
+    const viejo = movsRef.current.find(m => m.id === id);
+    if (!viejo) return;
+    const nuevo = { ...viejo, ...changes };
+    setCajas(prev => {
+      // Revertir efecto del viejo y aplicar el del nuevo.
+      const sinViejo = applyEfectoEnCajas(viejo, -1, prev);
+      const conNuevo = applyEfectoEnCajas(nuevo, +1, sinViejo);
+      persist(LS_CAJAS, conNuevo);
+      return conNuevo;
+    });
     setMovimientos(prev => {
-      const next = prev.map(m => m.id === id ? { ...m, ...changes } : m);
+      const next = prev.map(m => m.id === id ? nuevo : m);
       persist(LS_MOVS, next);
       return next;
     });
   }, []);
 
   const removeMovimiento = useCallback((id) => {
-    const mov = movimientos.find(m => m.id === id);
+    const mov = movsRef.current.find(m => m.id === id);
     if (!mov) return;
     setCajas(prev => {
-      const next = prev.map(c => {
-        if (c.id === mov.cajaId) {
-          const delta = mov.tipo === 'ingreso' ? -mov.monto : mov.monto;
-          return { ...c, saldo: (c.saldo || 0) + delta };
-        }
-        if (mov.tipo === 'traspaso' && c.id === mov.cajaDestinoId) {
-          return { ...c, saldo: (c.saldo || 0) - mov.monto };
-        }
-        return c;
-      });
+      const next = applyEfectoEnCajas(mov, -1, prev);
       persist(LS_CAJAS, next);
       return next;
     });
     setMovimientos(prev => { const next = prev.filter(m => m.id !== id); persist(LS_MOVS, next); return next; });
-  }, [movimientos]);
+  }, []);
 
   // ── Traspaso ──────────────────────────────────────────────────────────────
-  const traspasar = useCallback(({ cajaOrigenId, cajaDestinoId, monto, fecha, concepto, tcAplicado }) => {
-    const id = newId();
+  // Bug previo: el destino recibia el mismo monto que el origen, aunque las
+  // cajas fueran de distinta moneda. Ahora acepta montoDestino opcional para
+  // traspasos cross-moneda.
+  const traspasar = useCallback(({ cajaOrigenId, cajaDestinoId, monto, montoDestino, fecha, concepto, tcAplicado }) => {
     const mov = {
-      id, fecha: fecha || today(), tipo: 'traspaso',
+      id: newId(), fecha: fecha || today(), tipo: 'traspaso',
       descripcion: concepto || 'Traspaso entre cajas',
-      monto: Math.abs(monto), obraId: null, obraNombre: 'General',
+      monto: Math.abs(monto),
+      montoDestino: montoDestino != null ? Math.abs(montoDestino) : Math.abs(monto),
+      obraId: null, obraNombre: 'General',
       cajaId: cajaOrigenId, cajaDestinoId,
       proveedor: '', categoria: 'traspaso', medioPago: 'Interno',
       referencia: '', fondoReparo: false, tcAplicado: tcAplicado || null,
     };
     setCajas(prev => {
-      const next = prev.map(c => {
-        if (c.id === cajaOrigenId) return { ...c, saldo: (c.saldo || 0) - Math.abs(monto) };
-        if (c.id === cajaDestinoId) return { ...c, saldo: (c.saldo || 0) + Math.abs(monto) };
-        return c;
-      });
+      const next = applyEfectoEnCajas(mov, +1, prev);
       persist(LS_CAJAS, next);
       return next;
     });
     setMovimientos(prev => { const next = [mov, ...prev]; persist(LS_MOVS, next); return next; });
-    return id;
+    return mov.id;
   }, []);
 
   // ── Computed helpers ──────────────────────────────────────────────────────

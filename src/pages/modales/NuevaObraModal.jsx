@@ -205,7 +205,12 @@ export default function NuevaObraModal({ obra, onSave, onClose }) {
   const handleSave = () => {
     const e = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
-    onSave({ ...form, presupuesto: Number(form.presupuesto.replace(/\D/g, '')) || 0 });
+    // Bug previo: .replace(/\D/g, '') borraba TODOS los no-digitos, incluido el
+    // punto decimal. "18500000.50" se volvia 1850000050 (1.850 millones!).
+    // Ahora aceptamos digitos + punto + coma como separador decimal.
+    const presupRaw = String(form.presupuesto || '').replace(/[^0-9.,]/g, '').replace(',', '.');
+    const presupNum = parseFloat(presupRaw);
+    onSave({ ...form, presupuesto: Number.isFinite(presupNum) ? presupNum : 0 });
     onClose();
   };
 
