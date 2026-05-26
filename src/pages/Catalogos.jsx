@@ -648,22 +648,28 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
   return (
     <div style={{ display: 'flex', gap: 10, height: '100%' }}>
       {/* Left: rubro tree */}
-      <Box style={{ width: 200, flexShrink: 0, padding: 10, overflow: 'auto', fontSize: 12 }}>
-        <div style={{ fontWeight: 800, fontSize: 11, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Por rubro</div>
+      <Box style={{ width: 190, flexShrink: 0, padding: '8px 6px', overflow: 'auto' }}>
+        <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, padding: '0 4px', marginBottom: 6 }}>Por rubro</div>
         <div onClick={() => setSelRubro('')}
-          style={{ padding: '4px 6px', borderRadius: 3, cursor: 'pointer', fontWeight: !selRubro ? 700 : 400, background: !selRubro ? T.accentSoft : 'transparent', display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span>Todos</span><span style={{ color: T.ink3 }}>{tareas.length}</span>
+          style={{ padding: '4px 8px', borderRadius: 3, cursor: 'pointer', fontWeight: !selRubro ? 700 : 400, fontSize: 11, background: !selRubro ? T.accentSoft : 'transparent', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+          <span style={{ color: !selRubro ? T.ink : T.ink2 }}>Todos</span>
+          <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono }}>{tareas.length}</span>
         </div>
-        {rubros.map(r => (
-          <div key={r.id} onClick={() => setSelRubro(r.nombre)}
-            style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 6px', borderRadius: 3, cursor: 'pointer', background: selRubro === r.nombre ? T.accentSoft : 'transparent', marginBottom: 2 }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 7, height: 7, borderRadius: 2, background: rCol(r.nombre), flexShrink: 0 }} />
-              {r.nombre}
-            </span>
-            <span style={{ color: T.ink3, flexShrink: 0 }}>{tareas.filter(t => t.rubroNombre === r.nombre).length}</span>
-          </div>
-        ))}
+        {rubros.map(r => {
+          const count = tareas.filter(t => t.rubroNombre === r.nombre).length;
+          const isOn  = selRubro === r.nombre;
+          // Show "N · Nombre corto" — strip the leading number prefix
+          const label = r.nombre.replace(/^\d+\s*-\s*/, '');
+          const num   = r.nombre.match(/^(\d+)/)?.[1];
+          return (
+            <div key={r.id} onClick={() => setSelRubro(r.nombre)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 3, cursor: 'pointer', background: isOn ? T.accentSoft : 'transparent', borderLeft: `2px solid ${isOn ? T.accent : 'transparent'}`, marginBottom: 1 }}>
+              {num && <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono, flexShrink: 0, width: 14 }}>{num}</span>}
+              <span style={{ flex: 1, fontSize: 11, color: isOn ? T.ink : T.ink2, fontWeight: isOn ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+              {count > 0 && <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono, flexShrink: 0 }}>{count}</span>}
+            </div>
+          );
+        })}
       </Box>
 
       {/* Main: task list */}
@@ -678,44 +684,58 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
         <div style={{ flex: 1, overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr style={{ background: T.faint, position: 'sticky', top: 0 }}>
-                {['Código','Tarea','Un','Mat $','Sub $','Total $'].map((h,i) => (
-                  <th key={h} style={{ padding: '6px 10px', textAlign: i>=3 ? 'right' : 'left', fontWeight: 700, fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: `1px solid ${T.faint2}` }}>{h}</th>
+              <tr style={{ background: T.faint, position: 'sticky', top: 0, zIndex: 2 }}>
+                {['Tarea','Un','Mat $','Sub $','Total $'].map((h,i) => (
+                  <th key={h} style={{ padding: '5px 10px', textAlign: i>=2 ? 'right' : 'left', fontWeight: 700, fontSize: 9, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: `1px solid ${T.faint2}` }}>{h}</th>
                 ))}
-                <th style={{ width: 60, borderBottom: `1px solid ${T.faint2}` }} />
+                <th style={{ width: 56, borderBottom: `1px solid ${T.faint2}` }} />
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: T.ink3 }}>Sin tareas</td></tr>}
-              {filtered.map(t => {
-                const c = calcTarea(t);
-                return (
-                  <tr key={t.id} onClick={() => startEdit(t)}
-                    style={{ cursor: 'pointer', borderBottom: `1px solid ${T.faint2}`, background: editId === t.id ? T.accentSoft : 'transparent' }}>
-                    <td style={{ padding: '7px 10px', fontFamily: T.fontMono, fontSize: 11, color: T.ink2 }}>{t.codigo}</td>
-                    <td style={{ padding: '7px 10px', fontWeight: 600 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: 2, background: rCol(t.rubroNombre), flexShrink: 0 }} />
-                        <div>
-                          {t.subRubro && <div style={{ fontSize: 9, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 1 }}>{t.subRubro}</div>}
-                          {t.nombre}
+              {filtered.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: T.ink3 }}>Sin tareas</td></tr>}
+              {(() => {
+                const rows = [];
+                let lastRubro = null;
+                filtered.forEach(t => {
+                  // Group header when showing all rubros
+                  if (!selRubro && t.rubroNombre !== lastRubro) {
+                    lastRubro = t.rubroNombre;
+                    const rNum = t.rubroNombre.match(/^(\d+)/)?.[1];
+                    const rLabel = t.rubroNombre.replace(/^\d+\s*-\s*/, '');
+                    rows.push(
+                      <tr key={`grp-${t.rubroNombre}`}>
+                        <td colSpan={6} style={{ padding: '10px 10px 3px', background: T.faint, borderTop: `1px solid ${T.faint2}` }}>
+                          <span style={{ fontSize: 9, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                            {rNum && <span style={{ fontFamily: T.fontMono, color: T.ink3, marginRight: 5 }}>{rNum} ·</span>}
+                            {rLabel}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  const c = calcTarea(t);
+                  rows.push(
+                    <tr key={t.id} onClick={() => startEdit(t)}
+                      style={{ cursor: 'pointer', borderBottom: `1px solid ${T.faint2}`, background: editId === t.id ? T.accentSoft : 'transparent' }}>
+                      <td style={{ padding: '5px 10px', fontWeight: 500 }}>
+                        <div style={{ fontSize: 12 }}>{t.nombre}</div>
+                        {t.subRubro && <div style={{ fontSize: 9, color: T.ink3, marginTop: 1 }}>{t.subRubro}</div>}
+                      </td>
+                      <td style={{ padding: '5px 10px', color: T.ink3, fontSize: 10 }}>{t.unidad}</td>
+                      <td style={{ padding: '5px 10px', fontFamily: T.fontMono, fontSize: 11, textAlign: 'right', color: T.ink2 }}>{fmtN(c.mat)}</td>
+                      <td style={{ padding: '5px 10px', fontFamily: T.fontMono, fontSize: 11, textAlign: 'right', color: T.ink2 }}>{fmtN(c.sub)}</td>
+                      <td style={{ padding: '5px 10px', fontFamily: T.fontMono, fontSize: 11, fontWeight: 700, textAlign: 'right' }}>{fmtN(c.total)}</td>
+                      <td style={{ padding: '4px 6px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <span title="Duplicar" style={{ fontSize: 12, color: T.ink3, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); duplicate(t); }}>⧉</span>
+                          <span style={{ fontSize: 11, color: T.ink3, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar?')) onDelete(t.id); }}>🗑</span>
                         </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '7px 10px', color: T.ink2 }}>{t.unidad}</td>
-                    <td style={{ padding: '7px 10px', fontFamily: T.fontMono, textAlign: 'right' }}>$ {fmtN(c.mat)}</td>
-                    <td style={{ padding: '7px 10px', fontFamily: T.fontMono, textAlign: 'right' }}>$ {fmtN(c.sub)}</td>
-                    <td style={{ padding: '7px 10px', fontFamily: T.fontMono, fontWeight: 800, textAlign: 'right', color: T.accent }}>$ {fmtN(c.total)}</td>
-                    <td style={{ padding: '4px 8px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, color: T.ink2, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); startEdit(t); }}>✏</span>
-                        <span title="Duplicar" style={{ fontSize: 13, color: T.ink2, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); duplicate(t); }}>⧉</span>
-                        <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar?')) onDelete(t.id); }}>🗑</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                      </td>
+                    </tr>
+                  );
+                });
+                return rows;
+              })()}
             </tbody>
           </table>
         </div>
@@ -767,12 +787,12 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
 
   return (
     <div style={{ display: 'flex', gap: 10, height: '100%' }}>
-      <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0, paddingBottom: 4 }}>
+      <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0, paddingBottom: 8 }}>
           <Btn sm fill onClick={() => { setForm({ nombre: '' }); setSelId(null); }}>+ Nuevo rubro</Btn>
         </div>
         {form && (
-          <div style={{ background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 6, padding: 12, display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
+          <div style={{ background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 5, padding: '8px 10px', display: 'flex', gap: 6, alignItems: 'flex-end', flexShrink: 0, marginBottom: 8 }}>
             <div style={{ flex: 1 }}>
               <div style={labelSt}>Nombre</div>
               <input style={inputSt} value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value.toUpperCase() }))} placeholder="Ej: PINTURA" autoFocus />
@@ -786,20 +806,22 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
             }}>OK</Btn>
           </div>
         )}
-        {rubros.map(r => (
-          <div key={r.id}
-            style={{ display: 'flex', alignItems: 'center', padding: '9px 12px', borderRadius: 4, border: `1px solid ${activeId === r.id ? T.accent : T.faint2}`, background: activeId === r.id ? T.accentSoft : T.paper, cursor: 'pointer', gap: 8 }}
-            onClick={() => setActiveId(r.id === activeId ? null : r.id)}>
-            <span style={{ width: 11, height: 11, borderRadius: 2, background: rCol(r.nombre), flexShrink: 0 }} />
-            <div style={{ flex: 1, fontWeight: 700, fontSize: 13 }}>{r.nombre}</div>
-            <span style={{ fontSize: 10, color: T.ink2 }}>{tareas.filter(t => t.rubroNombre === r.nombre).length} APU</span>
-            <span style={{ fontSize: 10, color: T.ink2 }}>{mo.filter(m => m.oficio === r.nombre).length} MO</span>
-            <span style={{ fontSize: 10, color: T.ink2 }}>{subs.filter(s => s.rubro === r.nombre).length} SC</span>
-            <Btn sm onClick={e => { e.stopPropagation(); setForm({ nombre: r.nombre }); setSelId(r.id); }}>✏</Btn>
-            <span style={{ color: T.warn, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}
-              onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar rubro?')) { onDelete(r.id); if (activeId === r.id) setActiveId(null); } }}>×</span>
-          </div>
-        ))}
+        {rubros.map(r => {
+          const isActive = activeId === r.id;
+          const apu = tareas.filter(t => t.rubroNombre === r.nombre).length;
+          return (
+            <div key={r.id}
+              style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 3, borderLeft: `3px solid ${isActive ? T.accent : rCol(r.nombre)}`, background: isActive ? T.accentSoft : 'transparent', cursor: 'pointer', gap: 6, marginBottom: 1 }}
+              onClick={() => setActiveId(r.id === activeId ? null : r.id)}>
+              <div style={{ flex: 1, fontSize: 11, fontWeight: isActive ? 700 : 400, color: isActive ? T.ink : T.ink2, lineHeight: 1.3 }}>{r.nombre}</div>
+              {apu > 0 && <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono }}>{apu}</span>}
+              <span style={{ fontSize: 11, color: T.ink3, cursor: 'pointer', opacity: 0.6, lineHeight: 1 }}
+                onClick={e => { e.stopPropagation(); setForm({ nombre: r.nombre }); setSelId(r.id); }}>✏</span>
+              <span style={{ fontSize: 13, color: T.ink3, cursor: 'pointer', opacity: 0.5, lineHeight: 1 }}
+                onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar rubro?')) { onDelete(r.id); if (activeId === r.id) setActiveId(null); } }}>×</span>
+            </div>
+          );
+        })}
       </div>
 
       {activeRubro ? (
