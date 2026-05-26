@@ -449,20 +449,44 @@ export default function ExportModal({ onClose, obra, detalle }) {
   const tc = dolarVenta || 1;
 
   const imprimir = async () => {
-    const origin = window.location.origin;
-    const logoLight = `${origin}/assets/kamak-logo-light.png`;
-    const logoDark = `${origin}/assets/kamak-logo.png`;
-    // Generar el QR del cliente para la ultima pagina del PDF.
-    let qrDataUrl = null;
-    if (obra?.cliente && obra?.nombre) {
-      const link = buildWaMeLink(obra.cliente, obra.nombre);
-      qrDataUrl = await generateQrDataUrl(link, 560);
+    try {
+      const origin = window.location.origin;
+      const logoLight = `${origin}/assets/kamak-logo-light.png`;
+      const logoDark = `${origin}/assets/kamak-logo.png`;
+
+      // Generar el QR del cliente (opcional — si falla no rompemos la
+      // impresion: imprimimos sin QR).
+      let qrDataUrl = null;
+      try {
+        if (obra?.cliente && obra?.nombre) {
+          const link = buildWaMeLink(obra.cliente, obra.nombre);
+          qrDataUrl = await generateQrDataUrl(link, 560);
+        }
+      } catch (e) {
+        console.warn('[imprimir] no se pudo generar QR, se imprime sin el:', e);
+        qrDataUrl = null;
+      }
+
+      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl });
+
+      const w = abrirHTML(html, { width: 794, height: 1000 });
+      if (!w) {
+        alert('No se pudo abrir la ventana de impresión.\n\nProbablemente el navegador bloqueó la ventana emergente. Permitilas en la configuración del sitio y volvé a intentar.');
+        return;
+      }
+      // Esperar a que el HTML cargue (incluyendo fonts) antes de imprimir.
+      setTimeout(() => {
+        try {
+          w.focus();
+          w.print();
+        } catch (e) {
+          console.warn('[imprimir] error al disparar print:', e);
+        }
+      }, 900);
+    } catch (e) {
+      console.error('[imprimir] error:', e);
+      alert('Hubo un error al generar la propuesta:\n\n' + (e?.message || e));
     }
-    const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl });
-    // abrirHTML usa noopener,noreferrer asi la ventana abierta no puede
-    // tocar window.opener (defensa adicional contra XSS).
-    const w = abrirHTML(html, { width: 794, height: 1000 });
-    if (w) setTimeout(() => { w.focus(); w.print(); }, 900);
   };
 
   const PREVIEW_SCALE = 0.38;
