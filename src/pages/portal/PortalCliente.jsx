@@ -221,6 +221,35 @@ export default function PortalCliente() {
       {/* ── Content ────────────────────────────────────────────────────────── */}
       <div className="portal-content" style={{ maxWidth: 1060, margin: '0 auto' }}>
 
+        {/* Debug panel: solo visible cuando un admin esta viendo el portal en
+            preview. Muestra datos crudos para diagnosticar bugs de moneda /
+            cuotas. NO se le muestra al cliente real. */}
+        {isAdminInternal && (
+          <details style={{ background: '#fff8e0', padding: 10, fontSize: 11, fontFamily: 'monospace', borderRadius: 4, marginBottom: 12, border: '1px solid #f0d878' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#7a5a00' }}>🔍 DEBUG (solo visible para admin)</summary>
+            <div style={{ marginTop: 8, lineHeight: 1.6 }}>
+              <div>obra.id: <b>{obra.id}</b></div>
+              <div>obra.moneda: <b>{obra.moneda || '(none)'}</b></div>
+              <div>obra.cliente (texto): <b>{obra.cliente}</b></div>
+              <div>obra.clienteId: <b>{obra.clienteId || '(none, hay que editar la obra y seleccionar cliente del dropdown)'}</b></div>
+              <div>clienteActual resuelto: <b>{clienteActual?.nombre || '(NO matcheo - falla)'}</b> id={clienteActual?.id || '?'}</div>
+              <div>dolarVenta: <b>{dolarVenta}</b></div>
+              <div>cuotas.length: <b>{cuotas.length}</b></div>
+              <div style={{ marginTop: 6 }}>cuotas raw:</div>
+              <pre style={{ margin: 0, padding: 6, background: '#fff', borderRadius: 3, fontSize: 10, overflow: 'auto' }}>
+                {JSON.stringify(cuotas.map(c => ({ n: c.n, monto: c.monto, _usd: c._usd, estado: c.estado, fecha: c.fecha })), null, 2)}
+              </pre>
+              <div style={{ marginTop: 6 }}>conversiones a USD:</div>
+              <pre style={{ margin: 0, padding: 6, background: '#fff', borderRadius: 3, fontSize: 10, overflow: 'auto' }}>
+                {JSON.stringify(cuotas.map(c => ({ n: c.n, monto: c.monto, _usd: !!c._usd, obraEsUSD, enUSD: cuotaEnUSD(c) })), null, 2)}
+              </pre>
+              <div style={{ marginTop: 6 }}>totalCuotasUSD: <b>{totalCuotasUSD}</b></div>
+              <div>totalClienteUSD (calc del presupuesto): <b>{totalClienteUSD}</b></div>
+            </div>
+          </details>
+        )}
+
+
         {/* TAB 0 — RESUMEN */}
         {tab === 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
