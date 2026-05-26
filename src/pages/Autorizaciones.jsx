@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip } from '../components/ui';
 import { T } from '../theme';
@@ -311,12 +310,9 @@ export default function Autorizaciones() {
   const { usuarios, currentUser, togglePermiso, applyRol, removeUsuario, updateUsuario, roles, updateRol, removeRol } = useUsuarios();
   const { solicitudes, resolveSolicitud } = useSolicitudes();
 
-  const navigate = useNavigate();
   const isAdmin = currentUser?.rol === 'Admin';
 
-  useEffect(() => {
-    if (currentUser && !isAdmin) navigate('/', { replace: true });
-  }, [currentUser, isAdmin, navigate]);
+  // Non-admins can access to see their own authorization history
 
   // Non-admins start on solicitudes tab; admins blocked from nothing
   const [tab, setTab] = useState(isAdmin ? 'solicitudes' : 'solicitudes');

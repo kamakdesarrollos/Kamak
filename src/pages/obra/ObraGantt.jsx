@@ -4,6 +4,7 @@ import PageLayout from '../../components/layout/PageLayout';
 import { Btn } from '../../components/ui';
 import { T } from '../../theme';
 import { useObras } from '../../store/ObrasContext';
+import { useUsuarios } from '../../store/UsuariosContext';
 
 // ── Fixed constants ────────────────────────────────────────────────────────────
 const TOT_WEEKS  = 60;
@@ -127,6 +128,15 @@ export default function ObraGantt() {
   const { id }   = useParams();
   const navigate = useNavigate();
   const { obras, getDetalle, patchDetalle } = useObras();
+  const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
+  const canSeeGantt = isAdmin || ['Comprador', 'Director de obra'].includes(currentUser?.rol);
+  const rolHiddenTabs = isAdmin ? [] : [
+    'Presupuesto', 'Adicionales', 'Contratos MO', 'Portal cliente',
+    ...(!canSeeGantt ? ['Gantt'] : []),
+  ];
+  const tabsOcultos = currentUser?.tabsOcultos ?? [];
+  const allHiddenTabs = new Set([...tabsOcultos, ...rolHiddenTabs]);
 
   const obra    = obras.find(o => o.id === id) || { nombre: id||'—', fechaInicio: '' };
   const detalle = getDetalle(id||'');
@@ -392,9 +402,12 @@ export default function ObraGantt() {
 
       {/* ── Tab bar (same as ObraPresupuesto) ── */}
       <div className="k-tabs" style={{ marginBottom: 8 }}>
-        {TABS_DEF.map((tab, i) => (
-          <span key={i} className={`k-tab${tab === 'Gantt' ? ' k-tab-on' : ''}`} onClick={() => handleTabClick(i)}>{tab}</span>
-        ))}
+        {TABS_DEF.map((tab, i) => {
+          if (allHiddenTabs.has(tab)) return null;
+          return (
+            <span key={i} className={`k-tab${tab === 'Gantt' ? ' k-tab-on' : ''}`} onClick={() => handleTabClick(i)}>{tab}</span>
+          );
+        })}
       </div>
 
       {/* ── Header ── */}

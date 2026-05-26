@@ -5,6 +5,7 @@ import { Box, Btn, Chip, Label } from '../components/ui';
 import { T } from '../theme';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useMovimientos } from '../store/MovimientosContext';
+import { useUsuarios } from '../store/UsuariosContext';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
@@ -143,6 +144,8 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Proveedores() {
   const navigate = useNavigate();
+  const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
   const { proveedores, addProveedor, updateProveedor, removeProveedor, getSaldo, getObrasProveedor } = useProveedores();
   const { movimientos } = useMovimientos();
   const [pagoProvId, setPagoProvId] = useState(null);
@@ -216,15 +219,17 @@ export default function Proveedores() {
         </div>
       </div>
 
-      {/* KPIs */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-        <KPI label="Total" value={proveedores.length} sub="proveedores" />
-        <KPI label="Mano de obra" value={moCount} color={T.accent} />
-        <KPI label="Materiales" value={matCount} color="#0ea5e9" />
-        <KPI label="Con saldo pendiente" value={conSaldo.length} color={T.warn} />
-        <KPI label="Deuda total" value={`$ ${fmtN(totalDeuda)}`} color={T.warn} sub="suma de saldos" />
-        <KPI label="Total pagado" value={`$ ${fmtN(Object.values(totalPagado).reduce((s, v) => s + v, 0))}`} color={T.ok} sub="histórico gastos" />
-      </div>
+      {/* KPIs — solo admin */}
+      {isAdmin && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+          <KPI label="Total" value={proveedores.length} sub="proveedores" />
+          <KPI label="Mano de obra" value={moCount} color={T.accent} />
+          <KPI label="Materiales" value={matCount} color="#0ea5e9" />
+          <KPI label="Con saldo pendiente" value={conSaldo.length} color={T.warn} />
+          <KPI label="Deuda total" value={`$ ${fmtN(totalDeuda)}`} color={T.warn} sub="suma de saldos" />
+          <KPI label="Total pagado" value={`$ ${fmtN(Object.values(totalPagado).reduce((s, v) => s + v, 0))}`} color={T.ok} sub="histórico gastos" />
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="k-tabs" style={{ marginBottom: 14 }}>
@@ -246,15 +251,15 @@ export default function Proveedores() {
       {/* ─── Vista lista ────────────────────────────────────────────────────── */}
       {view === 'lista' && filtered.length > 0 && (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr 1fr', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr 1fr' : '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 0.8fr auto', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             <span>Proveedor</span>
             <span>Especialidad</span>
             <span style={{ fontFamily: T.fontMono }}>CUIT</span>
             <span>Contacto</span>
             <span>Calif.</span>
             <span style={{ textAlign: 'center' }}>Obras</span>
-            <span style={{ textAlign: 'right' }}>Pagado</span>
-            <span style={{ textAlign: 'right' }}>Saldo CC</span>
+            {isAdmin && <span style={{ textAlign: 'right' }}>Pagado</span>}
+            {isAdmin && <span style={{ textAlign: 'right' }}>Saldo CC</span>}
             <span style={{ textAlign: 'center' }}>Condición</span>
             <span>Acciones</span>
           </div>
@@ -265,7 +270,7 @@ export default function Proveedores() {
             const obrasCount = getObrasProveedor(p.id).length;
             return (
               <div key={p.id}
-                style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr 1fr', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
+                style={{ display: 'grid', gridTemplateColumns: isAdmin ? '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr 1fr' : '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 0.8fr auto', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
                 onMouseEnter={e => e.currentTarget.style.background = T.faint}
                 onMouseLeave={e => e.currentTarget.style.background = ''}
                 onClick={() => navigate(`/proveedores/${p.id}`)}>
@@ -309,14 +314,18 @@ export default function Proveedores() {
                     </span>
                   ) : <span style={{ color: T.ink3, fontFamily: T.fontMono }}>0</span>}
                 </span>
-                {/* Total pagado */}
-                <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontSize: 11, color: totalPagado[p.id] > 0 ? T.ok : T.ink3 }}>
-                  {totalPagado[p.id] > 0 ? `$ ${fmtN(totalPagado[p.id])}` : '—'}
-                </span>
-                {/* Saldo */}
-                <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.warn : T.ok }}>
-                  {saldo > 0 ? `$ ${fmtN(saldo)}` : '—'}
-                </span>
+                {/* Total pagado — solo admin */}
+                {isAdmin && (
+                  <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontSize: 11, color: totalPagado[p.id] > 0 ? T.ok : T.ink3 }}>
+                    {totalPagado[p.id] > 0 ? `$ ${fmtN(totalPagado[p.id])}` : '—'}
+                  </span>
+                )}
+                {/* Saldo — solo admin */}
+                {isAdmin && (
+                  <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.warn : T.ok }}>
+                    {saldo > 0 ? `$ ${fmtN(saldo)}` : '—'}
+                  </span>
+                )}
                 {/* Condición */}
                 <span style={{ textAlign: 'center' }}>
                   <Chip style={{ fontSize: 9 }}>{p.condicion || '—'}</Chip>
@@ -324,9 +333,11 @@ export default function Proveedores() {
                 {/* Acciones */}
                 <span style={{ display: 'flex', gap: 5, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
                   <Btn sm onClick={() => setEditProv(p)}>✏</Btn>
-                  <Btn sm accent onClick={() => setPagoProvId(p.id)}>Pagar</Btn>
-                  <span style={{ color: T.warn, cursor: 'pointer', fontSize: 16, padding: '0 2px', lineHeight: 1 }}
-                    onClick={() => { if (confirm(`¿Eliminar ${p.nombre}?`)) removeProveedor(p.id); }}>×</span>
+                  {isAdmin && <Btn sm accent onClick={() => setPagoProvId(p.id)}>Pagar</Btn>}
+                  {isAdmin && (
+                    <span style={{ color: T.warn, cursor: 'pointer', fontSize: 16, padding: '0 2px', lineHeight: 1 }}
+                      onClick={() => { if (confirm(`¿Eliminar ${p.nombre}?`)) removeProveedor(p.id); }}>×</span>
+                  )}
                 </span>
               </div>
             );
@@ -364,17 +375,19 @@ export default function Proveedores() {
                       style={{ color: T.accent, fontSize: 11, textDecoration: 'none' }}>✉ {p.email}</a>
                   )}
                 </div>
-                {/* Saldo */}
-                <div style={{ borderTop: `1px solid ${T.faint2}`, paddingTop: 8 }}>
-                  <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Saldo CC</div>
-                  <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 15, color: saldo > 0 ? T.warn : T.ok }}>
-                    {saldo > 0 ? `$ ${fmtN(saldo)}` : 'Al día'}
+                {/* Saldo — solo admin */}
+                {isAdmin && (
+                  <div style={{ borderTop: `1px solid ${T.faint2}`, paddingTop: 8 }}>
+                    <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Saldo CC</div>
+                    <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 15, color: saldo > 0 ? T.warn : T.ok }}>
+                      {saldo > 0 ? `$ ${fmtN(saldo)}` : 'Al día'}
+                    </div>
                   </div>
-                </div>
+                )}
                 {/* Acciones */}
                 <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
-                  <Btn sm style={{ flex: 1 }} onClick={() => navigate(`/proveedores/${p.id}`)}>Ver CC</Btn>
-                  <Btn sm accent style={{ flex: 1 }} onClick={() => setPagoProvId(p.id)}>Pagar</Btn>
+                  {isAdmin && <Btn sm style={{ flex: 1 }} onClick={() => navigate(`/proveedores/${p.id}`)}>Ver CC</Btn>}
+                  {isAdmin && <Btn sm accent style={{ flex: 1 }} onClick={() => setPagoProvId(p.id)}>Pagar</Btn>}
                   <Btn sm onClick={() => setEditProv(p)}>✏</Btn>
                 </div>
               </Box>

@@ -1026,11 +1026,21 @@ export default function Movimientos() {
     obras.filter(o => ['activa', 'en-presupuesto', 'pausada'].includes(o.estado)),
     [obras]);
 
-  const filtered = useMemo(() =>
-    movimientos
-      .filter(m => m.fecha.startsWith(mes) && (!filtroObra || m.obraId === filtroObra))
-      .sort((a, b) => b.fecha.localeCompare(a.fecha)),
-    [movimientos, mes, filtroObra]);
+  const cajaIdsMias = useMemo(() => cajas.map(c => c.id), [cajas]);
+  const filtered = useMemo(() => {
+    const cv = currentUser?.cajasVisibles ?? '*';
+    return movimientos
+      .filter(m => {
+        if (!m.fecha.startsWith(mes)) return false;
+        if (filtroObra && m.obraId !== filtroObra) return false;
+        if (!isAdmin && cv !== '*') {
+          // Only show movements in accessible cajas (or movements without cajaId that belong to the user's obras)
+          if (m.cajaId && !cajaIdsMias.includes(m.cajaId)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }, [movimientos, mes, filtroObra, isAdmin, cajaIdsMias, currentUser?.cajasVisibles]);
 
   const ingresos   = useMemo(() => filtered.filter(m => m.tipo === 'ingreso'),  [filtered]);
   const gastos     = useMemo(() => filtered.filter(m => m.tipo === 'gasto'),    [filtered]);

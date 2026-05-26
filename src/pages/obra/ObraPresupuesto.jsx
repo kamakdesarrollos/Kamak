@@ -2501,15 +2501,24 @@ function ObraPanel({ tipo, movs, cajas, proveedores, clientes, dolarVenta, obraI
 }
 
 function TabMovimientos({ obra, moneda }) {
-  const { movimientos, cajas, addMovimiento, removeMovimiento } = useMovimientos();
+  const { movimientos, cajas: allCajas, addMovimiento, removeMovimiento } = useMovimientos();
   const { proveedores } = useProveedores();
   const { clientes }    = useClientes();
   const { dolarVenta }  = useDolar();
   const navigate        = useNavigate();
+  const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
+  const cv = currentUser?.cajasVisibles ?? '*';
+  const cajas = cv === '*' ? allCajas : allCajas.filter(c => Array.isArray(cv) && cv.includes(c.id));
+  const cajaIdsMias = cajas.map(c => c.id);
 
   const movsObra = useMemo(() =>
-    movimientos.filter(m => m.obraId === obra.id).sort((a, b) => b.fecha.localeCompare(a.fecha)),
-    [movimientos, obra.id]);
+    movimientos.filter(m => {
+      if (m.obraId !== obra.id) return false;
+      if (!isAdmin && cv !== '*' && m.cajaId && !cajaIdsMias.includes(m.cajaId)) return false;
+      return true;
+    }).sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [movimientos, obra.id, isAdmin, cv, cajaIdsMias]);
   const ingresos = useMemo(() => movsObra.filter(m => m.tipo === 'ingreso'), [movsObra]);
   const gastos   = useMemo(() => movsObra.filter(m => m.tipo === 'gasto'),   [movsObra]);
 
@@ -2719,15 +2728,16 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 5: CONTRATOS MO
 // ─────────────────────────────────────────────────────────────────────────────
-const FORM_INIT = { proveedor: '', cuit: '', fechaInicio: '', fechaFin: '', fondoReparo: 5, formaPago: 'Por avance certificado mensualmente', rubrosAgregados: [] };
-const RUBRO_FORM_INIT = { rubroId: '', tareasSel: {} };
+const makeFormInit = () => ({ proveedor: '', cuit: '', fechaInicio: '', fechaFin: '', fondoReparo: 5, formaPago: 'Por avance certificado mensualmente', rubrosAgregados: [] });
+const makeRubroFormInit = () => ({ rubroId: '', tareasSel: {} });
 
 function TabContratosMO({ detalle, patch, moneda, obra }) {
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState(FORM_INIT);
+  const [form, setForm] = useState(makeFormInit);
   const [formError, setFormError] = useState('');
   const [addingRubro, setAddingRubro] = useState(false);
-  const [rubroForm, setRubroForm] = useState(RUBRO_FORM_INIT);
+  const [editingRubroId, setEditingRubroId] = useState(null);
+  const [rubroForm, setRubroForm] = useState(makeRubroFormInit);
   const [printContrato, setPrintContrato] = useState(null);
   const { proveedores: proveedoresDyn } = useProveedores();
   const navigate = useNavigate();
@@ -2735,7 +2745,9 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   const rubros = detalle.rubros || [];
   const contratos = detalle.contratos || [];
 
-  const allTareasSel = form.rubrosAgregados.flatMap(r => Object.keys(r.tareasSel));
+  const allTareasSel = form.rubrosAgregados
+    .filter(r => r.rubroId !== editingRubroId)
+    .flatMap(r => Object.keys(r.tareasSel));
   const rubroSel = rubros.find(r => r.id === rubroForm.rubroId) || null;
   const tareasDisponibles = rubroSel
     ? (rubroSel.tareas || []).filter(t =>
@@ -2760,17 +2772,28 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
     if (!rubroForm.rubroId) return;
     const rubro = rubros.find(r => r.id === rubroForm.rubroId);
     if (!rubro) return;
-    const existing = form.rubrosAgregados.find(r => r.rubroId === rubroForm.rubroId);
-    if (existing) {
-      setForm(p => ({ ...p, rubrosAgregados: p.rubrosAgregados.map(r => r.rubroId === rubroForm.rubroId ? { ...r, tareasSel: { ...r.tareasSel, ...rubroForm.tareasSel } } : r) }));
+    if (editingRubroId) {
+      setForm(p => ({ ...p, rubrosAgregados: p.rubrosAgregados.map(ra => ra.rubroId === editingRubroId ? { rubroId: rubroForm.rubroId, rubroNombre: rubro.nombre, tareasSel: rubroForm.tareasSel } : ra) }));
+      setEditingRubroId(null);
     } else {
-      setForm(p => ({ ...p, rubrosAgregados: [...p.rubrosAgregados, { rubroId: rubroForm.rubroId, rubroNombre: rubro.nombre, tareasSel: rubroForm.tareasSel }] }));
+      const existing = form.rubrosAgregados.find(r => r.rubroId === rubroForm.rubroId);
+      if (existing) {
+        setForm(p => ({ ...p, rubrosAgregados: p.rubrosAgregados.map(r => r.rubroId === rubroForm.rubroId ? { ...r, tareasSel: { ...r.tareasSel, ...rubroForm.tareasSel } } : r) }));
+      } else {
+        setForm(p => ({ ...p, rubrosAgregados: [...p.rubrosAgregados, { rubroId: rubroForm.rubroId, rubroNombre: rubro.nombre, tareasSel: rubroForm.tareasSel }] }));
+      }
     }
-    setRubroForm(RUBRO_FORM_INIT);
+    setRubroForm(makeRubroFormInit());
     setAddingRubro(false);
   };
 
   const removeRubro = (rubroId) => setForm(p => ({ ...p, rubrosAgregados: p.rubrosAgregados.filter(r => r.rubroId !== rubroId) }));
+
+  const startEditRubro = (ra) => {
+    setEditingRubroId(ra.rubroId);
+    setRubroForm({ rubroId: ra.rubroId, tareasSel: { ...ra.tareasSel } });
+    setAddingRubro(true);
+  };
 
   const totalContrato = form.rubrosAgregados.reduce((sum, ra) =>
     sum + Object.values(ra.tareasSel).reduce((s, v) => s + (v.cantidad || 0) * (v.precioUnit || 0), 0), 0);
@@ -2793,9 +2816,10 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
     });
     patch(d => ({ ...d, contratos: [...(d.contratos || []), { id: newId(), proveedor: form.proveedor, cuit: form.cuit, fechaInicio: form.fechaInicio, fechaFin: form.fechaFin, fondoReparo: +form.fondoReparo, formaPago: form.formaPago, estado: 'activo', tareas, monto: totalContrato }] }));
     setAdding(false);
-    setForm(FORM_INIT);
+    setForm(makeFormInit());
     setAddingRubro(false);
-    setRubroForm(RUBRO_FORM_INIT);
+    setEditingRubroId(null);
+    setRubroForm(makeRubroFormInit());
   };
 
   const toggleEstado = (id) => patch(d => ({ ...d, contratos: d.contratos.map(c => c.id === id ? { ...c, estado: c.estado === 'activo' ? 'cerrado' : 'activo' } : c) }));
@@ -2810,7 +2834,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
       </div>
 
       {adding && (
-        <FormPanel title="Nuevo contrato MO" onSave={save} onCancel={() => { setAdding(false); setForm(FORM_INIT); setAddingRubro(false); setRubroForm(RUBRO_FORM_INIT); setFormError(''); }} style={{ marginBottom: 14 }}>
+        <FormPanel title="Nuevo contrato MO" onSave={save} onCancel={() => { setAdding(false); setForm(makeFormInit()); setAddingRubro(false); setEditingRubroId(null); setRubroForm(makeRubroFormInit()); setFormError(''); }} style={{ marginBottom: 14 }}>
           {formError && <div style={{ color: '#dc2626', fontSize: 12, fontWeight: 600, padding: '4px 0' }}>{formError}</div>}
 
           {/* Fila 1: proveedor + cuit */}
@@ -2854,6 +2878,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                       <span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{ra.rubroNombre}</span>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                         <span style={{ fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, color: T.accent }}>$ {Math.round(subTotal).toLocaleString('es-AR')}</span>
+                        <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer', fontWeight: 700 }} onClick={() => startEditRubro(ra)}>✏ editar</span>
                         <span style={{ fontSize: 10, color: '#dc2626', cursor: 'pointer', fontWeight: 700 }} onClick={() => removeRubro(ra.rubroId)}>✕ quitar</span>
                       </div>
                     </div>
@@ -2876,11 +2901,16 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
           {/* Sub-form agregar rubro */}
           {addingRubro ? (
             <div style={{ marginTop: 6, background: T.faint, borderRadius: 5, border: `1.5px solid ${T.accent}`, padding: '10px 12px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Agregar rubro</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>{editingRubroId ? 'Editar rubro' : 'Agregar rubro'}</div>
               <FRow label="Rubro">
                 <select style={{ ...inputSt, cursor: 'pointer' }} value={rubroForm.rubroId} onChange={e => setRubroForm({ rubroId: e.target.value, tareasSel: {} })}>
                   <option value="">— Seleccionar rubro —</option>
-                  {rubros.filter(r => !form.rubrosAgregados.find(ra => ra.rubroId === r.id)).map(r => (
+                  {rubros.filter(r => {
+                    if (editingRubroId && r.id === editingRubroId) return true;
+                    if (form.rubrosAgregados.find(ra => ra.rubroId === r.id)) return false;
+                    const tareasSinSec = (r.tareas || []).filter(t => t.tipo !== 'seccion' && (t.cantidad || 0) > 0);
+                    return tareasSinSec.some(t => calcTareaContratada(t.id, contratos) < t.cantidad);
+                  }).map(r => (
                     <option key={r.id} value={r.id}>{r.nombre}</option>
                   ))}
                 </select>
@@ -2921,27 +2951,36 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                         const disponible = t.cantidad - calcTareaContratada(t.id, contratos);
                         const sel = rubroForm.tareasSel[t.id];
                         return (
-                          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: sel ? T.accentSoft : T.paper, borderRadius: 4, border: `1px solid ${sel ? T.accent : T.faint2}` }}>
-                            <input type="checkbox" checked={!!sel} onChange={() => onTareaToggle(t)} style={{ accentColor: T.accent, cursor: 'pointer', flexShrink: 0 }} />
-                            <span style={{ flex: 3, fontSize: 12 }}>{t.nombre}</span>
-                            <span style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{t.unidad} · disp: {disponible}/{t.cantidad}</span>
-                            {sel && (<>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                <span style={{ fontSize: 9, color: T.ink3 }}>Cant.</span>
-                                <input type="number" value={sel.cantidad} min="0" max={disponible}
-                                  onChange={e => setRubroForm(p => ({ ...p, tareasSel: { ...p.tareasSel, [t.id]: { ...sel, cantidad: +e.target.value } } }))}
-                                  style={{ width: 64, padding: '2px 6px', border: `1px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, fontSize: 12, textAlign: 'right' }} />
+                          <div key={t.id} style={{ padding: '6px 8px', background: sel ? T.accentSoft : T.paper, borderRadius: 4, border: `1px solid ${sel ? T.accent : T.faint2}` }}>
+                            {/* Línea 1: checkbox + nombre + disp */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <input type="checkbox" checked={!!sel} onChange={() => onTareaToggle(t)} style={{ accentColor: T.accent, cursor: 'pointer', flexShrink: 0 }} />
+                              <span style={{ flex: 1, fontSize: 12, fontWeight: sel ? 600 : 400 }}>{t.nombre}</span>
+                              <span style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{t.unidad} · disp: {disponible}/{t.cantidad}</span>
+                            </div>
+                            {/* Línea 2: inputs (solo cuando está seleccionado) */}
+                            {sel && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, paddingLeft: 24 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                  <span style={{ fontSize: 9, color: T.ink3 }}>Cantidad</span>
+                                  <input type="number" value={sel.cantidad} min="0" max={disponible}
+                                    onChange={e => setRubroForm(p => ({ ...p, tareasSel: { ...p.tareasSel, [t.id]: { ...sel, cantidad: +e.target.value } } }))}
+                                    style={{ width: 80, padding: '3px 6px', border: `1px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, fontSize: 12, textAlign: 'right' }} />
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                  <span style={{ fontSize: 9, color: T.ink3 }}>$ Unit MO</span>
+                                  <input type="number" value={sel.precioUnit} min="0"
+                                    onChange={e => setRubroForm(p => ({ ...p, tareasSel: { ...p.tareasSel, [t.id]: { ...sel, precioUnit: +e.target.value } } }))}
+                                    style={{ width: 110, padding: '3px 6px', border: `1px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, fontSize: 12, textAlign: 'right' }} />
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-end' }}>
+                                  <span style={{ fontSize: 9, color: T.ink3 }}>Subtotal</span>
+                                  <span style={{ fontSize: 13, fontWeight: 700, fontFamily: T.fontMono, color: T.accent, whiteSpace: 'nowrap' }}>
+                                    $ {Math.round((sel.cantidad || 0) * (sel.precioUnit || 0)).toLocaleString('es-AR')}
+                                  </span>
+                                </div>
                               </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                <span style={{ fontSize: 9, color: T.ink3 }}>$ Unit MO</span>
-                                <input type="number" value={sel.precioUnit} min="0"
-                                  onChange={e => setRubroForm(p => ({ ...p, tareasSel: { ...p.tareasSel, [t.id]: { ...sel, precioUnit: +e.target.value } } }))}
-                                  style={{ width: 96, padding: '2px 6px', border: `1px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, fontSize: 12, textAlign: 'right' }} />
-                              </div>
-                              <span style={{ fontSize: 12, fontWeight: 700, fontFamily: T.fontMono, color: T.accent, whiteSpace: 'nowrap' }}>
-                                $ {Math.round((sel.cantidad || 0) * (sel.precioUnit || 0)).toLocaleString('es-AR')}
-                              </span>
-                            </>)}
+                            )}
                           </div>
                         );
                       })}
@@ -2950,8 +2989,8 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                 </>
               )}
               <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
-                <Btn sm onClick={() => { setAddingRubro(false); setRubroForm(RUBRO_FORM_INIT); }}>Cancelar</Btn>
-                <Btn sm fill onClick={agregarRubroAlForm}>Agregar rubro</Btn>
+                <Btn sm onClick={() => { setAddingRubro(false); setEditingRubroId(null); setRubroForm(makeRubroFormInit()); }}>Cancelar</Btn>
+                <Btn sm fill onClick={agregarRubroAlForm}>{editingRubroId ? 'Guardar cambios' : 'Agregar rubro'}</Btn>
               </div>
             </div>
           ) : (

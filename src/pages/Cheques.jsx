@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
@@ -8,6 +8,7 @@ import { useMovimientos } from '../store/MovimientosContext';
 import { useObras } from '../store/ObrasContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useClientes } from '../store/ClientesContext';
+import { useUsuarios } from '../store/UsuariosContext';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -621,6 +622,14 @@ function RechazarModal({ cheque, onConfirm, onClose }) {
 
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Cheques() {
+  const { currentUser } = useUsuarios();
+  const navigate = useNavigate();
+  const isAdmin = currentUser?.rol === 'Admin';
+
+  useEffect(() => {
+    if (currentUser && !isAdmin) navigate('/', { replace: true });
+  }, [currentUser, isAdmin, navigate]);
+
   const { cheques, addCheque, updateCheque, removeCheque, depositarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque } = useCheques();
   const { cajas, addMovimiento } = useMovimientos();
   const { obras } = useObras();

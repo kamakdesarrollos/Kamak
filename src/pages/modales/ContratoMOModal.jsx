@@ -134,7 +134,7 @@ body{font-family:'Montserrat',sans-serif}
 }
 @media screen{
   html{background:#555}
-  body{margin:0 auto;padding:16px 0;width:794px}
+  body{margin:0 auto;padding:16px 0;width:210mm}
   .pag-dark,.pag-light{box-shadow:0 4px 24px rgba(0,0,0,.4);margin-bottom:16px}
 }`;
 
@@ -233,7 +233,7 @@ export default function ContratoMOModal({ onClose, contrato, obra }) {
       logoLight: `${origin}/assets/kamak-logo-light.png`,
       logoDark: `${origin}/assets/kamak-logo.png`,
     });
-    const w = window.open('', '_blank', 'width=794,height=1000,scrollbars=yes');
+    const w = window.open('', '_blank', 'width=860,height=1200,scrollbars=yes');
     w.document.open();
     w.document.write(html);
     w.document.close();

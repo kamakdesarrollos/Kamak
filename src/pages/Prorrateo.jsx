@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Label } from '../components/ui';
 import { T } from '../theme';
 import { useGastosFijos } from '../store/GastosFijosContext';
 import { useObras } from '../store/ObrasContext';
+import { useUsuarios } from '../store/UsuariosContext';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 
@@ -19,6 +20,12 @@ const MES_ACTUAL = new Date().toLocaleString('es-AR', { month: 'long', year: 'nu
 
 export default function Prorrateo() {
   const navigate = useNavigate();
+  const { currentUser } = useUsuarios();
+  const isAllowed = !currentUser || currentUser.rol === 'Admin' || currentUser.rol === 'Administración';
+  useEffect(() => {
+    if (currentUser && !isAllowed) navigate('/', { replace: true });
+  }, [currentUser, isAllowed, navigate]);
+
   const { items, setItems, totalMensual } = useGastosFijos();
   const { obras, patchDetalle } = useObras();
   const [criterio, setCriterio]     = useState('mixto');

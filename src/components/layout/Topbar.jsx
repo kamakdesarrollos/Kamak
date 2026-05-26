@@ -8,6 +8,7 @@ import { useUsuarios } from '../../store/UsuariosContext';
 import { useAlertas } from '../../store/AlertasContext';
 import { useWhatsappPending } from '../../store/WhatsappPendingContext';
 import { useSolicitudes } from '../../store/SolicitudesContext';
+import { useCheques } from '../../store/ChequesContext';
 import GlobalSearch from '../GlobalSearch';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -17,7 +18,7 @@ const fmtFecha = (iso) => {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
-function NotifPanel({ alertas, pending, solicitudesPendientes, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate }) {
+function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate }) {
   const items = [];
 
   // Solicitudes de eliminación pendientes (para admins)
@@ -32,6 +33,24 @@ function NotifPanel({ alertas, pending, solicitudesPendientes, noLeidas, marcarL
       leida:  false,
       ruta:   '/autorizaciones',
       tipo:   'solicitud',
+    });
+  });
+
+  // Cheques próximos a vencer
+  (chequesUrgentes || []).slice(0, 5).forEach(c => {
+    const d = diasHasta(c.fechaVencimiento);
+    const esHoy = d === 0;
+    items.push({
+      id:     c.id,
+      icon:   esHoy ? '🔴' : '🟡',
+      titulo: esHoy
+        ? `¡Cheque vence HOY — ${c.banco || ''}!`
+        : `Cheque vence en ${d}d — ${c.banco || ''}`,
+      subtit: `#${c.numero || '—'} · ${c.titular || c.proveedorNombre || '—'} · $${Math.round(c.monto || 0).toLocaleString('es-AR')}`,
+      fecha:  c.fechaVencimiento ? c.fechaVencimiento.split('-').reverse().join('/') : '',
+      leida:  false,
+      ruta:   '/cheques',
+      tipo:   'cheque',
     });
   });
 
@@ -159,6 +178,13 @@ function NotifPanel({ alertas, pending, solicitudesPendientes, noLeidas, marcarL
   );
 }
 
+function diasHasta(fecha) {
+  if (!fecha) return null;
+  const hoy = new Date().toISOString().split('T')[0];
+  const d1 = new Date(hoy), d2 = new Date(fecha);
+  return Math.round((d2 - d1) / 86400000);
+}
+
 export default function Topbar({ breadcrumb = [], right, search = true }) {
   const { dolarVenta, dolarCompra, loading: dolarLoading } = useDolar();
   const { user: authUser, signOut } = useAuth();
@@ -166,6 +192,7 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
   const { alertas, noLeidas, marcarLeida, marcarTodasLeidas } = useAlertas();
   const { pending } = useWhatsappPending();
   const { solicitudes } = useSolicitudes();
+  const { cheques } = useCheques();
   const navigate = useNavigate();
   const [showNotif, setShowNotif] = useState(false);
   const bellRef = useRef(null);
@@ -177,7 +204,17 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
 
   const pendientesWA = (pending || []).filter(p => p.status === 'pendiente').length;
   const solicitudesPendientes = isAdmin ? solicitudes.filter(s => s.estado === 'pendiente') : [];
-  const totalNotif   = noLeidas + pendientesWA + solicitudesPendientes.length;
+
+  // Cheques próximos a vencer — solo admin
+  const chequesUrgentes = isAdmin
+    ? (cheques || []).filter(c => {
+        if (c.estado !== 'cartera') return false;
+        const d = diasHasta(c.fechaVencimiento);
+        return d !== null && d >= 0 && d <= 7;
+      })
+    : [];
+
+  const totalNotif = noLeidas + pendientesWA + solicitudesPendientes.length + chequesUrgentes.length;
 
   // Cerrar panel al hacer click fuera
   useEffect(() => {
@@ -240,6 +277,7 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
                 alertas={alertas}
                 pending={pending}
                 solicitudesPendientes={solicitudesPendientes}
+                chequesUrgentes={chequesUrgentes}
                 noLeidas={noLeidas}
                 marcarLeida={marcarLeida}
                 marcarTodasLeidas={marcarTodasLeidas}

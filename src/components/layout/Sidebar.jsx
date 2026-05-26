@@ -10,17 +10,17 @@ const ALL_ITEMS = [
   { icon: '🏗', label: 'Obras',          path: '/obras' },
   { section: 'Administración' },
   { icon: '◉', label: 'Proveedores',    path: '/proveedores' },
-  { icon: '◎', label: 'Clientes',       path: '/clientes' },
+  { icon: '◎', label: 'Clientes',       path: '/clientes',     adminOnly: true },
   { icon: '⇄', label: 'Movimientos',    path: '/movimientos' },
   { icon: '$', label: 'Cajas',          path: '/cajas',        perm: 'verCaja' },
-  { icon: '✓', label: 'Cheques',        path: '/cheques' },
-  { icon: '⌗', label: 'Gastos Fijos',   path: '/prorrateo' },
+  { icon: '✓', label: 'Cheques',        path: '/cheques',      adminOnly: true },
+  { icon: '⌗', label: 'Gastos Fijos',   path: '/prorrateo',    allowedRoles: ['Admin', 'Administración'] },
   { section: 'Datos' },
   { icon: '▤', label: 'Catálogos',      path: '/catalogos',   adminOnly: true },
   { icon: '▦', label: 'Plantillas',     path: '/plantillas',  adminOnly: true },
   { icon: '▦', label: 'Reportes',       path: '/reportes',    adminOnly: true },
   { section: 'Sistema' },
-  { icon: '◐', label: 'Autorizaciones', path: '/autorizaciones', adminOnly: true },
+  { icon: '◐', label: 'Autorizaciones', path: '/autorizaciones' },
   { icon: '⚙', label: 'Configuración', path: '/configuracion', adminOnly: true },
 ];
 
@@ -41,6 +41,7 @@ export default function Sidebar({ active }) {
   const items = ALL_ITEMS.filter(it => {
     if (it.section) return true;
     if (it.adminOnly && !isAdmin) return false;
+    if (it.allowedRoles && !it.allowedRoles.includes(currentUser?.rol)) return false;
     if (it.perm && !p[it.perm]) return false;
     return true;
   });
@@ -65,7 +66,7 @@ export default function Sidebar({ active }) {
           >
             <span style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0, lineHeight: 1 }}>{it.icon || '·'}</span>
             <span>{it.label}</span>
-            {it.label === 'Autorizaciones' && solPendientes > 0 && (
+            {it.label === 'Autorizaciones' && solPendientes > 0 && isAdmin && (
               <span style={{ marginLeft: 'auto', background: '#c0392b', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700, lineHeight: '16px' }}>
                 {solPendientes}
               </span>
