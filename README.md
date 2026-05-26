@@ -52,6 +52,7 @@ npm run test:watch  # tests en modo watch
 |---|---|
 | `VITE_SUPABASE_URL` | URL del proyecto Supabase |
 | `VITE_SUPABASE_ANON_KEY` | Clave anónima pública |
+| `VITE_META_PHONE_NUMBER` | Número del bot WA (ej. `5492262223704`). Usado para generar QR y links wa.me que dirigen al cliente al bot. |
 
 ### Backend (panel de Vercel → Environment Variables, sin prefijo `VITE_`)
 
@@ -59,6 +60,7 @@ npm run test:watch  # tests en modo watch
 |---|---|
 | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | Acceso server-side (bypasea RLS) |
 | `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`, `META_VERIFY_TOKEN` | WhatsApp Cloud API |
+| `META_PHONE_NUMBER` | Número del bot WA en formato E.164 sin "+" (mismo valor que en frontend) |
 | `ANTHROPIC_API_KEY` | Claude (para el bot WA) |
 
 ## Estructura

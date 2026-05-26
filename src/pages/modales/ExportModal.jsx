@@ -3,6 +3,7 @@ import { Btn, Label, Divider } from '../../components/ui';
 import { T } from '../../theme';
 import { useDolar } from '../../store/DolarContext';
 import { esc, abrirHTML } from '../../lib/html';
+import { buildWaMeLink, generateQrDataUrl } from '../../lib/clienteAcceso';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -38,7 +39,7 @@ const CORNER_BRACKETS = `
   <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:2px solid #1a9b9c;border-right:2px solid #1a9b9c;"></div>`;
 
 // ── HTML generator ────────────────────────────────────────────────────────────
-function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta }) {
+function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl }) {
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
   const rubros = detalle?.rubros || [];
@@ -322,6 +323,19 @@ body{font-family:'Montserrat',sans-serif}
 ${portada}
 ${computo}
 ${condicionesPage}
+${qrDataUrl ? `
+<div class="qr-page" style="width:794px;min-height:1123px;background:#fff;padding:80px 60px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;page-break-before:always">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:3px;color:#1a9b9c;margin-bottom:14px">ACCESO AL PORTAL DEL CLIENTE</div>
+  <div style="font-family:'Montserrat',sans-serif;font-size:30px;font-weight:800;color:#171818;margin-bottom:8px;line-height:1.15">Seguí tu obra<br/>desde tu celular</div>
+  <div style="font-family:'Montserrat',sans-serif;font-size:14px;color:#5b5a55;max-width:460px;margin:18px 0 32px">Escaneá este código con la cámara de tu teléfono. Se abrirá WhatsApp con un mensaje listo para enviar. Al mandarlo recibís el link directo al portal de tu obra: avance, fotos, documentos y plan de pagos.</div>
+  <div style="background:#fff;border:2px solid #1a9b9c;border-radius:14px;padding:22px;position:relative">
+    <img src="${qrDataUrl}" alt="QR de acceso" style="width:280px;height:280px;display:block"/>
+  </div>
+  <div style="margin-top:26px;font-family:'Montserrat',sans-serif;font-size:12px;color:#171818;font-weight:600">¿No tenés la cámara con lector?</div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5b5a55;margin-top:4px">Escribinos al WhatsApp: <b style="color:#171818">${obra?.cliente ? esc(obra.cliente) : 'tu nombre'}</b> + nombre de la obra</div>
+  <div style="margin-top:60px;font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:1.5px;color:#9a9892">KAMAK DESARROLLOS · PORTAL CLIENTE</div>
+</div>
+` : ''}
 </body>
 </html>`;
 }
@@ -434,11 +448,17 @@ export default function ExportModal({ onClose, obra, detalle }) {
   const moneda = obra?.moneda || 'ARS';
   const tc = dolarVenta || 1;
 
-  const imprimir = () => {
+  const imprimir = async () => {
     const origin = window.location.origin;
     const logoLight = `${origin}/assets/kamak-logo-light.png`;
     const logoDark = `${origin}/assets/kamak-logo.png`;
-    const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta });
+    // Generar el QR del cliente para la ultima pagina del PDF.
+    let qrDataUrl = null;
+    if (obra?.cliente && obra?.nombre) {
+      const link = buildWaMeLink(obra.cliente, obra.nombre);
+      qrDataUrl = await generateQrDataUrl(link, 560);
+    }
+    const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl });
     // abrirHTML usa noopener,noreferrer asi la ventana abierta no puede
     // tocar window.opener (defensa adicional contra XSS).
     const w = abrirHTML(html, { width: 794, height: 1000 });

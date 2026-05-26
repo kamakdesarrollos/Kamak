@@ -31,3 +31,9 @@ export const ROL_ADMINISTRACION = 'Administración';
 export const ROL_COMPRADOR      = 'Comprador';
 export const ROL_DIRECTOR_OBRA  = 'Director de obra';
 export const ROL_CONTADOR       = 'Contador externo';
+
+// ── WhatsApp ────────────────────────────────────────────────────────────────
+// Numero del bot de WA Business de Kamak. Formato E.164 sin "+".
+// Se lee del env var VITE_META_PHONE_NUMBER; si no esta seteado, fallback al
+// numero conocido para que no rompa el build local.
+export const META_PHONE_NUMBER = import.meta.env.VITE_META_PHONE_NUMBER || '5492262223704';

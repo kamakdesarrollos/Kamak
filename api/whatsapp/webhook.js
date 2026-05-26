@@ -62,6 +62,49 @@ async function sendWA(to, body) {
   }
 }
 
+// Envía un mensaje de plantilla (template). Necesario cuando se inicia
+// conversación con un número que no escribió al bot en las últimas 24hs
+// — la API rechaza texto libre fuera de esa ventana.
+// La plantilla debe estar registrada y APROBADA en Meta Business Manager.
+async function sendWATemplate(to, templateName, languageCode, bodyParams = []) {
+  try {
+    const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          components: bodyParams.length > 0 ? [{
+            type: 'body',
+            parameters: bodyParams.map(text => ({ type: 'text', text: String(text) })),
+          }] : [],
+        },
+      }),
+    });
+    const json = await r.json();
+    if (!r.ok) {
+      console.error('sendWATemplate error:', r.status, JSON.stringify(json));
+      const err = json?.error;
+      // Errores comunes y sus causas:
+      // 132001 = plantilla no existe / no aprobada / idioma incorrecto
+      // 131026 = mensaje fuera de ventana 24h y sin plantilla
+      // 100    = parámetros del template no coinciden
+      const motivo = err?.code === 132001 ? `Plantilla "${templateName}" (${languageCode}) no existe o no está aprobada en Meta.`
+                   : err?.code === 131026 ? `Fuera de ventana de 24hs y la plantilla no aplica.`
+                   : err?.message || 'error desconocido';
+      throw new Error(motivo);
+    }
+    return json;
+  } catch (e) {
+    console.error('sendWATemplate exception:', e.message);
+    throw e;
+  }
+}
+
 async function downloadMedia(mediaId) {
   try {
     const r1 = await fetch(`https://graph.facebook.com/v18.0/${mediaId}`, {
@@ -185,6 +228,270 @@ async function notifyClienteCobro({ telefono, clienteNombre, monto, moneda, obra
     `Recibido por: ${recibidoPor}\n\n` +
     `¡Gracias por confiar en Kamak Desarrollos! 🙏`;
   await sendWA(telefono, msg);
+}
+
+// ── Cliente vinculado al portal ──────────────────────────────────────────────
+// Busca si un numero de WA ya esta vinculado a un cliente (flag whatsappActivo).
+async function getLinkedCliente(phone) {
+  const clientesData = await loadSharedData('clientes');
+  const clientes = Array.isArray(clientesData) ? clientesData : [];
+  return clientes.find(c => c.whatsappActivo && normalizePhone(c.telefono) === phone) || null;
+}
+
+// Parsea el primer mensaje que el cliente manda desde el QR del presupuesto.
+// Patron esperado: "Hola soy [cliente] obra [obra]"
+// Devuelve { nombreCliente, nombreObra } o null si no matchea.
+function parseClientePrimerMensaje(text) {
+  if (!text) return null;
+  const m = text.match(/hola\s+soy\s+(.+?)\s+obra\s+(.+?)$/i);
+  if (!m) return null;
+  return { nombreCliente: m[1].trim(), nombreObra: m[2].trim() };
+}
+
+// Match flexible de nombres (ignora mayusculas, tildes, espacios extra).
+function nombreMatch(a, b) {
+  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+  const A = norm(a), B = norm(b);
+  if (!A || !B) return false;
+  return A === B || A.includes(B) || B.includes(A);
+}
+
+// Crea (o renueva) un portal_token para una obra y devuelve la URL completa
+// que el cliente puede abrir en el navegador.
+async function generarPortalLink(obraId, obraNombre, clienteNombre, phone) {
+  const baseUrl = process.env.PORTAL_BASE_URL || 'https://kamak.com.ar';
+  const token = `pt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  const tokens = (await loadSharedData('portal_tokens')) || {};
+  tokens[token] = {
+    obraId, obraNombre, cliente: clienteNombre,
+    phone, expires,
+    createdAt: new Date().toISOString(),
+    source: 'qr-onboarding',
+  };
+  await saveSharedData('portal_tokens', tokens);
+  return `${baseUrl}/portal/acceso/${token}`;
+}
+
+// Vincula al cliente (guarda phone + whatsappActivo en la ficha) y le manda
+// el link al portal. Llamada cuando el cliente escanea el QR y envia el
+// primer mensaje "Hola soy X obra Y" desde su telefono.
+async function onboardCliente(phone, nombreCliente, nombreObra) {
+  const [clientesData, obrasData] = await Promise.all([
+    loadSharedData('clientes'),
+    loadSharedData('obras'),
+  ]);
+  const clientes = Array.isArray(clientesData) ? clientesData : [];
+  const obras = obrasData?.obras || [];
+
+  // Buscar cliente y obra por nombre flexible.
+  const cliente = clientes.find(c => nombreMatch(c.nombre, nombreCliente));
+  const obra = obras.find(o => nombreMatch(o.nombre, nombreObra));
+
+  if (!cliente || !obra) {
+    await sendWA(phone,
+      `Hola! No pude identificar tu obra automaticamente.\n\n` +
+      `Por favor escribinos:\n` +
+      `*${nombreCliente || '[tu nombre]'}* y la obra *${nombreObra || '[nombre obra]'}*\n\n` +
+      `Un asesor te va a responder pronto. Tambien podes contactarnos al telefono de Kamak.`
+    );
+    return;
+  }
+
+  // Si la obra que dijo no coincide con el cliente registrado, avisamos pero
+  // igual seguimos (porque la obra podria tener cliente como texto libre).
+  // No bloqueamos.
+
+  // Marcar el cliente como vinculado con su telefono.
+  const updatedClientes = clientes.map(c =>
+    c.id === cliente.id
+      ? { ...c, telefono: '+' + phone, whatsappActivo: true, whatsappVinculadoAt: new Date().toISOString() }
+      : c
+  );
+  await saveSharedData('clientes', updatedClientes);
+
+  // Generar link al portal y mandarselo.
+  const portalUrl = await generarPortalLink(obra.id, obra.nombre, cliente.nombre, phone);
+  await sendWA(phone,
+    `Hola ${cliente.nombre} 👋\n\n` +
+    `Bienvenido al portal de tu obra *${obra.nombre}*.\n\n` +
+    `Aca podes ver el avance, las fotos, los documentos y el plan de pagos:\n${portalUrl}\n\n` +
+    `Cualquier consulta escribime por aca. Tambien podes preguntarme cosas como:\n` +
+    `• *saldo* — cuanto debes\n` +
+    `• *proximo pago* — proxima cuota\n` +
+    `• *avance* — como va la obra\n` +
+    `• *ayuda* — ver todas las opciones`
+  );
+}
+
+// ── Handler de consultas del cliente vinculado ──────────────────────────────
+// Helpers de cuota (replicados aca; en frontend viven en src/lib y src/pages/obra/helpers.js).
+function cuotaMontoFn(c, moneda, tc) {
+  return (c._usd || moneda !== 'USD') ? (c.monto || 0) : Math.round((c.monto || 0) / tc);
+}
+function cuotaCobradoFn(c, moneda, tc) {
+  return (c.pagos || []).reduce((s, p) => {
+    if (moneda === 'USD') return s + (p.moneda === 'ARS' ? Math.round((p.monto || 0) / (p.tc || tc)) : (p.monto || 0));
+    return s + (p.moneda === 'USD' ? Math.round((p.monto || 0) * (p.tc || tc)) : (p.monto || 0));
+  }, 0);
+}
+function cuotaEstadoCalc(c, moneda, tc) {
+  const cob = cuotaCobradoFn(c, moneda, tc);
+  if (cob <= 0) return 'pendiente';
+  if (cob >= cuotaMontoFn(c, moneda, tc)) return 'pagado';
+  return 'parcial';
+}
+
+async function handleClienteFlow(phone, cliente, text) {
+  const t = (text || '').toLowerCase().trim();
+
+  // Cargar la(s) obra(s) del cliente.
+  const obrasData = await loadSharedData('obras');
+  const obras = obrasData?.obras || [];
+  const detalles = obrasData?.detalles || {};
+
+  const obrasDelCliente = obras.filter(o => nombreMatch(o.cliente, cliente.nombre));
+  if (obrasDelCliente.length === 0) {
+    await sendWA(phone,
+      `Hola ${cliente.nombre} 👋\n\nNo encontre obras asociadas a tu cuenta. Si pensas que es un error, contactanos a Kamak.`
+    );
+    return;
+  }
+  // Por ahora trabajamos con la primera obra activa (o la primera).
+  // Multi-obra se resuelve en una iteracion futura.
+  const obra = obrasDelCliente.find(o => o.estado === 'activa') || obrasDelCliente[0];
+  const detalle = detalles[obra.id] || {};
+  const moneda = obra.moneda || 'ARS';
+
+  // Cargar dolar para conversiones USD <-> ARS.
+  const dolarData = await loadSharedData('dolar');
+  const tc = dolarData?.venta || dolarData?.manualVal || 1070;
+
+  // Calculos de pagos
+  const cuotas = detalle.cuotas || [];
+  const cuotaMonto = c => cuotaMontoFn(c, moneda, tc);
+  const cuotaCobrado = c => cuotaCobradoFn(c, moneda, tc);
+  const totalCuotas = cuotas.reduce((s, c) => s + cuotaMonto(c), 0);
+  const totalCobrado = cuotas.reduce((s, c) => s + cuotaCobrado(c), 0);
+  const saldoPendiente = Math.max(0, totalCuotas - totalCobrado);
+  const pagadas = cuotas.filter(c => cuotaEstadoCalc(c, moneda, tc) === 'pagado').length;
+  const proximaCuota = cuotas
+    .filter(c => cuotaEstadoCalc(c, moneda, tc) !== 'pagado')
+    .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))[0];
+
+  const fmtFecha = (iso) => {
+    if (!iso) return '—';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  };
+
+  // Avance general (promedio de avance por tarea)
+  const rubros = detalle.rubros || [];
+  const tareas = rubros.flatMap(r => (r.tareas || []).filter(x => x.tipo !== 'seccion'));
+  const avanceGeneral = tareas.length > 0
+    ? Math.round(tareas.reduce((s, t) => s + (t.avance || 0), 0) / tareas.length)
+    : 0;
+
+  // Link al portal (genera uno nuevo cada vez para mayor seguridad)
+  const portalUrl = await generarPortalLink(obra.id, obra.nombre, cliente.nombre, phone);
+
+  // ── Routing por comando ───────────────────────────────────────────────────
+  if (/^(hola|buen[ao]s|hi|hey|hello|saludos|portal|link|acceso)\b/.test(t)) {
+    await sendWA(phone,
+      `Hola ${cliente.nombre} 👋\n\nAca tenes el link al portal de tu obra *${obra.nombre}*:\n${portalUrl}\n\n` +
+      `Tambien podes escribirme:\n• *saldo* — cuanto debes\n• *proximo pago* — proxima cuota\n• *avance* — como va la obra\n• *ayuda* — ver todas las opciones`
+    );
+    return;
+  }
+
+  if (/^(ayuda|help|menu|opciones|\?)/.test(t)) {
+    await sendWA(phone,
+      `🔹 *Opciones disponibles:*\n\n` +
+      `• *saldo* — cuanto debes y cuanto va pagado\n` +
+      `• *proximo pago* / *cuando pago* — proxima cuota a vencer\n` +
+      `• *cuanto pague* / *cobrado* — total pagado hasta ahora\n` +
+      `• *cuotas* / *plan de pagos* — lista completa de cuotas\n` +
+      `• *avance* / *como va* — % de avance de tu obra\n` +
+      `• *portal* / *link* — link al portal con toda la info\n` +
+      `• *ayuda* — este menu`
+    );
+    return;
+  }
+
+  if (/(saldo|cuanto\s+debo|cuanto\s+falta|deuda)/.test(t)) {
+    await sendWA(phone,
+      `💰 *Saldo de tu obra ${obra.nombre}*\n\n` +
+      `Total acordado: ${fmtMonto(totalCuotas, moneda)}\n` +
+      `Pagaste: ${fmtMonto(totalCobrado, moneda)}\n` +
+      `*Saldo pendiente: ${fmtMonto(saldoPendiente, moneda)}*\n\n` +
+      `Detalle completo en el portal:\n${portalUrl}`
+    );
+    return;
+  }
+
+  if (/(proximo\s+pago|proxima\s+cuota|cuando\s+pago|siguiente\s+pago)/.test(t)) {
+    if (!proximaCuota) {
+      await sendWA(phone, `🎉 Ya pagaste todas las cuotas de tu obra *${obra.nombre}*. ¡Gracias!\n${portalUrl}`);
+      return;
+    }
+    const monto = cuotaMonto(proximaCuota);
+    const cobrado = cuotaCobrado(proximaCuota);
+    const restante = Math.max(0, monto - cobrado);
+    await sendWA(phone,
+      `📅 *Proxima cuota de ${obra.nombre}*\n\n` +
+      `Cuota N°${proximaCuota.n || '—'}: ${proximaCuota.descripcion || ''}\n` +
+      `Vence: *${fmtFecha(proximaCuota.fecha)}*\n` +
+      `Monto: ${fmtMonto(monto, moneda)}` +
+      (cobrado > 0 ? `\nYa pagaste: ${fmtMonto(cobrado, moneda)}\nFalta: *${fmtMonto(restante, moneda)}*` : '') +
+      `\n\nDetalle: ${portalUrl}`
+    );
+    return;
+  }
+
+  if (/(cuanto\s+pague|pagado|cobrado|que\s+va)/.test(t)) {
+    const pct = totalCuotas > 0 ? Math.round((totalCobrado / totalCuotas) * 100) : 0;
+    await sendWA(phone,
+      `✅ *Pagos de ${obra.nombre}*\n\n` +
+      `Pagaste: *${fmtMonto(totalCobrado, moneda)}* de ${fmtMonto(totalCuotas, moneda)} (${pct}%)\n` +
+      `Cuotas cobradas: ${pagadas} de ${cuotas.length}\n\n` +
+      `Ver todas: ${portalUrl}`
+    );
+    return;
+  }
+
+  if (/(cuotas|plan\s+de\s+pagos|plan\s+pagos)/.test(t)) {
+    if (cuotas.length === 0) {
+      await sendWA(phone, `Tu obra *${obra.nombre}* todavia no tiene un plan de pagos definido.\n${portalUrl}`);
+      return;
+    }
+    const lineas = cuotas.slice(0, 10).map(c => {
+      const estado = cuotaEstadoCalc(c, moneda, tc);
+      const icon = estado === 'pagado' ? '✅' : estado === 'parcial' ? '🟡' : '⏳';
+      return `${icon} N°${c.n} ${c.descripcion || ''} — ${fmtMonto(cuotaMonto(c), moneda)} — ${fmtFecha(c.fecha)}`;
+    });
+    await sendWA(phone,
+      `📋 *Plan de pagos · ${obra.nombre}*\n\n${lineas.join('\n')}` +
+      (cuotas.length > 10 ? `\n\n…y ${cuotas.length - 10} cuotas mas.` : '') +
+      `\n\nDetalle completo: ${portalUrl}`
+    );
+    return;
+  }
+
+  if (/(avance|como\s+va|estado\s+obra|progreso)/.test(t)) {
+    await sendWA(phone,
+      `🏗 *Avance de ${obra.nombre}*\n\n` +
+      `Avance general: *${avanceGeneral}%*\n` +
+      `Estado: ${obra.estado || '—'}\n` +
+      (obra.fechaFinEstim ? `Entrega estimada: ${fmtFecha(obra.fechaFinEstim)}\n` : '') +
+      `\nVer fotos y detalle: ${portalUrl}`
+    );
+    return;
+  }
+
+  // Default: respuesta generica con link al portal.
+  await sendWA(phone,
+    `No pude entender tu consulta. Probá con *ayuda* para ver las opciones disponibles, o entrá al portal para ver el detalle de tu obra:\n${portalUrl}`
+  );
 }
 
 async function getAllAdmins() {
@@ -1427,12 +1734,24 @@ export default async function handler(req, res) {
 
     const conv = await loadConversation(phone);
     const user = await getLinkedUser(phone);
-    console.log(`USER linked=${!!user} state=${conv?.state}`);
+    const cliente = !user ? await getLinkedCliente(phone) : null;
+    console.log(`USER linked=${!!user} cliente=${!!cliente} state=${conv?.state}`);
 
-    if (!user) {
-      await handleLinkingFlow(phone, text, conv);
-    } else {
+    if (user) {
+      // Usuario interno (Admin, Compras, Capataz, etc.)
       await handleMainFlow(phone, user, text, mediaId, mimeType, conv);
+    } else if (cliente) {
+      // Cliente vinculado al portal (read-only, comandos limitados)
+      await handleClienteFlow(phone, cliente, text);
+    } else {
+      // Numero desconocido. Primero ver si esta haciendo onboarding desde el QR.
+      const parsedQR = parseClientePrimerMensaje(text);
+      if (parsedQR) {
+        await onboardCliente(phone, parsedQR.nombreCliente, parsedQR.nombreObra);
+      } else {
+        // Si no, flujo de vinculacion de usuario interno (el viejo).
+        await handleLinkingFlow(phone, text, conv);
+      }
     }
 
     console.log('DONE');

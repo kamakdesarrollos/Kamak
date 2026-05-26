@@ -24,6 +24,7 @@ import {
 } from './helpers';
 import { FRow, FInput, FSelect, FormPanel, inputSt, labelSt } from './forms';
 import TabDocumentos from './tabs/TabDocumentos';
+import ClienteAccesoModal from '../modales/ClienteAccesoModal';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -3362,6 +3363,7 @@ export default function ObraPresupuesto() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { obras, getDetalle, patchDetalle, updateObra } = useObras();
+  const { clientes } = useClientes();
   const { currentUser } = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
   const canSeeGantt = isAdmin || ['Comprador', 'Director de obra'].includes(currentUser?.rol);
@@ -3378,6 +3380,7 @@ export default function ObraPresupuesto() {
   const [showExport, setShowExport] = useState(false);
 const [showFinanciacion, setShowFinanciacion] = useState(false);
   const [showPortalAccess, setShowPortalAccess] = useState(false);
+  const [showClienteQR,    setShowClienteQR]    = useState(false);
   const [portalPhone, setPortalPhone] = useState('');
   const [portalSending, setPortalSending] = useState(false);
   const [portalMsg, setPortalMsg] = useState('');
@@ -3495,6 +3498,7 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <Btn sm onClick={() => navigate('/obras')}>← Obras</Btn>
+          <Btn sm onClick={() => setShowClienteQR(true)}>📲 QR cliente</Btn>
           <Btn sm onClick={() => { setShowPortalAccess(true); setPortalMsg(''); setPortalPhone(obra.clienteWhatsapp || ''); }}>🔗 Acceso cliente</Btn>
         </div>
       </div>
@@ -3546,6 +3550,14 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
       {displayTab === 8 && <TabFotos detalle={detalle} patch={patch} obraId={id} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
+
+      {showClienteQR && (
+        <ClienteAccesoModal
+          obra={obra}
+          cliente={clientes.find(c => (c.nombre || '').toLowerCase().trim() === (obra.cliente || '').toLowerCase().trim()) || { nombre: obra.cliente }}
+          onClose={() => setShowClienteQR(false)}
+        />
+      )}
 
       {showPortalAccess && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
