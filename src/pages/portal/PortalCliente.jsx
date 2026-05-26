@@ -270,17 +270,23 @@ export default function PortalCliente() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="portal-header" style={{ background: T.dark, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', overflow: 'hidden', gap: 8, flexWrap: 'wrap' }}>
-        {/* Rayas decorativas (referencia a la M de Kamak). Contenidas dentro
-            del header: el overflow:hidden del header padre las recorta si
-            sobresalen. */}
-        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 130, opacity: 0.08, pointerEvents: 'none', overflow: 'hidden' }}>
-          <svg viewBox="0 0 130 130" width="130" height="130" preserveAspectRatio="xMaxYMid slice" style={{ display: 'block' }}>
-            <g transform="rotate(62 65 65)">
-              <rect x="-40" y="10"  width="220" height="9" fill={T.accent} />
-              <rect x="-40" y="35"  width="220" height="9" fill={T.accent} />
-              <rect x="-40" y="60"  width="220" height="9" fill={T.accent} />
-              <rect x="-40" y="85"  width="220" height="9" fill={T.accent} />
-              <rect x="-40" y="110" width="220" height="9" fill={T.accent} />
+        {/* Rayas decorativas (referencia a la M de Kamak). El SVG ahora ocupa
+            100% del contenedor y se recorta limpiamente dentro del header
+            (sin importar la altura del header en mobile o con flex-wrap). */}
+        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 110, opacity: 0.09, pointerEvents: 'none', overflow: 'hidden' }}>
+          <svg
+            viewBox="0 0 110 110"
+            width="100%"
+            height="100%"
+            preserveAspectRatio="xMaxYMid slice"
+            style={{ display: 'block', overflow: 'hidden' }}
+          >
+            <g transform="rotate(62 55 55)" clipPath="inset(0)">
+              <rect x="-40" y="10"  width="200" height="8" fill={T.accent} />
+              <rect x="-40" y="32"  width="200" height="8" fill={T.accent} />
+              <rect x="-40" y="54"  width="200" height="8" fill={T.accent} />
+              <rect x="-40" y="76"  width="200" height="8" fill={T.accent} />
+              <rect x="-40" y="98"  width="200" height="8" fill={T.accent} />
             </g>
           </svg>
         </div>

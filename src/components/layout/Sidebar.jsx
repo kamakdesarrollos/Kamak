@@ -65,6 +65,7 @@ export default function Sidebar({ active }) {
           );
         }
         const isActive = active ? active === it.label : location.pathname === it.path || (it.path !== '/' && location.pathname.startsWith(it.path));
+        const hasBadge = it.label === 'Autorizaciones' && solPendientes > 0 && isAdmin;
         return (
           <div
             key={i}
@@ -72,11 +73,14 @@ export default function Sidebar({ active }) {
             onClick={() => it.path && navigate(it.path)}
           >
             <span style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0, lineHeight: 1 }}>{it.icon || '·'}</span>
-            {/* Label: se trunca con "..." si no entra, asi el badge nunca se corta */}
-            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {/* Label: se trunca con "..." solo si hay badge (asi el badge
+                nunca se corta). Sin badge, el label se ve completo siempre. */}
+            <span style={hasBadge
+              ? { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+              : { whiteSpace: 'nowrap' }}>
               {it.label}
             </span>
-            {it.label === 'Autorizaciones' && solPendientes > 0 && isAdmin && (
+            {hasBadge && (
               <span style={{
                 background: '#e74c3c',
                 color: '#fff',
