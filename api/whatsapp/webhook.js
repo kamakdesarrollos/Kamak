@@ -231,11 +231,29 @@ async function notifyClienteCobro({ telefono, clienteNombre, monto, moneda, obra
 }
 
 // ── Cliente vinculado al portal ──────────────────────────────────────────────
-// Busca si un numero de WA ya esta vinculado a un cliente (flag whatsappActivo).
+// Busca si un numero de WA ya esta vinculado a un cliente.
+// Matching robusto: prueba con whatsappActivo flag pero tambien acepta
+// clientes cuyo telefono coincida aunque el flag falte (datos legacy o
+// guardados pisados por otro proceso).
 async function getLinkedCliente(phone) {
   const clientesData = await loadSharedData('clientes');
   const clientes = Array.isArray(clientesData) ? clientesData : [];
-  return clientes.find(c => c.whatsappActivo && normalizePhone(c.telefono) === phone) || null;
+  // 1) Match preferido: whatsappActivo + telefono normalizado matchea.
+  let match = clientes.find(c => c.whatsappActivo && normalizePhone(c.telefono) === phone);
+  if (match) {
+    console.log(`getLinkedCliente: match flag+phone cliente=${match.id} (${match.nombre})`);
+    return match;
+  }
+  // 2) Match relajado: cualquier cliente con ese telefono (aunque whatsappActivo
+  //    se haya perdido — guardado pisado por el frontend, datos legacy, etc.)
+  match = clientes.find(c => normalizePhone(c.telefono) === phone);
+  if (match) {
+    console.log(`getLinkedCliente: match SOLO phone cliente=${match.id} (${match.nombre}) — flag whatsappActivo perdido`);
+    return match;
+  }
+  console.log(`getLinkedCliente: NO match para phone=${phone}. Total clientes=${clientes.length}. Telefonos guardados:`,
+    clientes.map(c => `${c.nombre}:${c.telefono}->${normalizePhone(c.telefono)}|act:${!!c.whatsappActivo}`).join(' / '));
+  return null;
 }
 
 // Parsea el primer mensaje que el cliente manda desde el QR del presupuesto.
@@ -308,7 +326,13 @@ async function onboardCliente(phone, nombreCliente, nombreObra) {
       ? { ...c, telefono: '+' + phone, whatsappActivo: true, whatsappVinculadoAt: new Date().toISOString() }
       : c
   );
-  await saveSharedData('clientes', updatedClientes);
+  const ok = await saveSharedData('clientes', updatedClientes);
+  console.log(`onboardCliente: vinculado cliente=${cliente.id} (${cliente.nombre}) phone=+${phone} save_ok=${ok}`);
+  // Re-leer para verificar que se persistio (defensa contra pisado por
+  // frontend o por algun race condition).
+  const verify = await loadSharedData('clientes');
+  const verifyOk = Array.isArray(verify) && verify.find(c => c.id === cliente.id)?.whatsappActivo === true;
+  console.log(`onboardCliente: verificacion post-save = ${verifyOk}`);
 
   // Generar link al portal y mandarselo.
   const portalUrl = await generarPortalLink(obra.id, obra.nombre, cliente.nombre, phone);
@@ -1768,8 +1792,22 @@ export default async function handler(req, res) {
       if (parsedQR) {
         await onboardCliente(phone, parsedQR.nombreCliente, parsedQR.nombreObra);
       } else {
-        // Si no, flujo de vinculacion de usuario interno (el viejo).
-        await handleLinkingFlow(phone, text, conv);
+        // Detectar comandos tipicos de cliente. Si escribe "saldo", "avance",
+        // "hola", etc. NO mandar al flujo de vinculacion de admin — ese flujo
+        // pide nombre/email de empleado y confunde al cliente.
+        const t = (text || '').toLowerCase().trim();
+        const esComandoCliente = /^(hola|buen[ao]s|hi|hey|saludos|saldo|cuanto|deuda|avance|como\s+va|estado|proximo|cuota|portal|link|acceso|pago|ayuda|help|\?)/.test(t);
+        if (esComandoCliente) {
+          await sendWA(phone,
+            `Hola 👋\n\nNo te tengo registrado todavia. Si sos cliente de Kamak Desarrollos, ` +
+            `tu obra deberia haberte enviado un *codigo QR* en el presupuesto.\n\n` +
+            `Escanealo y te vinculo automaticamente.\n\n` +
+            `Si no tenes el QR a mano, contactanos al equipo de Kamak para que te lo envien.`
+          );
+        } else {
+          // Caso restante: flujo de vinculacion de usuario interno (empleados).
+          await handleLinkingFlow(phone, text, conv);
+        }
       }
     }
 
