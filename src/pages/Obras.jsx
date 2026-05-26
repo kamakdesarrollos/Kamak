@@ -6,6 +6,7 @@ import { T } from '../theme';
 import { useObras, EMPTY_DETALLE } from '../store/ObrasContext';
 import NuevaObraModal from './modales/NuevaObraModal';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useMovimientos } from '../store/MovimientosContext';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n, moneda) => {
@@ -22,13 +23,14 @@ const fmtDate = (iso) => {
 
 const margenColor = (m) => m < 0 ? T.accent : m < 20 ? T.warn : T.ok;
 
-// ── Calcula stats reales desde el detalle ─────────────────────────────────────
-function computeStats(obra, detalle) {
-  const movs  = detalle.movimientos || [];
+// ── Calcula stats reales desde el detalle + movs globales ────────────────────
+// Item 3.8: ahora 'gastado' viene de MovimientosContext (la fuente unica de
+// movimientos en runtime), no de detalle.movimientos (que es solo semilla).
+function computeStats(obra, detalle, movimientos) {
   const rubros = detalle.rubros || [];
 
-  const gastado = movs
-    .filter(m => m.tipo === 'gasto')
+  const gastado = (movimientos || [])
+    .filter(m => m.tipo === 'gasto' && m.obraId === obra.id)
     .reduce((s, m) => s + (m.monto || 0), 0);
 
   const todasTareas = rubros.flatMap(r => r.tareas || []);
@@ -419,6 +421,7 @@ function FilaArchivada({ obra, onClick, onTransicion, onEliminar }) {
 export default function Obras() {
   const navigate = useNavigate();
   const { obras, detalles, addObra, updateObra, setEstado, deleteObra, byEstado } = useObras();
+  const { movimientos } = useMovimientos();
   const { currentUser } = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
 
@@ -426,7 +429,8 @@ export default function Obras() {
   const puedeVer = (o) => ov === '*' || (Array.isArray(ov) && ov.includes(o.id));
   const canCreate = isAdmin || currentUser?.permisos?.crearObra === true;
 
-  const getStats = (obra) => computeStats(obra, detalles[obra.id] || EMPTY_DETALLE);
+  // Item 3.8: 'gastado' por obra ahora viene de los movs reales (no de la semilla).
+  const getStats = (obra) => computeStats(obra, detalles[obra.id] || EMPTY_DETALLE, movimientos);
 
   const [searchParams] = useSearchParams();
   const [tabIdx, setTabIdx] = useState(0);

@@ -6,6 +6,7 @@ import { T } from '../theme';
 import { useGastosFijos } from '../store/GastosFijosContext';
 import { useObras } from '../store/ObrasContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useMovimientos } from '../store/MovimientosContext';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 
@@ -27,7 +28,8 @@ export default function Prorrateo() {
   }, [currentUser, isAllowed, navigate]);
 
   const { items, setItems, totalMensual } = useGastosFijos();
-  const { obras, patchDetalle } = useObras();
+  const { obras } = useObras();
+  const { addMovimiento } = useMovimientos();
   const [criterio, setCriterio]     = useState('mixto');
   const [manualPct, setManualPct]   = useState({});
   const [confirmado, setConfirmado] = useState(false);
@@ -74,29 +76,30 @@ export default function Prorrateo() {
 
   const totalPct = distribuciones.reduce((s, d) => s + d.pctAsignado, 0);
 
+  // Item 3.8: en vez de empujar a detalle.movimientos (fuente legacy/semilla)
+  // ahora creamos movimientos reales via MovimientosContext, asi aparecen
+  // en /movimientos, /cajas, Reportes, etc. (fuente unica).
   const confirmar = () => {
     if (obrasActivas.length === 0 || totalMensual === 0) return;
     const hoy = new Date().toISOString().split('T')[0];
-    const ts  = Date.now();
-    distribuciones.forEach((d, i) => {
+    distribuciones.forEach((d) => {
       const monto = Math.round(totalMensual * d.pctAsignado / 100);
       if (monto <= 0) return;
-      patchDetalle(d.o.id, det => ({
-        ...det,
-        movimientos: [
-          ...(det.movimientos || []),
-          {
-            id:          `pror-${ts}-${i}`,
-            tipo:        'gasto',
-            descripcion: `Prorrateo administrativo · ${MES_ACTUAL}`,
-            monto,
-            fecha:       hoy,
-            categoria:   'prorrateo',
-            obraId:      d.o.id,
-            obraNombre:  d.o.nombre,
-          },
-        ],
-      }));
+      addMovimiento({
+        tipo:        'gasto',
+        descripcion: `Prorrateo administrativo · ${MES_ACTUAL}`,
+        monto,
+        fecha:       hoy,
+        categoria:   'prorrateo',
+        obraId:      d.o.id,
+        obraNombre:  d.o.nombre,
+        cajaId:      null,
+        cajaDestinoId: null,
+        proveedor:   '',
+        medioPago:   'Prorrateo',
+        referencia:  '',
+        fondoReparo: false,
+      });
     });
     setConfirmado(true);
     setTimeout(() => setConfirmado(false), 4000);

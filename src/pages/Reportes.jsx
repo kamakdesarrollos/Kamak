@@ -6,6 +6,7 @@ import { T } from '../theme';
 import { useObras } from '../store/ObrasContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useMovimientos } from '../store/MovimientosContext';
 
 const CY = new Date().getFullYear();
 const fmtM = (n) => {
@@ -38,15 +39,18 @@ export default function Reportes() {
 
   const { obras, detalles } = useObras();
   const { proveedores } = useProveedores();
+  const { movimientos } = useMovimientos();
   const [rubroObraId, setRubroObraId] = useState('');
 
   // ── KPIs ──
   const activas = obras.filter(o => o.estado === 'activa');
 
+  // Item 3.8: leer movimientos reales del MovimientosContext (fuente unica)
+  // en vez de los movs semilla en detalles[obraId].movimientos. Antes los
+  // numeros de Reportes no coincidian con los de /movimientos.
   const allMovsYTD = useMemo(() =>
-    Object.values(detalles).flatMap(d =>
-      (d.movimientos || []).filter(m => (m.fecha || '').startsWith(String(CY)))
-    ), [detalles]);
+    movimientos.filter(m => (m.fecha || '').startsWith(String(CY))),
+    [movimientos]);
 
   const facturacionYTD = allMovsYTD.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0);
   const costoYTD       = allMovsYTD.filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0);
