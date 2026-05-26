@@ -2719,12 +2719,15 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 5: CONTRATOS MO
 // ─────────────────────────────────────────────────────────────────────────────
-const FORM_INIT = { rubroId: '', gremio: '', proveedor: '', cuit: '', fechaInicio: '', fechaFin: '', fondoReparo: 5, formaPago: 'Por avance certificado mensualmente', tareasSel: {} };
+const FORM_INIT = { proveedor: '', cuit: '', fechaInicio: '', fechaFin: '', fondoReparo: 5, formaPago: 'Por avance certificado mensualmente', rubrosAgregados: [] };
+const RUBRO_FORM_INIT = { rubroId: '', tareasSel: {} };
 
 function TabContratosMO({ detalle, patch, moneda, obra }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(FORM_INIT);
   const [formError, setFormError] = useState('');
+  const [addingRubro, setAddingRubro] = useState(false);
+  const [rubroForm, setRubroForm] = useState(RUBRO_FORM_INIT);
   const [printContrato, setPrintContrato] = useState(null);
   const { proveedores: proveedoresDyn } = useProveedores();
   const navigate = useNavigate();
@@ -2732,20 +2735,17 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   const rubros = detalle.rubros || [];
   const contratos = detalle.contratos || [];
 
-  const rubroSel = rubros.find(r => r.id === form.rubroId) || null;
-
+  const allTareasSel = form.rubrosAgregados.flatMap(r => Object.keys(r.tareasSel));
+  const rubroSel = rubros.find(r => r.id === rubroForm.rubroId) || null;
   const tareasDisponibles = rubroSel
-    ? (rubroSel.tareas || []).filter(t => t.tipo !== 'seccion' && calcTareaContratada(t.id, contratos) < (t.cantidad || 0))
+    ? (rubroSel.tareas || []).filter(t =>
+        t.tipo !== 'seccion' &&
+        calcTareaContratada(t.id, contratos) < (t.cantidad || 0) &&
+        !allTareasSel.includes(t.id))
     : [];
 
-  const onRubroChange = (rubroId) => {
-    const r = rubros.find(x => x.id === rubroId);
-    setForm(p => ({ ...p, rubroId, gremio: r?.nombre || '', tareasSel: {} }));
-    setFormError('');
-  };
-
   const onTareaToggle = (t) => {
-    setForm(p => {
+    setRubroForm(p => {
       if (p.tareasSel[t.id]) {
         const next = { ...p.tareasSel };
         delete next[t.id];
@@ -2756,24 +2756,46 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
     });
   };
 
-  const totalContrato = Object.values(form.tareasSel).reduce((s, v) => s + (v.cantidad || 0) * (v.precioUnit || 0), 0);
+  const agregarRubroAlForm = () => {
+    if (!rubroForm.rubroId) return;
+    const rubro = rubros.find(r => r.id === rubroForm.rubroId);
+    if (!rubro) return;
+    const existing = form.rubrosAgregados.find(r => r.rubroId === rubroForm.rubroId);
+    if (existing) {
+      setForm(p => ({ ...p, rubrosAgregados: p.rubrosAgregados.map(r => r.rubroId === rubroForm.rubroId ? { ...r, tareasSel: { ...r.tareasSel, ...rubroForm.tareasSel } } : r) }));
+    } else {
+      setForm(p => ({ ...p, rubrosAgregados: [...p.rubrosAgregados, { rubroId: rubroForm.rubroId, rubroNombre: rubro.nombre, tareasSel: rubroForm.tareasSel }] }));
+    }
+    setRubroForm(RUBRO_FORM_INIT);
+    setAddingRubro(false);
+  };
+
+  const removeRubro = (rubroId) => setForm(p => ({ ...p, rubrosAgregados: p.rubrosAgregados.filter(r => r.rubroId !== rubroId) }));
+
+  const totalContrato = form.rubrosAgregados.reduce((sum, ra) =>
+    sum + Object.values(ra.tareasSel).reduce((s, v) => s + (v.cantidad || 0) * (v.precioUnit || 0), 0), 0);
 
   const save = () => {
-    if (!form.rubroId) { setFormError('Seleccioná un rubro'); return; }
     if (!form.proveedor.trim()) { setFormError('Ingresá el nombre del contratista'); return; }
-    if (!rubroSel) { setFormError('El rubro seleccionado ya no existe'); return; }
+    if (form.rubrosAgregados.length === 0) { setFormError('Agregá al menos un rubro con tareas'); return; }
     setFormError('');
-    const tareas = Object.entries(form.tareasSel)
-      .filter(([, v]) => (v.cantidad || 0) > 0)
-      .map(([tareaId, v]) => {
-        const t = (rubroSel.tareas || []).find(x => x.id === tareaId);
-        if (!t) return null;
-        return { tareaId, rubroId: form.rubroId, nombre: t.nombre, unidad: t.unidad, cantidadTotal: t.cantidad, cantidadContratada: +v.cantidad, precioUnit: +v.precioUnit };
-      })
-      .filter(Boolean);
-    patch(d => ({ ...d, contratos: [...(d.contratos || []), { id: newId(), gremio: form.gremio, rubroId: form.rubroId, proveedor: form.proveedor, cuit: form.cuit, fechaInicio: form.fechaInicio, fechaFin: form.fechaFin, fondoReparo: +form.fondoReparo, formaPago: form.formaPago, estado: 'activo', tareas, monto: totalContrato }] }));
+    const tareas = form.rubrosAgregados.flatMap(ra => {
+      const rubro = rubros.find(r => r.id === ra.rubroId);
+      if (!rubro) return [];
+      return Object.entries(ra.tareasSel)
+        .filter(([, v]) => (v.cantidad || 0) > 0)
+        .map(([tareaId, v]) => {
+          const t = (rubro.tareas || []).find(x => x.id === tareaId);
+          if (!t) return null;
+          return { tareaId, rubroId: ra.rubroId, rubroNombre: ra.rubroNombre, nombre: t.nombre, unidad: t.unidad, cantidadTotal: t.cantidad, cantidadContratada: +v.cantidad, precioUnit: +v.precioUnit };
+        })
+        .filter(Boolean);
+    });
+    patch(d => ({ ...d, contratos: [...(d.contratos || []), { id: newId(), proveedor: form.proveedor, cuit: form.cuit, fechaInicio: form.fechaInicio, fechaFin: form.fechaFin, fondoReparo: +form.fondoReparo, formaPago: form.formaPago, estado: 'activo', tareas, monto: totalContrato }] }));
     setAdding(false);
     setForm(FORM_INIT);
+    setAddingRubro(false);
+    setRubroForm(RUBRO_FORM_INIT);
   };
 
   const toggleEstado = (id) => patch(d => ({ ...d, contratos: d.contratos.map(c => c.id === id ? { ...c, estado: c.estado === 'activo' ? 'cerrado' : 'activo' } : c) }));
@@ -2788,16 +2810,11 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
       </div>
 
       {adding && (
-        <FormPanel title="Nuevo contrato MO" onSave={save} onCancel={() => { setAdding(false); setForm(FORM_INIT); setFormError(''); }} style={{ marginBottom: 14 }}>
+        <FormPanel title="Nuevo contrato MO" onSave={save} onCancel={() => { setAdding(false); setForm(FORM_INIT); setAddingRubro(false); setRubroForm(RUBRO_FORM_INIT); setFormError(''); }} style={{ marginBottom: 14 }}>
           {formError && <div style={{ color: '#dc2626', fontSize: 12, fontWeight: 600, padding: '4px 0' }}>{formError}</div>}
-          {/* Fila 1: gremio + proveedor + cuit */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-            <FRow label="Gremio / rubro">
-              <select style={{ ...inputSt, cursor: 'pointer' }} value={form.rubroId} onChange={e => onRubroChange(e.target.value)}>
-                <option value="">— Seleccionar rubro —</option>
-                {rubros.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
-              </select>
-            </FRow>
+
+          {/* Fila 1: proveedor + cuit */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <FRow label="Proveedor / contratista">
               <input
                 list="contrato-prov-list"
@@ -2816,7 +2833,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
             <FInput label="CUIT contratista" value={form.cuit} onChange={v => setForm(p => ({ ...p, cuit: v }))} placeholder="20-XXXXXXXX-X" />
           </div>
 
-          {/* Fila 2: fechas + fondo */}
+          {/* Fila 2: fechas + fondo + forma de pago */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 0.6fr 1fr', gap: 10 }}>
             <FInput label="Fecha inicio" value={form.fechaInicio} onChange={v => setForm(p => ({ ...p, fechaInicio: v }))} type="date" />
             <FInput label="Fecha fin" value={form.fechaFin} onChange={v => setForm(p => ({ ...p, fechaFin: v }))} type="date" />
@@ -2824,74 +2841,132 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
             <FInput label="Forma de pago" value={form.formaPago} onChange={v => setForm(p => ({ ...p, formaPago: v }))} />
           </div>
 
-          {/* Selección de tareas */}
-          {rubroSel && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  Tareas disponibles — {rubroSel.nombre}
-                </div>
-                {tareasDisponibles.length > 0 && (
-                  <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer', fontWeight: 700 }}
-                    onClick={() => {
-                      const allSel = tareasDisponibles.every(t => form.tareasSel[t.id]);
-                      if (allSel) {
-                        setForm(p => ({ ...p, tareasSel: {} }));
-                      } else {
-                        const next = { ...form.tareasSel };
-                        tareasDisponibles.forEach(t => {
-                          if (!next[t.id]) {
-                            const disponible = t.cantidad - calcTareaContratada(t.id, contratos);
-                            next[t.id] = { cantidad: disponible, precioUnit: Math.round(t.costoSub || t.costoMO) || 0 };
-                          }
-                        });
-                        setForm(p => ({ ...p, tareasSel: next }));
-                      }
-                    }}>
-                    {tareasDisponibles.every(t => form.tareasSel[t.id]) ? 'Deseleccionar todo' : 'Seleccionar todo'}
-                  </span>
-                )}
-              </div>
-              {tareasDisponibles.length === 0 ? (
-                <div style={{ fontSize: 12, color: T.ink3, padding: '8px 0' }}>Todas las tareas de este rubro ya están completamente contratadas.</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {tareasDisponibles.map(t => {
-                    const contratado = calcTareaContratada(t.id, contratos);
-                    const disponible = t.cantidad - contratado;
-                    const sel = form.tareasSel[t.id];
-                    return (
-                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: sel ? T.accentSoft : T.faint, borderRadius: 4, border: `1px solid ${sel ? T.accent : T.faint2}` }}>
-                        <input type="checkbox" checked={!!sel} onChange={() => onTareaToggle(t)} style={{ accentColor: T.accent, cursor: 'pointer', flexShrink: 0 }} />
-                        <span style={{ flex: 3, fontSize: 12 }}>{t.nombre}</span>
-                        <span style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{t.unidad} · disp: {disponible}/{t.cantidad}</span>
-                        {sel && (<>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            <span style={{ fontSize: 9, color: T.ink3 }}>Cant.</span>
-                            <input type="number" value={sel.cantidad} min="0" max={disponible}
-                              onChange={e => setForm(p => ({ ...p, tareasSel: { ...p.tareasSel, [t.id]: { ...sel, cantidad: +e.target.value } } }))}
-                              style={{ width: 64, padding: '2px 6px', border: `1px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, fontSize: 12, textAlign: 'right' }} />
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            <span style={{ fontSize: 9, color: T.ink3 }}>$ Unit MO</span>
-                            <input type="number" value={sel.precioUnit} min="0"
-                              onChange={e => setForm(p => ({ ...p, tareasSel: { ...p.tareasSel, [t.id]: { ...sel, precioUnit: +e.target.value } } }))}
-                              style={{ width: 96, padding: '2px 6px', border: `1px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, fontSize: 12, textAlign: 'right' }} />
-                          </div>
-                          <span style={{ fontSize: 12, fontWeight: 700, fontFamily: T.fontMono, color: T.accent, whiteSpace: 'nowrap' }}>
-                            $ {Math.round((sel.cantidad || 0) * (sel.precioUnit || 0)).toLocaleString('es-AR')}
-                          </span>
-                        </>)}
+          {/* Rubros ya agregados */}
+          {form.rubrosAgregados.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Rubros del contrato</div>
+              {form.rubrosAgregados.map(ra => {
+                const subTotal = Object.values(ra.tareasSel).reduce((s, v) => s + (v.cantidad || 0) * (v.precioUnit || 0), 0);
+                const rubro = rubros.find(r => r.id === ra.rubroId);
+                return (
+                  <div key={ra.rubroId} style={{ marginBottom: 6, background: T.faint, borderRadius: 5, border: `1px solid ${T.faint2}`, padding: '8px 10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{ra.rubroNombre}</span>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <span style={{ fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, color: T.accent }}>$ {Math.round(subTotal).toLocaleString('es-AR')}</span>
+                        <span style={{ fontSize: 10, color: '#dc2626', cursor: 'pointer', fontWeight: 700 }} onClick={() => removeRubro(ra.rubroId)}>✕ quitar</span>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {Object.entries(ra.tareasSel).map(([tareaId, v]) => {
+                        const t = (rubro?.tareas || []).find(x => x.id === tareaId);
+                        return t ? (
+                          <span key={tareaId} style={{ fontSize: 10, background: T.accentSoft, borderRadius: 3, padding: '2px 7px', color: T.ink2 }}>
+                            {t.nombre} ({v.cantidad} {t.unidad})
+                          </span>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Sub-form agregar rubro */}
+          {addingRubro ? (
+            <div style={{ marginTop: 6, background: T.faint, borderRadius: 5, border: `1.5px solid ${T.accent}`, padding: '10px 12px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Agregar rubro</div>
+              <FRow label="Rubro">
+                <select style={{ ...inputSt, cursor: 'pointer' }} value={rubroForm.rubroId} onChange={e => setRubroForm({ rubroId: e.target.value, tareasSel: {} })}>
+                  <option value="">— Seleccionar rubro —</option>
+                  {rubros.filter(r => !form.rubrosAgregados.find(ra => ra.rubroId === r.id)).map(r => (
+                    <option key={r.id} value={r.id}>{r.nombre}</option>
+                  ))}
+                </select>
+              </FRow>
+
+              {rubroSel && (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, marginTop: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Tareas disponibles — {rubroSel.nombre}
+                    </div>
+                    {tareasDisponibles.length > 0 && (
+                      <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer', fontWeight: 700 }}
+                        onClick={() => {
+                          const allSel = tareasDisponibles.every(t => rubroForm.tareasSel[t.id]);
+                          if (allSel) {
+                            setRubroForm(p => ({ ...p, tareasSel: {} }));
+                          } else {
+                            const next = { ...rubroForm.tareasSel };
+                            tareasDisponibles.forEach(t => {
+                              if (!next[t.id]) {
+                                const disponible = t.cantidad - calcTareaContratada(t.id, contratos);
+                                next[t.id] = { cantidad: disponible, precioUnit: Math.round(t.costoSub || t.costoMO) || 0 };
+                              }
+                            });
+                            setRubroForm(p => ({ ...p, tareasSel: next }));
+                          }
+                        }}>
+                        {tareasDisponibles.every(t => rubroForm.tareasSel[t.id]) ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                      </span>
+                    )}
+                  </div>
+                  {tareasDisponibles.length === 0 ? (
+                    <div style={{ fontSize: 12, color: T.ink3, padding: '8px 0' }}>Todas las tareas de este rubro ya están completamente contratadas.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {tareasDisponibles.map(t => {
+                        const disponible = t.cantidad - calcTareaContratada(t.id, contratos);
+                        const sel = rubroForm.tareasSel[t.id];
+                        return (
+                          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: sel ? T.accentSoft : T.paper, borderRadius: 4, border: `1px solid ${sel ? T.accent : T.faint2}` }}>
+                            <input type="checkbox" checked={!!sel} onChange={() => onTareaToggle(t)} style={{ accentColor: T.accent, cursor: 'pointer', flexShrink: 0 }} />
+                            <span style={{ flex: 3, fontSize: 12 }}>{t.nombre}</span>
+                            <span style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{t.unidad} · disp: {disponible}/{t.cantidad}</span>
+                            {sel && (<>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                <span style={{ fontSize: 9, color: T.ink3 }}>Cant.</span>
+                                <input type="number" value={sel.cantidad} min="0" max={disponible}
+                                  onChange={e => setRubroForm(p => ({ ...p, tareasSel: { ...p.tareasSel, [t.id]: { ...sel, cantidad: +e.target.value } } }))}
+                                  style={{ width: 64, padding: '2px 6px', border: `1px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, fontSize: 12, textAlign: 'right' }} />
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                <span style={{ fontSize: 9, color: T.ink3 }}>$ Unit MO</span>
+                                <input type="number" value={sel.precioUnit} min="0"
+                                  onChange={e => setRubroForm(p => ({ ...p, tareasSel: { ...p.tareasSel, [t.id]: { ...sel, precioUnit: +e.target.value } } }))}
+                                  style={{ width: 96, padding: '2px 6px', border: `1px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, fontSize: 12, textAlign: 'right' }} />
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 700, fontFamily: T.fontMono, color: T.accent, whiteSpace: 'nowrap' }}>
+                                $ {Math.round((sel.cantidad || 0) * (sel.precioUnit || 0)).toLocaleString('es-AR')}
+                              </span>
+                            </>)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
               )}
-              {totalContrato > 0 && (
-                <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', fontSize: 14, fontWeight: 800, fontFamily: T.fontMono, color: T.accent }}>
-                  Total contrato: $ {Math.round(totalContrato).toLocaleString('es-AR')}
-                </div>
-              )}
+              <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
+                <Btn sm onClick={() => { setAddingRubro(false); setRubroForm(RUBRO_FORM_INIT); }}>Cancelar</Btn>
+                <Btn sm fill onClick={agregarRubroAlForm}>Agregar rubro</Btn>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 6 }}>
+              <span
+                onClick={() => setAddingRubro(true)}
+                style={{ fontSize: 12, color: T.accent, cursor: 'pointer', fontWeight: 700 }}>
+                + Agregar rubro
+              </span>
+            </div>
+          )}
+
+          {totalContrato > 0 && (
+            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', fontSize: 14, fontWeight: 800, fontFamily: T.fontMono, color: T.accent }}>
+              Total contrato: $ {Math.round(totalContrato).toLocaleString('es-AR')}
             </div>
           )}
         </FormPanel>
@@ -2906,19 +2981,25 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
         const reparo = Math.round(cert * (c.fondoReparo || 0) / 100);
         const aLiquidar = cert - reparo;
         const tareas = Array.isArray(c.tareas) ? c.tareas : [];
+        const rubrosNombres = c.gremio
+          ? [c.gremio]
+          : [...new Set(tareas.map(t => t.rubroNombre).filter(Boolean))];
         return (
           <Box key={c.id} style={{ padding: '12px 14px', marginBottom: 8, opacity: c.estado === 'cerrado' ? 0.7 : 1 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>{c.gremio}</div>
-                <div style={{ fontSize: 12, color: T.ink2 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>
                   {(() => {
                     const prov = proveedoresDyn.find(p => p.nombre === c.proveedor || (c.cuit && p.cuit && p.cuit.replace(/[-\s]/g,'') === c.cuit.replace(/[-\s]/g,'')));
                     return prov
-                      ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${prov.id}`)}>{c.proveedor}</span>
-                      : c.proveedor;
-                  })()}{c.cuit ? ` · CUIT ${c.cuit}` : ''}
+                      ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${prov.id}`)}>{c.proveedor || c.gremio}</span>
+                      : (c.proveedor || c.gremio || '—');
+                  })()}
+                  {c.cuit ? <span style={{ fontSize: 11, color: T.ink2, fontWeight: 400 }}> · CUIT {c.cuit}</span> : ''}
                 </div>
+                {rubrosNombres.length > 0 && (
+                  <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>{rubrosNombres.join(' · ')}</div>
+                )}
               </div>
               <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 16 }}>{fmtM(monto, moneda)}</div>
               <Chip ok={c.estado === 'activo'} style={{ fontSize: 10 }}>{c.estado}</Chip>
@@ -3415,8 +3496,7 @@ export default function ObraPresupuesto() {
     return isNaN(t) ? 0 : t;
   });
   const [showExport, setShowExport] = useState(false);
-  const [showContrato, setShowContrato] = useState(false);
-  const [showFinanciacion, setShowFinanciacion] = useState(false);
+const [showFinanciacion, setShowFinanciacion] = useState(false);
   const [showPortalAccess, setShowPortalAccess] = useState(false);
   const [portalPhone, setPortalPhone] = useState('');
   const [portalSending, setPortalSending] = useState(false);
@@ -3536,7 +3616,6 @@ export default function ObraPresupuesto() {
         <div style={{ display: 'flex', gap: 6 }}>
           <Btn sm onClick={() => navigate('/obras')}>← Obras</Btn>
           <Btn sm onClick={() => { setShowPortalAccess(true); setPortalMsg(''); setPortalPhone(obra.clienteWhatsapp || ''); }}>🔗 Acceso cliente</Btn>
-          <Btn sm fill onClick={() => setShowContrato(true)}>Contrato MO</Btn>
         </div>
       </div>
 
@@ -3584,7 +3663,6 @@ export default function ObraPresupuesto() {
       {displayTab === 8 && <TabFotos detalle={detalle} patch={patch} obraId={id} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
-      {showContrato && <ContratoMOModal onClose={() => setShowContrato(false)} />}
 
       {showPortalAccess && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

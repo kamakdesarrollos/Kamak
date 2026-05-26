@@ -28,14 +28,40 @@ function generarHTMLContrato({ contrato, obra, logoLight, logoDark }) {
     ? `<img src="${logoDark}" style="height:20px;object-fit:contain;display:block" />`
     : `<div class="logo-sm">KAMAK</div>`;
 
-  const taskRows = tareas.map((t, i) => `
-    <div class="task-row${i % 2 === 1 ? ' alt' : ''}">
-      <div class="tc tc-name">${t.nombre}</div>
-      <div class="tc tc-un">${t.unidad}</div>
-      <div class="tc tc-num">${fmtN(t.cantidadContratada)}</div>
-      <div class="tc tc-num">${fmtM(t.precioUnit)}</div>
-      <div class="tc tc-num bold">${fmtM((t.cantidadContratada || 0) * (t.precioUnit || 0))}</div>
-    </div>`).join('');
+  // Group tasks by rubro (supports old single-rubro format via c.gremio)
+  const rubroGroups = [];
+  if (tareas.length > 0) {
+    const hasRubroNames = tareas.some(t => t.rubroNombre);
+    if (hasRubroNames) {
+      const groupMap = new Map();
+      tareas.forEach(t => {
+        const key = t.rubroNombre || '—';
+        if (!groupMap.has(key)) groupMap.set(key, []);
+        groupMap.get(key).push(t);
+      });
+      groupMap.forEach((ts, nombre) => rubroGroups.push({ nombre, tareas: ts }));
+    } else {
+      rubroGroups.push({ nombre: c.gremio || '', tareas });
+    }
+  }
+
+  let rowIdx = 0;
+  const taskRows = rubroGroups.map(group => {
+    const sectionHeader = rubroGroups.length > 1
+      ? `<div class="sec-ttl" style="margin-top:6px"><span class="dmnd-sm"></span>${group.nombre.toUpperCase()}</div>`
+      : '';
+    const rows = group.tareas.map(t => {
+      const cls = rowIdx++ % 2 === 1 ? ' alt' : '';
+      return `<div class="task-row${cls}">
+        <div class="tc tc-name">${t.nombre}</div>
+        <div class="tc tc-un">${t.unidad}</div>
+        <div class="tc tc-num">${fmtN(t.cantidadContratada)}</div>
+        <div class="tc tc-num">${fmtM(t.precioUnit)}</div>
+        <div class="tc tc-num bold">${fmtM((t.cantidadContratada || 0) * (t.precioUnit || 0))}</div>
+      </div>`;
+    }).join('');
+    return sectionHeader + rows;
+  }).join('');
 
   const css = `
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
@@ -117,7 +143,7 @@ body{font-family:'Montserrat',sans-serif}
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=794, initial-scale=1.0">
-<title>Contrato MO — ${c.gremio}</title>
+<title>Contrato MO — ${c.proveedor || c.gremio}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>${css}</style>
@@ -132,10 +158,10 @@ body{font-family:'Montserrat',sans-serif}
     <div class="eyebrow">CONTRATO DE MANO DE OBRA</div>
     <div class="obra-subtitle">OBRA · <span>${(obra?.nombre || '—').toUpperCase()}</span></div>
     <div class="title-frame">
-      <div class="frame-lbl">◆ RUBRO / GREMIO ◆</div>
+      <div class="frame-lbl">◆ CONTRATISTA ◆</div>
       <div class="corner c-tl"></div><div class="corner c-tr"></div>
       <div class="corner c-bl"></div><div class="corner c-br"></div>
-      <div class="title-main">${(c.gremio || '').toUpperCase()}</div>
+      <div class="title-main">${(c.proveedor || c.gremio || '').toUpperCase()}</div>
       <div class="title-num">${numContrato} &nbsp;·&nbsp; ${fecha}</div>
     </div>
   </div>
@@ -153,8 +179,8 @@ body{font-family:'Montserrat',sans-serif}
 
 <div class="pag-light">
   <div class="wm-br">${STRIPES_SVG}</div>
-  <div class="comp-hdr">${imgDark}<div class="comp-meta">CONTRATO MO · ${(c.gremio || '').toUpperCase()} · ${numContrato}</div></div>
-  <div class="sec-ttl"><span class="dmnd-sm"></span>ALCANCE DE TRABAJOS · ${(c.gremio || '').toUpperCase()}</div>
+  <div class="comp-hdr">${imgDark}<div class="comp-meta">CONTRATO MO · ${(c.proveedor || c.gremio || '').toUpperCase()} · ${numContrato}</div></div>
+  <div class="sec-ttl"><span class="dmnd-sm"></span>ALCANCE DE TRABAJOS</div>
   <div class="tbl-hdr">
     <div class="tc tc-name">DESCRIPCIÓN</div>
     <div class="tc tc-un">UN</div>
@@ -219,8 +245,10 @@ export default function ContratoMOModal({ onClose, contrato, obra }) {
       <div className="k-modal" style={{ width: 640, maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 17 }}>Contrato MO · {contrato?.gremio}</div>
-            <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>{contrato?.proveedor || '—'}</div>
+            <div style={{ fontWeight: 800, fontSize: 17 }}>Contrato MO · {contrato?.proveedor || contrato?.gremio}</div>
+            <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>
+              {[...new Set((contrato?.tareas || []).map(t => t.rubroNombre).filter(Boolean))].join(' · ') || contrato?.gremio || '—'}
+            </div>
           </div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
         </div>
@@ -241,28 +269,45 @@ export default function ContratoMOModal({ onClose, contrato, obra }) {
             ))}
           </div>
 
-          {/* Task list */}
-          {tareas.length > 0 && (
-            <div style={{ borderRadius: 4, overflow: 'hidden', border: `1px solid ${T.faint2}` }}>
-              <div style={{ background: T.dark, color: T.paper, padding: '6px 12px', fontSize: 10, fontWeight: 700, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <div style={{ width: 8, height: 8, background: T.accent, transform: 'rotate(45deg)' }} />
-                {tareas.length} tarea{tareas.length !== 1 ? 's' : ''} · {contrato?.gremio}
-              </div>
-              {tareas.map((t, i) => (
-                <div key={i} style={{ display: 'flex', padding: '6px 12px', borderBottom: `1px solid ${T.faint2}`, fontSize: 11, background: i % 2 ? T.faint : T.paper, alignItems: 'center' }}>
-                  <span style={{ flex: 3 }}>{t.nombre}</span>
-                  <span style={{ flex: 0.5, color: T.ink2, textAlign: 'center' }}>{t.unidad}</span>
-                  <span style={{ flex: 0.7, fontFamily: T.fontMono, textAlign: 'right' }}>{t.cantidadContratada}</span>
-                  <span style={{ flex: 1.2, fontFamily: T.fontMono, textAlign: 'right', color: T.ink2 }}>$ {Math.round(t.precioUnit).toLocaleString('es-AR')}</span>
-                  <span style={{ flex: 1.2, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700 }}>$ {Math.round((t.cantidadContratada || 0) * (t.precioUnit || 0)).toLocaleString('es-AR')}</span>
+          {/* Task list grouped by rubro */}
+          {tareas.length > 0 && (() => {
+            const hasRubroNames = tareas.some(t => t.rubroNombre);
+            const groups = hasRubroNames
+              ? [...tareas.reduce((m, t) => { const k = t.rubroNombre || '—'; if (!m.has(k)) m.set(k, []); m.get(k).push(t); return m; }, new Map()).entries()].map(([nombre, ts]) => ({ nombre, tareas: ts }))
+              : [{ nombre: contrato?.gremio || '', tareas }];
+            let rowIdx = 0;
+            return (
+              <div style={{ borderRadius: 4, overflow: 'hidden', border: `1px solid ${T.faint2}` }}>
+                <div style={{ background: T.dark, color: T.paper, padding: '6px 12px', fontSize: 10, fontWeight: 700, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ width: 8, height: 8, background: T.accent, transform: 'rotate(45deg)' }} />
+                  {tareas.length} tarea{tareas.length !== 1 ? 's' : ''}
                 </div>
-              ))}
-              <div style={{ display: 'flex', padding: '7px 12px', background: T.accentSoft, fontSize: 12, fontWeight: 800 }}>
-                <span style={{ flex: 1 }}>TOTAL MO</span>
-                <span style={{ fontFamily: T.fontMono }}>$ {Math.round(monto).toLocaleString('es-AR')}</span>
+                {groups.map(group => (
+                  <div key={group.nombre}>
+                    {groups.length > 1 && (
+                      <div style={{ background: T.faint2, padding: '4px 12px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>{group.nombre}</div>
+                    )}
+                    {group.tareas.map((t) => {
+                      const i = rowIdx++;
+                      return (
+                        <div key={i} style={{ display: 'flex', padding: '6px 12px', borderBottom: `1px solid ${T.faint2}`, fontSize: 11, background: i % 2 ? T.faint : T.paper, alignItems: 'center' }}>
+                          <span style={{ flex: 3 }}>{t.nombre}</span>
+                          <span style={{ flex: 0.5, color: T.ink2, textAlign: 'center' }}>{t.unidad}</span>
+                          <span style={{ flex: 0.7, fontFamily: T.fontMono, textAlign: 'right' }}>{t.cantidadContratada}</span>
+                          <span style={{ flex: 1.2, fontFamily: T.fontMono, textAlign: 'right', color: T.ink2 }}>$ {Math.round(t.precioUnit).toLocaleString('es-AR')}</span>
+                          <span style={{ flex: 1.2, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700 }}>$ {Math.round((t.cantidadContratada || 0) * (t.precioUnit || 0)).toLocaleString('es-AR')}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+                <div style={{ display: 'flex', padding: '7px 12px', background: T.accentSoft, fontSize: 12, fontWeight: 800 }}>
+                  <span style={{ flex: 1 }}>TOTAL MO</span>
+                  <span style={{ fontFamily: T.fontMono }}>$ {Math.round(monto).toLocaleString('es-AR')}</span>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {tareas.length === 0 && (
             <div style={{ background: T.faint, borderRadius: 4, padding: '12px 16px', textAlign: 'center' }}>
