@@ -116,20 +116,32 @@ export default function Clientes() {
     );
   }, [clientes, search]);
 
-  // Si el nombre del cliente cambio, propagar el nuevo nombre a:
-  // - obras[].cliente  (donde matcheaba con el nombre viejo)
-  // - movimientos[].proveedor (en ingresos que usen el nombre del cliente como
-  //   proveedor; legacy, antes de que existiera clienteId)
-  // Sin esto, las obras y movimientos siguen mostrando el nombre viejo y el
-  // QR del cliente (que se arma con obra.cliente) tambien queda desactualizado.
+  // Propaga el nombre actual del cliente a obras y movimientos vinculados.
+  // Estrategia:
+  //   1) Obras vinculadas por clienteId (FK real): siempre actualizar nombre
+  //      si esta desincronizado, sin importar si el nombre cambio o no en
+  //      este guardado. Esto permite "re-sincronizar" obras legacy con un
+  //      simple click en Guardar.
+  //   2) Obras legacy sin clienteId: si cambio el nombre, propagar por el
+  //      nombre viejo Y aprovechar para asignarles clienteId (asi a futuro
+  //      no necesitan este fallback).
+  //   3) Movimientos de ingreso que usan el nombre del cliente como
+  //      proveedor (legacy, antes de que existiera clienteId).
   const saveCliente = (initial, data) => {
     updateCliente(initial.id, data);
     const oldName = initial.nombre;
     const newName = data.nombre;
+
+    // (1) Sync por clienteId — siempre.
+    obras
+      .filter(o => o.clienteId === initial.id && o.cliente !== newName)
+      .forEach(o => updateObra(o.id, { cliente: newName }));
+
+    // (2)+(3) Fallback legacy: si cambio el nombre.
     if (oldName && newName && oldName !== newName) {
       obras
-        .filter(o => o.cliente === oldName)
-        .forEach(o => updateObra(o.id, { cliente: newName }));
+        .filter(o => !o.clienteId && o.cliente === oldName)
+        .forEach(o => updateObra(o.id, { cliente: newName, clienteId: initial.id }));
       movimientos
         .filter(m => m.tipo === 'ingreso' && m.proveedor === oldName)
         .forEach(m => updateMovimiento(m.id, { proveedor: newName }));
