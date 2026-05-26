@@ -74,7 +74,20 @@ function InsumoSearch({ items, onSelect, placeholder }) {
 
   const results = useMemo(() => {
     if (!q.trim()) return [];
-    return items.filter(i => i.nombre.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
+    const norm = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const ql = norm(q);
+    const matches = items.filter(i => norm(i.nombre).includes(ql));
+    const rank = s => {
+      if (s.startsWith(ql)) return 2;
+      if (s.split(/\s+/).some(w => w.startsWith(ql))) return 1;
+      return 0;
+    };
+    matches.sort((a, b) => {
+      const diff = rank(norm(b.nombre)) - rank(norm(a.nombre));
+      if (diff !== 0) return diff;
+      return a.nombre.localeCompare(b.nombre, 'es');
+    });
+    return matches.slice(0, 12);
   }, [q, items]);
 
   useEffect(() => {
@@ -107,7 +120,7 @@ function InsumoSearch({ items, onSelect, placeholder }) {
               onMouseDown={() => select(item)}
               style={{ padding: '8px 12px', cursor: 'pointer', background: i === idx ? T.accentSoft : 'transparent', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 12, fontWeight: 600 }}>{item.nombre}</span>
-              <span style={{ fontSize: 11, color: T.ink2, fontFamily: T.fontMono }}>{item.unidad} · $ {fmtN(item.precio)}</span>
+              <span style={{ fontSize: 11, color: T.ink2, fontFamily: T.fontMono }}>{item.unidad} · $ {fmtN(item.precio ?? item.precioHora ?? 0)}</span>
             </div>
           ))}
         </div>
@@ -119,15 +132,18 @@ function InsumoSearch({ items, onSelect, placeholder }) {
 // ── Full-screen APU editor ─────────────────────────────────────────────────────
 const cellInSt = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, border: `1px solid ${T.faint2}`, borderRadius: 3, padding: '2px 5px', outline: 'none', background: T.paper };
 
-function APUEditor({ form, setForm, rubros, materiales, subcontratos, onSave, onCancel }) {
+function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, onSave, onCancel }) {
   const costs = useMemo(() => calcTarea(form), [form]);
 
   const addMat = (item) => setForm(f => ({ ...f, materiales: [...f.materiales, { id: newId(), nombre: item.nombre, cantidad: 1, unidad: item.unidad, precio: item.precio }] }));
   const addSub = (item) => setForm(f => ({ ...f, subcontratos: [...(f.subcontratos||[]), { id: newId(), nombre: item.nombre, cantidad: 1, unidad: item.unidad, precio: item.precio }] }));
+  const addMO  = (item) => setForm(f => ({ ...f, mo: [...(f.mo||[]), { id: newId(), nombre: item.nombre, horas: 1, precioHora: item.precioHora }] }));
   const updateMat = (id, field, val) => setForm(f => ({ ...f, materiales: f.materiales.map(m => m.id === id ? { ...m, [field]: val } : m) }));
   const removeMat = (id) => setForm(f => ({ ...f, materiales: f.materiales.filter(m => m.id !== id) }));
   const updateSub = (id, field, val) => setForm(f => ({ ...f, subcontratos: (f.subcontratos||[]).map(s => s.id === id ? { ...s, [field]: val } : s) }));
   const removeSub = (id) => setForm(f => ({ ...f, subcontratos: (f.subcontratos||[]).filter(s => s.id !== id) }));
+  const updateMO  = (id, field, val) => setForm(f => ({ ...f, mo: (f.mo||[]).map(m => m.id === id ? { ...m, [field]: val } : m) }));
+  const removeMO  = (id) => setForm(f => ({ ...f, mo: (f.mo||[]).filter(m => m.id !== id) }));
 
   const headerInput = (extra) => ({ background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.18)', color: T.paper, fontFamily: T.font, fontSize: 12, padding: '4px 8px', borderRadius: 4, outline: 'none', ...extra });
 
@@ -256,6 +272,42 @@ function APUEditor({ form, setForm, rubros, materiales, subcontratos, onSave, on
               <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic', padding: '6px 0' }}>Sin sub contratos. Buscá en el catálogo para agregar.</div>
             )}
           </div>
+
+          {/* MANO DE OBRA */}
+          <div>
+            <SectionHeader label="Mano de obra" />
+            <div style={{ marginBottom: 10 }}>
+              <InsumoSearch items={moItems||[]} onSelect={addMO} placeholder="Buscar categoría de MO y agregar…" />
+            </div>
+            {(form.mo||[]).length > 0 ? (
+              <div>
+                <div className="k-tr" style={{ background: T.faint, fontWeight: 700, fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  <div className="k-cell" style={{ flex: 3 }}>Categoría</div>
+                  <div className="k-cell" style={{ flex: 1, textAlign: 'right' }}>Horas</div>
+                  <div className="k-cell" style={{ flex: 0.8 }} />
+                  <div className="k-cell" style={{ flex: 1.5, textAlign: 'right' }}>$/h</div>
+                  <div className="k-cell" style={{ flex: 1.5, textAlign: 'right' }}>Total $</div>
+                  <div className="k-cell" style={{ flex: 0.3 }} />
+                </div>
+                {(form.mo||[]).map(m => (
+                  <div key={m.id} className="k-tr" style={{ alignItems: 'center' }}>
+                    <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>{m.nombre}</div>
+                    <div className="k-cell" style={{ flex: 1 }}>
+                      <input type="number" min="0" step="0.01" value={m.horas} onChange={e => updateMO(m.id, 'horas', +e.target.value)} style={cellInSt} />
+                    </div>
+                    <div className="k-cell" style={{ flex: 0.8, textAlign: 'center', color: T.ink2, fontSize: 11 }}>h</div>
+                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>$ {fmtN(m.precioHora)}</div>
+                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 12 }}>$ {fmtN(m.horas * m.precioHora)}</div>
+                    <div className="k-cell" style={{ flex: 0.3, textAlign: 'center' }}>
+                      <span style={{ color: T.accent, cursor: 'pointer', fontSize: 15 }} onClick={() => removeMO(m.id)}>×</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic', padding: '6px 0' }}>Sin mano de obra. Buscá en el catálogo para agregar.</div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -267,20 +319,26 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
   const [sel, setSel] = useState(null);
   const [form, setForm] = useState(null);
   const [search, setSearch] = useState('');
+  const [lastAddedId, setLastAddedId] = useState(null);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return items.filter(i => Object.values(i).some(v => String(v).toLowerCase().includes(q)));
-  }, [items, search]);
+    const list = items.filter(i => Object.values(i).some(v => String(v).toLowerCase().includes(q)));
+    if (lastAddedId) {
+      const idx = list.findIndex(i => i.id === lastAddedId);
+      if (idx > 0) { const [it] = list.splice(idx, 1); list.unshift(it); }
+    }
+    return list;
+  }, [items, search, lastAddedId]);
 
   const startAdd  = () => { setForm({ ...emptyForm }); setSel(null); };
   const startEdit = (item) => { setForm({ ...item }); setSel(item.id); };
-  const cancel    = () => { setForm(null); setSel(null); };
+  const cancel    = () => { setForm(null); setSel(null); setLastAddedId(null); };
   const save = () => {
     if (!form) return;
     if (sel) onUpdate(sel, form);
     else onAdd(form);
-    setForm(null); setSel(null);
+    setForm(null); setSel(null); setLastAddedId(null);
   };
 
   return (
@@ -309,7 +367,15 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
                   <td style={{ padding: '4px 8px', textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                       <span title="Duplicar" style={{ color: T.ink2, cursor: 'pointer', fontSize: 13 }}
-                        onClick={e => { e.stopPropagation(); onAdd({ ...item, nombre: `Copia de ${item.nombre}` }); }}>⧉</span>
+                        onClick={e => {
+                          e.stopPropagation();
+                          const dupId = newId();
+                          const copy = { ...item, nombre: `Copia de ${item.nombre}`, id: dupId };
+                          onAdd(copy);
+                          setLastAddedId(dupId);
+                          setForm({ ...copy });
+                          setSel(dupId);
+                        }}>⧉</span>
                       <span style={{ color: T.accent, cursor: 'pointer', fontSize: 12 }}
                         onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar?')) onDelete(item.id); }}>🗑</span>
                     </div>
@@ -496,21 +562,27 @@ function ImportarAPUModal({ rubros, onImport, onClose }) {
 
 // ── Tab: APU ──────────────────────────────────────────────────────────────────
 function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcontrato }) {
-  const { tareas, rubros, materiales, subcontratos } = catalog;
+  const { tareas, rubros, materiales, subcontratos, mo } = catalog;
   const [selRubro, setSelRubro] = useState('');
   const [search, setSearch] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState(null);
   const [editId, setEditId] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const [lastAddedId, setLastAddedId] = useState(null);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return tareas.filter(t =>
+    const list = tareas.filter(t =>
       (!selRubro || t.rubroNombre === selRubro) &&
       (t.nombre.toLowerCase().includes(q) || (t.codigo||'').toLowerCase().includes(q))
     );
-  }, [tareas, selRubro, search]);
+    if (lastAddedId) {
+      const idx = list.findIndex(t => t.id === lastAddedId);
+      if (idx > 0) { const [it] = list.splice(idx, 1); list.unshift(it); }
+    }
+    return list;
+  }, [tareas, selRubro, search, lastAddedId]);
 
   const startEdit = (t) => { setForm(JSON.parse(JSON.stringify(t))); setEditId(t.id); setEditMode(true); };
   const startNew  = () => {
@@ -518,16 +590,23 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
     setEditId(null);
     setEditMode(true);
   };
-  const cancel = () => { setEditMode(false); setForm(null); setEditId(null); };
+  const cancel = () => { setEditMode(false); setForm(null); setEditId(null); setLastAddedId(null); };
   const duplicate = (t) => {
-    onAdd({
+    const dupId = newId();
+    const copy = {
       ...t,
+      id: dupId,
       nombre: `Copia de ${t.nombre}`,
       materiales:   (t.materiales||[]).map(m => ({ ...m, id: newId() })),
       subcontratos: (t.subcontratos||[]).map(s => ({ ...s, id: newId() })),
       mo:           (t.mo||[]).map(m => ({ ...m, id: newId() })),
       generales:    (t.generales||[]).map(g => ({ ...g, id: newId() })),
-    });
+    };
+    onAdd(copy);
+    setLastAddedId(dupId);
+    setForm(JSON.parse(JSON.stringify(copy)));
+    setEditId(dupId);
+    setEditMode(true);
   };
 
   const handleImport = ({ nombre, subRubro, unidad, rubroNombre, mats, subs, gens }) => {
@@ -563,7 +642,7 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
     if (!form || !form.nombre.trim()) return;
     if (editId) onUpdate(editId, form);
     else onAdd(form);
-    setEditMode(false); setForm(null); setEditId(null);
+    setEditMode(false); setForm(null); setEditId(null); setLastAddedId(null);
   };
 
   return (
@@ -648,6 +727,7 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
           setForm={setForm}
           rubros={rubros}
           materiales={materiales}
+          moItems={mo || []}
           subcontratos={subcontratos || []}
           onSave={save}
           onCancel={cancel}
