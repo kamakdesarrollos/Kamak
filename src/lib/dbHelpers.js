@@ -55,18 +55,25 @@ export async function createAuthUser(email, password) {
   return tempClient.auth.signUp({ email, password });
 }
 
+// Devuelve:
+//   - el dato si existe en la tabla
+//   - null si la query funciono pero no hay registro para esa key
+//   - undefined si hubo error de red/permiso (importante: los providers
+//     usan esto para NO disparar un save de SEED que tambien fallaria
+//     con el mismo error, evitando spam de 401)
 export async function loadSharedData(key) {
   try {
     const { data, error } = await supabase.from('shared_data').select('data').eq('key', key).maybeSingle();
     if (error) {
       console.error('[loadSharedData] error:', key, error);
       _fireErrorToast('Sin conexión con la base de datos. Reintentando…');
+      return undefined; // error -> distinto de "no hay datos"
     }
     return data?.data ?? null;
   } catch (e) {
     console.error('[loadSharedData] exception:', key, e);
     _fireErrorToast('Sin conexión con la base de datos. Reintentando…');
-    return null;
+    return undefined; // error -> distinto de "no hay datos"
   }
 }
 

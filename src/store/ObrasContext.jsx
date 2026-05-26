@@ -207,6 +207,14 @@ export function ObrasProvider({ children }) {
     let cancelled = false;
     loadSharedData('obras').then(data => {
       if (cancelled) return;
+      if (data === undefined) {
+        // Error de red/permiso en el load. NO hacemos save (terminaria con
+        // el mismo error). Marcamos ready para que la app se renderee con
+        // el localStorage que ya tenemos.
+        sbLoaded.current = true;
+        markReady();
+        return;
+      }
       if (userEditedBeforeFirstLoad.current) {
         // El usuario ya hizo cambios antes de que llegara el fetch — no
         // pisamos su trabajo, en su lugar subimos sus cambios al remoto.

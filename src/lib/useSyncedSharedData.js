@@ -101,16 +101,24 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
     let cancelled = false;
     loadSharedData(key).then(data => {
       if (cancelled) return;
+      if (data === undefined) {
+        // Hubo error de red/permiso en el load. NO hacemos save (terminaria
+        // con el mismo error y generaria spam de 401). Marcamos ready para
+        // que la app se renderee con el localStorage que ya tenemos.
+        sbLoaded.current = true;
+        if (!skipMarkReady) markReady();
+        return;
+      }
       // Si el usuario edito algo ANTES de que llegue este fetch, no pisamos
       // su cambio. En su lugar, lo subimos al remoto (gana el local).
       if (userEditedBeforeFirstLoad.current) {
         saveSharedData(key, stateRef.current);
-      } else if (data !== null && data !== undefined) {
+      } else if (data !== null) {
         fromRemote.current = true;
         setState(data);
         setTimeout(() => { fromRemote.current = false; }, 0);
       } else {
-        // Primer save: subir el initial al remoto (no habia nada).
+        // data === null: query exitosa pero no hay registro. Primer save.
         saveSharedData(key, stateRef.current);
       }
       sbLoaded.current = true;
