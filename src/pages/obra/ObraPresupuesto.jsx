@@ -141,7 +141,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         {/* KPI: Total cliente — solo admin (precio de venta) */}
-        {isAdmin && totalCliente > 0 && (
+        {isAdmin && totalClienteUSD > 0 && (
           <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${T.accent}`, cursor: 'pointer' }}
             onClick={() => onChangeTab?.(1)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Total cliente</div>

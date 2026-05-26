@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useUsuarios } from '../store/UsuariosContext';
 
@@ -7,16 +7,30 @@ export default function WhatsappVerificationBanner() {
   const [verif, setVerif]       = useState(null);
   const [loading, setLoading]   = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  // Si la tabla no tiene RLS configurada para el usuario actual, recibimos
+  // 403 en cada poll. Lo detectamos una vez y dejamos de polear (no tiene
+  // sentido reintentar cada 15s — el error es de config, no transiente).
+  const accessDenied = useRef(false);
 
   useEffect(() => {
-    if (!currentUser?.email || dismissed) return;
+    if (!currentUser?.email || dismissed || accessDenied.current) return;
     const check = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('whatsapp_verifications')
         .select('*')
         .eq('user_email', currentUser.email)
         .gt('expires_at', new Date().toISOString())
         .maybeSingle();
+      if (error) {
+        // 401/403 = no hay RLS configurada o el usuario no tiene permiso.
+        // Detenemos el polling — esto no se va a arreglar reintentando.
+        if (error.code === 'PGRST301' || error.code === '42501' || /403|401|forbidden|permission/i.test(error.message || '')) {
+          accessDenied.current = true;
+          console.warn('[WhatsappVerificationBanner] Sin permiso para leer whatsapp_verifications. Polling detenido. Configurar RLS en Supabase si querés que funcione la vinculación interactiva.');
+          clearInterval(interval);
+        }
+        return;
+      }
       setVerif(data || null);
     };
     check();
