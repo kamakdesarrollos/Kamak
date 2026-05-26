@@ -229,7 +229,7 @@ body {
    posicion en pantalla — parece que la raya se interrumpe en el area
    blanca intermedia y reaparece abajo, alineada. */
 .k-stripes-bg {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260' viewBox='0 0 260 260'><g transform='rotate(62 130 130)' fill='%231a9b9c' fill-opacity='0.05'><rect x='-60' y='25' width='420' height='13'/><rect x='-60' y='60' width='420' height='13'/><rect x='-60' y='95' width='420' height='13'/><rect x='-60' y='130' width='420' height='13'/><rect x='-60' y='165' width='420' height='13'/></g></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260' viewBox='0 0 260 260'><g transform='rotate(62 130 130)' fill='%231a9b9c' fill-opacity='0.12'><rect x='-60' y='25' width='420' height='14'/><rect x='-60' y='60' width='420' height='14'/><rect x='-60' y='95' width='420' height='14'/><rect x='-60' y='130' width='420' height='14'/><rect x='-60' y='165' width='420' height='14'/></g></svg>");
   background-position: top right;
   background-repeat: no-repeat;
   background-attachment: fixed;
