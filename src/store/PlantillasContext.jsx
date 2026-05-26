@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
@@ -294,19 +294,23 @@ export function PlantillasProvider({ children }) {
     if (pendingSaveRef.current) saveSharedData('plantillas', pendingSaveRef.current, { silent: true });
   }, []);
 
-  const add = (plt) => setPlantillas(p => [...p, { ...plt, id: newId(), updatedAt: today(), usosCount: 0 }]);
-  const update = (id, changes) => setPlantillas(p => p.map(t => t.id === id ? { ...t, ...changes, updatedAt: today() } : t));
-  const remove = (id) => setPlantillas(p => p.filter(t => t.id !== id));
-  const duplicate = (id) => {
-    const src = plantillas.find(p => p.id === id);
-    if (!src) return;
-    const copy = JSON.parse(JSON.stringify(src));
-    setPlantillas(p => [...p, { ...copy, id: newId(), nombre: src.nombre + ' (copia)', updatedAt: today(), usosCount: 0 }]);
-  };
-  const incrementUso = (id) => setPlantillas(p => p.map(t => t.id === id ? { ...t, usosCount: (t.usosCount||0) + 1 } : t));
+  const add = useCallback((plt) => setPlantillas(p => [...p, { ...plt, id: newId(), updatedAt: today(), usosCount: 0 }]), []);
+  const update = useCallback((id, changes) => setPlantillas(p => p.map(t => t.id === id ? { ...t, ...changes, updatedAt: today() } : t)), []);
+  const remove = useCallback((id) => setPlantillas(p => p.filter(t => t.id !== id)), []);
+  const duplicate = useCallback((id) => {
+    setPlantillas(p => {
+      const src = p.find(x => x.id === id);
+      if (!src) return p;
+      const copy = JSON.parse(JSON.stringify(src));
+      return [...p, { ...copy, id: newId(), nombre: src.nombre + ' (copia)', updatedAt: today(), usosCount: 0 }];
+    });
+  }, []);
+  const incrementUso = useCallback((id) => setPlantillas(p => p.map(t => t.id === id ? { ...t, usosCount: (t.usosCount||0) + 1 } : t)), []);
+
+  const value = useMemo(() => ({ plantillas, add, update, remove, duplicate, incrementUso }), [plantillas, add, update, remove, duplicate, incrementUso]);
 
   return (
-    <PlantillasContext.Provider value={{ plantillas, add, update, remove, duplicate, incrementUso }}>
+    <PlantillasContext.Provider value={value}>
       {children}
     </PlantillasContext.Provider>
   );

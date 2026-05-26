@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
@@ -129,11 +129,13 @@ export function ChequesProvider({ children }) {
     });
   }, [updateCheque]);
 
+  const value = useMemo(() => ({
+    cheques, addCheque, updateCheque, removeCheque,
+    depositarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque,
+  }), [cheques, addCheque, updateCheque, removeCheque, depositarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque]);
+
   return (
-    <CTX.Provider value={{
-      cheques, addCheque, updateCheque, removeCheque,
-      depositarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque,
-    }}>
+    <CTX.Provider value={value}>
       {children}
     </CTX.Provider>
   );

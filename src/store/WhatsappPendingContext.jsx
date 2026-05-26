@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 
 const CTX = createContext(null);
@@ -66,8 +66,13 @@ export function WhatsappPendingProvider({ children }) {
     save(next);
   }, [save]);
 
+  const value = useMemo(
+    () => ({ pending, reload, rejectItem, confirmItem, updateItem }),
+    [pending, reload, rejectItem, confirmItem, updateItem]
+  );
+
   return (
-    <CTX.Provider value={{ pending, reload, rejectItem, confirmItem, updateItem }}>
+    <CTX.Provider value={value}>
       {children}
     </CTX.Provider>
   );

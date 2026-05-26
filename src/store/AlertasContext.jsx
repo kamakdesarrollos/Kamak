@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 
@@ -40,10 +40,15 @@ export function AlertasProvider({ children }) {
     });
   }, []);
 
-  const noLeidas = alertas.filter(a => !a.leida).length;
+  const noLeidas = useMemo(() => alertas.filter(a => !a.leida).length, [alertas]);
+
+  const value = useMemo(
+    () => ({ alertas, noLeidas, marcarLeida, marcarTodasLeidas, reload }),
+    [alertas, noLeidas, marcarLeida, marcarTodasLeidas, reload]
+  );
 
   return (
-    <CTX.Provider value={{ alertas, noLeidas, marcarLeida, marcarTodasLeidas, reload }}>
+    <CTX.Provider value={value}>
       {children}
     </CTX.Provider>
   );

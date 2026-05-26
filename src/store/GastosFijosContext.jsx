@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
@@ -66,17 +66,19 @@ export function GastosFijosProvider({ children }) {
     if (pendingSaveRef.current) saveSharedData('gastos_fijos', pendingSaveRef.current, { silent: true });
   }, []);
 
-  const setItems = (fn) => {
+  const setItems = useCallback((fn) => {
     setItemsState(prev => {
       const next = typeof fn === 'function' ? fn(prev) : fn;
       localStorage.setItem(LS_KEY, JSON.stringify(next));
       return next;
     });
-  };
+  }, []);
 
-  const totalMensual = items.reduce((s, i) => s + (i.monto || 0), 0);
+  const totalMensual = useMemo(() => items.reduce((s, i) => s + (i.monto || 0), 0), [items]);
 
-  return <CTX.Provider value={{ items, setItems, totalMensual }}>{children}</CTX.Provider>;
+  const value = useMemo(() => ({ items, setItems, totalMensual }), [items, setItems, totalMensual]);
+
+  return <CTX.Provider value={value}>{children}</CTX.Provider>;
 }
 
 export const useGastosFijos = () => useContext(CTX);

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 
@@ -81,8 +81,13 @@ export function SolicitudesProvider({ children }) {
     ));
   }, []);
 
+  const value = useMemo(
+    () => ({ solicitudes, addSolicitud, resolveSolicitud }),
+    [solicitudes, addSolicitud, resolveSolicitud]
+  );
+
   return (
-    <CTX.Provider value={{ solicitudes, addSolicitud, resolveSolicitud }}>
+    <CTX.Provider value={value}>
       {children}
     </CTX.Provider>
   );

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
@@ -108,8 +108,13 @@ export function ConfiguracionProvider({ children }) {
   const patchApariencia    = useCallback((ch) => patch('apariencia', ch), [patch]);
   const patchRoot          = useCallback((ch) => patch(null, ch), [patch]);
 
+  const value = useMemo(
+    () => ({ config, patchEmpresa, patchNotificaciones, patchSeguridad, patchApariencia, patchRoot }),
+    [config, patchEmpresa, patchNotificaciones, patchSeguridad, patchApariencia, patchRoot]
+  );
+
   return (
-    <CTX.Provider value={{ config, patchEmpresa, patchNotificaciones, patchSeguridad, patchApariencia, patchRoot }}>
+    <CTX.Provider value={value}>
       {children}
     </CTX.Provider>
   );
