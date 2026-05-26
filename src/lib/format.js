@@ -54,6 +54,9 @@ export const fmtFecha = (iso) => {
   const parts = iso.split('-');
   if (parts.length !== 3) return iso;
   const [y, m, d] = parts;
+  // Validar que sean numericos — si no, no es una fecha (ej "no-es-fecha")
+  // y devolvemos el input original.
+  if (!/^\d+$/.test(y) || !/^\d+$/.test(m) || !/^\d+$/.test(d)) return iso;
   return `${d}/${m}/${y}`;
 };
 
@@ -62,9 +65,11 @@ export const fmtFecha = (iso) => {
  */
 export const fmtFechaCorta = (iso) => {
   if (!iso || typeof iso !== 'string') return '—';
-  const [y, m, d] = iso.split('-');
-  if (!d) return iso;
-  return `${d}/${m}/${(y || '').slice(2)}`;
+  const parts = iso.split('-');
+  if (parts.length !== 3) return iso;
+  const [y, m, d] = parts;
+  if (!/^\d+$/.test(y) || !/^\d+$/.test(m) || !/^\d+$/.test(d)) return iso;
+  return `${d}/${m}/${y.slice(2)}`;
 };
 
 /**

@@ -4,6 +4,12 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // Vitest config integrada (item 5.1).
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['src/**/*.{test,spec}.{js,jsx}'],
+  },
   build: {
     // Source maps ocultos: se generan pero no se sirven al cliente
     // (utiles para debugging / Sentry; no aumentan el bundle visible).
