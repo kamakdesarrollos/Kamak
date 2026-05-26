@@ -190,6 +190,10 @@ export function ObrasProvider({ children }) {
   const fromRemote  = useRef(false);
   const obrasRef    = useRef(obras);
   const detallesRef = useRef(detalles);
+  // Marca true cuando el usuario edita ANTES de que llegue el primer fetch
+  // a Supabase. Sin esto, el remote pisaba ediciones tempranas — sintoma
+  // tipico: borrar una foto y verla aparecer de vuelta a los 2 segundos.
+  const userEditedBeforeFirstLoad = useRef(false);
   const { markReady } = useAppLoading();
   useEffect(() => { obrasRef.current = obras; }, [obras]);
   useEffect(() => { detallesRef.current = detalles; }, [detalles]);
@@ -202,7 +206,11 @@ export function ObrasProvider({ children }) {
     let cancelled = false;
     loadSharedData('obras').then(data => {
       if (cancelled) return;
-      if (data) {
+      if (userEditedBeforeFirstLoad.current) {
+        // El usuario ya hizo cambios antes de que llegara el fetch — no
+        // pisamos su trabajo, en su lugar subimos sus cambios al remoto.
+        saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
+      } else if (data) {
         fromRemote.current = true;
         if (data.obras)    { setObras(data.obras);       saveObras(data.obras); }
         if (data.detalles) { setDetalles(data.detalles); saveDet(data.detalles); }
@@ -244,16 +252,27 @@ export function ObrasProvider({ children }) {
     if (pendingSaveRef.current) saveSharedData('obras', pendingSaveRef.current, { silent: true });
   }, []);
 
+  // Helper: marcar que el usuario hizo un cambio antes del primer fetch a
+  // Supabase. Si esto pasa, el load remoto no debe pisar los cambios locales.
+  const markUserEdit = () => {
+    if (!sbLoaded.current) userEditedBeforeFirstLoad.current = true;
+  };
+
   // ── Obras CRUD (memoizado para que el value del Provider sea estable)
   const addObra = useCallback((obra) => {
+    markUserEdit();
     const id = `obra-${Date.now()}`;
     setObras(prev => [...prev, { id, nombre: obra.nombre, cliente: obra.cliente, direccion: obra.direccion || '', tipo: obra.tipo || 'Otro', estado: 'en-presupuesto', moneda: obra.moneda || 'ARS', presupuesto: Number(obra.presupuesto) || 0, gastado: 0, avance: 0, margen: 0, fechaInicio: obra.fechaInicio || '', fechaFinEstim: obra.fechaFinEstim || '', fechaFin: '', notas: obra.notas || '', createdAt: new Date().toISOString() }]);
     return id;
   }, []);
 
-  const updateObra = useCallback((id, changes) => setObras(prev => prev.map(o => o.id === id ? { ...o, ...changes } : o)), []);
+  const updateObra = useCallback((id, changes) => {
+    markUserEdit();
+    setObras(prev => prev.map(o => o.id === id ? { ...o, ...changes } : o));
+  }, []);
 
   const setEstado = useCallback((id, nuevoEstado) => {
+    markUserEdit();
     const today = new Date().toISOString().split('T')[0];
     setObras(prev => prev.map(o => {
       if (o.id !== id) return o;
@@ -264,7 +283,10 @@ export function ObrasProvider({ children }) {
     }));
   }, []);
 
-  const deleteObra = useCallback((id) => setObras(prev => prev.filter(o => o.id !== id)), []);
+  const deleteObra = useCallback((id) => {
+    markUserEdit();
+    setObras(prev => prev.filter(o => o.id !== id));
+  }, []);
 
   // byEstado y getDetalle son derivados — devuelven nueva referencia cada
   // call (es lo correcto: usar useMemo en el consumidor cuando se necesite).
@@ -279,6 +301,7 @@ export function ObrasProvider({ children }) {
   const getDetalle = useCallback((id) => detalles[id] ?? EMPTY_DETALLE, [detalles]);
 
   const patchDetalle = useCallback((id, fn) => {
+    markUserEdit();
     setDetalles(prev => {
       const current = prev[id] ?? EMPTY_DETALLE;
       const updated = typeof fn === 'function' ? fn(current) : { ...current, ...fn };

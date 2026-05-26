@@ -78,7 +78,11 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   detalle.adicionales.filter(a => a.estado === 'pendiente').forEach(a => alertas.push({ tipo: 'info', msg: `Adicional pendiente de aprobación: "${a.descripcion}"` }));
 
   const tc = dolarVenta || 1070;
-  const toUSD = (n) => `U$S ${fmtN(Math.round(n / tc))}`;
+  // Helper de formato: respeta la moneda de la obra. Si la obra es ARS muestra
+  // "$ X", si es USD muestra "U$S X". Asume que los valores ya estan en la
+  // moneda de la obra (mismas unidades que los costos del presupuesto).
+  const obraMonedaResumen = obra.moneda || 'ARS';
+  const fmtMObra = (n) => obraMonedaResumen === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
 
   // Financiación
   const finPlan = detalle.financiacion || {};
@@ -88,8 +92,8 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   const interesFin = parseFloat(finPlan.interes) || 0;
   const totalCliente = Math.round((venta + adicionalCliente) * (1 + interesFin / 100));
   const cuotasPlan = detalle.cuotas || [];
-  const cuotaMontoPlan = c => (c._usd || obra.moneda !== 'USD') ? c.monto : Math.round(c.monto / tc);
-  const cuotasPagadas = cuotasPlan.filter(c => cuotaEstadoCalc(c, obra.moneda || 'ARS', tc) === 'pagado').reduce((s, c) => s + cuotaMontoPlan(c), 0);
+  const cuotaMontoPlan = c => cuotaMontoFn(c, obraMonedaResumen, tc);
+  const cuotasPagadas = cuotasPlan.filter(c => cuotaEstadoCalc(c, obraMonedaResumen, tc) === 'pagado').reduce((s, c) => s + cuotaMontoPlan(c), 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -125,8 +129,8 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
           <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${T.accent}`, cursor: 'pointer' }}
             onClick={() => onChangeTab?.(1)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Total cliente</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.accent }}>{toUSD(totalCliente)}</div>
-            {adicionalCliente > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>incl. {toUSD(adicionalCliente)} adicionales</div>}
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.accent }}>{fmtMObra(totalCliente)}</div>
+            {adicionalCliente > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>incl. {fmtMObra(adicionalCliente)} adicionales</div>}
             <div style={{ fontSize: 10, color: T.accent, marginTop: 4 }}>Ver plan de cuotas →</div>
           </Box>
         )}
@@ -135,7 +139,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
           <Box style={{ padding: '12px 14px', cursor: 'pointer' }}
             onClick={() => onChangeTab?.(1)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Cuotas cobradas</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.ok }}>{`U$S ${fmtN(cuotasPagadas)}`}</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.ok }}>{fmtMObra(cuotasPagadas)}</div>
             <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{cuotasPlan.filter(c => cuotaEstadoCalc(c, obra.moneda || 'ARS', tc) === 'pagado').length} / {cuotasPlan.length} cuotas cobradas</div>
           </Box>
         )}
@@ -165,10 +169,10 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Financiero</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {[
-              ['Venta total (presu)', toUSD(venta), T.ink, isAdmin],
-              ['Costo total (presu)', toUSD(costo), T.ink, true],
-              ['Margen bruto (presu)', toUSD(venta - costo), margen < 0 ? T.accent : T.ok, verMargenes],
-              ['Gastado real', toUSD(totalGastadoReal), totalGastadoReal > costo ? T.accent : T.ink, true],
+              ['Venta total (presu)', fmtMObra(venta), T.ink, isAdmin],
+              ['Costo total (presu)', fmtMObra(costo), T.ink, true],
+              ['Margen bruto (presu)', fmtMObra(venta - costo), margen < 0 ? T.accent : T.ok, verMargenes],
+              ['Gastado real', fmtMObra(totalGastadoReal), totalGastadoReal > costo ? T.accent : T.ink, true],
             ].filter(([,,, show]) => show).map(([l, v, c], i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${T.faint2}`, fontSize: 12 }}>
                 <span style={{ color: T.ink2 }}>{l}</span>
@@ -2524,10 +2528,14 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
     .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
     .reduce((s, a) => s + (a.monto || 0), 0);
   const interes = parseFloat((detalle.financiacion || {}).interes) || 0;
-  const totalARS = Math.round((ventaBase + adicionalCliente) * (1 + interes / 100));
-  const total = moneda === 'USD' ? Math.round(totalARS / tc) : totalARS;
-  const ventaDisplay = moneda === 'USD' ? Math.round(ventaBase / tc) : ventaBase;
-  const adicDisplay  = moneda === 'USD' ? Math.round(adicionalCliente / tc) : adicionalCliente;
+  // venta y adicionales estan en la moneda de la obra (los costos del
+  // presupuesto se cargan en esa moneda). NO dividir por tc — eso era el
+  // bug que mostraba un total mucho mas chico para obras en USD.
+  const total = Math.round((ventaBase + adicionalCliente) * (1 + interes / 100));
+  // Igual que `total`: los valores ya estan en la moneda de la obra, no
+  // dividir por tc.
+  const ventaDisplay = ventaBase;
+  const adicDisplay  = adicionalCliente;
 
   const cuotas = detalle.cuotas || [];
 

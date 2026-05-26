@@ -7,45 +7,16 @@ import { useDolar } from '../../store/DolarContext';
 import { useClientes } from '../../store/ClientesContext';
 import { Box, Btn, Chip, Stat, Bar } from '../../components/ui';
 import { T } from '../../theme';
+import { fmtN, fmtMoney, fmtFecha } from '../../lib/format';
+import { newId } from '../../lib/id';
+import { cuotaMontoFn, cuotaCobrado as cuotaCobradoFn, cuotaEstadoCalc, calcObra } from '../obra/helpers';
 
-const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
-const fmtM = (n, moneda) => moneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
-const fmtD = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
-const newId = () => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+const fmtD = fmtFecha;
 
 const rubroAvance = (rubro) =>
   rubro.tareas.length > 0
     ? Math.round(rubro.tareas.reduce((s, t) => s + t.avance, 0) / rubro.tareas.length)
     : 0;
-
-const calcVentaBase = (rubros) => {
-  let v = 0;
-  for (const r of rubros) {
-    for (const t of (r.tareas || []).filter(x => x.tipo !== 'seccion')) {
-      const costoUnit = (t.costoMat || 0) + (t.costoSub || 0);
-      const ventaUnit = t.margenLinea != null
-        ? costoUnit * (1 + t.margenLinea / 100)
-        : (t.costoMat || 0) * (1 + (r.margenMat || 0) / 100) + (t.costoSub || 0) * (1 + (r.margenMO || 0) / 100);
-      v += ventaUnit * (t.cantidad || 0);
-    }
-  }
-  return Math.round(v);
-};
-
-const cuotaMontoFn = (c, moneda, tc) =>
-  (c._usd || moneda !== 'USD') ? (c.monto || 0) : Math.round((c.monto || 0) / tc);
-const cuotaCobradoFn = (c, moneda, tc) =>
-  (c.pagos || []).reduce((s, p) =>
-    moneda === 'USD'
-      ? s + (p.moneda === 'ARS' ? Math.round((p.monto || 0) / (p.tc || tc)) : (p.monto || 0))
-      : s + (p.moneda === 'USD' ? Math.round((p.monto || 0) * (p.tc || tc)) : (p.monto || 0))
-  , 0);
-const cuotaEstadoCalc = (c, moneda, tc) => {
-  const cob = cuotaCobradoFn(c, moneda, tc);
-  if (cob <= 0) return 'pendiente';
-  if (cob >= cuotaMontoFn(c, moneda, tc)) return 'pagado';
-  return 'parcial';
-};
 
 export default function PortalCliente() {
   const { id } = useParams();
@@ -56,7 +27,6 @@ export default function PortalCliente() {
   const { currentUser } = useUsuarios();
   const { dolarVenta } = useDolar();
   const { clientes } = useClientes();
-  const toUSD = n => `U$S ${fmtN(Math.round(n / (dolarVenta || 1070)))}`;
   const [tab, setTab] = useState(0);
   const [msg, setMsg] = useState('');
 
@@ -148,12 +118,19 @@ export default function PortalCliente() {
 
   const tc = dolarVenta || 1070;
   const obraM = obra.moneda || 'ARS';
+  // Helper local: formatea un monto en la moneda real de la obra.
+  // Si la obra es ARS, muestra "$ X". Si es USD, muestra "U$S X". No hace
+  // conversiones automaticas — los valores vienen en la moneda de la obra.
+  const fmt = (n) => fmtMoney(n, obraM);
   const cuotaMonto    = c => cuotaMontoFn(c, obraM, tc);
   const totalCuotas   = cuotas.reduce((s, c) => s + cuotaMonto(c), 0);
   const pagadoCuotas  = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
   const countPagadas  = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').length;
 
-  const ventaBase = calcVentaBase(rubros);
+  // Total acordado al cliente: venta del presupuesto + adicionales + interes
+  // de financiacion. Mismo calculo que TabCuentaCliente del admin para
+  // garantizar consistencia.
+  const { venta: ventaBase } = calcObra(rubros);
   const adicionalCliente = (detalle.adicionales || [])
     .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
     .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
@@ -313,7 +290,7 @@ export default function PortalCliente() {
                   ['Dirección',         obra.direccion || '—'],
                   ['Inicio de obra',    fmtD(obra.fechaInicio)],
                   ['Entrega estimada',  fmtD(obra.fechaFinEstim)],
-                  ['Presupuesto total', toUSD(totalCliente || obra.presupuesto)],
+                  ['Presupuesto total', fmt(totalCliente || obra.presupuesto)],
                 ].map(([k, v]) => (
                   <div key={k}>
                     <div style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 700, marginBottom: 3 }}>{k}</div>
@@ -372,9 +349,9 @@ export default function PortalCliente() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Summary bar */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, background: T.faint, borderRadius: 8, padding: '16px 20px' }}>
-              <Stat label="Total presupuestado" value={`U$S ${fmtN(totalCuotas)}`} />
-              <Stat label="Cobrado"             value={`U$S ${fmtN(pagadoCuotas)}`} />
-              <Stat label="Saldo"               value={`U$S ${fmtN(totalCuotas - pagadoCuotas)}`} />
+              <Stat label="Total presupuestado" value={fmt(totalCuotas)} />
+              <Stat label="Cobrado"             value={fmt(pagadoCuotas)} />
+              <Stat label="Saldo"               value={fmt(totalCuotas - pagadoCuotas)} />
               <Stat label="Cuotas pagadas"       value={`${countPagadas} / ${cuotas.length}`} />
             </div>
 
@@ -384,8 +361,8 @@ export default function PortalCliente() {
               </div>
               {totalCliente > 0 && (
             <div style={{ padding: '10px 16px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-              <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total acordado</span><div style={{ fontWeight: 800, fontFamily: T.fontMono, color: T.ink }}>{toUSD(totalCliente)}</div></div>
-              {adicionalCliente > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Incluye adicionales</span><div style={{ fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{toUSD(adicionalCliente)}</div></div>}
+              <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total acordado</span><div style={{ fontWeight: 800, fontFamily: T.fontMono, color: T.ink }}>{fmt(totalCliente)}</div></div>
+              {adicionalCliente > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Incluye adicionales</span><div style={{ fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{fmt(adicionalCliente)}</div></div>}
               {interes > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Interés aplicado</span><div style={{ fontWeight: 700, color: T.ink2 }}>{interes}%</div></div>}
             </div>
           )}
@@ -410,7 +387,7 @@ export default function PortalCliente() {
                         <div style={{ fontSize: 11, color: T.ink2 }}>{fmtD(c.fecha)}</div>
                       </div>
                       <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14, flexShrink: 0, color: isPagado ? T.ok : T.ink }}>
-                        {`U$S ${fmtN(cuotaMonto(c))}`}
+                        {fmt(cuotaMonto(c))}
                       </div>
                       <Chip ok={isPagado} accent={isParcial || isProximo} style={{ fontSize: 10, flexShrink: 0 }}>{etiqueta}</Chip>
                     </div>
