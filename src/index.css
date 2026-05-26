@@ -128,12 +128,11 @@ body {
 .k-img-label { position: relative; z-index: 1; background: rgba(247,244,236,0.9); padding: 0 4px; }
 
 /* ── Sidebar ─────────────────────────────────── */
-.k-sidebar { width: 152px; background: var(--paper); border-right: 1px solid var(--faint2); padding: 10px 0; display: flex; flex-direction: column; gap: 1px; font-size: 12px; flex-shrink: 0; }
-.k-sidebar-item { display: flex; align-items: center; gap: 7px; padding: 6px 12px; cursor: pointer; }
-.k-sidebar-item:hover { background: rgba(0,0,0,0.03); }
-.k-sidebar-item.active { background: #fff; box-shadow: inset 3px 0 0 var(--accent); font-weight: 700; color: var(--dark); }
-.k-sidebar-item:not(.active) { color: var(--ink2); }
-.k-sidebar-section { padding: 12px 12px 5px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+.k-sidebar { width: 152px; background: var(--accent2); border-right: 1px solid rgba(0,0,0,0.15); padding: 10px 0; display: flex; flex-direction: column; gap: 1px; font-size: 12px; flex-shrink: 0; color: rgba(255,255,255,0.85); }
+.k-sidebar-item { display: flex; align-items: center; gap: 7px; padding: 6px 12px; cursor: pointer; color: rgba(255,255,255,0.75); transition: background 0.12s, color 0.12s; }
+.k-sidebar-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.k-sidebar-item.active { background: rgba(0,0,0,0.18); box-shadow: inset 3px 0 0 #fff; font-weight: 700; color: #fff; }
+.k-sidebar-section { padding: 12px 12px 5px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.55); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
 
 /* ── Scrollbars ──────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

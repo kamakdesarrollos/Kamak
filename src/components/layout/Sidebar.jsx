@@ -59,7 +59,7 @@ export default function Sidebar({ active }) {
         if (it.section) {
           return (
             <div key={i} className="k-sidebar-section" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Diamond size={5} color={T.accent} />
+              <Diamond size={5} color="rgba(255,255,255,0.7)" />
               <span>{it.section}</span>
             </div>
           );
