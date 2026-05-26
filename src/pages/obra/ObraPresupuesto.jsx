@@ -411,6 +411,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
   const [viewUSD, setViewUSD] = useState(true);
   const fmtVenta = n => viewUSD ? `U$S ${fmtN(Math.round(n / tc))}` : `$ ${fmtN(n)}`;
 
+  // Rubro element refs for sidebar scroll-to
+  const rubroElemsRef = useRef({});
+
   // Drag state ─ rubros
   const dragRubroRef = useRef(null);
   const [dragOverRubroId, setDragOverRubroId] = useState(null);
@@ -672,6 +675,30 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
       </div>
 
     <div style={{ display: 'flex', gap: 10, flex: 1, overflow: 'hidden' }}>
+      {/* Left: rubro navigation sidebar */}
+      <Box style={{ width: 160, flexShrink: 0, padding: '8px 6px', overflow: 'auto' }}>
+        <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, padding: '0 4px', marginBottom: 6 }}>Por rubro</div>
+        {rr.map(r => {
+          const isActive = selRubroId === r.id;
+          const num = r.nombre.match(/^(\d+)/)?.[1];
+          const label = r.nombre.replace(/^\d+\s*-\s*/, '');
+          return (
+            <div key={r.id}
+              onClick={() => {
+                setSelRubroId(r.id);
+                rubroElemsRef.current[r.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              style={{ display: 'flex', flexDirection: 'column', padding: '3px 8px', borderRadius: 3, cursor: 'pointer', background: isActive ? T.accentSoft : 'transparent', borderLeft: `2px solid ${isActive ? T.accent : 'transparent'}`, marginBottom: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {num && <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono, flexShrink: 0, width: 14 }}>{num}</span>}
+                <span style={{ flex: 1, fontSize: 11, color: isActive ? T.ink : T.ink2, fontWeight: isActive ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+              </div>
+              <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono, paddingLeft: num ? 18 : 0 }}>{fmtVenta(r.venta)}</span>
+            </div>
+          );
+        })}
+      </Box>
+
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Rubros */}
@@ -684,7 +711,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
           )}
 
           {rr.map(rubro => (
-            <Box key={rubro.id}
+            <div key={rubro.id} ref={el => { if (el) rubroElemsRef.current[rubro.id] = el; }}>
+            <Box
               draggable
               onDragStart={e => onRubroDragStart(e, rubro.id)}
               onDragOver={e => onRubroDragOver(e, rubro.id)}
@@ -898,6 +926,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                 </>
               )}
             </Box>
+            </div>
           ))}
 
           {addingRubro && (() => {

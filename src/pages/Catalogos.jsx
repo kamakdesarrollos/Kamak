@@ -315,21 +315,25 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, o
 }
 
 // ── Tab: Materiales / Sub contratos / MO / Generales (tabla simple + panel) ────
-function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm }) {
+function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm, rubroKey = 'rubro', rubros }) {
   const [sel, setSel] = useState(null);
   const [form, setForm] = useState(null);
   const [search, setSearch] = useState('');
   const [lastAddedId, setLastAddedId] = useState(null);
+  const [selRubro, setSelRubro] = useState('');
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    const list = items.filter(i => Object.values(i).some(v => String(v).toLowerCase().includes(q)));
+    const list = items.filter(i =>
+      (!selRubro || i[rubroKey] === selRubro) &&
+      Object.values(i).some(v => String(v).toLowerCase().includes(q))
+    );
     if (lastAddedId) {
       const idx = list.findIndex(i => i.id === lastAddedId);
       if (idx > 0) { const [it] = list.splice(idx, 1); list.unshift(it); }
     }
     return list;
-  }, [items, search, lastAddedId]);
+  }, [items, search, lastAddedId, selRubro, rubroKey]);
 
   const startAdd  = () => { setForm({ ...emptyForm }); setSel(null); };
   const startEdit = (item) => { setForm({ ...item }); setSel(item.id); };
@@ -343,6 +347,31 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
 
   return (
     <div style={{ display: 'flex', gap: 10, height: '100%' }}>
+      {rubros?.length > 0 && (
+        <Box style={{ width: 190, flexShrink: 0, padding: '8px 6px', overflow: 'auto' }}>
+          <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, padding: '0 4px', marginBottom: 6 }}>Por rubro</div>
+          <div onClick={() => setSelRubro('')}
+            style={{ padding: '4px 8px', borderRadius: 3, cursor: 'pointer', fontWeight: !selRubro ? 700 : 400, fontSize: 11, background: !selRubro ? T.accentSoft : 'transparent', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+            <span style={{ color: !selRubro ? T.ink : T.ink2 }}>Todos</span>
+            <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono }}>{items.length}</span>
+          </div>
+          {rubros.map(r => {
+            const count = items.filter(i => i[rubroKey] === r).length;
+            const isOn  = selRubro === r;
+            const label = r.replace(/^\d+\s*-\s*/, '');
+            const num   = r.match(/^(\d+)/)?.[1];
+            return (
+              <div key={r} onClick={() => setSelRubro(r)}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 3, cursor: 'pointer', background: isOn ? T.accentSoft : 'transparent', borderLeft: `2px solid ${isOn ? T.accent : 'transparent'}`, marginBottom: 1 }}>
+                {num && <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono, flexShrink: 0, width: 14 }}>{num}</span>}
+                <span style={{ flex: 1, fontSize: 11, color: isOn ? T.ink : T.ink2, fontWeight: isOn ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+                {count > 0 && <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono, flexShrink: 0 }}>{count}</span>}
+              </div>
+            );
+          })}
+        </Box>
+      )}
+
       <Box style={{ flex: 1, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '8px 10px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 8, alignItems: 'center' }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar…"
@@ -359,29 +388,54 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
             </thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={cols.length+1} style={{ padding: 24, textAlign: 'center', color: T.ink3 }}>Sin resultados</td></tr>}
-              {filtered.map(item => (
-                <tr key={item.id}
-                  style={{ background: sel === item.id ? T.accentSoft : 'transparent', cursor: 'pointer', borderBottom: `1px solid ${T.faint2}` }}
-                  onClick={() => startEdit(item)}>
-                  {cols.map(c => <td key={c.key} style={{ padding: '7px 10px', fontFamily: c.mono ? T.fontMono : T.font, textAlign: c.align||'left' }}>{c.render ? c.render(item[c.key], item) : item[c.key]}</td>)}
-                  <td style={{ padding: '4px 8px', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
-                      <span title="Duplicar" style={{ color: T.ink2, cursor: 'pointer', fontSize: 13 }}
-                        onClick={e => {
-                          e.stopPropagation();
-                          const dupId = newId();
-                          const copy = { ...item, nombre: `Copia de ${item.nombre}`, id: dupId };
-                          onAdd(copy);
-                          setLastAddedId(dupId);
-                          setForm({ ...copy });
-                          setSel(dupId);
-                        }}>⧉</span>
-                      <span style={{ color: T.accent, cursor: 'pointer', fontSize: 12 }}
-                        onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar?')) onDelete(item.id); }}>🗑</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {(() => {
+                const rows = [];
+                let lastGroup = null;
+                filtered.forEach(item => {
+                  if (rubros?.length > 0 && !selRubro) {
+                    const grp = item[rubroKey] || '';
+                    if (grp !== lastGroup) {
+                      lastGroup = grp;
+                      const rNum = grp.match(/^(\d+)/)?.[1];
+                      const rLabel = grp.replace(/^\d+\s*-\s*/, '');
+                      rows.push(
+                        <tr key={`grp-${grp}`}>
+                          <td colSpan={cols.length+1} style={{ padding: '10px 10px 3px', background: T.faint, borderTop: `1px solid ${T.faint2}` }}>
+                            <span style={{ fontSize: 9, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                              {rNum && <span style={{ fontFamily: T.fontMono, color: T.ink3, marginRight: 5 }}>{rNum} ·</span>}
+                              {rLabel}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  }
+                  rows.push(
+                    <tr key={item.id}
+                      style={{ background: sel === item.id ? T.accentSoft : 'transparent', cursor: 'pointer', borderBottom: `1px solid ${T.faint2}` }}
+                      onClick={() => startEdit(item)}>
+                      {cols.map(c => <td key={c.key} style={{ padding: '7px 10px', fontFamily: c.mono ? T.fontMono : T.font, textAlign: c.align||'left' }}>{c.render ? c.render(item[c.key], item) : item[c.key]}</td>)}
+                      <td style={{ padding: '4px 8px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <span title="Duplicar" style={{ color: T.ink2, cursor: 'pointer', fontSize: 13 }}
+                            onClick={e => {
+                              e.stopPropagation();
+                              const dupId = newId();
+                              const copy = { ...item, nombre: `Copia de ${item.nombre}`, id: dupId };
+                              onAdd(copy);
+                              setLastAddedId(dupId);
+                              setForm({ ...copy });
+                              setSel(dupId);
+                            }}>⧉</span>
+                          <span style={{ color: T.accent, cursor: 'pointer', fontSize: 12 }}
+                            onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar?')) onDelete(item.id); }}>🗑</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                });
+                return rows;
+              })()}
             </tbody>
           </table>
         </div>
@@ -950,96 +1004,114 @@ export default function Catalogos() {
       </div>
 
       <div style={{ height: 'calc(100vh - 230px)', overflow: 'hidden' }}>
-        {tab === 0 && (
-          <TabSimple
-            items={catalog.materiales}
-            onAdd={item => add('materiales', item)}
-            onUpdate={(id, ch) => update('materiales', id, ch)}
-            onDelete={id => remove('materiales', id)}
-            cols={[
-              { key: 'codigo', label: 'Código', mono: true },
-              { key: 'nombre', label: 'Nombre' },
-              { key: 'precio', label: 'Precio $', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
-              { key: 'unidad', label: 'Unidad' },
-              { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
-              { key: 'updatedAt', label: 'Actualizado', mono: true },
-            ]}
-            emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, rubro: catalog.rubros[0]?.nombre || '', updatedAt: today() }}
-            renderForm={(form, setForm) => (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <FRow label="Código"><input style={inputSt} value={form.codigo||''} onChange={e => setForm(f=>({...f, codigo:e.target.value}))} /></FRow>
-                  <FRow label="Unidad"><input style={inputSt} value={form.unidad||''} onChange={e => setForm(f=>({...f, unidad:e.target.value}))} /></FRow>
-                </div>
-                <FRow label="Nombre"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
-                <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
-                <FRow label="Rubro">
-                  <select style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))}>
-                    {catalog.rubros.map(r => <option key={r.id}>{r.nombre}</option>)}
-                  </select>
-                </FRow>
-              </>
-            )}
-          />
-        )}
-        {tab === 1 && (
-          <TabSimple
-            items={catalog.subcontratos||[]}
-            onAdd={item => add('subcontratos', item)}
-            onUpdate={(id, ch) => update('subcontratos', id, ch)}
-            onDelete={id => remove('subcontratos', id)}
-            cols={[
-              { key: 'codigo', label: 'Código', mono: true },
-              { key: 'nombre', label: 'Nombre' },
-              { key: 'precio', label: 'Precio $', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
-              { key: 'unidad', label: 'Unidad' },
-              { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
-              { key: 'updatedAt', label: 'Actualizado', mono: true },
-            ]}
-            emptyForm={{ codigo: '', nombre: '', unidad: 'm²', precio: 0, rubro: catalog.rubros[0]?.nombre || '', updatedAt: today() }}
-            renderForm={(form, setForm) => (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <FRow label="Código"><input style={inputSt} value={form.codigo||''} onChange={e => setForm(f=>({...f, codigo:e.target.value}))} /></FRow>
-                  <FRow label="Unidad"><input style={inputSt} value={form.unidad||''} onChange={e => setForm(f=>({...f, unidad:e.target.value}))} /></FRow>
-                </div>
-                <FRow label="Nombre"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
-                <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
-                <FRow label="Rubro">
-                  <select style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))}>
-                    {catalog.rubros.map(r => <option key={r.id}>{r.nombre}</option>)}
-                  </select>
-                </FRow>
-              </>
-            )}
-          />
-        )}
-        {tab === 2 && (
-          <TabSimple
-            items={catalog.mo}
-            onAdd={item => add('mo', item)}
-            onUpdate={(id, ch) => update('mo', id, ch)}
-            onDelete={id => remove('mo', id)}
-            cols={[
-              { key: 'nombre', label: 'Nombre / Categoría' },
-              { key: 'oficio', label: 'Gremio' },
-              { key: 'precioHora', label: '$/h', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
-              { key: 'unidad', label: 'Unidad' },
-            ]}
-            emptyForm={{ nombre: '', oficio: catalog.rubros[0]?.nombre || '', unidad: 'h', precioHora: 0 }}
-            renderForm={(form, setForm) => (
-              <>
-                <FRow label="Nombre / Categoría"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
-                <FRow label="Gremio / Oficio">
-                  <select style={inputSt} value={form.oficio||''} onChange={e => setForm(f=>({...f, oficio:e.target.value}))}>
-                    {catalog.rubros.map(r => <option key={r.id}>{r.nombre}</option>)}
-                  </select>
-                </FRow>
-                <FRow label="Precio por hora $"><input style={inputSt} type="number" min="0" value={form.precioHora||0} onChange={e => setForm(f=>({...f, precioHora:+e.target.value}))} /></FRow>
-              </>
-            )}
-          />
-        )}
+        {tab === 0 && (() => {
+          const seen = new Set();
+          const rs = catalog.materiales.map(i => i.rubro).filter(r => r && !seen.has(r) && seen.add(r));
+          return (
+            <TabSimple
+              items={catalog.materiales}
+              onAdd={item => add('materiales', item)}
+              onUpdate={(id, ch) => update('materiales', id, ch)}
+              onDelete={id => remove('materiales', id)}
+              rubros={rs}
+              rubroKey="rubro"
+              cols={[
+                { key: 'codigo', label: 'Código', mono: true },
+                { key: 'nombre', label: 'Nombre' },
+                { key: 'precio', label: 'Precio $', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
+                { key: 'unidad', label: 'Unidad' },
+                { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
+                { key: 'updatedAt', label: 'Actualizado', mono: true },
+              ]}
+              emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, rubro: catalog.rubros[0]?.nombre || '', updatedAt: today() }}
+              renderForm={(form, setForm) => (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <FRow label="Código"><input style={inputSt} value={form.codigo||''} onChange={e => setForm(f=>({...f, codigo:e.target.value}))} /></FRow>
+                    <FRow label="Unidad"><input style={inputSt} value={form.unidad||''} onChange={e => setForm(f=>({...f, unidad:e.target.value}))} /></FRow>
+                  </div>
+                  <FRow label="Nombre"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
+                  <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
+                  <FRow label="Rubro">
+                    <select style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))}>
+                      {catalog.rubros.map(r => <option key={r.id}>{r.nombre}</option>)}
+                    </select>
+                  </FRow>
+                </>
+              )}
+            />
+          );
+        })()}
+        {tab === 1 && (() => {
+          const seen = new Set();
+          const rs = (catalog.subcontratos||[]).map(i => i.rubro).filter(r => r && !seen.has(r) && seen.add(r));
+          return (
+            <TabSimple
+              items={catalog.subcontratos||[]}
+              onAdd={item => add('subcontratos', item)}
+              onUpdate={(id, ch) => update('subcontratos', id, ch)}
+              onDelete={id => remove('subcontratos', id)}
+              rubros={rs}
+              rubroKey="rubro"
+              cols={[
+                { key: 'codigo', label: 'Código', mono: true },
+                { key: 'nombre', label: 'Nombre' },
+                { key: 'precio', label: 'Precio $', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
+                { key: 'unidad', label: 'Unidad' },
+                { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
+                { key: 'updatedAt', label: 'Actualizado', mono: true },
+              ]}
+              emptyForm={{ codigo: '', nombre: '', unidad: 'm²', precio: 0, rubro: catalog.rubros[0]?.nombre || '', updatedAt: today() }}
+              renderForm={(form, setForm) => (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <FRow label="Código"><input style={inputSt} value={form.codigo||''} onChange={e => setForm(f=>({...f, codigo:e.target.value}))} /></FRow>
+                    <FRow label="Unidad"><input style={inputSt} value={form.unidad||''} onChange={e => setForm(f=>({...f, unidad:e.target.value}))} /></FRow>
+                  </div>
+                  <FRow label="Nombre"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
+                  <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
+                  <FRow label="Rubro">
+                    <select style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))}>
+                      {catalog.rubros.map(r => <option key={r.id}>{r.nombre}</option>)}
+                    </select>
+                  </FRow>
+                </>
+              )}
+            />
+          );
+        })()}
+        {tab === 2 && (() => {
+          const seen = new Set();
+          const rs = catalog.mo.map(i => i.oficio).filter(r => r && !seen.has(r) && seen.add(r));
+          return (
+            <TabSimple
+              items={catalog.mo}
+              onAdd={item => add('mo', item)}
+              onUpdate={(id, ch) => update('mo', id, ch)}
+              onDelete={id => remove('mo', id)}
+              rubros={rs}
+              rubroKey="oficio"
+              cols={[
+                { key: 'nombre', label: 'Nombre / Categoría' },
+                { key: 'oficio', label: 'Gremio' },
+                { key: 'precioHora', label: '$/h', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
+                { key: 'unidad', label: 'Unidad' },
+              ]}
+              emptyForm={{ nombre: '', oficio: catalog.rubros[0]?.nombre || '', unidad: 'h', precioHora: 0 }}
+              renderForm={(form, setForm) => (
+                <>
+                  <FRow label="Nombre / Categoría"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
+                  <FRow label="Gremio / Oficio">
+                    <select style={inputSt} value={form.oficio||''} onChange={e => setForm(f=>({...f, oficio:e.target.value}))}>
+                      {catalog.rubros.map(r => <option key={r.id}>{r.nombre}</option>)}
+                    </select>
+                  </FRow>
+                  <FRow label="Precio por hora $"><input style={inputSt} type="number" min="0" value={form.precioHora||0} onChange={e => setForm(f=>({...f, precioHora:+e.target.value}))} /></FRow>
+                </>
+              )}
+            />
+          );
+        })()}
         {tab === 3 && (
           <TabSimple
             items={catalog.generales}
