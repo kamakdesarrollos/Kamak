@@ -64,19 +64,47 @@ export default function PortalCliente() {
     return () => { cancelled = true; };
   }, [id, isAdminInternal]);
 
-  const obra = obras.find(o => o.id === id);
-  const detalle = getDetalle(id || '');
+  // ── Carga de datos ──────────────────────────────────────────────────────
+  // El portal tiene dos modos:
+  // - ADMIN (con sesion): lee de los contexts globales (obras, clientes,
+  //   dolar, etc.) que ya tienen los datos sincronizados.
+  // - CLIENTE (sin sesion): no puede leer Supabase directo por RLS, asi que
+  //   llama al endpoint serverless /api/portal/data que usa service key del
+  //   lado backend y devuelve solo los datos de esa obra.
+  const [serverData, setServerData] = useState(null);
 
-  // Auto-refresh para garantizar que admin y cliente siempre ven lo mismo:
-  // - polling cada 30s mientras la pestana esta activa.
-  // - refetch inmediato al volver a la pestana (visibilitychange).
-  // - refetch inmediato al volver foco a la ventana (focus).
-  // El polling de fondo es 30s porque ya hay broadcast de Realtime — esto es
-  // solo fallback por si Realtime no llega. El visibilitychange/focus es el
-  // que garantiza la actualizacion inmediata cuando el cliente "vuelve" al
-  // portal despues de hacer otra cosa.
   useEffect(() => {
-    if (accessStatus !== 'allowed') return;
+    if (isAdminInternal || accessStatus !== 'allowed' || !id) return;
+    let cancelled = false;
+    let interval = null;
+    let token = null;
+    try { token = sessionStorage.getItem(`kamak_portal_${id}`); } catch {}
+    if (!token) return;
+
+    const fetchData = () => fetch(`/api/portal/data?token=${encodeURIComponent(token)}`)
+      .then(r => r.json())
+      .then(data => { if (!cancelled && data && !data.error) setServerData(data); })
+      .catch(e => console.error('[portal/data] fetch error:', e));
+
+    fetchData();
+    const start = () => { if (!interval) interval = setInterval(fetchData, 30000); };
+    const stop  = () => { if (interval) { clearInterval(interval); interval = null; } };
+    const onVis = () => { if (document.hidden) stop(); else { fetchData(); start(); } };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', fetchData);
+
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', fetchData);
+    };
+  }, [id, isAdminInternal, accessStatus]);
+
+  // Modo admin: usar refetch del context (sincroniza con admin en tiempo real).
+  useEffect(() => {
+    if (!isAdminInternal || accessStatus !== 'allowed') return;
     let interval = null;
     const start = () => { if (!interval) interval = setInterval(refetch, 30000); };
     const stop  = () => { if (interval) { clearInterval(interval); interval = null; } };
@@ -89,7 +117,18 @@ export default function PortalCliente() {
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', refetch);
     };
-  }, [accessStatus, refetch]);
+  }, [accessStatus, refetch, isAdminInternal]);
+
+  // Resolver fuentes de datos: del context (admin) o del endpoint (cliente).
+  const obra = isAdminInternal
+    ? obras.find(o => o.id === id)
+    : serverData?.obra;
+  const detalle = isAdminInternal
+    ? getDetalle(id || '')
+    : (serverData?.detalle || { rubros: [], adicionales: [], cuotas: [], documentos: [], fotos: [], financiacion: {} });
+  const effectiveDolarVenta = isAdminInternal
+    ? dolarVenta
+    : (serverData?.dolarVenta || 1070);
 
   // Pantalla de bloqueo: cuando el cliente no tiene acceso valido,
   // mostramos un mensaje claro sin revelar info de la obra.
@@ -111,6 +150,17 @@ export default function PortalCliente() {
     );
   }
 
+  // Modo cliente: si todavia no llego la data del endpoint, mostramos loader
+  // (sino se veria "Obra no encontrada" incorrectamente mientras carga).
+  if (!isAdminInternal && !serverData) {
+    return (
+      <div style={{ fontFamily: T.font, background: T.dark, minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+        <div style={{ fontSize: 56 }}>⏳</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>Cargando tu obra…</div>
+      </div>
+    );
+  }
+
   if (!id || !obra) {
     return (
       <div style={{ fontFamily: T.font, background: T.paper, minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
@@ -122,14 +172,17 @@ export default function PortalCliente() {
     );
   }
 
-  // Resolver el nombre actual del cliente. Si obra.clienteId apunta a un
-  // cliente existente, usar su nombre actual (que puede ser distinto al
-  // texto guardado en obra.cliente si el cliente se renombro despues).
-  // Fallback: matching por nombre, y si tampoco, el texto crudo.
-  const clienteActual = (obra.clienteId && clientes.find(c => c.id === obra.clienteId))
-    || clientes.find(c => (c.nombre || '').toLowerCase().trim() === (obra.cliente || '').toLowerCase().trim())
-    || null;
-  const clienteNombre = clienteActual?.nombre || obra.cliente || '';
+  // Resolver el nombre del cliente:
+  // - Modo admin: matching del contexto (clienteId -> nombre actual o fallback).
+  // - Modo cliente: viene resuelto del endpoint serverless.
+  const clienteActual = isAdminInternal
+    ? ((obra.clienteId && clientes.find(c => c.id === obra.clienteId))
+       || clientes.find(c => (c.nombre || '').toLowerCase().trim() === (obra.cliente || '').toLowerCase().trim())
+       || null)
+    : null;
+  const clienteNombre = isAdminInternal
+    ? (clienteActual?.nombre || obra.cliente || '')
+    : (serverData?.clienteNombre || obra.cliente || '');
 
   const rubros    = detalle.rubros    || [];
   const cuotas    = detalle.cuotas    || [];
@@ -137,7 +190,7 @@ export default function PortalCliente() {
   const fotos     = detalle.fotos     || [];
   const fin       = detalle.financiacion || {};
 
-  const tc = dolarVenta || 1070;
+  const tc = effectiveDolarVenta || 1070;
   const obraM = obra.moneda || 'ARS';
   const obraEsUSD = obraM === 'USD';
 
