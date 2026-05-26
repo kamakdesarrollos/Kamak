@@ -389,56 +389,85 @@ export default function Cajas() {
         ] : []}
       />
 
-      {/* ARS */}
-      {cajasARS.length > 0 && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <div className="k-h" style={{ fontSize: 18 }}>ARS</div>
-            <Chip style={{ fontSize: 9 }}>{cajasARS.length} caja{cajasARS.length !== 1 ? 's' : ''}</Chip>
-            <div className="k-divider" style={{ flex: 1, marginLeft: 8 }} />
+      {/* Tablas formales por seccion */}
+      {[
+        { titulo: 'ARS',                 cajas: cajasARS,       isARS: true,  unidad: 'cajas' },
+        { titulo: 'USD',                 cajas: cajasUSD,       isARS: false, unidad: 'cajas' },
+        { titulo: 'Rendición de fondos', cajas: cajasRendicion, isARS: true,  unidad: 'usuarios' },
+      ].filter(s => s.cajas.length > 0).map(seccion => (
+        <div key={seccion.titulo} style={{ marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: T.ink2, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase' }}>{seccion.titulo}</div>
+            <span style={{ fontSize: 11, color: T.ink3 }}>{seccion.cajas.length} {seccion.unidad}</span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
-            {cajasARS.map(c => (
-              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} saldoCheques={chequesPorCaja[c.id] || 0} canRemove={isAdmin} />
-            ))}
-          </div>
-        </>
-      )}
 
-      {/* USD */}
-      {cajasUSD.length > 0 && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <div className="k-h" style={{ fontSize: 18 }}>USD</div>
-            <Chip style={{ fontSize: 9 }}>{cajasUSD.length} caja{cajasUSD.length !== 1 ? 's' : ''}</Chip>
-            <div className="k-divider" style={{ flex: 1, marginLeft: 8 }} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
-            {cajasUSD.map(c => (
-              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} canRemove={isAdmin} />
-            ))}
-          </div>
-        </>
-      )}
+          <Box style={{ padding: 0, overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ display: 'grid', gridTemplateColumns: seccion.isARS ? '2fr 1fr 1.4fr 1fr 1fr 110px' : '2fr 1fr 1.4fr 1fr 110px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 12px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              <span>Caja</span>
+              <span>Tipo</span>
+              <span>Propietario</span>
+              {seccion.isARS && <span style={{ textAlign: 'right' }}>Cheques</span>}
+              <span style={{ textAlign: 'right' }}>Saldo</span>
+              <span style={{ textAlign: 'right' }}>Acciones</span>
+            </div>
 
-      {/* Rendición */}
-      {cajasRendicion.length > 0 && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <div className="k-h" style={{ fontSize: 18 }}>Rendición de fondos</div>
-            <Chip style={{ fontSize: 9 }}>{cajasRendicion.length} usuario{cajasRendicion.length !== 1 ? 's' : ''}</Chip>
-            <div className="k-divider" style={{ flex: 1, marginLeft: 8 }} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
-            {cajasRendicion.map(c => (
-              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} canRemove={isAdmin} />
-            ))}
-          </div>
-          <div style={{ fontSize: 11, color: T.ink2, padding: '6px 10px', background: T.faint, borderRadius: 4, maxWidth: 420 }}>
-            Rendición = caja asignada a un usuario con fondos adelantados. Saldo negativo indica que la empresa le debe al usuario.
-          </div>
-        </>
-      )}
+            {/* Filas */}
+            {seccion.cajas.map((c, i) => {
+              const saldo = c.saldo || 0;
+              const saldoCheques = chequesPorCaja[c.id] || 0;
+              const efectivo = saldo - saldoCheques;
+              const isLow = c.tipo === 'obra' && saldo < 30000;
+              return (
+                <div key={c.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: seccion.isARS ? '2fr 1fr 1.4fr 1fr 1fr 110px' : '2fr 1fr 1.4fr 1fr 110px',
+                    padding: '9px 12px',
+                    borderBottom: i < seccion.cajas.length - 1 ? `1px solid ${T.faint2}` : 'none',
+                    fontSize: 12,
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    transition: 'background 0.12s',
+                    borderLeft: `3px solid ${c.color || T.ink2}`,
+                  }}
+                  onClick={() => setCajaSel(c)}
+                  onMouseEnter={e => e.currentTarget.style.background = T.faint}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ fontWeight: 700, color: T.ink, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</span>
+                    {isLow && <Chip warn style={{ fontSize: 9, flexShrink: 0 }}>⚠ bajo</Chip>}
+                  </span>
+                  <span style={{ fontSize: 11, color: T.ink2, textTransform: 'capitalize' }}>{TIPO_LABEL[c.tipo] || c.tipo}</span>
+                  <span style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 6 }}>{c.propietario || '—'}</span>
+                  {seccion.isARS && (
+                    <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 600, color: saldoCheques > 0 ? T.accent : T.ink3 }}>
+                      {saldoCheques > 0 ? `$ ${fmtN(saldoCheques)}` : '—'}
+                    </span>
+                  )}
+                  <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: saldo < 0 ? T.warn : T.ink }}>
+                    {seccion.isARS ? '$' : 'U$S'} {fmtN(saldo)}
+                  </span>
+                  <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                    <Btn sm onClick={() => setTraspaso(true)}>↔</Btn>
+                    {isAdmin && (
+                      <span style={{ color: T.warn, cursor: 'pointer', fontSize: 16, padding: '0 4px', lineHeight: 1 }}
+                        onClick={() => handleRemove(c)}>×</span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </Box>
+
+          {seccion.titulo === 'Rendición de fondos' && (
+            <div style={{ marginTop: 8, fontSize: 11, color: T.ink2, padding: '6px 10px', background: T.faint, borderRadius: 4, maxWidth: 520 }}>
+              Rendición = caja asignada a un usuario con fondos adelantados. Saldo negativo indica que la empresa le debe al usuario.
+            </div>
+          )}
+        </div>
+      ))}
 
       {cajasActivas.length === 0 && (
         <div style={{ textAlign: 'center', padding: 40, color: T.ink3 }}>Sin cajas registradas. Creá la primera.</div>

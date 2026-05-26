@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Bar, Chip } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useObras } from '../store/ObrasContext';
 import { useProveedores } from '../store/ProveedoresContext';
@@ -138,35 +139,22 @@ export default function Reportes() {
 
   return (
     <PageLayout breadcrumb={['Reportes']} active="Reportes">
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-        <div>
-          <div className="k-h" style={{ fontSize: 28 }}>Reportes</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>Análisis de datos · {CY}</div>
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
+      <PageHero
+        label={`ANÁLISIS DE DATOS · ${CY}`}
+        title="Reportes"
+        subtitle="Indicadores de gestión y exportación de datos"
+        actions={
           <Btn sm onClick={() => exportJSON({ obras, detalles }, `kamak_datos_${CY}.json`)}>
             ↗ Exportar todo (JSON)
           </Btn>
-        </div>
-      </div>
-
-      {/* KPIs */}
-      <div style={{ display: 'flex', gap: 0, background: T.faint, borderRadius: 4, marginBottom: 14, overflow: 'hidden', border: `1px solid ${T.faint2}` }}>
-        {[
-          { label: 'Obras activas', value: activas.length, sub: `${obras.filter(o=>o.estado==='en-presupuesto').length} en presupuesto` },
-          { label: 'Cobrado YTD', value: fmtM(facturacionYTD) },
-          { label: 'Gastado YTD', value: fmtM(costoYTD) },
-          { label: 'Margen promedio', value: `${margenProm.toFixed(1)}%`, sub: 'obras activas' },
-          { label: 'Total obras', value: obras.filter(o => o.estado !== 'archivada').length, sub: `${obras.filter(o=>o.estado==='finalizada').length} finalizadas` },
-        ].map((s, i) => (
-          <div key={s.label} style={{ flex: 1, textAlign: 'center', padding: '12px 8px', borderLeft: i ? `1px solid ${T.faint2}` : 'none' }}>
-            <div style={{ fontSize: 9, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{s.label}</div>
-            <div style={{ fontWeight: 800, fontSize: 22, fontFamily: T.fontMono, color: T.accent }}>{s.value}</div>
-            {s.sub && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{s.sub}</div>}
-          </div>
-        ))}
-      </div>
+        }
+        kpis={[
+          { label: 'Obras activas',    value: activas.length,                                                          sub: `${obras.filter(o=>o.estado==='en-presupuesto').length} en presu.`, color: T.ok },
+          { label: 'Cobrado YTD',      value: fmtM(facturacionYTD),                                                    color: T.accent },
+          { label: 'Gastado YTD',      value: fmtM(costoYTD),                                                          color: T.warn },
+          { label: 'Margen promedio',  value: `${margenProm.toFixed(1)}%`,                                              sub: 'obras activas',     color: margenProm < 0 ? T.warn : T.ok },
+        ]}
+      />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {/* Avance por rubro */}
