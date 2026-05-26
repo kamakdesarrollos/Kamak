@@ -1,303 +1,32 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
-import { Box, Btn, Chip } from '../components/ui';
+import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
+import { useProveedores } from '../store/ProveedoresContext';
+import { useDolar } from '../store/DolarContext';
 import { useSolicitudes } from '../store/SolicitudesContext';
-import { adminAction, createAuthUser } from '../lib/dbHelpers';
+import { useWhatsappPending } from '../store/WhatsappPendingContext';
+import AprobarFacturaModal from './modales/AprobarFacturaModal';
 
-const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
-const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
+// Hub unificado de aprobaciones admin:
+// - Solicitudes de eliminacion (creadas por no-admins en /movimientos)
+// - Facturas de WhatsApp (bot detecto fotos/PDFs)
+// - Movimientos de WhatsApp (bot interpreto texto)
+//
+// Layout:
+// - Tabs por estado (Pendientes / Aprobadas / Rechazadas)
+// - Dentro de cada tab, 3 secciones colapsables por origen.
+//
+// Query params:
+// - ?origen=eliminacion|whatsapp -> filtra que secciones se muestran
+// - ?tab=aprobadas|rechazadas -> abre directamente ese tab
 
-const PERM_COLS = [
-  { key: 'verCostos',    label: 'Ver costos' },
-  { key: 'verMargenes',  label: 'Ver márgenes' },
-  { key: 'verCaja',      label: 'Ver caja' },
-  { key: 'cargarGastos', label: 'Cargar gastos' },
-  { key: 'cargarAvance', label: 'Cargar avance' },
-  { key: 'editarPresu',  label: 'Editar presu' },
-  { key: 'aprobarPagos', label: 'Aprobar pagos' },
-  { key: 'crearObra',    label: 'Crear obra' },
-  { key: 'verDashboard', label: 'Ver dashboard' },
-];
-
-const TABS_OCULTOS_OPTS = [
-  'Resumen', 'Presupuesto', 'Materiales', 'Adicionales', 'Gantt',
-  'Movimientos', 'Cuenta cliente', 'Contratos MO', 'Documentos', 'Fotos', 'Financiación',
-];
-
-function PermToggle({ on, onChange }) {
-  return (
-    <div onClick={onChange}
-      style={{ width: 22, height: 13, borderRadius: 7, background: on ? T.ok : T.faint2, cursor: 'pointer', position: 'relative', transition: 'background 0.15s', flexShrink: 0 }}>
-      <div style={{ position: 'absolute', top: 2, left: on ? 11 : 2, width: 9, height: 9, borderRadius: '50%', background: T.paper, transition: 'left 0.15s', boxShadow: '0 1px 2px rgba(0,0,0,.3)' }} />
-    </div>
-  );
-}
-
-function ChipToggle({ label, active, onClick, color }) {
-  return (
-    <div onClick={onClick} style={{
-      display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
-      borderRadius: 20, fontSize: 11, cursor: 'pointer', userSelect: 'none',
-      background: active ? (color || T.accent) : T.faint,
-      color: active ? T.paper : T.ink2,
-      border: `1.5px solid ${active ? (color || T.accent) : T.faint2}`,
-      transition: 'all 0.12s',
-    }}>
-      {label}
-    </div>
-  );
-}
-
-function EditarAccesosModal({ usuario, obras, cajas, onClose }) {
-  const { updateUsuario } = useUsuarios();
-
-  const [obrasAll, setObrasAll] = useState(usuario.obrasVisibles === '*');
-  const [obrasSelected, setObrasSelected] = useState(
-    Array.isArray(usuario.obrasVisibles) ? usuario.obrasVisibles : []
-  );
-  const [cajasAll, setCajasAll] = useState(usuario.cajasVisibles === '*');
-  const [cajasSelected, setCajasSelected] = useState(
-    Array.isArray(usuario.cajasVisibles) ? usuario.cajasVisibles : []
-  );
-  const [tabsOcultos, setTabsOcultos] = useState(Array.isArray(usuario.tabsOcultos) ? usuario.tabsOcultos : []);
-
-  const toggleObra = (id) => setObrasSelected(prev =>
-    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-  );
-  const toggleCaja = (id) => setCajasSelected(prev =>
-    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-  );
-  const toggleTab = (tab) => setTabsOcultos(prev =>
-    prev.includes(tab) ? prev.filter(x => x !== tab) : [...prev, tab]
-  );
-
-  const guardar = () => {
-    updateUsuario(usuario.id, {
-      obrasVisibles: obrasAll ? '*' : obrasSelected,
-      cajasVisibles: cajasAll ? '*' : cajasSelected,
-      tabsOcultos,
-    });
-    onClose();
-  };
-
-  return (
-    <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Accesos · {usuario.nombre}</div>
-          <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
-        </div>
-
-        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 18, overflowY: 'auto' }}>
-          {/* Obras visibles */}
-          <div>
-            <label style={labelSt}>Obras visibles</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <input type="checkbox" id={`obras-all-${usuario.id}`} checked={obrasAll}
-                onChange={e => setObrasAll(e.target.checked)} style={{ cursor: 'pointer' }} />
-              <label htmlFor={`obras-all-${usuario.id}`} style={{ fontSize: 12, cursor: 'pointer' }}>Todas las obras</label>
-            </div>
-            {!obrasAll && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {obras.map(o => (
-                  <ChipToggle key={o.id} label={o.nombre} active={obrasSelected.includes(o.id)} color={T.ok} onClick={() => toggleObra(o.id)} />
-                ))}
-                {obras.length === 0 && <div style={{ fontSize: 11, color: T.ink3 }}>No hay obras disponibles</div>}
-              </div>
-            )}
-          </div>
-
-          {/* Cajas visibles */}
-          <div>
-            <label style={labelSt}>Cajas visibles</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <input type="checkbox" id={`cajas-all-${usuario.id}`} checked={cajasAll}
-                onChange={e => setCajasAll(e.target.checked)} style={{ cursor: 'pointer' }} />
-              <label htmlFor={`cajas-all-${usuario.id}`} style={{ fontSize: 12, cursor: 'pointer' }}>Todas las cajas</label>
-            </div>
-            {!cajasAll && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {cajas.map(c => (
-                  <ChipToggle key={c.id} label={c.nombre} active={cajasSelected.includes(c.id)} color="#3d7a4a" onClick={() => toggleCaja(c.id)} />
-                ))}
-                {cajas.length === 0 && <div style={{ fontSize: 11, color: T.ink3 }}>No hay cajas disponibles</div>}
-              </div>
-            )}
-          </div>
-
-          {/* Tabs ocultos */}
-          <div>
-            <label style={labelSt}>Pestañas ocultas en obra</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-              {TABS_OCULTOS_OPTS.map(tab => (
-                <ChipToggle key={tab} label={tab} active={tabsOcultos.includes(tab)} color="#c0392b" onClick={() => toggleTab(tab)} />
-              ))}
-            </div>
-            <div style={{ fontSize: 10, color: T.ink3 }}>Las pestañas marcadas en rojo NO serán visibles para este usuario dentro de cada obra.</div>
-          </div>
-        </div>
-
-        <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
-          <Btn sm onClick={onClose}>Cancelar</Btn>
-          <Btn sm fill onClick={guardar}>Guardar accesos</Btn>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function NuevoUsuarioModal({ obras, cajas, onClose }) {
-  const { addUsuario, roles } = useUsuarios();
-  const [nombre, setNombre] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPass, setShowPass] = useState(false);
-  const [rol, setRol] = useState('Comprador');
-  const [obrasAll, setObrasAll] = useState(false);
-  const [obrasSelected, setObrasSelected] = useState([]);
-  const [cajasAll, setCajasAll] = useState(false);
-  const [cajasSelected, setCajasSelected] = useState([]);
-  const [tabsOcultos, setTabsOcultos] = useState([]);
-
-  const [creating, setCreating] = useState(false);
-  const [sbError, setSbError] = useState('');
-
-  const ok = nombre.trim() && email.trim() && password.trim();
-
-  const toggleObra = (id) => setObrasSelected(prev =>
-    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-  );
-  const toggleCaja = (id) => setCajasSelected(prev =>
-    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-  );
-  const toggleTab = (tab) => setTabsOcultos(prev =>
-    prev.includes(tab) ? prev.filter(x => x !== tab) : [...prev, tab]
-  );
-
-  const confirmar = async () => {
-    if (!ok || creating) return;
-    setCreating(true);
-    setSbError('');
-    const { error: authError, data } = await createAuthUser(email.trim(), password.trim());
-    if (authError) {
-      setSbError(authError.message);
-      setCreating(false);
-      return;
-    }
-    await addUsuario({
-      nombre: nombre.trim(),
-      email: email.trim(),
-      rol,
-      obrasVisibles: obrasAll ? '*' : obrasSelected,
-      cajasVisibles: cajasAll ? '*' : cajasSelected,
-      tabsOcultos,
-    });
-    onClose();
-  };
-
-  return (
-    <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 500, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 17, fontFamily: T.font }}>Nuevo usuario</div>
-          <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
-        </div>
-        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
-          <div>
-            <label style={labelSt}>Nombre</label>
-            <input style={inputSt} value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Nombre completo" autoFocus />
-          </div>
-          <div>
-            <label style={labelSt}>Email / usuario</label>
-            <input style={inputSt} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="usuario@empresa.com" />
-          </div>
-          <div>
-            <label style={labelSt}>Contraseña</label>
-            <div style={{ position: 'relative' }}>
-              <input
-                style={{ ...inputSt, paddingRight: 34 }}
-                type={showPass ? 'text' : 'password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Contraseña inicial"
-              />
-              <span onClick={() => setShowPass(v => !v)}
-                style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: 14, color: T.ink3, userSelect: 'none' }}>
-                {showPass ? '🙈' : '👁'}
-              </span>
-            </div>
-          </div>
-          <div>
-            <label style={labelSt}>Rol base</label>
-            <select style={{ ...inputSt, cursor: 'pointer' }} value={rol} onChange={e => setRol(e.target.value)}>
-              {Object.keys(roles).map(r => <option key={r}>{r}</option>)}
-            </select>
-            <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>Los permisos se pre-rellenan según el rol y se pueden editar individualmente.</div>
-          </div>
-
-          {/* Obras visibles */}
-          <div>
-            <label style={labelSt}>Obras visibles</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <input type="checkbox" id="new-obras-all" checked={obrasAll} onChange={e => setObrasAll(e.target.checked)} style={{ cursor: 'pointer' }} />
-              <label htmlFor="new-obras-all" style={{ fontSize: 12, cursor: 'pointer' }}>Todas las obras</label>
-            </div>
-            {!obrasAll && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {obras.map(o => (
-                  <ChipToggle key={o.id} label={o.nombre} active={obrasSelected.includes(o.id)} color={T.ok} onClick={() => toggleObra(o.id)} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Cajas visibles */}
-          <div>
-            <label style={labelSt}>Cajas visibles</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <input type="checkbox" id="new-cajas-all" checked={cajasAll} onChange={e => setCajasAll(e.target.checked)} style={{ cursor: 'pointer' }} />
-              <label htmlFor="new-cajas-all" style={{ fontSize: 12, cursor: 'pointer' }}>Todas las cajas</label>
-            </div>
-            {!cajasAll && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {cajas.map(c => (
-                  <ChipToggle key={c.id} label={c.nombre} active={cajasSelected.includes(c.id)} color="#3d7a4a" onClick={() => toggleCaja(c.id)} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Tabs ocultos */}
-          <div>
-            <label style={labelSt}>Pestañas ocultas en obra</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {TABS_OCULTOS_OPTS.map(tab => (
-                <ChipToggle key={tab} label={tab} active={tabsOcultos.includes(tab)} color="#c0392b" onClick={() => toggleTab(tab)} />
-              ))}
-            </div>
-          </div>
-        </div>
-        {sbError && (
-          <div style={{ margin: '0 18px', padding: '8px 12px', background: '#fae6e0', borderRadius: 4, fontSize: 12, color: T.accent, borderLeft: `3px solid ${T.accent}` }}>
-            {sbError}
-          </div>
-        )}
-        <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
-          <Btn sm onClick={onClose}>Cancelar</Btn>
-          <Btn sm fill onClick={confirmar} style={{ opacity: ok && !creating ? 1 : 0.5 }}>
-            {creating ? 'Creando…' : 'Crear usuario'}
-          </Btn>
-        </div>
-      </div>
-    </div>
-  );
-}
-
+const fmtN = (n) => n != null ? Math.round(n).toLocaleString('es-AR') : '—';
+const fmtFecha = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
 const fmtDatetime = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -305,58 +34,432 @@ const fmtDatetime = (iso) => {
     d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 };
 
+const newPagoId = () => `pago-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+const newAdicId = () => `adic-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+
+const cuotaMontoFn   = (c, moneda, tc) => (c._usd || moneda !== 'USD') ? (c.monto||0) : Math.round((c.monto||0)/tc);
+const cuotaCobradoFn = (c, moneda, tc) =>
+  (c.pagos||[]).reduce((s,p) =>
+    moneda==='USD'
+      ? s+(p.moneda==='ARS' ? Math.round((p.monto||0)/(p.tc||tc)) : (p.monto||0))
+      : s+(p.moneda==='USD' ? Math.round((p.monto||0)*(p.tc||tc)) : (p.monto||0))
+  , 0);
+const cuotaEstado = (c, moneda, tc) => {
+  const cob = cuotaCobradoFn(c, moneda, tc);
+  if (cob<=0) return 'pendiente';
+  if (cob>=cuotaMontoFn(c, moneda, tc)) return 'pagado';
+  return 'parcial';
+};
+
+// ── Cards/filas por tipo ──────────────────────────────────────────────────────
+
+function SolicitudRow({ sol, isPendiente, onAprobar, onRechazar }) {
+  const mov = sol.movimiento || {};
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.faint2}`, padding: '10px 14px', gap: 8, background: isPendiente ? '#fff7ed' : 'transparent' }}>
+      <div style={{ flex: 3, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mov.descripcion || '—'}</div>
+        <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono, marginTop: 2 }}>
+          {mov.tipo} · ${fmtN(mov.monto)} · {mov.fecha}
+          {mov.obraNombre && mov.obraNombre !== 'General' && ` · ${mov.obraNombre}`}
+        </div>
+      </div>
+      <div style={{ flex: 2, fontSize: 12, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sol.motivo}>
+        {sol.motivo}
+      </div>
+      <div style={{ flex: 1.2, fontSize: 11, color: T.ink2 }}>{sol.solicitadoPor?.nombre || '—'}</div>
+      <div style={{ flex: 1, fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{fmtDatetime(sol.creadoAt)}</div>
+      <div style={{ width: 140, flexShrink: 0, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+        {isPendiente ? (
+          <>
+            <button onClick={onAprobar}
+              style={{ padding: '4px 10px', background: '#059669', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              ✓ Aprobar
+            </button>
+            <button onClick={onRechazar}
+              style={{ padding: '4px 10px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              ✕ Rechazar
+            </button>
+          </>
+        ) : (
+          <span style={{ fontSize: 10, color: T.ink3 }}>Resuelto por {sol.resolvedBy}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FacturaCard({ item, isPendiente, onReview, onReject }) {
+  return (
+    <Box style={{ padding: '12px 16px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+      {item.mediaUrl && item.mediaType !== 'pdf' ? (
+        <a href={item.mediaUrl} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
+          <img src={item.mediaUrl} alt="factura" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: `1.5px solid ${T.faint2}`, display: 'block' }} />
+        </a>
+      ) : (
+        <a href={item.mediaUrl || undefined} target="_blank" rel="noreferrer"
+          style={{ width: 60, height: 60, borderRadius: 6, background: '#e8f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0, textDecoration: 'none' }}>
+          {item.mediaUrl ? '📄' : (item.mediaType === 'image' ? '🖼' : '📄')}
+        </a>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>{item.proveedor || 'Proveedor no detectado'}</div>
+            {item.cuit && <div style={{ fontSize: 10, color: T.ink3 }}>CUIT {item.cuit}</div>}
+          </div>
+          {item.montoTotal != null && (
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 15, color: T.warn, flexShrink: 0 }}>
+              $ {fmtN(item.montoTotal)}
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11, color: T.ink2 }}>
+          {item.tipoFactura   && <span style={{ background: T.faint2, borderRadius: 3, padding: '1px 6px', fontWeight: 700 }}>Factura {item.tipoFactura}</span>}
+          {item.numeroFactura && <span>{item.numeroFactura}</span>}
+          {item.fecha         && <span>{fmtFecha(item.fecha)}</span>}
+          {item.concepto      && <span style={{ color: T.ink3 }}>{item.concepto}</span>}
+        </div>
+
+        <div style={{ marginTop: 4, fontSize: 10, color: T.ink3 }}>
+          Recibido de +{item.from} · {item.receivedAt && new Date(item.receivedAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+          {item.resolvedAt && <> · resuelto {fmtDatetime(item.resolvedAt)}</>}
+        </div>
+      </div>
+
+      {isPendiente && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
+          <Btn sm fill onClick={onReview} style={{ background: '#25803a', fontSize: 11 }}>📝 Revisar y aprobar</Btn>
+          <Btn sm onClick={onReject} style={{ fontSize: 11, color: T.ink3 }}>✕ Rechazar</Btn>
+        </div>
+      )}
+      {!isPendiente && (
+        <div style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+          background: item.status === 'confirmed' ? '#d1fae5' : '#fee2e2',
+          color:      item.status === 'confirmed' ? '#059669' : '#dc2626' }}>
+          {item.status === 'confirmed' ? '✓ Aprobada' : '✕ Rechazada'}
+        </div>
+      )}
+    </Box>
+  );
+}
+
+function MovimientoCard({ item, isPendiente, navigate, proveedores, obras, getDetalle, dolarVenta, onApprove, onReject }) {
+  const m = item.movimiento || {};
+  const esGasto = m.tipo === 'gasto';
+  const [esAdicional, setEsAdicional] = useState(false);
+  const [cuotaId, setCuotaId] = useState('');
+
+  const tc = dolarVenta || 1070;
+  const obraObj    = obras.find(o => o.id === m.obraId);
+  const obraMoneda = obraObj?.moneda || 'ARS';
+  const cuotas     = !esGasto && m.obraId ? (getDetalle(m.obraId)?.cuotas || []) : [];
+  const cuotasPend = cuotas.filter(c => cuotaEstado(c, obraMoneda, tc) !== 'pagado');
+  const totalCuotas    = cuotas.reduce((s, c) => s + cuotaMontoFn(c, obraMoneda, tc), 0);
+  const totalCobrado   = cuotas.reduce((s, c) => s + cuotaCobradoFn(c, obraMoneda, tc), 0);
+  const saldoPendiente = Math.max(0, totalCuotas - totalCobrado);
+  const fmtC = n => obraMoneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
+
+  const inputStLocal = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
+
+  return (
+    <Box style={{ padding: '12px 16px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+      <div style={{ width: 36, height: 36, borderRadius: 6, background: esGasto ? '#fff0e8' : '#e8f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+        {esGasto ? '💸' : '💰'}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>{m.descripcion || '—'}</div>
+            <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
+              {item.creadoPor} · {m.obraId
+                ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/obras/${m.obraId}/presupuesto`)}>{m.obraNombre || 'General'}</span>
+                : (m.obraNombre || 'General')}
+            </div>
+          </div>
+          <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 15, color: esGasto ? T.warn : T.ok, flexShrink: 0 }}>
+            {esGasto ? '−' : '+'}$ {fmtN(m.monto)}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11, color: T.ink2 }}>
+          <span style={{ background: esGasto ? '#fff0e8' : '#e8f4f0', borderRadius: 3, padding: '1px 6px', fontWeight: 700, color: esGasto ? T.warn : T.ok, textTransform: 'capitalize' }}>
+            {m.tipo}
+          </span>
+          {m.categoria && <span>{m.categoria}</span>}
+          {m.proveedor && (() => {
+            const prov = proveedores.find(p => p.nombre === m.proveedor);
+            return prov
+              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${prov.id}`)}>{m.proveedor}</span>
+              : <span>{m.proveedor}</span>;
+          })()}
+          {m.fecha     && <span>{fmtFecha(m.fecha)}</span>}
+          <span style={{ padding: '1px 6px', borderRadius: 3, background: m.comprobante === 'blanco' ? '#e8f4f0' : '#f5f0e0', color: m.comprobante === 'blanco' ? T.ok : T.ink3, fontWeight: 600 }}>
+            {m.comprobante === 'blanco' ? '✓ Con factura' : 'Sin factura'}
+          </span>
+        </div>
+
+        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: T.ink3 }}>
+          <span>Enviado desde WhatsApp · {item.receivedAt && new Date(item.receivedAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+          {m.comprobanteUrl && (
+            <a href={m.comprobanteUrl} target="_blank" rel="noreferrer"
+              style={{ color: '#25803a', fontWeight: 700, textDecoration: 'none', background: '#e8f4f0', borderRadius: 3, padding: '1px 6px' }}>
+              {(() => { try { return new URL(m.comprobanteUrl).pathname.endsWith('.pdf') ? '📄 Ver PDF' : '🖼 Ver foto'; } catch { return '📎 Ver archivo'; } })()}
+            </a>
+          )}
+          {item.resolvedAt && <span>· resuelto {fmtDatetime(item.resolvedAt)}</span>}
+        </div>
+
+        {/* Estado de cobros de la obra (solo ingresos con obra) */}
+        {isPendiente && !esGasto && m.obraId && cuotas.length > 0 && (
+          <div style={{ marginTop: 8, padding: '8px 10px', background: '#e8f4f0', borderRadius: 5, fontSize: 11 }}>
+            <div style={{ fontWeight: 700, color: T.ok, marginBottom: 4 }}>Estado cobros de la obra</div>
+            <div style={{ display: 'flex', gap: 16 }}>
+              <span>Cobrado: <b style={{ fontFamily: 'monospace' }}>{fmtC(totalCobrado)}</b></span>
+              <span>Pendiente: <b style={{ fontFamily: 'monospace', color: saldoPendiente > 0 ? T.warn : T.ok }}>{fmtC(saldoPendiente)}</b></span>
+              <span style={{ color: T.ink3 }}>de {fmtC(totalCuotas)} total</span>
+            </div>
+            {cuotasPend.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                <label style={{ fontSize: 10, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Vincular a cuota</label>
+                <select value={cuotaId} onChange={e => setCuotaId(e.target.value)}
+                  style={{ ...inputStLocal, marginTop: 3, fontSize: 11 }}>
+                  <option value="">— Sin vincular —</option>
+                  {cuotasPend.map(c => {
+                    const montoC  = cuotaMontoFn(c, obraMoneda, tc);
+                    const cobC    = cuotaCobradoFn(c, obraMoneda, tc);
+                    const est     = cuotaEstado(c, obraMoneda, tc);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {`${c.n ? `#${c.n} · ` : ''}${c.descripcion} · ${est === 'parcial' ? `saldo ${fmtC(montoC-cobC)}` : fmtC(montoC)}`}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {isPendiente && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
+          <Btn sm fill onClick={() => onApprove(esAdicional, cuotaId)} style={{ background: '#25803a', fontSize: 11 }}>✓ Aprobar</Btn>
+          <Btn sm onClick={onReject} style={{ fontSize: 11, color: T.ink3 }}>✕ Rechazar</Btn>
+          {esGasto && m.obraId && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, cursor: 'pointer', color: T.ink2, userSelect: 'none' }}>
+              <input type="checkbox" checked={esAdicional} onChange={e => setEsAdicional(e.target.checked)} />
+              + Adicional
+            </label>
+          )}
+        </div>
+      )}
+      {!isPendiente && (
+        <div style={{ flexShrink: 0, padding: '4px 8px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+          background: item.status === 'confirmed' ? '#d1fae5' : '#fee2e2',
+          color:      item.status === 'confirmed' ? '#059669' : '#dc2626' }}>
+          {item.status === 'confirmed' ? '✓ Aprobado' : '✕ Rechazado'}
+        </div>
+      )}
+    </Box>
+  );
+}
+
+// ── Pagina principal ──────────────────────────────────────────────────────────
+
 export default function Autorizaciones() {
-  const { usuarios, currentUser, togglePermiso, applyRol, removeUsuario, updateUsuario, roles, updateRol, removeRol } = useUsuarios();
+  const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const isAdmin = currentUser?.rol === 'Admin';
-  // Guard: solo Admin. La pagina expone CRUD de usuarios — sin esto, un no-admin
-  // podia llamar las funciones desde la consola y escalar privilegios.
+  // Guard: solo Admin.
   useEffect(() => {
     if (currentUser && !isAdmin) navigate('/', { replace: true });
   }, [currentUser, isAdmin, navigate]);
 
-  const { obras } = useObras();
-  const { cajas: allCajas, removeMovimiento } = useMovimientos();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const origenParam = searchParams.get('origen'); // 'eliminacion' | 'whatsapp' | null
+  const tabParam    = searchParams.get('tab');    // 'aprobadas' | 'rechazadas' | null
+
+  const { obras, patchDetalle, getDetalle } = useObras();
+  const { addMovimiento, removeMovimiento, cajas } = useMovimientos();
+  const { proveedores } = useProveedores();
+  const { dolarVenta } = useDolar();
   const { solicitudes, resolveSolicitud } = useSolicitudes();
+  const { pending, reload, rejectItem, confirmItem } = useWhatsappPending();
 
-  const [tab, setTab] = useState('solicitudes');
-  const [modalNuevo, setModalNuevo] = useState(false);
-  const [editAccesos, setEditAccesos] = useState(null);
-  const [resetPassId, setResetPassId] = useState(null);
-  const [newPass, setNewPass] = useState('');
-  const [resetLoading, setResetLoading] = useState(false);
+  const initialTab = tabParam === 'aprobadas' ? 'aprobadas'
+    : tabParam === 'rechazadas' ? 'rechazadas'
+    : 'pendientes';
+  const [tab, setTab] = useState(initialTab);
 
-  const cajas = allCajas.filter(c => c.activa);
+  const [collapsed, setCollapsed] = useState({ eliminacion: false, facturas: false, movimientos: false });
+  const toggleSection = (k) => setCollapsed(s => ({ ...s, [k]: !s[k] }));
 
-  // Solicitudes visibles según rol
-  const solVisibles = isAdmin
-    ? solicitudes
-    : solicitudes.filter(s => s.solicitadoPor?.id === currentUser?.id || s.solicitadoPor?.email === currentUser?.email);
-  const solPendientes = solVisibles.filter(s => s.estado === 'pendiente');
+  const [reviewFactura, setReviewFactura] = useState(null);
 
-  const handleApprove = (sol) => {
+  // Bucketizar items por estado
+  const buckets = useMemo(() => {
+    const solP = solicitudes.filter(s => s.estado === 'pendiente');
+    const solA = solicitudes.filter(s => s.estado === 'aprobada');
+    const solR = solicitudes.filter(s => s.estado === 'rechazada');
+
+    const facturasAll    = pending.filter(p => p.tipoPendiente !== 'movimiento');
+    const movimientosAll = pending.filter(p => p.tipoPendiente === 'movimiento');
+
+    const isPending  = (p) => !p.status || (p.status !== 'confirmed' && p.status !== 'rejected');
+    const isApproved = (p) => p.status === 'confirmed';
+    const isRejected = (p) => p.status === 'rejected';
+
+    return {
+      pendientes:  { eliminacion: solP, facturas: facturasAll.filter(isPending),  movimientos: movimientosAll.filter(isPending) },
+      aprobadas:   { eliminacion: solA, facturas: facturasAll.filter(isApproved), movimientos: movimientosAll.filter(isApproved) },
+      rechazadas:  { eliminacion: solR, facturas: facturasAll.filter(isRejected), movimientos: movimientosAll.filter(isRejected) },
+    };
+  }, [solicitudes, pending]);
+
+  const current = buckets[tab];
+
+  // Counts para los tabs
+  const countPendientes = buckets.pendientes.eliminacion.length + buckets.pendientes.facturas.length + buckets.pendientes.movimientos.length;
+  const countAprobadas  = buckets.aprobadas.eliminacion.length  + buckets.aprobadas.facturas.length  + buckets.aprobadas.movimientos.length;
+  const countRechazadas = buckets.rechazadas.eliminacion.length + buckets.rechazadas.facturas.length + buckets.rechazadas.movimientos.length;
+
+  // Visibilidad de secciones segun origen filter
+  const showEliminacion = origenParam !== 'whatsapp';
+  const showFacturas    = origenParam !== 'eliminacion';
+  const showMovimientos = origenParam !== 'eliminacion';
+
+  // ── Handlers ──
+
+  const handleAprobarSol = (sol) => {
     removeMovimiento(sol.movimientoId);
     resolveSolicitud(sol.id, 'aprobada', currentUser?.nombre || 'Admin');
   };
-  const handleReject = (sol) => {
+  const handleRechazarSol = (sol) => {
     resolveSolicitud(sol.id, 'rechazada', currentUser?.nombre || 'Admin');
   };
 
-  const obrasLabel = (u) => {
-    const ov = u.obrasVisibles;
-    if (ov === '*' || ov === 'Todas') return 'Todas';
-    if (!Array.isArray(ov) || ov.length === 0) return 'Ninguna';
-    if (ov.length <= 2) return ov.map(id => obras.find(o => o.id === id)?.nombre || id).join(', ');
-    return `${ov.length} obras`;
+  const handleRechazarFactura = (id) => {
+    if (window.confirm('¿Rechazás esta factura? No se guardará como gasto.')) rejectItem(id);
   };
 
-  const cajasLabel = (u) => {
-    const cv = u.cajasVisibles;
-    if (cv === '*') return 'Todas';
-    if (!Array.isArray(cv) || cv.length === 0) return 'Ninguna';
-    if (cv.length === 1) return cajas.find(c => c.id === cv[0])?.nombre || cv[0];
-    return `${cv.length} cajas`;
+  const resolveCaja = (item, m) => {
+    if (m.cajaId) return m.cajaId;
+    const sender  = (item.creadoPor || '').toLowerCase().trim();
+    const moneda  = m.moneda || 'ARS';
+    const activas = cajas.filter(c => c.activa);
+    if (m.tipo === 'ingreso') {
+      const exact   = activas.find(c => (c.propietario || '').toLowerCase() === sender && c.moneda === moneda);
+      if (exact) return exact.id;
+      const partial = activas.find(c => (c.propietario || '').toLowerCase().includes(sender) && c.moneda === moneda);
+      return partial?.id || activas.find(c => c.moneda === moneda)?.id || null;
+    } else {
+      if (m.cajaTipo === 'personal') {
+        const exact   = activas.find(c => (c.propietario || '').toLowerCase() === sender && c.moneda === moneda);
+        if (exact) return exact.id;
+        return activas.find(c => (c.propietario || '').toLowerCase().includes(sender) && c.moneda === moneda)?.id || null;
+      }
+      if (m.cajaTipo === 'banco') {
+        return activas.find(c => c.tipo === 'banco' && c.moneda === moneda)?.id || null;
+      }
+      return null;
+    }
   };
+
+  const handleAprobarMovimiento = (item, esAdicional, cuotaId) => {
+    const m = item.movimiento;
+    if (!m) return;
+    const cajaResuelta = resolveCaja(item, m);
+    const movId = addMovimiento({
+      tipo:           m.tipo,
+      descripcion:    m.descripcion,
+      monto:          m.monto,
+      fecha:          m.fecha,
+      obraId:         m.obraId || null,
+      obraNombre:     m.obraNombre || 'General',
+      cajaId:         cajaResuelta,
+      cajaDestinoId:  null,
+      proveedor:      m.proveedor || '',
+      categoria:      m.categoria || 'general',
+      medioPago:      m.medioPago || 'Transferencia',
+      comprobante:    m.comprobante || 'negro',
+      comprobanteUrl: m.comprobanteUrl || null,
+      fondoReparo:    false,
+      cuotaId:        cuotaId || null,
+    });
+
+    // Aplicar pago a cuota si fue vinculado
+    if (m.tipo === 'ingreso' && cuotaId && m.obraId) {
+      const tc = dolarVenta || 1070;
+      const obraMoneda = obras.find(o => o.id === m.obraId)?.moneda || 'ARS';
+      const cobradoPor = currentUser?.nombre || currentUser?.email || '';
+      patchDetalle(m.obraId, d => {
+        const cuotas = [...(d.cuotas || [])];
+        let remaining = m.monto;
+        let idx = cuotas.findIndex(c => c.id === cuotaId);
+        while (remaining > 0 && idx < cuotas.length) {
+          const c = cuotas[idx];
+          const montoC  = cuotaMontoFn(c, obraMoneda, tc);
+          const cobC    = cuotaCobradoFn(c, obraMoneda, tc);
+          const saldoC  = montoC - cobC;
+          if (saldoC <= 0) { idx++; continue; }
+          const toApply = Math.min(remaining, saldoC);
+          cuotas[idx] = {
+            ...c,
+            pagos: [...(c.pagos||[]), {
+              id: newPagoId(),
+              movimientoId: movId || null,
+              monto: toApply,
+              moneda: 'ARS',
+              tc,
+              fecha: m.fecha,
+              cobradoPor,
+              fotoUrl: m.comprobanteUrl || null,
+            }],
+          };
+          remaining -= toApply;
+          idx++;
+        }
+        return { ...d, cuotas };
+      });
+    }
+    if (esAdicional && m.obraId) {
+      patchDetalle(m.obraId, d => ({
+        ...d,
+        adicionales: [...(d.adicionales || []), {
+          id: newAdicId(),
+          descripcion: m.descripcion,
+          tarea: '', cantidad: null, unidad: '',
+          costoUnit: null, costoTotal: m.monto,
+          valorVentaUnit: null, valorVentaTotal: null,
+          montoProveedor: m.monto, cantidadProveedor: null, costoUnitProveedor: null,
+          aplicadoAContrato: false,
+          monto: m.monto, fecha: m.fecha, estado: 'pendiente',
+          aplicaACliente: true, aplicaAProveedor: false,
+        }],
+      }));
+    }
+    confirmItem(item.id);
+  };
+
+  const handleRechazarMovimiento = (id) => {
+    if (window.confirm('¿Rechazás este movimiento? No se guardará.')) rejectItem(id);
+  };
+
+  // ── Render ──
+
+  const isPendienteTab = tab === 'pendientes';
+
+  // Helper para el header de secciones
+  const SectionHeader = ({ titulo, count, sectionKey }) => (
+    <div onClick={() => toggleSection(sectionKey)}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 4px', cursor: 'pointer', userSelect: 'none', borderBottom: `1px solid ${T.faint2}`, marginBottom: 10 }}>
+      <span style={{ fontSize: 11, color: T.ink3 }}>{collapsed[sectionKey] ? '▶' : '▼'}</span>
+      <span style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5 }}>{titulo}</span>
+      <span style={{ background: T.faint, borderRadius: 10, padding: '1px 8px', fontSize: 11, fontWeight: 700, color: T.ink2 }}>{count}</span>
+    </div>
+  );
 
   return (
     <PageLayout breadcrumb={['Autorizaciones']} active="Autorizaciones">
@@ -364,261 +467,138 @@ export default function Autorizaciones() {
         <div>
           <div className="k-h" style={{ fontSize: 28 }}>Autorizaciones</div>
           <div style={{ fontSize: 12, color: T.ink2 }}>
-            {isAdmin ? 'Gestión de usuarios y aprobaciones pendientes' : 'Mis solicitudes de eliminación'}
+            Aprobaciones pendientes — eliminaciones de movimientos + items recibidos por WhatsApp
           </div>
         </div>
-        {isAdmin && (
-          <div style={{ display: 'flex', gap: 6 }}>
-            <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo usuario</Btn>
-          </div>
-        )}
+        <Btn sm onClick={reload}>↺ Actualizar</Btn>
       </div>
 
+      {/* Tabs por estado */}
       <div className="k-tabs" style={{ margin: '8px 0 10px' }}>
-        <span className={`k-tab${tab === 'solicitudes' ? ' k-tab-on' : ''}`} onClick={() => setTab('solicitudes')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          Solicitudes de eliminación
-          {solPendientes.length > 0 && (
+        <span className={`k-tab${tab === 'pendientes' ? ' k-tab-on' : ''}`}
+          onClick={() => { setTab('pendientes'); setSearchParams(p => { p.delete('tab'); return p; }); }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          Pendientes
+          {countPendientes > 0 && (
             <span style={{ background: '#c0392b', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700 }}>
-              {solPendientes.length}
+              {countPendientes}
             </span>
           )}
         </span>
-        {isAdmin && (
-          <span className={`k-tab${tab === 'usuarios' ? ' k-tab-on' : ''}`} onClick={() => setTab('usuarios')}>
-            Usuarios · {usuarios.length}
+        <span className={`k-tab${tab === 'aprobadas' ? ' k-tab-on' : ''}`}
+          onClick={() => { setTab('aprobadas'); setSearchParams(p => { p.set('tab', 'aprobadas'); return p; }); }}>
+          Aprobadas · {countAprobadas}
+        </span>
+        <span className={`k-tab${tab === 'rechazadas' ? ' k-tab-on' : ''}`}
+          onClick={() => { setTab('rechazadas'); setSearchParams(p => { p.set('tab', 'rechazadas'); return p; }); }}>
+          Rechazadas · {countRechazadas}
+        </span>
+      </div>
+
+      {/* Filtro origen (si esta aplicado por query) */}
+      {origenParam && (
+        <div style={{ marginBottom: 12, padding: '6px 10px', background: T.accentSoft, borderRadius: 4, fontSize: 11, color: T.accent, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>Filtro activo: solo <b>{origenParam === 'whatsapp' ? 'WhatsApp' : 'Eliminaciones'}</b></span>
+          <span style={{ cursor: 'pointer', textDecoration: 'underline' }}
+            onClick={() => setSearchParams(p => { p.delete('origen'); return p; })}>
+            quitar filtro
           </span>
+        </div>
+      )}
+
+      {/* Contenido */}
+      <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
+
+        {/* Solicitudes de eliminacion */}
+        {showEliminacion && (
+          <div style={{ marginBottom: 18 }}>
+            <SectionHeader titulo="Solicitudes de eliminación" count={current.eliminacion.length} sectionKey="eliminacion" />
+            {!collapsed.eliminacion && (
+              current.eliminacion.length === 0
+                ? <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin items</div>
+                : current.eliminacion.map(sol => (
+                  <SolicitudRow
+                    key={sol.id}
+                    sol={sol}
+                    isPendiente={isPendienteTab}
+                    onAprobar={() => handleAprobarSol(sol)}
+                    onRechazar={() => handleRechazarSol(sol)}
+                  />
+                ))
+            )}
+          </div>
         )}
-        {isAdmin && (
-          <span className={`k-tab${tab === 'roles' ? ' k-tab-on' : ''}`} onClick={() => setTab('roles')}>
-            Roles base
-          </span>
+
+        {/* Facturas WhatsApp */}
+        {showFacturas && (
+          <div style={{ marginBottom: 18 }}>
+            <SectionHeader titulo="Facturas de WhatsApp" count={current.facturas.length} sectionKey="facturas" />
+            {!collapsed.facturas && (
+              current.facturas.length === 0
+                ? <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin items</div>
+                : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {current.facturas.map(item => (
+                      <FacturaCard
+                        key={item.id}
+                        item={item}
+                        isPendiente={isPendienteTab}
+                        onReview={() => setReviewFactura(item)}
+                        onReject={() => handleRechazarFactura(item.id)}
+                      />
+                    ))}
+                  </div>
+                )
+            )}
+          </div>
+        )}
+
+        {/* Movimientos WhatsApp */}
+        {showMovimientos && (
+          <div style={{ marginBottom: 18 }}>
+            <SectionHeader titulo="Movimientos de WhatsApp" count={current.movimientos.length} sectionKey="movimientos" />
+            {!collapsed.movimientos && (
+              current.movimientos.length === 0
+                ? <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin items</div>
+                : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {current.movimientos.map(item => (
+                      <MovimientoCard
+                        key={item.id}
+                        item={item}
+                        isPendiente={isPendienteTab}
+                        navigate={navigate}
+                        proveedores={proveedores}
+                        obras={obras}
+                        getDetalle={getDetalle}
+                        dolarVenta={dolarVenta}
+                        onApprove={(esAdic, cuotaId) => handleAprobarMovimiento(item, esAdic, cuotaId)}
+                        onReject={() => handleRechazarMovimiento(item.id)}
+                      />
+                    ))}
+                  </div>
+                )
+            )}
+          </div>
+        )}
+
+        {/* Mensaje si no hay nada */}
+        {countPendientes === 0 && tab === 'pendientes' && (
+          <div style={{ padding: 48, textAlign: 'center', color: T.ink3, fontSize: 13 }}>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>✓</div>
+            Sin aprobaciones pendientes
+          </div>
         )}
       </div>
 
-      {tab === 'solicitudes' && (
-        <Box style={{ padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 240px)' }}>
-          {solVisibles.length === 0 ? (
-            <div style={{ padding: 48, textAlign: 'center', color: T.ink3, fontSize: 13 }}>
-              <div style={{ fontSize: 32, marginBottom: 10 }}>✓</div>
-              Sin solicitudes de eliminación
-            </div>
-          ) : (
-            <>
-              {/* Header */}
-              <div style={{ display: 'flex', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 14px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, gap: 8 }}>
-                <div style={{ flex: 3 }}>Movimiento</div>
-                <div style={{ flex: 2 }}>Motivo</div>
-                {isAdmin && <div style={{ flex: 1.2 }}>Solicitado por</div>}
-                <div style={{ flex: 1 }}>Fecha</div>
-                <div style={{ flex: 0.8 }}>Estado</div>
-                {isAdmin && <div style={{ width: 140, flexShrink: 0 }}></div>}
-              </div>
-              {solVisibles.map(sol => {
-                const mov = sol.movimiento || {};
-                const isPendiente = sol.estado === 'pendiente';
-                return (
-                  <div key={sol.id} style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.faint2}`, padding: '10px 14px', gap: 8, background: isPendiente ? '#fff7ed' : 'transparent' }}>
-                    <div style={{ flex: 3, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mov.descripcion || '—'}</div>
-                      <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono, marginTop: 2 }}>
-                        {mov.tipo} · ${Math.round(mov.monto || 0).toLocaleString('es-AR')} · {mov.fecha}
-                        {mov.obraNombre && mov.obraNombre !== 'General' && ` · ${mov.obraNombre}`}
-                      </div>
-                    </div>
-                    <div style={{ flex: 2, fontSize: 12, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sol.motivo}>
-                      {sol.motivo}
-                    </div>
-                    {isAdmin && (
-                      <div style={{ flex: 1.2, fontSize: 11, color: T.ink2 }}>{sol.solicitadoPor?.nombre || '—'}</div>
-                    )}
-                    <div style={{ flex: 1, fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{fmtDatetime(sol.creadoAt)}</div>
-                    <div style={{ flex: 0.8 }}>
-                      {sol.estado === 'pendiente' && <span style={{ background: '#fef3c7', color: '#d97706', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>⏳ Pendiente</span>}
-                      {sol.estado === 'aprobada' && <span style={{ background: '#d1fae5', color: '#059669', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>✓ Aprobada</span>}
-                      {sol.estado === 'rechazada' && <span style={{ background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>✕ Rechazada</span>}
-                    </div>
-                    {isAdmin && (
-                      <div style={{ width: 140, flexShrink: 0, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        {isPendiente ? (
-                          <>
-                            <button
-                              onClick={() => handleApprove(sol)}
-                              style={{ padding: '4px 10px', background: '#059669', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                              Aprobar
-                            </button>
-                            <button
-                              onClick={() => handleReject(sol)}
-                              style={{ padding: '4px 10px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                              Rechazar
-                            </button>
-                          </>
-                        ) : (
-                          <span style={{ fontSize: 10, color: T.ink3 }}>Resuelto por {sol.resolvedBy}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </>
-          )}
-        </Box>
+      {/* Modal de revision de factura */}
+      {reviewFactura && (
+        <AprobarFacturaModal
+          item={reviewFactura}
+          onConfirm={() => { confirmItem(reviewFactura.id); setReviewFactura(null); }}
+          onClose={() => setReviewFactura(null)}
+        />
       )}
-
-      {tab === 'usuarios' && isAdmin && (
-        <Box style={{ padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 240px)' }}>
-          {/* Header */}
-          <div style={{ display: 'flex', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, position: 'sticky', top: 0, zIndex: 1, minWidth: 0 }}>
-            <div style={{ width: 160, flexShrink: 0, padding: '8px 10px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>Usuario</div>
-            <div style={{ width: 170, flexShrink: 0, padding: '8px 10px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>Credenciales</div>
-            <div style={{ width: 130, flexShrink: 0, padding: '8px 10px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>Rol</div>
-            <div style={{ width: 110, flexShrink: 0, padding: '8px 10px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>Obras</div>
-            <div style={{ width: 100, flexShrink: 0, padding: '8px 10px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>Cajas</div>
-            {PERM_COLS.map(col => (
-              <div key={col.key} style={{ width: 60, flexShrink: 0, padding: '8px 4px', fontSize: 8, fontWeight: 700, color: T.ink2, textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.3 }}>
-                {col.label}
-              </div>
-            ))}
-            <div style={{ width: 70, flexShrink: 0 }}></div>
-          </div>
-
-          {/* Rows */}
-          {usuarios.map(u => (
-            <div key={u.id} style={{ display: 'flex', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', minWidth: 0 }}>
-
-              {/* Nombre + avatar */}
-              <div style={{ width: 160, flexShrink: 0, padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                <div style={{ width: 24, height: 24, borderRadius: '50%', background: T.ink2, color: T.paper, fontFamily: `'Montserrat',sans-serif`, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
-                  {(u.nombre || '?')[0].toUpperCase()}
-                </div>
-                <div style={{ fontWeight: 700, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nombre}</div>
-              </div>
-
-              {/* Credenciales: email + cambiar contraseña */}
-              <div style={{ width: 170, flexShrink: 0, padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                <div style={{ fontSize: 11, color: T.ink2, fontFamily: T.fontMono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</div>
-                {resetPassId === u.id ? (
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                    <input
-                      autoFocus
-                      type="password"
-                      value={newPass}
-                      onChange={e => setNewPass(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Escape') { setResetPassId(null); setNewPass(''); } }}
-                      placeholder="Nueva contraseña"
-                      style={{ fontSize: 11, padding: '2px 6px', border: `1.5px solid ${T.accent}`, borderRadius: 3, fontFamily: T.fontMono, outline: 'none', width: 100 }}
-                    />
-                    <span
-                      title="Confirmar"
-                      style={{ fontSize: 10, color: resetLoading ? T.ink3 : T.ok, cursor: resetLoading ? 'default' : 'pointer', fontWeight: 700 }}
-                      onClick={async () => {
-                        if (!newPass.trim() || resetLoading) return;
-                        setResetLoading(true);
-                        const { error } = await adminAction('updatePassword', { email: u.email, password: newPass.trim() });
-                        setResetLoading(false);
-                        if (error) { alert('Error: ' + error); return; }
-                        setResetPassId(null); setNewPass('');
-                      }}>✓</span>
-                    <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer' }}
-                      onClick={() => { setResetPassId(null); setNewPass(''); }}>✕</span>
-                    {resetLoading && <span style={{ fontSize: 9, color: T.ink3 }}>…</span>}
-                  </div>
-                ) : (
-                  <span style={{ fontSize: 9, color: T.accent, cursor: 'pointer', fontWeight: 700 }}
-                    onClick={() => { setResetPassId(u.id); setNewPass(''); }}>
-                    cambiar contraseña
-                  </span>
-                )}
-              </div>
-
-              {/* Rol */}
-              <div style={{ width: 130, flexShrink: 0, padding: '8px 10px' }}>
-                <select style={{ fontSize: 10, padding: '3px 6px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, background: T.paper, cursor: 'pointer', maxWidth: '100%' }}
-                  value={u.rol}
-                  onChange={e => applyRol(u.id, e.target.value)}>
-                  {Object.keys(roles).map(r => <option key={r}>{r}</option>)}
-                </select>
-              </div>
-
-              {/* Obras */}
-              <div style={{ width: 110, flexShrink: 0, padding: '8px 10px', fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {obrasLabel(u)}
-              </div>
-
-              {/* Cajas */}
-              <div style={{ width: 100, flexShrink: 0, padding: '8px 10px', fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {cajasLabel(u)}
-              </div>
-
-              {PERM_COLS.map(col => (
-                <div key={col.key} style={{ width: 60, flexShrink: 0, display: 'flex', justifyContent: 'center', padding: '8px 4px' }}>
-                  <PermToggle on={u.permisos?.[col.key]} onChange={() => togglePermiso(u.id, col.key)} />
-                </div>
-              ))}
-
-              <div style={{ width: 70, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '4px 6px' }}>
-                <span
-                  title="Editar accesos"
-                  style={{ fontSize: 12, color: T.accent, cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}
-                  onClick={() => setEditAccesos(u)}>
-                  accesos
-                </span>
-                <span style={{ color: T.faint2, fontSize: 16, cursor: 'pointer' }}
-                  onClick={() => { if (confirm(`¿Eliminar usuario ${u.nombre}?`)) removeUsuario(u.id); }}>×</span>
-              </div>
-            </div>
-          ))}
-        </Box>
-      )}
-
-      {tab === 'roles' && isAdmin && (
-        <Box style={{ padding: 16 }}>
-          <div style={{ fontSize: 12, color: T.ink2, marginBottom: 14 }}>
-            Los roles base definen permisos predeterminados. Al asignar un rol a un usuario, sus permisos se resetean a estos valores. Cada permiso puede ajustarse individualmente por usuario en la pestaña Usuarios.
-          </div>
-          <div style={{ fontSize: 11, overflowX: 'auto' }}>
-            <div style={{ display: 'flex', background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
-              <div style={{ width: 160, flexShrink: 0, padding: '6px 12px', fontWeight: 700, fontSize: 10, textTransform: 'uppercase' }}>Rol</div>
-              {PERM_COLS.map(col => (
-                <div key={col.key} style={{ flex: 1, minWidth: 70, padding: '6px 4px', fontWeight: 700, fontSize: 8, textTransform: 'uppercase', letterSpacing: 0.3, textAlign: 'center' }}>
-                  {col.label}
-                </div>
-              ))}
-              <div style={{ width: 30, flexShrink: 0 }} />
-            </div>
-            {Object.entries(roles).map(([rolName, perms]) => {
-              const enUso = usuarios.some(u => u.rol === rolName);
-              return (
-                <div key={rolName} style={{ display: 'flex', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center' }}>
-                  <div style={{ width: 160, flexShrink: 0, padding: '8px 12px' }}>
-                    <Chip style={{ fontSize: 10 }}>{rolName}</Chip>
-                  </div>
-                  {PERM_COLS.map(col => (
-                    <div key={col.key} style={{ flex: 1, minWidth: 70, padding: '8px 4px', display: 'flex', justifyContent: 'center' }}>
-                      <PermToggle on={perms[col.key]} onChange={() => updateRol(rolName, col.key)} />
-                    </div>
-                  ))}
-                  <div style={{ width: 30, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                    <span
-                      title={enUso ? `${usuarios.filter(u => u.rol === rolName).length} usuario(s) usan este rol` : 'Eliminar rol'}
-                      style={{ color: enUso ? T.faint2 : T.accent, cursor: enUso ? 'not-allowed' : 'pointer', fontSize: 16, userSelect: 'none' }}
-                      onClick={() => {
-                        if (enUso) return;
-                        if (confirm(`¿Eliminar el rol "${rolName}"? Esta acción no se puede deshacer.`)) removeRol(rolName);
-                      }}>×</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ fontSize: 10, color: T.ink3, marginTop: 10 }}>
-            Los cambios en roles base solo afectan a nuevos usuarios o cuando se reasigna el rol. Los permisos individuales existentes no se modifican automáticamente.
-          </div>
-        </Box>
-      )}
-
-      {modalNuevo && <NuevoUsuarioModal obras={obras} cajas={cajas} onClose={() => setModalNuevo(false)} />}
-      {editAccesos && <EditarAccesosModal usuario={editAccesos} obras={obras} cajas={cajas} onClose={() => setEditAccesos(null)} />}
     </PageLayout>
   );
 }

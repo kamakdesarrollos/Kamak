@@ -39,9 +39,10 @@ const Catalogos          = lazy(() => import('./pages/Catalogos'));
 const Plantillas         = lazy(() => import('./pages/Plantillas'));
 const Reportes           = lazy(() => import('./pages/Reportes'));
 const Autorizaciones     = lazy(() => import('./pages/Autorizaciones'));
+const Usuarios           = lazy(() => import('./pages/Usuarios'));
 const Configuracion      = lazy(() => import('./pages/Configuracion'));
 const Cheques            = lazy(() => import('./pages/Cheques'));
-const WhatsappBuzon      = lazy(() => import('./pages/WhatsappBuzon'));
+// WhatsappBuzon eliminado — /whatsapp ahora redirige a /autorizaciones?origen=whatsapp.
 const MobileComprador    = lazy(() => import('./pages/mobile/MobileComprador'));
 const MobileDirector     = lazy(() => import('./pages/mobile/MobileDirector'));
 const PortalCliente      = lazy(() => import('./pages/portal/PortalCliente'));
@@ -214,12 +215,14 @@ function AppShell() {
                   <Route path="/cajas" element={<Cajas />} />
                   <Route path="/cajas/conciliacion" element={<Conciliacion />} />
                   <Route path="/cheques" element={<Cheques />} />
-                  <Route path="/whatsapp" element={<WhatsappBuzon />} />
+                  {/* /whatsapp queda como atajo a la seccion WhatsApp de /autorizaciones */}
+                  <Route path="/whatsapp" element={<Navigate to="/autorizaciones?origen=whatsapp" replace />} />
                   <Route path="/prorrateo" element={<Prorrateo />} />
                   <Route path="/catalogos" element={<Catalogos />} />
                   <Route path="/plantillas" element={<Plantillas />} />
                   <Route path="/reportes" element={<Reportes />} />
                   <Route path="/autorizaciones" element={<Autorizaciones />} />
+                  <Route path="/usuarios" element={<Usuarios />} />
                   <Route path="/configuracion" element={<Configuracion />} />
                   <Route path="/mobile/comprador" element={<MobileComprador />} />
                   <Route path="/mobile/director" element={<MobileDirector />} />

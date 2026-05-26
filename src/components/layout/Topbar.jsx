@@ -69,7 +69,8 @@ function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, 
         : `$${(p.movimiento?.monto || 0).toLocaleString('es-AR')} · ${p.movimiento?.descripcion || ''}`,
       fecha:  fmtFecha(p.receivedAt),
       leida:  false,
-      ruta:   '/whatsapp',
+      // El click navega al hub unificado, filtrado por origen WhatsApp.
+      ruta:   '/autorizaciones?origen=whatsapp',
       tipo:   'pending',
     });
   });
@@ -159,11 +160,11 @@ function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, 
       {items.length > 0 && (
         <div style={{ borderTop: '1px solid #3a3a3e', padding: '8px 14px', display: 'flex', gap: 8 }}>
           <span
-            onClick={() => { onClose(); navigate('/whatsapp'); }}
+            onClick={() => { onClose(); navigate('/autorizaciones?origen=whatsapp'); }}
             style={{ fontSize: 11, color: '#9a9892', cursor: 'pointer', flex: 1, textAlign: 'center' }}
             onMouseEnter={e => e.currentTarget.style.color = '#fff'}
             onMouseLeave={e => e.currentTarget.style.color = '#9a9892'}>
-            Ver buzón WhatsApp →
+            Ver autorizaciones →
           </span>
           <span
             onClick={() => { onClose(); navigate('/'); }}

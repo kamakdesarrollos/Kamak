@@ -3,6 +3,7 @@ import { Diamond } from '../ui';
 import { T } from '../../theme';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useSolicitudes } from '../../store/SolicitudesContext';
+import { useWhatsappPending } from '../../store/WhatsappPendingContext';
 
 const ALL_ITEMS = [
   { section: 'Operación' },
@@ -21,6 +22,7 @@ const ALL_ITEMS = [
   { icon: '▦', label: 'Reportes',       path: '/reportes',    adminOnly: true },
   { section: 'Sistema' },
   { icon: '◐', label: 'Autorizaciones', path: '/autorizaciones', adminOnly: true },
+  { icon: '👤', label: 'Usuarios',       path: '/usuarios',       adminOnly: true },
   { icon: '⚙', label: 'Configuración', path: '/configuracion', adminOnly: true },
 ];
 
@@ -29,14 +31,19 @@ export default function Sidebar({ active }) {
   const location = useLocation();
   const { currentUser } = useUsuarios();
   const { solicitudes } = useSolicitudes();
+  const { pending: waPending } = useWhatsappPending();
   const p = currentUser?.permisos ?? {};
   const isAdmin = currentUser?.rol === 'Admin';
 
-  // Badge: admins see all pending, non-admins see their own pending
-  const solPendientes = isAdmin
+  // Badge "Autorizaciones": ahora cuenta TODAS las pendings:
+  // solicitudes de eliminacion + items activos del bot de WhatsApp.
+  // Solo se muestra para Admin (no-admin no ve /autorizaciones).
+  const waPendientes = isAdmin
+    ? waPending.filter(p => !p.status || (p.status !== 'confirmed' && p.status !== 'rejected')).length
+    : 0;
+  const solPendientes = (isAdmin
     ? solicitudes.filter(s => s.estado === 'pendiente').length
-    : solicitudes.filter(s => s.estado === 'pendiente' &&
-        (s.solicitadoPor?.id === currentUser?.id || s.solicitadoPor?.email === currentUser?.email)).length;
+    : 0) + waPendientes;
 
   const items = ALL_ITEMS.filter(it => {
     if (it.section) return true;
