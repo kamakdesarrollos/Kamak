@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Label } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useGastosFijos } from '../store/GastosFijosContext';
 import { useObras } from '../store/ObrasContext';
@@ -107,18 +108,25 @@ export default function Prorrateo() {
 
   return (
     <PageLayout breadcrumb={['Gastos Fijos', MES_ACTUAL]} active="Gastos Fijos">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-        <div>
-          <div className="k-h" style={{ fontSize: 28 }}>Prorrateo · {MES_ACTUAL}</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>Gastos fijos mensuales repartidos entre las obras activas</div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {confirmado && <span style={{ fontSize: 12, color: T.ok, fontWeight: 700 }}>✓ Confirmado</span>}
-          <Btn sm fill onClick={confirmar} style={{ opacity: (totalMensual > 0 && obrasActivas.length > 0) ? 1 : 0.5 }}>
-            Confirmar prorrateo
-          </Btn>
-        </div>
-      </div>
+      <PageHero
+        label={`GASTOS FIJOS · ${MES_ACTUAL}`}
+        title="Prorrateo"
+        subtitle="Gastos fijos mensuales repartidos entre las obras activas"
+        actions={
+          <>
+            {confirmado && <span style={{ fontSize: 12, color: T.accent, fontWeight: 700 }}>✓ Confirmado</span>}
+            <Btn sm fill onClick={confirmar} style={{ opacity: (totalMensual > 0 && obrasActivas.length > 0) ? 1 : 0.5 }}>
+              Confirmar prorrateo
+            </Btn>
+          </>
+        }
+        kpis={[
+          { label: 'Gastos fijos',     value: items.length,                                 sub: 'configurados',     color: T.ink },
+          { label: 'Total mensual',    value: `$ ${fmtN(totalMensual)}`,                    sub: 'a repartir',        color: T.warn },
+          { label: 'Obras activas',    value: obrasActivas.length,                          sub: 'destinatarias',    color: T.ok },
+          { label: 'Promedio por obra', value: obrasActivas.length > 0 ? `$ ${fmtN(totalMensual / obrasActivas.length)}` : '—', sub: 'estimado', color: T.ink },
+        ]}
+      />
 
       <div style={{ display: 'flex', gap: 10, overflow: 'hidden', height: 'calc(100vh - 240px)' }}>
 

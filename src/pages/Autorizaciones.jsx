@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
@@ -463,15 +464,18 @@ export default function Autorizaciones() {
 
   return (
     <PageLayout breadcrumb={['Autorizaciones']} active="Autorizaciones">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-        <div>
-          <div className="k-h" style={{ fontSize: 28 }}>Autorizaciones</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>
-            Aprobaciones pendientes — eliminaciones de movimientos + items recibidos por WhatsApp
-          </div>
-        </div>
-        <Btn sm onClick={reload}>↺ Actualizar</Btn>
-      </div>
+      <PageHero
+        label="APROBACIONES"
+        title="Autorizaciones"
+        subtitle="Eliminaciones de movimientos + items recibidos por WhatsApp"
+        actions={<Btn sm onClick={reload}>↺ Actualizar</Btn>}
+        kpis={[
+          { label: 'Pendientes',  value: countPendientes,                                                       sub: 'requieren acción', color: countPendientes > 0 ? T.warn : T.ink },
+          { label: 'WhatsApp',    value: buckets.pendientes.facturas.length + buckets.pendientes.movimientos.length, sub: 'del bot',          color: T.accent },
+          { label: 'Aprobadas',   value: countAprobadas,                                                        sub: 'historial',        color: T.ok },
+          { label: 'Rechazadas',  value: countRechazadas,                                                       sub: 'historial',        color: T.ink3 },
+        ]}
+      />
 
       {/* Tabs por estado */}
       <div className="k-tabs" style={{ margin: '8px 0 10px' }}>

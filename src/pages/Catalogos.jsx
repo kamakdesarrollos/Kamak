@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Divider } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { useUsuarios } from '../store/UsuariosContext';
@@ -997,15 +998,23 @@ export default function Catalogos() {
 
   return (
     <PageLayout breadcrumb={['Catálogos', TABS[tab]]} active="Catálogos">
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div className="k-h" style={{ fontSize: 26 }}>Catálogo de precios · APU</div>
-        <div style={{ display: 'flex', gap: 8 }}>
+      <PageHero
+        label="CATÁLOGO DE PRECIOS · APU"
+        title="Catálogos"
+        subtitle="Insumos, mano de obra, tareas y rubros base del presupuesto"
+        actions={
           <Btn sm onClick={() => {
             const data = JSON.stringify(catalog, null, 2);
             const a = document.createElement('a'); a.href = 'data:text/json,' + encodeURIComponent(data); a.download = 'kamak_catalog.json'; a.click();
           }}>↓ Exportar JSON</Btn>
-        </div>
-      </div>
+        }
+        kpis={[
+          { label: 'Materiales',  value: catalog.materiales.length,          color: T.ink },
+          { label: 'Mano de obra', value: catalog.mo.length,                   color: T.ink },
+          { label: 'Tareas APU',   value: catalog.tareas.length,               color: T.accent },
+          { label: 'Rubros',       value: catalog.rubros.length,               color: T.ink },
+        ]}
+      />
 
       <div className="k-tabs" style={{ marginBottom: 10 }}>
         {TABS.map((_, i) => (

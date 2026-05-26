@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useObras } from '../store/ObrasContext';
@@ -1075,41 +1076,39 @@ export default function Movimientos() {
 
   return (
     <PageLayout breadcrumb={['Movimientos']} active="Movimientos">
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div className="k-h" style={{ fontSize: 28 }}>Movimientos</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select style={{ ...inputSt, cursor: 'pointer' }} value={filtroObra} onChange={e => setFiltroObra(e.target.value)}>
-            <option value="">Todas las obras</option>
-            {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-          </select>
-          <div style={{ display: 'flex', alignItems: 'center', border: `1.2px solid ${T.faint2}`, borderRadius: 4, overflow: 'hidden' }}>
-            <span onClick={() => setMes(m => navMes(m, -1))}
-              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: 16, color: T.ink2, background: T.faint, borderRight: `1px solid ${T.faint2}`, userSelect: 'none', lineHeight: 1 }}>‹</span>
-            <span style={{ padding: '6px 18px', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, minWidth: 130, textAlign: 'center' }}>
-              {mesLabel(mes)}
-            </span>
-            <span onClick={() => setMes(m => navMes(m, +1))}
-              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: 16, color: T.ink2, background: T.faint, borderLeft: `1px solid ${T.faint2}`, userSelect: 'none', lineHeight: 1 }}>›</span>
-          </div>
-          <Btn sm onClick={exportCSV}>↗ CSV</Btn>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 14 }}>
-        {[
-          { label: 'Ingresos del mes',  value: `$ ${fmtN(totalIngresos)}`, color: T.ok,   sub: `${ingresos.length} registros` },
-          { label: 'Gastos del mes',    value: `$ ${fmtN(totalGastos)}`,   color: T.warn, sub: `${gastos.length} registros` },
-          { label: 'Neto',              value: `${neto >= 0 ? '+' : '−'}$ ${fmtN(neto)}`, color: neto >= 0 ? T.ok : T.warn, sub: neto >= 0 ? 'superávit' : 'déficit' },
-          { label: 'Total movimientos', value: String(ingresos.length + gastos.length), color: T.ink, sub: `${traspasos.length} traspasos` },
-        ].map(s => (
-          <Box key={s.label} style={{ padding: '10px 14px' }}>
-            <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: s.color, marginTop: 2 }}>{s.value}</div>
-            <div style={{ fontSize: 10, color: T.ink3, marginTop: 1 }}>{s.sub}</div>
-          </Box>
-        ))}
-      </div>
+      <PageHero
+        label="CAJA · INGRESOS Y EGRESOS"
+        title="Movimientos"
+        subtitle={mesLabel(mes)}
+        actions={
+          <>
+            <select
+              value={filtroObra}
+              onChange={e => setFiltroObra(e.target.value)}
+              style={{ padding: '5px 8px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, background: 'rgba(255,255,255,0.06)', color: '#fff', cursor: 'pointer', maxWidth: 180 }}
+            >
+              <option value="" style={{ color: T.ink }}>Todas las obras</option>
+              {obras.map(o => <option key={o.id} value={o.id} style={{ color: T.ink }}>{o.nombre}</option>)}
+            </select>
+            <div style={{ display: 'flex', alignItems: 'center', border: `1px solid #3a3a3e`, borderRadius: 4, overflow: 'hidden' }}>
+              <span onClick={() => setMes(m => navMes(m, -1))}
+                style={{ padding: '5px 10px', cursor: 'pointer', fontSize: 14, color: '#fff', background: 'rgba(255,255,255,0.06)', userSelect: 'none', lineHeight: 1 }}>‹</span>
+              <span style={{ padding: '5px 14px', fontFamily: T.fontMono, fontSize: 11, fontWeight: 700, minWidth: 110, textAlign: 'center', color: '#fff' }}>
+                {mesLabel(mes)}
+              </span>
+              <span onClick={() => setMes(m => navMes(m, +1))}
+                style={{ padding: '5px 10px', cursor: 'pointer', fontSize: 14, color: '#fff', background: 'rgba(255,255,255,0.06)', userSelect: 'none', lineHeight: 1 }}>›</span>
+            </div>
+            <Btn sm onClick={exportCSV}>↗ CSV</Btn>
+          </>
+        }
+        kpis={[
+          { label: 'Ingresos del mes',  value: `$ ${fmtN(totalIngresos)}`,  sub: `${ingresos.length} registros`, color: T.ok },
+          { label: 'Gastos del mes',    value: `$ ${fmtN(totalGastos)}`,    sub: `${gastos.length} registros`,    color: T.warn },
+          { label: 'Neto',              value: `${neto >= 0 ? '+' : '−'}$ ${fmtN(neto)}`, sub: neto >= 0 ? 'superávit' : 'déficit', color: neto >= 0 ? T.ok : T.warn },
+          { label: 'Total movimientos', value: String(ingresos.length + gastos.length),   sub: `${traspasos.length} traspasos`,    color: T.ink },
+        ]}
+      />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Panel

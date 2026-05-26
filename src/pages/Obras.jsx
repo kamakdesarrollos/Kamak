@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Bar, Label, ImgPh } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useObras, EMPTY_DETALLE } from '../store/ObrasContext';
 import NuevaObraModal from './modales/NuevaObraModal';
@@ -494,18 +495,27 @@ export default function Obras() {
 
   return (
     <PageLayout breadcrumb={['Inicio', 'Obras']} active="Obras">
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <div className="k-h" style={{ fontSize: 28 }}>Obras</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            value={busqueda} onChange={e => setBusqueda(e.target.value)}
-            placeholder="⌕ Buscar obra o cliente…"
-            style={{ padding: '5px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontSize: 12, fontFamily: T.font, width: 200, outline: 'none' }}
-          />
-          {canCreate && <Btn sm fill onClick={() => setShowNueva(true)}>+ Nueva obra</Btn>}
-        </div>
-      </div>
+      <PageHero
+        label="GESTIÓN DE OBRAS"
+        title="Obras"
+        subtitle={`${activas.length + enPresu.length} obras en curso`}
+        actions={
+          <>
+            <input
+              value={busqueda} onChange={e => setBusqueda(e.target.value)}
+              placeholder="⌕ Buscar obra o cliente…"
+              style={{ padding: '5px 10px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, width: 200, outline: 'none', background: 'rgba(255,255,255,0.06)', color: '#fff' }}
+            />
+            {canCreate && <Btn sm fill onClick={() => setShowNueva(true)}>+ Nueva obra</Btn>}
+          </>
+        }
+        kpis={[
+          { label: 'Activas',        value: activas.length,      color: T.ok },
+          { label: 'En presupuesto', value: enPresu.length,      color: T.accent },
+          { label: 'Finalizadas',    value: finalizadas.length,  color: T.ink },
+          { label: 'Archivadas',     value: archivadas.length,   color: T.ink3 },
+        ]}
+      />
 
       {/* Tabs */}
       <div className="k-tabs" style={{ marginBottom: 14 }}>

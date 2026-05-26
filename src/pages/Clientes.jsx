@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useClientes } from '../store/ClientesContext';
 import { useObras } from '../store/ObrasContext';
@@ -151,40 +152,25 @@ export default function Clientes() {
   return (
     <PageLayout breadcrumb={['Clientes']} active="Clientes">
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div className="k-h" style={{ fontSize: 28 }}>Clientes</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar nombre, empresa, CUIT…"
-            style={{ ...inputSt, width: 220 }} />
-          <Btn sm fill onClick={() => setModal(true)}>+ Nuevo cliente</Btn>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-        <Box style={{ padding: '10px 16px', flex: 1 }}>
-          <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total clientes</div>
-          <div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontMono, marginTop: 2 }}>{clientes.length}</div>
-        </Box>
-        <Box style={{ padding: '10px 16px', flex: 1 }}>
-          <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Con obras activas</div>
-          <div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontMono, color: T.ok, marginTop: 2 }}>
-            {clientes.filter(c => obrasCount[c.id] > 0).length}
-          </div>
-        </Box>
-        <Box style={{ padding: '10px 16px', flex: 1 }}>
-          <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total obras</div>
-          <div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontMono, marginTop: 2 }}>
-            {Object.values(obrasCount).reduce((s, v) => s + v, 0)}
-          </div>
-        </Box>
-        <Box style={{ padding: '10px 16px', flex: 2 }}>
-          <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total facturado</div>
-          <div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontMono, color: T.ok, marginTop: 2 }}>
-            $ {Math.round(Object.values(totalFacturado).reduce((s, v) => s + v, 0)).toLocaleString('es-AR')}
-          </div>
-        </Box>
-      </div>
+      <PageHero
+        label="GESTIÓN DE CLIENTES"
+        title="Clientes"
+        subtitle={`${clientes.length} clientes registrados`}
+        actions={
+          <>
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar nombre, empresa, CUIT…"
+              style={{ padding: '5px 10px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, background: 'rgba(255,255,255,0.06)', color: '#fff', width: 220, outline: 'none' }} />
+            <Btn sm fill onClick={() => setModal(true)}>+ Nuevo cliente</Btn>
+          </>
+        }
+        kpis={[
+          { label: 'Total clientes',    value: clientes.length,                                                                  color: T.ink },
+          { label: 'Con obras activas', value: clientes.filter(c => obrasCount[c.id] > 0).length,                                color: T.ok },
+          { label: 'Total obras',       value: Object.values(obrasCount).reduce((s, v) => s + v, 0),                              color: T.ink },
+          { label: 'Total facturado',   value: `$ ${Math.round(Object.values(totalFacturado).reduce((s, v) => s + v, 0)).toLocaleString('es-AR')}`, color: T.ok },
+        ]}
+      />
 
       {filtered.length === 0 ? (
         <Box style={{ padding: 32, textAlign: 'center', color: T.ink3, fontSize: 13 }}>

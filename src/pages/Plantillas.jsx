@@ -879,68 +879,80 @@ export default function Plantillas() {
         <span style={{ fontSize: 11, color: T.ink3, marginLeft: 4 }}>{filtered.length} plantillas</span>
       </div>
 
-      <div style={{ overflow: 'auto', height: 'calc(100vh - 230px)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-          {filtered.map(p => {
+      {/* Tabla estructurada — estilo formal similar a Catalogos */}
+      <Box style={{ padding: 0, overflow: 'hidden' }}>
+        {/* Header */}
+        <div style={{ display: 'grid', gridTemplateColumns: '0.7fr 2fr 0.6fr 0.6fr 1fr 0.5fr 0.8fr 1fr', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 12px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <span>Tipo</span>
+          <span>Nombre</span>
+          <span style={{ textAlign: 'right' }}>Rubros</span>
+          <span style={{ textAlign: 'right' }}>Tareas</span>
+          <span style={{ textAlign: 'right' }}>Referencia</span>
+          <span style={{ textAlign: 'center' }}>Usos</span>
+          <span>Actualizado</span>
+          <span style={{ textAlign: 'right' }}>Acciones</span>
+        </div>
+
+        {/* Filas */}
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 290px)' }}>
+          {filtered.map((p, i) => {
             const ref     = calcRef(p);
             const nTareas = totalTareas(p);
             return (
-              <Box key={p.id}
-                style={{ padding: 12, background: TIPO_BG[p.tipo] || T.paper, cursor: 'pointer',
-                  border: viewId === p.id ? `2px solid ${T.accent}` : '2px solid transparent',
-                  transition: 'box-shadow 0.15s', position: 'relative' }}
+              <div key={p.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '0.7fr 2fr 0.6fr 0.6fr 1fr 0.5fr 0.8fr 1fr',
+                  padding: '10px 12px',
+                  borderBottom: i < filtered.length - 1 ? `1px solid ${T.faint2}` : 'none',
+                  fontSize: 12,
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  background: viewId === p.id ? T.accentSoft : 'transparent',
+                  transition: 'background 0.12s',
+                }}
                 onClick={() => { setViewId(p.id); setEditMode(false); setMenuId(null); }}
-                onMouseEnter={e => e.currentTarget.style.boxShadow = '4px 4px 0 rgba(0,0,0,0.1)'}
-                onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1, minWidth: 0, paddingRight: 6 }}>
-                    <div style={{ fontSize: 10, color: TIPO_COL[p.tipo] || T.ink2, fontWeight: 800, textTransform: 'uppercase', marginBottom: 2 }}>{p.tipo}</div>
-                    <div className="k-h" style={{ fontSize: 18, lineHeight: 1.2 }}>{p.nombre}</div>
-                    {p.descripcion && <div style={{ fontSize: 12, color: T.ink2, marginTop: 2 }}>{p.descripcion}</div>}
-                  </div>
-                  <div style={{ position: 'relative', flexShrink: 0 }}>
-                    <span style={{ fontSize: 18, cursor: 'pointer', padding: '0 4px', userSelect: 'none' }}
-                      onClick={e => { e.stopPropagation(); setMenuId(menuId === p.id ? null : p.id); }}>⋮</span>
+                onMouseEnter={e => { if (viewId !== p.id) e.currentTarget.style.background = T.faint; }}
+                onMouseLeave={e => { if (viewId !== p.id) e.currentTarget.style.background = 'transparent'; }}
+              >
+                <span>
+                  <span style={{ fontSize: 9, background: (TIPO_COL[p.tipo] || T.ink2) + '22', color: TIPO_COL[p.tipo] || T.ink2, padding: '2px 7px', borderRadius: 3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{p.tipo}</span>
+                </span>
+                <span style={{ minWidth: 0, paddingRight: 8 }}>
+                  <div style={{ fontWeight: 700, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.nombre}</div>
+                  {p.descripcion && <div style={{ fontSize: 11, color: T.ink3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.descripcion}</div>}
+                </span>
+                <span style={{ textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>{(p.rubros || []).length}</span>
+                <span style={{ textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>{nTareas}</span>
+                <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700, color: T.accent }}>{fmtRef(ref)}</span>
+                <span style={{ textAlign: 'center', fontFamily: T.fontMono, color: p.usosCount > 0 ? T.ok : T.ink3 }}>{p.usosCount || '—'}</span>
+                <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3 }}>{p.updatedAt}</span>
+                <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                  <Btn sm onClick={() => startEdit(p)}>✏</Btn>
+                  <Btn sm fill onClick={() => handleUsar(p)}>Usar →</Btn>
+                  <span style={{ position: 'relative' }}>
+                    <Btn sm onClick={() => setMenuId(menuId === p.id ? null : p.id)}>⋮</Btn>
                     {menuId === p.id && (
-                      <div style={{ position: 'absolute', right: 0, top: 24, background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, zIndex: 20, minWidth: 120, boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
+                      <div style={{ position: 'absolute', right: 0, top: 28, background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, zIndex: 20, minWidth: 120, boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
                         <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 12, borderBottom: `1px solid ${T.faint2}` }}
-                          onClick={e => { e.stopPropagation(); startEdit(p); }}>Editar</div>
-                        <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 12, borderBottom: `1px solid ${T.faint2}` }}
-                          onClick={e => { e.stopPropagation(); handleDup(p); }}>Duplicar</div>
+                          onClick={() => handleDup(p)}>Duplicar</div>
                         <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 12, color: T.warn }}
-                          onClick={e => { e.stopPropagation(); handleDel(p); }}>Eliminar</div>
+                          onClick={() => handleDel(p)}>Eliminar</div>
                       </div>
                     )}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
-                  <Chip style={{ fontSize: 10 }}>{(p.rubros || []).length} rubros</Chip>
-                  <Chip style={{ fontSize: 10 }}>{nTareas} tareas</Chip>
-                  {p.usosCount > 0 && <Chip style={{ fontSize: 10, background: T.accentSoft }}>× {p.usosCount}</Chip>}
-                </div>
-
-                <div style={{ marginTop: 8, fontFamily: T.fontMono, fontWeight: 800, fontSize: 14, color: T.accent }}>{fmtRef(ref)}</div>
-                <div style={{ fontSize: 10, color: T.ink3, marginBottom: 10 }}>referencia · {p.updatedAt}</div>
-
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <Btn sm onClick={e => { e.stopPropagation(); startEdit(p); }} style={{ flex: 1, justifyContent: 'center' }}>✏ Editar</Btn>
-                  <Btn sm fill onClick={e => { e.stopPropagation(); handleUsar(p); }} style={{ flex: 1, justifyContent: 'center' }}>Usar →</Btn>
-                </div>
-              </Box>
+                  </span>
+                </span>
+              </div>
             );
           })}
 
-          <Box dashed style={{ padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink3, minHeight: 165, cursor: 'pointer' }}
-            onClick={startNew}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 30 }}>+</div>
-              <div>Nueva plantilla<br /><span style={{ fontSize: 11 }}>desde cero o duplicando otra</span></div>
+          {filtered.length === 0 && (
+            <div style={{ padding: 40, textAlign: 'center', color: T.ink3, fontSize: 13 }}>
+              No hay plantillas que coincidan con el filtro.
             </div>
-          </Box>
+          )}
         </div>
-      </div>
+      </Box>
 
       {viewPlt && !showEdit && (
         <PlantillaViewer

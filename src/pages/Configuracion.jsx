@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Label, Divider, Chip } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useDolar } from '../store/DolarContext';
@@ -232,10 +233,11 @@ export default function Configuracion() {
   if (currentUser?.rol !== 'Admin') {
     return (
       <PageLayout breadcrumb={['Configuración']} active="Configuración">
-        <div style={{ marginBottom: 12 }}>
-          <div className="k-h" style={{ fontSize: 28 }}>Mi cuenta</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>Perfil y seguridad</div>
-        </div>
+        <PageHero
+          label="MI CUENTA"
+          title="Mi cuenta"
+          subtitle="Perfil y seguridad"
+        />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 360 }}>
           <CambiarNombre />
           <CambiarContrasena />
@@ -246,13 +248,12 @@ export default function Configuracion() {
 
   return (
     <PageLayout breadcrumb={['Configuración']} active="Configuración">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-        <div>
-          <div className="k-h" style={{ fontSize: 28 }}>Configuración</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>Parámetros generales del sistema · empresa · integraciones</div>
-        </div>
-        {saved && <Chip ok style={{ fontSize: 12 }}>✓ Guardado</Chip>}
-      </div>
+      <PageHero
+        label="PARÁMETROS DEL SISTEMA"
+        title="Configuración"
+        subtitle="Empresa · integraciones · seguridad · apariencia"
+        actions={saved && <Chip ok style={{ fontSize: 12 }}>✓ Guardado</Chip>}
+      />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, maxWidth: 900, alignItems: 'start' }}>
 

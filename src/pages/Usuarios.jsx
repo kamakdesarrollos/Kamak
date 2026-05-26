@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
@@ -345,15 +346,18 @@ export default function Usuarios() {
 
   return (
     <PageLayout breadcrumb={['Usuarios']} active="Usuarios">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-        <div>
-          <div className="k-h" style={{ fontSize: 28 }}>Usuarios</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>Gestión de usuarios, permisos y roles</div>
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo usuario</Btn>
-        </div>
-      </div>
+      <PageHero
+        label="GESTIÓN INTERNA"
+        title="Usuarios"
+        subtitle="Usuarios, permisos y roles del sistema"
+        actions={<Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo usuario</Btn>}
+        kpis={[
+          { label: 'Total usuarios', value: usuarios.length,                                    color: T.ink },
+          { label: 'Admins',         value: usuarios.filter(u => u.rol === 'Admin').length,    color: T.accent },
+          { label: 'Otros roles',    value: usuarios.filter(u => u.rol !== 'Admin').length,    color: T.ink },
+          { label: 'Roles base',     value: (roles || []).length,                              color: T.ink },
+        ]}
+      />
 
       <div className="k-tabs" style={{ margin: '8px 0 10px' }}>
         <span className={`k-tab${tab === 'usuarios' ? ' k-tab-on' : ''}`} onClick={() => setTab('usuarios')}>

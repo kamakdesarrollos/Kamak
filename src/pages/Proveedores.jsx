@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Label } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useMovimientos } from '../store/MovimientosContext';
@@ -193,43 +194,38 @@ export default function Proveedores() {
 
   return (
     <PageLayout breadcrumb={['Proveedores']} active="Proveedores">
-
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div className="k-h" style={{ fontSize: 28 }}>Proveedores</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar nombre, rubro, CUIT…"
-            style={{ ...inputSt, width: 220 }} />
-          <select value={sort} onChange={e => setSort(e.target.value)}
-            style={{ ...inputSt, width: 'auto', cursor: 'pointer' }}>
-            <option value="nombre">A – Z</option>
-            <option value="saldo">Mayor saldo</option>
-          </select>
-          {/* Vista toggle */}
-          <div style={{ display: 'flex', border: `1px solid ${T.faint2}`, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
-            {[['lista', '≡'], ['cards', '⊞']].map(([v, icon]) => (
-              <div key={v} onClick={() => setView(v)}
-                style={{ padding: '5px 11px', fontSize: 14, cursor: 'pointer', background: view === v ? T.dark : T.paper, color: view === v ? '#fff' : T.ink2, userSelect: 'none', lineHeight: 1 }}>
-                {icon}
-              </div>
-            ))}
-          </div>
-          <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo proveedor</Btn>
-        </div>
-      </div>
-
-      {/* KPIs — solo admin */}
-      {isAdmin && (
-        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-          <KPI label="Total" value={proveedores.length} sub="proveedores" />
-          <KPI label="Mano de obra" value={moCount} color={T.accent} />
-          <KPI label="Materiales" value={matCount} color="#0ea5e9" />
-          <KPI label="Con saldo pendiente" value={conSaldo.length} color={T.warn} />
-          <KPI label="Deuda total" value={`$ ${fmtN(totalDeuda)}`} color={T.warn} sub="suma de saldos" />
-          <KPI label="Total pagado" value={`$ ${fmtN(Object.values(totalPagado).reduce((s, v) => s + v, 0))}`} color={T.ok} sub="histórico gastos" />
-        </div>
-      )}
+      <PageHero
+        label="GESTIÓN DE PROVEEDORES"
+        title="Proveedores"
+        subtitle={`${proveedores.length} proveedores · ${moCount} mano de obra · ${matCount} materiales`}
+        actions={
+          <>
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar nombre, rubro, CUIT…"
+              style={{ padding: '5px 10px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, background: 'rgba(255,255,255,0.06)', color: '#fff', width: 200, outline: 'none' }} />
+            <select value={sort} onChange={e => setSort(e.target.value)}
+              style={{ padding: '5px 8px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, background: 'rgba(255,255,255,0.06)', color: '#fff', cursor: 'pointer' }}>
+              <option value="nombre" style={{ color: T.ink }}>A – Z</option>
+              <option value="saldo" style={{ color: T.ink }}>Mayor saldo</option>
+            </select>
+            <div style={{ display: 'flex', border: `1px solid #3a3a3e`, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
+              {[['lista', '≡'], ['cards', '⊞']].map(([v, icon]) => (
+                <div key={v} onClick={() => setView(v)}
+                  style={{ padding: '5px 11px', fontSize: 14, cursor: 'pointer', background: view === v ? T.accent : 'rgba(255,255,255,0.06)', color: '#fff', userSelect: 'none', lineHeight: 1 }}>
+                  {icon}
+                </div>
+              ))}
+            </div>
+            <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo proveedor</Btn>
+          </>
+        }
+        kpis={isAdmin ? [
+          { label: 'Total',           value: proveedores.length,                       sub: 'proveedores',     color: T.ink },
+          { label: 'Con saldo',       value: conSaldo.length,                          sub: 'pendiente',       color: T.warn },
+          { label: 'Deuda total',     value: `$ ${fmtN(totalDeuda)}`,                  sub: 'suma de saldos',  color: T.warn },
+          { label: 'Total pagado',    value: `$ ${fmtN(Object.values(totalPagado).reduce((s, v) => s + v, 0))}`, sub: 'histórico', color: T.ok },
+        ] : []}
+      />
 
       {/* Tabs */}
       <div className="k-tabs" style={{ marginBottom: 14 }}>
