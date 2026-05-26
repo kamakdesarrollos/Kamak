@@ -7,9 +7,8 @@ import { useDolar } from '../../store/DolarContext';
 import { useClientes } from '../../store/ClientesContext';
 import { Box, Btn, Chip, Stat, Bar } from '../../components/ui';
 import { T } from '../../theme';
-import { fmtN, fmtMoney, fmtFecha } from '../../lib/format';
-import { newId } from '../../lib/id';
-import { cuotaMontoFn, cuotaCobrado as cuotaCobradoFn, cuotaEstadoCalc, calcObra } from '../obra/helpers';
+import { fmtN, fmtFecha } from '../../lib/format';
+import { cuotaEstadoCalc, calcObra } from '../obra/helpers';
 
 const fmtD = fmtFecha;
 
@@ -21,14 +20,13 @@ const rubroAvance = (rubro) =>
 export default function PortalCliente() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { obras, getDetalle, patchDetalle } = useObras();
+  const { obras, getDetalle } = useObras();
 
   const { user } = useAuth();
   const { currentUser } = useUsuarios();
   const { dolarVenta } = useDolar();
   const { clientes } = useClientes();
   const [tab, setTab] = useState(0);
-  const [msg, setMsg] = useState('');
 
   // GATE de acceso al portal:
   // - Admin interno (logueado) -> acceso libre para preview.
@@ -113,7 +111,6 @@ export default function PortalCliente() {
   const cuotas    = detalle.cuotas    || [];
   const documentos = detalle.documentos || [];
   const fotos     = detalle.fotos     || [];
-  const mensajes  = detalle.mensajes  || [];
   const fin       = detalle.financiacion || {};
 
   const tc = dolarVenta || 1070;
@@ -156,14 +153,7 @@ export default function PortalCliente() {
     ? Math.max(0, Math.ceil((new Date(obra.fechaFinEstim) - new Date()) / 86400000))
     : null;
 
-  const sendMsg = () => {
-    const texto = msg.trim();
-    if (!texto) return;
-    patchDetalle(id, d => ({ ...d, mensajes: [...(d.mensajes || []), { id: newId(), autor: 'cliente', texto, fecha: new Date().toISOString() }] }));
-    setMsg('');
-  };
-
-  const tabs = ['Resumen', 'Avance', 'Plan de pagos', 'Documentos', `Mensajes${mensajes.length > 0 ? ' · ' + mensajes.length : ''}`];
+  const tabs = ['Resumen', 'Avance', 'Plan de pagos', 'Documentos'];
 
   // Estado chip colors
   const estadoChip = {
@@ -176,10 +166,10 @@ export default function PortalCliente() {
   const estadoInfo = estadoChip[obra.estado] || estadoChip.activa;
 
   return (
-    <div style={{ fontFamily: T.font, background: T.paper, minHeight: '100vh' }}>
+    <div className="portal-page" style={{ fontFamily: T.font, background: T.paper, minHeight: '100vh', overflowX: 'hidden' }}>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div style={{ background: T.dark, padding: '14px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
+      <div className="portal-header" style={{ background: T.dark, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', overflow: 'hidden', gap: 8, flexWrap: 'wrap' }}>
         {/* decorative stripe */}
         <div style={{ position: 'absolute', top: -60, right: -60, opacity: 0.06, pointerEvents: 'none' }}>
           <svg viewBox="0 0 200 200" width="200" height="200"><g transform="rotate(62 100 100)"><rect x="-50" y="20" width="300" height="14" fill={T.accent} /><rect x="-50" y="60" width="300" height="14" fill={T.accent} /><rect x="-50" y="100" width="300" height="14" fill={T.accent} /></g></svg>
@@ -216,12 +206,12 @@ export default function PortalCliente() {
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────── */}
-      <div style={{ background: 'white', borderBottom: `1.5px solid ${T.faint2}`, padding: '0 28px', display: 'flex', gap: 0 }}>
+      <div className="portal-tabs" style={{ background: 'white', borderBottom: `1.5px solid ${T.faint2}`, display: 'flex', gap: 0, overflowX: 'auto' }}>
         {tabs.map((t, i) => (
           <span
             key={i}
             onClick={() => setTab(i)}
-            style={{ padding: '13px 16px', fontSize: 13, fontWeight: tab === i ? 700 : 400, color: tab === i ? T.accent : T.ink2, borderBottom: `2.5px solid ${tab === i ? T.accent : 'transparent'}`, cursor: 'pointer', transition: 'color 0.15s', userSelect: 'none' }}
+            style={{ padding: '13px 16px', fontSize: 13, fontWeight: tab === i ? 700 : 400, color: tab === i ? T.accent : T.ink2, borderBottom: `2.5px solid ${tab === i ? T.accent : 'transparent'}`, cursor: 'pointer', transition: 'color 0.15s', userSelect: 'none', whiteSpace: 'nowrap' }}
           >
             {t}
           </span>
@@ -229,19 +219,39 @@ export default function PortalCliente() {
       </div>
 
       {/* ── Content ────────────────────────────────────────────────────────── */}
-      <div style={{ padding: '24px 28px', maxWidth: 1060, margin: '0 auto' }}>
+      <div className="portal-content" style={{ maxWidth: 1060, margin: '0 auto' }}>
 
         {/* TAB 0 — RESUMEN */}
         {tab === 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-            {/* KPIs */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, background: T.faint, borderRadius: 8, padding: '16px 20px' }}>
-              <Stat label="Avance general"    value={`${obra.avance}%`} />
-              <Stat label="Días restantes"    value={diasRestantes !== null ? `${diasRestantes}` : '—'} />
-              <Stat label="Cuotas pagadas"    value={`${countPagadas} / ${cuotas.length}`} />
-              <Stat label="Entrega estimada"  value={fmtD(obra.fechaFinEstim)} />
+            {/* KPIs + Datos de la obra unificados arriba */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, background: T.faint, borderRadius: 8, padding: '16px 18px' }}>
+              <Stat label="Avance general"     value={`${obra.avance}%`} />
+              <Stat label="Días restantes"     value={diasRestantes !== null ? `${diasRestantes}` : '—'} />
+              <Stat label="Cuotas pagadas"     value={`${countPagadas} / ${cuotas.length}`} />
+              <Stat label="Entrega estimada"   value={fmtD(obra.fechaFinEstim)} />
+              <Stat label="Tipo de obra"       value={obra.tipo || '—'} />
+              <Stat label="Dirección"          value={obra.direccion || '—'} />
+              <Stat label="Inicio de obra"     value={fmtD(obra.fechaInicio)} />
+              <Stat label="Presupuesto total"  value={fmt(totalClienteUSD || toUSD(obra.presupuesto, obraEsUSD))} />
             </div>
+
+            {/* Notas / aviso del equipo */}
+            {(obra.notas || fin.notaPortal) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {obra.notas && (
+                  <div style={{ padding: '10px 14px', background: T.faint, borderRadius: 6, fontSize: 12, color: T.ink2, borderLeft: `3px solid ${T.accent}` }}>
+                    {obra.notas}
+                  </div>
+                )}
+                {fin.notaPortal && (
+                  <div style={{ padding: '10px 14px', background: '#fffbeb', borderRadius: 6, fontSize: 12, color: T.ink, borderLeft: `3px solid #f59e0b` }}>
+                    📋 {fin.notaPortal}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Avance por rubro */}
             {rubros.length > 0 && (
@@ -296,34 +306,6 @@ export default function PortalCliente() {
               </Box>
             )}
 
-            {/* Info de la obra */}
-            <Box style={{ padding: 18 }}>
-              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14, color: T.ink }}>Datos de la obra</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 14 }}>
-                {[
-                  ['Tipo de obra',      obra.tipo],
-                  ['Dirección',         obra.direccion || '—'],
-                  ['Inicio de obra',    fmtD(obra.fechaInicio)],
-                  ['Entrega estimada',  fmtD(obra.fechaFinEstim)],
-                  ['Presupuesto total', fmt(totalClienteUSD || toUSD(obra.presupuesto, obraEsUSD))],
-                ].map(([k, v]) => (
-                  <div key={k}>
-                    <div style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 700, marginBottom: 3 }}>{k}</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{v}</div>
-                  </div>
-                ))}
-              </div>
-              {obra.notas && (
-                <div style={{ marginTop: 14, padding: '10px 14px', background: T.faint, borderRadius: 6, fontSize: 12, color: T.ink2, borderLeft: `3px solid ${T.accent}` }}>
-                  {obra.notas}
-                </div>
-              )}
-              {fin.notaPortal && (
-                <div style={{ marginTop: 14, padding: '10px 14px', background: '#fffbeb', borderRadius: 6, fontSize: 12, color: T.ink, borderLeft: `3px solid #f59e0b` }}>
-                  📋 {fin.notaPortal}
-                </div>
-              )}
-            </Box>
           </div>
         )}
 
@@ -374,7 +356,7 @@ export default function PortalCliente() {
               <div style={{ padding: '12px 16px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}` }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Plan de pagos</div>
               </div>
-              {totalCliente > 0 && (
+              {totalClienteUSD > 0 && (
             <div style={{ padding: '10px 16px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
               <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total acordado</span><div style={{ fontWeight: 800, fontFamily: T.fontMono, color: T.ink }}>{fmt(totalClienteUSD)}</div></div>
               {adicionalClienteUSD > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Incluye adicionales</span><div style={{ fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{fmt(adicionalClienteUSD)}</div></div>}
@@ -441,58 +423,6 @@ export default function PortalCliente() {
                 </div>
               ))
             )}
-          </Box>
-        )}
-
-        {/* TAB 4 — MENSAJES */}
-        {tab === 4 && (
-          <Box style={{ padding: 18 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4, color: T.ink }}>Mensajes con Kamak Desarrollos</div>
-            <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>
-              {obra.nombre} · {obra.tipo}
-            </div>
-
-            {/* Chat area */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: 220, marginBottom: 18 }}>
-              {mensajes.length === 0 ? (
-                <div style={{ color: T.ink3, fontSize: 13, textAlign: 'center', padding: '56px 0', flex: 1 }}>
-                  No hay mensajes aún. Escribí tu consulta a Kamak Desarrollos.
-                </div>
-              ) : (
-                mensajes.map((m) => {
-                  const mine = m.autor === 'cliente';
-                  const d = new Date(m.fecha);
-                  const ts = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-                  return (
-                    <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
-                      <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>
-                        {mine ? clienteNombre : 'Kamak Desarrollos'} · {ts}
-                      </div>
-                      <div style={{ background: mine ? T.accentSoft : 'white', border: `1.5px solid ${mine ? T.accent : T.faint2}`, borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px', padding: '9px 14px', maxWidth: '72%', fontSize: 13, color: T.ink, lineHeight: 1.45 }}>
-                        {m.texto}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Input */}
-            <div style={{ display: 'flex', gap: 8, borderTop: `1.5px solid ${T.faint2}`, paddingTop: 14 }}>
-              <input
-                value={msg}
-                onChange={e => setMsg(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
-                style={{ flex: 1, padding: '9px 13px', border: `1.5px solid ${T.faint2}`, borderRadius: 6, fontSize: 13, fontFamily: T.font, outline: 'none', color: T.ink, background: 'white' }}
-                placeholder="Escribí tu mensaje… (Enter para enviar)"
-              />
-              <button
-                onClick={sendMsg}
-                style={{ background: T.accent, color: 'white', border: 'none', borderRadius: 6, padding: '0 18px', fontSize: 13, cursor: 'pointer', fontFamily: T.font, fontWeight: 700 }}
-              >
-                Enviar
-              </button>
-            </div>
           </Box>
         )}
       </div>

@@ -161,3 +161,18 @@ body {
 .k-page { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 .k-page-body { display: flex; flex: 1; overflow: hidden; }
 .k-content { flex: 1; overflow: auto; }
+
+/* ── Portal del cliente ──────────────────────── */
+/* Desktop: padding 28px laterales, KPIs en grilla amplia. */
+.portal-page { overflow-x: hidden; }
+.portal-header { padding: 14px 28px; }
+.portal-tabs { padding: 0 28px; }
+.portal-tabs::-webkit-scrollbar { display: none; }
+.portal-content { padding: 24px 28px; }
+
+/* Mobile (< 640px): padding lateral mas chico, sin overflow horizontal. */
+@media (max-width: 640px) {
+  .portal-header { padding: 12px 14px; }
+  .portal-tabs { padding: 0 14px; }
+  .portal-content { padding: 18px 14px; }
+}
