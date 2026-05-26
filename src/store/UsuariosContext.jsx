@@ -206,6 +206,14 @@ export function UsuariosProvider({ children }) {
   const logout = useCallback(() => {
     saveSession(null);
     setCurrentUser(null);
+    // Item 3.10: limpiar todas las keys kamak_* del localStorage al logout
+    // asi el siguiente usuario en la misma maquina no ve residuos del anterior
+    // (preferencias del dashboard, sesion, roles editados localmente, etc.).
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('kamak_'))
+        .forEach(k => localStorage.removeItem(k));
+    } catch { /* sessionStorage / localStorage puede no estar disponible */ }
   }, []);
 
   // Memoizar el value: critico porque casi todas las paginas leen este context.

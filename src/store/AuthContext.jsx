@@ -23,7 +23,18 @@ export function AuthProvider({ children }) {
   // signUp deshabilitado: la creacion de usuarios va por la edge function
   // admin-users (que verifica rol Admin del caller).
   const signIn  = useCallback((email, password) => supabase.auth.signInWithPassword({ email, password }), []);
-  const signOut = useCallback(() => supabase.auth.signOut(), []);
+
+  // Item 3.10: al cerrar sesion limpiamos todas las keys kamak_* del
+  // localStorage asi el siguiente usuario en esta maquina no ve residuos del
+  // anterior (sesion, dashboard widgets, roles editados, etc.).
+  const signOut = useCallback(async () => {
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('kamak_'))
+        .forEach(k => localStorage.removeItem(k));
+    } catch { /* sin storage disponible */ }
+    return supabase.auth.signOut();
+  }, []);
 
   // Memoizar el value: importante porque el useEffect de inactividad en
   // AuthGate dependia de signOut, y antes signOut cambiaba en cada render

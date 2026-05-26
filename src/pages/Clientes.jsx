@@ -110,9 +110,9 @@ export default function Clientes() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return clientes.filter(c =>
-      !q || c.nombre.toLowerCase().includes(q) ||
+      !q || (c.nombre || '').toLowerCase().includes(q) ||
       (c.empresa || '').toLowerCase().includes(q) ||
-      (c.cuit || '').includes(q)
+      (c.cuit    || '').includes(q)
     );
   }, [clientes, search]);
 

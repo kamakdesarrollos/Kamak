@@ -127,49 +127,10 @@ export function Table({ cols, rows, style }) {
   );
 }
 
-export function BarChart({ data = [50, 30, 80, 45, 65, 70, 90, 55, 40, 60, 75, 85], h = 80, accent }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: h, padding: '4px 2px', borderBottom: `1px dashed ${T.faint2}` }}>
-      {data.map((d, i) => (
-        <div key={i} style={{ flex: 1, height: `${d}%`, background: accent && i === data.length - 1 ? T.accent : T.ink2, borderRadius: '2px 2px 0 0', opacity: accent ? (i / data.length * 0.5 + 0.5) : 1 }} />
-      ))}
-    </div>
-  );
-}
-
-export function StackedBars({ data, h = 100 }) {
-  const max = Math.max(...data.map(d => Math.max(d.in, d.out)));
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: h, padding: '4px 2px', borderBottom: `1px dashed ${T.faint2}` }}>
-      {data.map((d, i) => (
-        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: h - 20 }}>
-            <div style={{ width: 8, height: `${d.in / max * 100}%`, background: T.ok, borderRadius: '2px 2px 0 0' }} />
-            <div style={{ width: 8, height: `${d.out / max * 100}%`, background: T.accent, borderRadius: '2px 2px 0 0' }} />
-          </div>
-          <div style={{ fontSize: 9, color: T.ink3, fontFamily: `'JetBrains Mono', monospace`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', textAlign: 'center' }}>{d.label}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function Toggle({ on }) {
-  return (
-    <div className="k-toggle" style={{ background: on ? T.accent : T.faint2 }}>
-      <div className="k-toggle-knob" style={{ left: on ? 11 : 1 }} />
-    </div>
-  );
-}
-
-export function GanttBar({ start, len, pct = 0, color, label }) {
-  return (
-    <div className="k-gantt-bar" style={{ left: `${start}%`, width: `${len}%` }}>
-      <div className="k-gantt-fill" style={{ width: `${pct}%`, background: color || T.ink2 }} />
-      {label && <span className="k-gantt-label">{label}</span>}
-    </div>
-  );
-}
+// Componentes BarChart, StackedBars, Toggle y GanttBar eliminados — no se
+// usaban en ningun lado. Si en el futuro hace falta un grafico/toggle/gantt,
+// reimplementar como componente focal en su pagina (eran genericos sin
+// configuracion suficiente para reuso real).
 
 export function Logo({ h = 30, dark, style }) {
   const src = dark ? '/assets/kamak-logo-light.png' : '/assets/kamak-logo.png';

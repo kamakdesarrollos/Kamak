@@ -787,7 +787,7 @@ export default function Plantillas() {
     const q = search.toLowerCase();
     return plantillas.filter(p =>
       (tipoFilt === 'Todos' || p.tipo === tipoFilt) &&
-      (p.nombre.toLowerCase().includes(q) || (p.descripcion || '').toLowerCase().includes(q))
+      ((p.nombre || '').toLowerCase().includes(q) || (p.descripcion || '').toLowerCase().includes(q))
     );
   }, [plantillas, tipoFilt, search]);
 

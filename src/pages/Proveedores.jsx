@@ -181,7 +181,7 @@ export default function Proveedores() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     let list = proveedores.filter(p =>
-      !q || p.nombre.toLowerCase().includes(q) || (p.tipo || '').toLowerCase().includes(q) || (p.cuit || '').includes(q)
+      !q || (p.nombre || '').toLowerCase().includes(q) || (p.tipo || '').toLowerCase().includes(q) || (p.cuit || '').includes(q)
     );
     if (tab === 'conSaldo') list = list.filter(p => getSaldo(p.id) > 0);
     else if (tab !== 'Todos') list = list.filter(p => getCat(p) === tab);

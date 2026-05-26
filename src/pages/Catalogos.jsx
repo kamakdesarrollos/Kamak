@@ -631,7 +631,7 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
     const q = search.toLowerCase();
     const list = tareas.filter(t =>
       (!selRubro || t.rubroNombre === selRubro) &&
-      (t.nombre.toLowerCase().includes(q) || (t.codigo||'').toLowerCase().includes(q))
+      ((t.nombre||'').toLowerCase().includes(q) || (t.codigo||'').toLowerCase().includes(q))
     );
     if (lastAddedId) {
       const idx = list.findIndex(t => t.id === lastAddedId);

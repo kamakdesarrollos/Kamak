@@ -313,7 +313,7 @@ function TaskAutocomplete({ value, onChange, suggestions, onSelect }) {
   const filtered = useMemo(() => {
     const q = value.trim().toLowerCase();
     if (!q) return suggestions.slice(0, 10);
-    return suggestions.filter(s => s.nombre.toLowerCase().includes(q)).slice(0, 10);
+    return suggestions.filter(s => (s.nombre || '').toLowerCase().includes(q)).slice(0, 10);
   }, [value, suggestions]);
 
   useEffect(() => {
