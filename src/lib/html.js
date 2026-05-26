@@ -54,7 +54,10 @@ export const imprimirHTML = (html) => {
   return new Promise((resolve, reject) => {
     const iframe = document.createElement('iframe');
     iframe.setAttribute('aria-hidden', 'true');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+    // OFFSCREEN pero con dimensiones reales (794px = A4 width). Si el iframe
+    // es de 0x0 o visibility:hidden, el browser NO encuentra contenido al
+    // imprimir y la preview queda en blanco.
+    iframe.style.cssText = 'position:absolute;left:-10000px;top:0;width:794px;height:1123px;border:0;';
     document.body.appendChild(iframe);
 
     const cleanup = () => {
@@ -82,9 +85,15 @@ export const imprimirHTML = (html) => {
       }
     };
 
-    iframe.onload = () => {
-      // Pequeno delay para que fuentes/imagenes terminen de pintarse.
-      setTimeout(triggerPrint, 400);
+    iframe.onload = async () => {
+      // Esperar a que las fuentes terminen de cargar para que la preview
+      // de impresion no salga con tipografias incorrectas / desalineadas.
+      try {
+        const fontsReady = iframe.contentDocument?.fonts?.ready;
+        if (fontsReady) await fontsReady;
+      } catch { /* algunos browsers no exponen fonts API */ }
+      // Pequeno delay extra para asegurar que el browser termino el layout.
+      setTimeout(triggerPrint, 300);
     };
     iframe.onerror = (e) => {
       cleanup();
