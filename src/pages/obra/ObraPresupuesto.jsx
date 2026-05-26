@@ -3379,14 +3379,7 @@ export default function ObraPresupuesto() {
   });
   const [showExport, setShowExport] = useState(false);
 const [showFinanciacion, setShowFinanciacion] = useState(false);
-  const [showPortalAccess, setShowPortalAccess] = useState(false);
-  const [showClienteQR,    setShowClienteQR]    = useState(false);
-  const [portalPhone, setPortalPhone] = useState('');
-  const [portalSending, setPortalSending] = useState(false);
-  const [portalMsg, setPortalMsg] = useState('');
-  const [portalWamid, setPortalWamid] = useState('');
-  const [portalWaStatus, setPortalWaStatus] = useState('');
-  const [portalManualUrl, setPortalManualUrl] = useState('');
+  const [showClienteQR, setShowClienteQR] = useState(false);
 
   const obra = obras.find(o => o.id === id) ?? { id, nombre: id, cliente: '', moneda: 'ARS', presupuesto: 0, avance: 0 };
   const detalle = getDetalle(id);
@@ -3425,62 +3418,6 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
     handleTab(1);
   };
 
-  const sendPortalAccess = async () => {
-    const rawPhone = portalPhone.replace(/\D/g, '');
-    if (rawPhone.length < 10) {
-      setPortalMsg('❌ Número inválido. Ingresá al menos 10 dígitos (ej: 5492262530655).');
-      return;
-    }
-    setPortalSending(true); setPortalMsg(''); setPortalWamid(''); setPortalWaStatus(''); setPortalManualUrl('');
-    try {
-      const token = `pt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-      let waPhone = rawPhone;
-      if (!waPhone.startsWith('549')) {
-        waPhone = waPhone.startsWith('54') ? '549' + waPhone.slice(2) : '549' + waPhone;
-      }
-      const baseUrl = window.location.origin;
-      const link = `${baseUrl}/portal/acceso/${token}`;
-      const tokens = (await loadSharedData('portal_tokens')) || {};
-      tokens[token] = { obraId: id, obraNombre: obra.nombre, cliente: obra.cliente, phone: rawPhone, expires, createdAt: new Date().toISOString() };
-      const saved = await saveSharedData('portal_tokens', tokens);
-      if (!saved) {
-        setPortalMsg('❌ Error al guardar en base de datos (saveSharedData falló).');
-        setPortalSending(false);
-        return;
-      }
-      const verify = await loadSharedData('portal_tokens');
-      if (!verify?.[token]) {
-        setPortalMsg(`❌ El token se guardó pero no se puede leer de vuelta. Posible problema de RLS en Supabase (shared_data).\nToken: ${token}`);
-        setPortalSending(false);
-        return;
-      }
-      const text = `Hola! Te compartimos el acceso a tu portal de obra *${obra.nombre}*.\n\nPodés ver el avance, las cuotas y los documentos en este enlace:\n${link}\n\n_Kamak Desarrollos_`;
-      setPortalManualUrl(`https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`);
-      setPortalMsg(`✓ Link generado.\n${link}`);
-    } catch (e) {
-      setPortalMsg(`❌ Error: ${e.message}`);
-    }
-    setPortalSending(false);
-  };
-
-  useEffect(() => {
-    if (!portalWamid) return;
-    return onRemoteChange('portal_tokens', async () => {
-      const tokens = await loadSharedData('portal_tokens');
-      const entry = tokens && Object.values(tokens).find(t => t.wamid === portalWamid);
-      if (entry?.waStatus) {
-        const label = {
-          read: '✓✓ Leído por el cliente',
-          delivered: '✓✓ Entregado',
-          sent: '✓ Enviado',
-          failed: `❌ No entregado: ${entry.waError || 'número no está en WhatsApp'}`,
-        }[entry.waStatus] || entry.waStatus;
-        setPortalWaStatus(label);
-      }
-    });
-  }, [portalWamid]);
-
   return (
     <PageLayout breadcrumb={['Obras', obra.nombre, tabLabels[displayTab]]} active="Obras">
       {/* Header */}
@@ -3499,7 +3436,6 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
         <div style={{ display: 'flex', gap: 6 }}>
           <Btn sm onClick={() => navigate('/obras')}>← Obras</Btn>
           <Btn sm onClick={() => setShowClienteQR(true)}>📲 QR cliente</Btn>
-          <Btn sm onClick={() => { setShowPortalAccess(true); setPortalMsg(''); setPortalPhone(obra.clienteWhatsapp || ''); }}>🔗 Acceso cliente</Btn>
         </div>
       </div>
 
@@ -3559,47 +3495,6 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
         />
       )}
 
-      {showPortalAccess && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 10, padding: 28, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 6 }}>🔗 Acceso al portal cliente</div>
-            <div style={{ fontSize: 12, color: T.ink3, marginBottom: 18 }}>Se genera un link único para <b>{obra.cliente || obra.nombre}</b>. Solo podrán ver el portal de esta obra.</div>
-            <FRow label="WhatsApp del cliente (sin +, con código país)">
-              <input
-                style={{ ...inputSt, fontSize: 14 }}
-                placeholder="Ej: 5491112345678"
-                value={portalPhone}
-                onChange={e => setPortalPhone(e.target.value)}
-              />
-            </FRow>
-            {portalMsg && (
-              <div style={{ marginTop: 12, padding: '10px 14px', background: portalMsg.startsWith('✓') ? '#d1fae5' : '#fee2e2', borderRadius: 6, fontSize: 12, color: T.ink, whiteSpace: 'pre-line' }}>
-                {portalMsg}
-              </div>
-            )}
-            {portalManualUrl && (
-              <div style={{ marginTop: 8, padding: '10px 14px', background: '#fffbeb', border: `1px solid #f59e0b`, borderRadius: 6, fontSize: 12 }}>
-                <div style={{ fontWeight: 700, marginBottom: 6, color: T.ink }}>⚠ El número no inició conversación con el bot — enviá el link manualmente:</div>
-                <a href={portalManualUrl} target="_blank" rel="noreferrer"
-                  style={{ display: 'inline-block', padding: '6px 14px', background: '#25D366', color: 'white', borderRadius: 6, fontWeight: 700, textDecoration: 'none', fontSize: 13 }}>
-                  📲 Abrir WhatsApp y enviar
-                </a>
-              </div>
-            )}
-            {!portalManualUrl && portalMsg.startsWith('✓') && (
-              <div style={{ marginTop: 4, padding: '7px 14px', background: portalWaStatus?.startsWith('❌') ? '#fee2e2' : portalWaStatus ? '#d1fae5' : '#f0f9ff', borderRadius: 6, fontSize: 12, color: T.ink2 }}>
-                Estado de entrega: <b style={{ color: T.ink }}>{portalWaStatus || 'aguardando confirmación…'}</b>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-              <Btn sm onClick={() => { setShowPortalAccess(false); setPortalMsg(''); setPortalWamid(''); setPortalWaStatus(''); setPortalManualUrl(''); }}>Cancelar</Btn>
-              <Btn sm fill onClick={sendPortalAccess} disabled={portalSending}>
-                {portalSending ? 'Generando…' : '🔗 Generar acceso'}
-              </Btn>
-            </div>
-          </div>
-        </div>
-      )}
     </PageLayout>
   );
 }
