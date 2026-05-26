@@ -20,6 +20,7 @@ import { onRemoteChange } from '../../lib/syncBus';
 import { esc, abrirHTML } from '../../lib/html';
 import {
   cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
+  cuotaMontoUSD, arsToUSD,
   tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
 } from './helpers';
 import { FRow, FInput, FSelect, FormPanel, inputSt, labelSt } from './forms';
@@ -78,11 +79,16 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   detalle.adicionales.filter(a => a.estado === 'pendiente').forEach(a => alertas.push({ tipo: 'info', msg: `Adicional pendiente de aprobación: "${a.descripcion}"` }));
 
   const tc = dolarVenta || 1070;
-  // Helper de formato: respeta la moneda de la obra. Si la obra es ARS muestra
-  // "$ X", si es USD muestra "U$S X". Asume que los valores ya estan en la
-  // moneda de la obra (mismas unidades que los costos del presupuesto).
+  // ── MODELO DE MONEDA ──────────────────────────────────────────────────
+  // - Costos (calcObra.costo, gastado real): SIEMPRE en pesos. Las compras
+  //   se hacen en pesos. fmtPesos para mostrar.
+  // - Venta al cliente (totalCliente, cuotas, cobrado): SIEMPRE en USD.
+  //   En Kamak nunca venden en pesos; la obra puede estar marcada como
+  //   USD (valores cargados en USD) o ARS (valores cargados en ARS y se
+  //   convierten al display). fmtUSD para mostrar.
   const obraMonedaResumen = obra.moneda || 'ARS';
-  const fmtMObra = (n) => obraMonedaResumen === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
+  const fmtPesos = (n) => `$ ${fmtN(n)}`;
+  const fmtUSD   = (n) => `U$S ${fmtN(n)}`;
 
   // Financiación
   const finPlan = detalle.financiacion || {};
@@ -90,10 +96,20 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
     .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
     .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
   const interesFin = parseFloat(finPlan.interes) || 0;
-  const totalCliente = Math.round((venta + adicionalCliente) * (1 + interesFin / 100));
+  // venta y adicionales en ARS (vienen de costos en pesos). Total en ARS,
+  // convertido a USD para display.
+  const totalClienteARS = Math.round((venta + adicionalCliente) * (1 + interesFin / 100));
+  const totalClienteUSD = arsToUSD(totalClienteARS, tc);
+  const adicionalClienteUSD = arsToUSD(adicionalCliente, tc);
   const cuotasPlan = detalle.cuotas || [];
-  const cuotaMontoPlan = c => cuotaMontoFn(c, obraMonedaResumen, tc);
-  const cuotasPagadas = cuotasPlan.filter(c => cuotaEstadoCalc(c, obraMonedaResumen, tc) === 'pagado').reduce((s, c) => s + cuotaMontoPlan(c), 0);
+  // Cuotas en USD (cada una segun su moneda nativa).
+  const cuotasPagadasUSD = cuotasPlan
+    .filter(c => cuotaEstadoCalc(c, obraMonedaResumen, tc) === 'pagado')
+    .reduce((s, c) => s + cuotaMontoUSD(c, obraMonedaResumen, tc), 0);
+  const totalCuotasUSD = cuotasPlan.reduce((s, c) => s + cuotaMontoUSD(c, obraMonedaResumen, tc), 0);
+  // Diferencia entre el total acordado y la suma de cuotas (alerta para
+  // armar el plan completo).
+  const diferenciaPlanUSD = totalClienteUSD - totalCuotasUSD;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -129,8 +145,13 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
           <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${T.accent}`, cursor: 'pointer' }}
             onClick={() => onChangeTab?.(1)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Total cliente</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.accent }}>{fmtMObra(totalCliente)}</div>
-            {adicionalCliente > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>incl. {fmtMObra(adicionalCliente)} adicionales</div>}
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.accent }}>{fmtUSD(totalClienteUSD)}</div>
+            {adicionalClienteUSD > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>incl. {fmtUSD(adicionalClienteUSD)} adicionales</div>}
+            {Math.abs(diferenciaPlanUSD) > 1 && cuotasPlan.length > 0 && (
+              <div style={{ fontSize: 10, color: T.warn, marginTop: 4, fontWeight: 700 }}>
+                ⚠ Faltan {fmtUSD(diferenciaPlanUSD)} por asignar en cuotas
+              </div>
+            )}
             <div style={{ fontSize: 10, color: T.accent, marginTop: 4 }}>Ver plan de cuotas →</div>
           </Box>
         )}
@@ -139,7 +160,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
           <Box style={{ padding: '12px 14px', cursor: 'pointer' }}
             onClick={() => onChangeTab?.(1)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Cuotas cobradas</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.ok }}>{fmtMObra(cuotasPagadas)}</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.ok }}>{fmtUSD(cuotasPagadasUSD)}</div>
             <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{cuotasPlan.filter(c => cuotaEstadoCalc(c, obra.moneda || 'ARS', tc) === 'pagado').length} / {cuotasPlan.length} cuotas cobradas</div>
           </Box>
         )}
@@ -169,10 +190,12 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Financiero</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {[
-              ['Venta total (presu)', fmtMObra(venta), T.ink, isAdmin],
-              ['Costo total (presu)', fmtMObra(costo), T.ink, true],
-              ['Margen bruto (presu)', fmtMObra(venta - costo), margen < 0 ? T.accent : T.ok, verMargenes],
-              ['Gastado real', fmtMObra(totalGastadoReal), totalGastadoReal > costo ? T.accent : T.ink, true],
+              // Venta al cliente: SIEMPRE USD (Kamak no vende en pesos).
+              ['Venta total (presu)', fmtUSD(arsToUSD(venta, tc)), T.ink, isAdmin],
+              // Compras a proveedores: SIEMPRE pesos (las compras se hacen en pesos).
+              ['Costo total (presu)', fmtPesos(costo), T.ink, true],
+              ['Margen bruto (presu)', fmtUSD(arsToUSD(venta - costo, tc)), margen < 0 ? T.accent : T.ok, verMargenes],
+              ['Gastado real', fmtPesos(totalGastadoReal), totalGastadoReal > costo ? T.accent : T.ink, true],
             ].filter(([,,, show]) => show).map(([l, v, c], i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${T.faint2}`, fontSize: 12 }}>
                 <span style={{ color: T.ink2 }}>{l}</span>
@@ -2520,33 +2543,39 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
   const navigate = useNavigate();
   const [expandedId, setExpandedId] = useState(null);
 
-  const fmt = n => moneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
+  // En Kamak la venta al cliente SIEMPRE se expresa en USD (independiente
+  // de la moneda nominal de la obra). Las compras a proveedores quedan en
+  // pesos pero eso se ve en TabResumen.
+  const fmt = n => `U$S ${fmtN(n)}`;
 
-  // Totales financieros
-  const { venta: ventaBase } = calcObra(detalle.rubros || []);
-  const adicionalCliente = (detalle.adicionales || [])
+  // Totales financieros — todo convertido a USD para el display al cliente.
+  const { venta: ventaBaseARS } = calcObra(detalle.rubros || []);
+  const adicionalClienteARS = (detalle.adicionales || [])
     .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
     .reduce((s, a) => s + (a.monto || 0), 0);
   const interes = parseFloat((detalle.financiacion || {}).interes) || 0;
-  // venta y adicionales estan en la moneda de la obra (los costos del
-  // presupuesto se cargan en esa moneda). NO dividir por tc — eso era el
-  // bug que mostraba un total mucho mas chico para obras en USD.
-  const total = Math.round((ventaBase + adicionalCliente) * (1 + interes / 100));
-  // Igual que `total`: los valores ya estan en la moneda de la obra, no
-  // dividir por tc.
-  const ventaDisplay = ventaBase;
-  const adicDisplay  = adicionalCliente;
+  const totalARS = Math.round((ventaBaseARS + adicionalClienteARS) * (1 + interes / 100));
+  const total = arsToUSD(totalARS, tc);
+  const ventaDisplay = arsToUSD(ventaBaseARS, tc);
+  const adicDisplay  = arsToUSD(adicionalClienteARS, tc);
 
   const cuotas = detalle.cuotas || [];
 
-  // Cobrado real: suma de pagos registrados en las cuotas (fuente de verdad)
+  // Cobrado real en USD: suma de pagos convertidos a USD.
   const totalCobrado = useMemo(
-    () => cuotas.reduce((s, c) => s + cuotaCobrado(c, moneda, tc), 0),
-    [cuotas, moneda, tc]
+    () => cuotas.reduce((s, c) => {
+      // cuotaCobrado devuelve en la moneda activa (le pasamos USD para que
+      // convierta automaticamente cualquier pago ARS a USD).
+      return s + cuotaCobrado(c, 'USD', tc);
+    }, 0),
+    [cuotas, tc]
   );
 
   const saldoPendiente = Math.max(0, total - totalCobrado);
   const cuotasPagadas = cuotas.filter(c => cuotaEstadoCalc(c, moneda, tc) === 'pagado').length;
+  // Suma de cuotas armadas en USD, para chequear si el plan completa el total.
+  const sumaCuotasUSD = cuotas.reduce((s, c) => s + cuotaMontoUSD(c, moneda || 'ARS', tc), 0);
+  const diferenciaPlan = total - sumaCuotasUSD;
 
   const rowSt = (i) => ({
     display: 'flex', alignItems: 'center', padding: '11px 14px', gap: 12,
@@ -2593,6 +2622,36 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
         </Box>
       </div>
 
+      {/* Banner: cuotas no cubren el total acordado */}
+      {cuotas.length > 0 && Math.abs(diferenciaPlan) > 1 && (
+        <div style={{
+          background: diferenciaPlan > 0 ? '#fff4e5' : '#ffe5e5',
+          border: `1.5px solid ${diferenciaPlan > 0 ? T.warn : T.accent}`,
+          borderRadius: 6,
+          padding: '10px 14px',
+          marginBottom: 14,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          fontSize: 12,
+        }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, color: T.ink }}>
+              {diferenciaPlan > 0
+                ? `El plan de cuotas no cubre el total acordado`
+                : `El plan de cuotas excede el total acordado`}
+            </div>
+            <div style={{ color: T.ink2, marginTop: 2 }}>
+              Total a cobrar: {fmt(total)} · Cuotas: {fmt(sumaCuotasUSD)} ·
+              <b style={{ color: diferenciaPlan > 0 ? T.warn : T.accent, marginLeft: 4 }}>
+                {diferenciaPlan > 0 ? `Falta asignar ${fmt(diferenciaPlan)}` : `Excede en ${fmt(-diferenciaPlan)}`}
+              </b>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Lista de cuotas */}
       {cuotas.length === 0 ? (
         <Box style={{ padding: '32px 20px', textAlign: 'center', color: T.ink3, fontSize: 13 }}>
@@ -2602,8 +2661,9 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
         <Box style={{ padding: 0, overflow: 'hidden' }}>
           {cuotas.map((c, i) => {
             const estado = cuotaEstadoCalc(c, moneda, tc);
-            const monto  = cuotaMontoFn(c, moneda, tc);
-            const cobrado = cuotaCobrado(c, moneda, tc);
+            // Mostramos en USD (regla: venta al cliente siempre en USD).
+            const monto  = cuotaMontoUSD(c, moneda || 'ARS', tc);
+            const cobrado = cuotaCobrado(c, 'USD', tc);
             const saldo  = Math.max(0, monto - cobrado);
             const pagos  = c.pagos || [];
             const isOpen = expandedId === c.id;

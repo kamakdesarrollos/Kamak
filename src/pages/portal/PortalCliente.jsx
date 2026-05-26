@@ -118,24 +118,39 @@ export default function PortalCliente() {
 
   const tc = dolarVenta || 1070;
   const obraM = obra.moneda || 'ARS';
-  // Helper local: formatea un monto en la moneda real de la obra.
-  // Si la obra es ARS, muestra "$ X". Si es USD, muestra "U$S X". No hace
-  // conversiones automaticas — los valores vienen en la moneda de la obra.
-  const fmt = (n) => fmtMoney(n, obraM);
-  const cuotaMonto    = c => cuotaMontoFn(c, obraM, tc);
-  const totalCuotas   = cuotas.reduce((s, c) => s + cuotaMonto(c), 0);
-  const pagadoCuotas  = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
-  const countPagadas  = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').length;
+  const obraEsUSD = obraM === 'USD';
 
-  // Total acordado al cliente: venta del presupuesto + adicionales + interes
-  // de financiacion. Mismo calculo que TabCuentaCliente del admin para
-  // garantizar consistencia.
-  const { venta: ventaBase } = calcObra(rubros);
-  const adicionalCliente = (detalle.adicionales || [])
+  // ── Modelo de moneda del portal ─────────────────────────────────────────
+  // - Costos del presupuesto (tareas): SIEMPRE en pesos (ARS), sin importar
+  //   la moneda de la obra. La obra USD es solo para mostrar el total
+  //   convertido.
+  // - Cuotas: en la moneda de la obra (USD si obra es USD, ARS si ARS) o
+  //   con flag c._usd si fueron cargadas explicitamente en USD.
+  // - Portal: muestra TODO en USD para el cliente. Cualquier valor ARS se
+  //   convierte usando la cotizacion actual del dolar.
+
+  // Convierte un monto a USD para display. yaUSD = true si el monto ya
+  // esta en USD (no hace falta convertir).
+  const toUSD = (n, yaUSD) => Math.round(yaUSD ? n : n / tc);
+  const fmt = (n) => `U$S ${fmtN(n)}`;
+
+  // Cuotas en USD (cada una segun su moneda real).
+  const cuotaEnUSD = c => toUSD(c.monto || 0, obraEsUSD || !!c._usd);
+  const totalCuotasUSD  = cuotas.reduce((s, c) => s + cuotaEnUSD(c), 0);
+  const pagadoCuotasUSD = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').reduce((s, c) => s + cuotaEnUSD(c), 0);
+  const countPagadas    = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').length;
+
+  // Total acordado al cliente: venta del presupuesto (costos *en ARS* +
+  // margen) + adicionales (en ARS) + interes de financiacion. Convertido a
+  // USD para el display.
+  const { venta: ventaBaseARS } = calcObra(rubros);
+  const adicionalClienteARS = (detalle.adicionales || [])
     .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
     .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
   const interes = parseFloat(fin.interes) || 0;
-  const totalCliente = Math.round((ventaBase + adicionalCliente) * (1 + interes / 100));
+  const totalClienteARS = Math.round((ventaBaseARS + adicionalClienteARS) * (1 + interes / 100));
+  const totalClienteUSD = toUSD(totalClienteARS, false);
+  const adicionalClienteUSD = toUSD(adicionalClienteARS, false);
 
   const diasRestantes = obra.fechaFinEstim
     ? Math.max(0, Math.ceil((new Date(obra.fechaFinEstim) - new Date()) / 86400000))
@@ -290,7 +305,7 @@ export default function PortalCliente() {
                   ['Dirección',         obra.direccion || '—'],
                   ['Inicio de obra',    fmtD(obra.fechaInicio)],
                   ['Entrega estimada',  fmtD(obra.fechaFinEstim)],
-                  ['Presupuesto total', fmt(totalCliente || obra.presupuesto)],
+                  ['Presupuesto total', fmt(totalClienteUSD || toUSD(obra.presupuesto, obraEsUSD))],
                 ].map(([k, v]) => (
                   <div key={k}>
                     <div style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 700, marginBottom: 3 }}>{k}</div>
@@ -349,9 +364,9 @@ export default function PortalCliente() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Summary bar */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, background: T.faint, borderRadius: 8, padding: '16px 20px' }}>
-              <Stat label="Total presupuestado" value={fmt(totalCuotas)} />
-              <Stat label="Cobrado"             value={fmt(pagadoCuotas)} />
-              <Stat label="Saldo"               value={fmt(totalCuotas - pagadoCuotas)} />
+              <Stat label="Total presupuestado" value={fmt(totalCuotasUSD)} />
+              <Stat label="Cobrado"             value={fmt(pagadoCuotasUSD)} />
+              <Stat label="Saldo"               value={fmt(totalCuotasUSD - pagadoCuotasUSD)} />
               <Stat label="Cuotas pagadas"       value={`${countPagadas} / ${cuotas.length}`} />
             </div>
 
@@ -361,8 +376,8 @@ export default function PortalCliente() {
               </div>
               {totalCliente > 0 && (
             <div style={{ padding: '10px 16px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-              <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total acordado</span><div style={{ fontWeight: 800, fontFamily: T.fontMono, color: T.ink }}>{fmt(totalCliente)}</div></div>
-              {adicionalCliente > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Incluye adicionales</span><div style={{ fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{fmt(adicionalCliente)}</div></div>}
+              <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total acordado</span><div style={{ fontWeight: 800, fontFamily: T.fontMono, color: T.ink }}>{fmt(totalClienteUSD)}</div></div>
+              {adicionalClienteUSD > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Incluye adicionales</span><div style={{ fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{fmt(adicionalClienteUSD)}</div></div>}
               {interes > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Interés aplicado</span><div style={{ fontWeight: 700, color: T.ink2 }}>{interes}%</div></div>}
             </div>
           )}
@@ -387,7 +402,7 @@ export default function PortalCliente() {
                         <div style={{ fontSize: 11, color: T.ink2 }}>{fmtD(c.fecha)}</div>
                       </div>
                       <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14, flexShrink: 0, color: isPagado ? T.ok : T.ink }}>
-                        {fmt(cuotaMonto(c))}
+                        {fmt(cuotaEnUSD(c))}
                       </div>
                       <Chip ok={isPagado} accent={isParcial || isProximo} style={{ fontSize: 10, flexShrink: 0 }}>{etiqueta}</Chip>
                     </div>

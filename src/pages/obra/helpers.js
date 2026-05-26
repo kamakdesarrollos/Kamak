@@ -13,6 +13,27 @@ export const cuotaMontoFn = (c, moneda, tc) =>
   (c._usd || moneda !== 'USD') ? (c.monto || 0) : Math.round((c.monto || 0) / tc);
 
 /**
+ * Devuelve el monto de la cuota en USD para display al cliente.
+ * Asume que el monto esta en la moneda de la obra (o tiene flag _usd).
+ * - Si la obra es USD o c._usd: el monto ya esta en USD, no convertir.
+ * - Si la obra es ARS: convertir dividiendo por tc.
+ *
+ * Esta funcion existe porque toda la "venta al cliente" en Kamak se cotiza
+ * en USD, sin importar la moneda de la obra. Las compras a proveedores
+ * quedan en pesos para el admin, pero el cliente siempre ve USD.
+ */
+export const cuotaMontoUSD = (c, obraMoneda, tc) => {
+  const monto = c.monto || 0;
+  const esUSD = obraMoneda === 'USD' || !!c._usd;
+  return Math.round(esUSD ? monto : monto / tc);
+};
+
+/**
+ * Convierte un monto en ARS (costos del presupuesto) a USD para display.
+ */
+export const arsToUSD = (montoARS, tc) => Math.round((montoARS || 0) / (tc || 1));
+
+/**
  * Suma todos los pagos de una cuota, convertidos a la moneda activa.
  * Cada pago puede estar en moneda distinta (ARS/USD) — usa su propio TC si lo
  * tiene, sino el TC vigente.
