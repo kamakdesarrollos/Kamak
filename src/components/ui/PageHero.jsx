@@ -24,37 +24,47 @@ import { T } from '../../theme';
 
 export default function PageHero({ title, subtitle, kpis = [], actions, label }) {
   return (
-    <Box style={{ padding: 0, overflow: 'hidden', marginBottom: 14 }}>
-      {/* Banner oscuro */}
+    <Box style={{
+      padding: 0,
+      overflow: 'hidden',
+      marginBottom: 14,
+      // Sombra delicada multi-capa: contornos sutiles + un leve halo abajo
+      // que da sensacion de "elevacion" sin ser invasivo.
+      boxShadow: '0 1px 0 rgba(0,0,0,0.04), 0 6px 14px -8px rgba(20,18,15,0.18)',
+    }}>
+      {/* Banner oscuro — bajo perfil. Rayas sutiles del mismo lenguaje
+          visual que el Topbar. Linea acento abajo da elegancia sin ruido. */}
       <div style={{
         background: T.dark,
         color: '#fff',
-        padding: '16px 18px',
+        padding: '8px 14px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         position: 'relative',
         overflow: 'hidden',
-        gap: 16,
+        gap: 12,
+        borderBottom: `1px solid ${T.accent}`,
       }}>
-        <Stripes style={{ top: -50, right: -30, opacity: 0.10 }} />
+        <Stripes style={{ top: -30, right: -10, opacity: 0.07 }} />
 
         <div style={{ position: 'relative', minWidth: 0, flex: 1 }}>
           {label && (
             <div style={{
-              fontSize: 9,
+              fontSize: 8.5,
               color: T.accent,
               fontFamily: `'JetBrains Mono', monospace`,
-              letterSpacing: 1.8,
+              letterSpacing: 1.5,
               fontWeight: 700,
-              marginBottom: 4,
+              marginBottom: 1,
+              opacity: 0.9,
             }}>
               {label}
             </div>
           )}
-          <div className="k-h" style={{ fontSize: 26, lineHeight: 1.1 }}>{title}</div>
+          <div className="k-h" style={{ fontSize: 17, lineHeight: 1.15, letterSpacing: -0.2 }}>{title}</div>
           {subtitle && (
-            <div style={{ fontSize: 12, color: '#9a9892', marginTop: 4 }}>{subtitle}</div>
+            <div style={{ fontSize: 10.5, color: '#a3a09a', marginTop: 2, fontWeight: 400 }}>{subtitle}</div>
           )}
         </div>
 
@@ -62,7 +72,7 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 6,
             position: 'relative',
             flexShrink: 0,
             flexWrap: 'wrap',
@@ -73,26 +83,32 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
         )}
       </div>
 
-      {/* KPIs (opcionales) */}
+      {/* KPIs — compactos, dividers casi imperceptibles, leve halo en hover. */}
       {kpis.length > 0 && (
         <div style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${kpis.length}, 1fr)`,
-          background: T.faint,
+          background: '#fbf9f1',
         }}>
           {kpis.map((k, i) => (
-            <div key={i} style={{
-              padding: '12px 16px',
-              borderRight: i < kpis.length - 1 ? `1px solid ${T.faint2}` : 'none',
-              minWidth: 0,
-            }}>
+            <div
+              key={i}
+              style={{
+                padding: '8px 14px',
+                borderRight: i < kpis.length - 1 ? `1px solid rgba(212, 207, 191, 0.5)` : 'none',
+                minWidth: 0,
+                transition: 'background 0.18s ease',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f3eedf'}
+              onMouseLeave={e => e.currentTarget.style.background = ''}
+            >
               <div style={{
-                fontSize: 9,
+                fontSize: 8.5,
                 color: T.ink3,
                 fontFamily: `'JetBrains Mono', monospace`,
-                letterSpacing: 1.4,
+                letterSpacing: 1.2,
                 fontWeight: 700,
-                marginBottom: 4,
+                marginBottom: 2,
                 textTransform: 'uppercase',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
@@ -102,10 +118,11 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
               </div>
               <div style={{
                 fontFamily: `'Montserrat', sans-serif`,
-                fontSize: 20,
+                fontSize: 16,
                 fontWeight: 800,
                 color: k.color || T.ink,
-                lineHeight: 1,
+                lineHeight: 1.1,
+                letterSpacing: -0.2,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -113,7 +130,7 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
                 {k.value}
               </div>
               {k.sub && (
-                <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>{k.sub}</div>
+                <div style={{ fontSize: 9.5, color: T.ink3, marginTop: 1 }}>{k.sub}</div>
               )}
             </div>
           ))}
