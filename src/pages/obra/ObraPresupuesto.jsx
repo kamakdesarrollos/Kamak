@@ -22,6 +22,8 @@ import {
   cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
   tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
 } from './helpers';
+import { FRow, FInput, FSelect, FormPanel, inputSt, labelSt } from './forms';
+import TabDocumentos from './tabs/TabDocumentos';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -30,53 +32,10 @@ const fmtM = (n, moneda) => moneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`
 const fmtQ = (n) => { if (!n) return '0'; const r = Math.round(n * 1000) / 1000; return r.toLocaleString('es-AR', { maximumFractionDigits: 3 }); };
 const fmtD = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
 
-// ── UI micro-helpers ──────────────────────────────────────────────────────────
-const inputSt = { padding: '5px 8px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, width: '100%', boxSizing: 'border-box', outline: 'none' };
-const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3 };
-
 // Estilos del editor inline en celdas del presupuesto (constantes, no varian
 // por celda ni por render). Antes se creaban dentro del .map() por cada tarea.
 const INLINE_CELL_ST  = { fontFamily: T.fontMono, fontSize: 12, color: T.ink2, cursor: 'text', textDecoration: 'underline dotted', textDecorationColor: T.faint2 };
 const INLINE_INPUT_ST = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, border: `1.5px solid ${T.accent}`, borderRadius: 3, padding: '1px 4px', outline: 'none', background: 'white' };
-
-function FRow({ label, children }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <div style={labelSt}>{label}</div>
-      {children}
-    </div>
-  );
-}
-function FInput({ label, value, onChange, type = 'text', placeholder }) {
-  return (
-    <FRow label={label}>
-      <input style={inputSt} type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} step={type === 'number' ? 'any' : undefined} />
-    </FRow>
-  );
-}
-function FSelect({ label, value, onChange, options }) {
-  return (
-    <FRow label={label}>
-      <select style={{ ...inputSt, cursor: 'pointer' }} value={value} onChange={e => onChange(e.target.value)}>
-        {options.map(o => <option key={o}>{o}</option>)}
-      </select>
-    </FRow>
-  );
-}
-
-// ── Componente reutilizable de formulario inline ──────────────────────────────
-function FormPanel({ title, children, onSave, onCancel, style, saveLabel = 'Guardar', saveDisabled = false }) {
-  return (
-    <div style={{ background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 6, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, ...style }}>
-      {title && <div style={{ fontWeight: 700, fontSize: 13 }}>{title}</div>}
-      {children}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-        <Btn sm onClick={onCancel}>Cancelar</Btn>
-        <Btn sm accent onClick={onSave} style={{ opacity: saveDisabled ? 0.5 : 1, pointerEvents: saveDisabled ? 'none' : 'auto' }}>{saveLabel}</Btn>
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 0: RESUMEN
@@ -3063,100 +3022,8 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TAB 6: DOCUMENTOS
+// TAB 6: DOCUMENTOS -> ./tabs/TabDocumentos.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-function TabDocumentos({ detalle, patch, obraId }) {
-  const [adding,      setAdding]      = useState(false);
-  const [form,        setForm]        = useState({ nombre: '', tipo: 'Contrato', fecha: new Date().toISOString().split('T')[0] });
-  const [pendingFile, setPendingFile] = useState(null);
-  const [uploading,   setUploading]   = useState(false);
-  const [uploadErr,   setUploadErr]   = useState('');
-  const fileRef = useRef(null);
-  const TIPOS_DOC = ['Contrato', 'Presupuesto', 'Planos', 'Certificado', 'Factura', 'Permiso', 'Otro'];
-
-  const handleFile = (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    setPendingFile(f);
-    if (!form.nombre.trim()) setForm(p => ({ ...p, nombre: f.name.replace(/\.[^.]+$/, '') }));
-  };
-
-  const save = async () => {
-    if (!form.nombre.trim()) return;
-    let url = null;
-    if (pendingFile) {
-      setUploading(true);
-      setUploadErr('');
-      const ext  = pendingFile.name.split('.').pop();
-      const path = `obras/${obraId}/docs/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('kamak-fotos').upload(path, pendingFile, { upsert: true });
-      if (error) { setUploadErr('Error al subir el archivo: ' + error.message); setUploading(false); return; }
-      url = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
-      setUploading(false);
-    }
-    patch(d => ({ ...d, documentos: [...d.documentos, { id: newId(), ...form, url }] }));
-    setAdding(false);
-    setForm({ nombre: '', tipo: 'Contrato', fecha: new Date().toISOString().split('T')[0] });
-    setPendingFile(null);
-  };
-
-  const del = (id) => patch(d => ({ ...d, documentos: d.documentos.filter(dc => dc.id !== id) }));
-
-  return (
-    <div style={{ maxWidth: 700 }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-        <Btn sm fill onClick={() => setAdding(true)}>+ Documento</Btn>
-      </div>
-
-      {adding && (
-        <FormPanel title="Agregar documento" onSave={save} onCancel={() => { setAdding(false); setPendingFile(null); setUploadErr(''); }}
-          style={{ marginBottom: 14 }} saveLabel={uploading ? 'Subiendo...' : 'Guardar'} saveDisabled={uploading}>
-          <FInput label="Nombre del documento" value={form.nombre} onChange={v => setForm(p => ({ ...p, nombre: v }))} placeholder="Ej: Contrato de obra firmado" />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <FSelect label="Tipo" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))} options={TIPOS_DOC} />
-            <FInput label="Fecha" value={form.fecha} onChange={v => setForm(p => ({ ...p, fecha: v }))} type="date" />
-          </div>
-          <div style={{ background: T.faint, borderRadius: 4, padding: '10px 12px', border: `1.5px dashed ${T.faint2}`, cursor: 'pointer' }}
-            onClick={() => fileRef.current?.click()}>
-            <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" style={{ display: 'none' }} onChange={handleFile} />
-            {pendingFile ? (
-              <div style={{ fontSize: 12, color: T.ink, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 18 }}>📎</span>
-                <span style={{ fontWeight: 600 }}>{pendingFile.name}</span>
-                <span style={{ color: T.ink3 }}>({(pendingFile.size / 1024).toFixed(0)} KB)</span>
-              </div>
-            ) : (
-              <div style={{ fontSize: 12, color: T.ink2, textAlign: 'center' }}>📎 Clic para seleccionar archivo (PDF, Word, Excel, imágenes)</div>
-            )}
-          </div>
-          {uploadErr && <div style={{ fontSize: 11, color: '#dc2626' }}>{uploadErr}</div>}
-        </FormPanel>
-      )}
-
-      {detalle.documentos.length === 0 ? (
-        <div style={{ color: T.ink3, padding: 24, textAlign: 'center' }}>Sin documentos</div>
-      ) : (
-        <Box style={{ padding: 0, overflow: 'hidden' }}>
-          {detalle.documentos.map((dc, i) => (
-            <div key={dc.id} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: i < detalle.documentos.length - 1 ? `1px solid ${T.faint2}` : 'none', gap: 12 }}>
-              <span style={{ fontSize: 22 }}>📄</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{dc.nombre}</div>
-                <div style={{ fontSize: 11, color: T.ink2 }}>{dc.tipo} · {fmtD(dc.fecha)}</div>
-              </div>
-              <Chip style={{ fontSize: 10 }}>{dc.tipo}</Chip>
-              {dc.url
-                ? <a href={dc.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}><Btn sm>↓ Abrir</Btn></a>
-                : <Btn sm style={{ opacity: 0.4, pointerEvents: 'none' }}>Sin archivo</Btn>
-              }
-              <span style={{ color: T.accent, cursor: 'pointer', fontSize: 12 }} onClick={() => del(dc.id)}>🗑</span>
-            </div>
-          ))}
-        </Box>
-      )}
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 7: FOTOS
