@@ -72,9 +72,27 @@ export default function Sidebar({ active }) {
             onClick={() => it.path && navigate(it.path)}
           >
             <span style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0, lineHeight: 1 }}>{it.icon || '·'}</span>
-            <span>{it.label}</span>
+            {/* Label: se trunca con "..." si no entra, asi el badge nunca se corta */}
+            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {it.label}
+            </span>
             {it.label === 'Autorizaciones' && solPendientes > 0 && isAdmin && (
-              <span style={{ marginLeft: 'auto', background: '#c0392b', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700, lineHeight: '16px' }}>
+              <span style={{
+                background: '#e74c3c',
+                color: '#fff',
+                borderRadius: 10,
+                padding: '0 6px',
+                minWidth: 18,
+                height: 18,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 10,
+                fontWeight: 700,
+                lineHeight: 1,
+                flexShrink: 0,
+                boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+              }}>
                 {solPendientes}
               </span>
             )}
