@@ -20,7 +20,7 @@ const rubroAvance = (rubro) =>
 export default function PortalCliente() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { obras, getDetalle } = useObras();
+  const { obras, getDetalle, refetch } = useObras();
 
   const { user } = useAuth();
   const { currentUser } = useUsuarios();
@@ -66,6 +66,28 @@ export default function PortalCliente() {
 
   const obra = obras.find(o => o.id === id);
   const detalle = getDetalle(id || '');
+
+  // Auto-refresh para garantizar que admin y cliente siempre ven lo mismo:
+  // - polling cada 15s mientras la pestana esta activa.
+  // - refetch inmediato al volver a la pestana (visibilitychange).
+  // - refetch inmediato al volver foco a la ventana (focus).
+  // Sin esto, el cliente podria ver datos viejos si el broadcast de Realtime
+  // se pierde (red intermitente, app en background, etc.).
+  useEffect(() => {
+    if (accessStatus !== 'allowed') return;
+    let interval = null;
+    const start = () => { if (!interval) interval = setInterval(refetch, 15000); };
+    const stop  = () => { if (interval) { clearInterval(interval); interval = null; } };
+    const onVis = () => { if (document.hidden) stop(); else { refetch(); start(); } };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', refetch);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', refetch);
+    };
+  }, [accessStatus, refetch]);
 
   // Pantalla de bloqueo: cuando el cliente no tiene acceso valido,
   // mostramos un mensaje claro sin revelar info de la obra.

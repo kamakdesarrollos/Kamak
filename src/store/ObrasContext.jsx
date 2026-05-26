@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback, us
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
+import { SAVE_DEBOUNCE_MS } from '../lib/constants';
 
 // ── Datos semilla obras ───────────────────────────────────────────────────────
 const SEED_OBRAS = [
@@ -244,7 +245,7 @@ export function ObrasProvider({ children }) {
     const t = setTimeout(() => {
       saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
       pendingSaveRef.current = null;
-    }, 800);
+    }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [obras, detalles]);
 
@@ -309,13 +310,25 @@ export function ObrasProvider({ children }) {
     });
   }, []);
 
+  // Permite forzar una recarga desde Supabase (usado por el portal del
+  // cliente para garantizar que ve la misma info que el admin, sin depender
+  // exclusivamente del broadcast de Realtime).
+  const refetch = useCallback(async () => {
+    const data = await loadSharedData('obras');
+    if (!data) return;
+    fromRemote.current = true;
+    if (data.obras)    { setObras(data.obras);       saveObras(data.obras); }
+    if (data.detalles) { setDetalles(data.detalles); saveDet(data.detalles); }
+    setTimeout(() => { fromRemote.current = false; }, 0);
+  }, []);
+
   // Memoizar el value: sin esto, cada render del Provider crea un objeto nuevo
   // y todos los componentes que consuman este context re-renderizan, aunque
   // las obras / detalles no hayan cambiado. Era la causa principal de lentitud
   // al editar inputs (ObraPresupuesto consume 9 contexts).
   const value = useMemo(
-    () => ({ obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle }),
-    [obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle]
+    () => ({ obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle, refetch }),
+    [obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle, refetch]
   );
 
   return (
