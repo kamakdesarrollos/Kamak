@@ -15,25 +15,23 @@ export const calcTarea = (t) => {
 };
 
 const SEED = {
-  rubros: [
-    { id: 'r1', nombre: 'ALBAÑILERÍA' },
-    { id: 'r2', nombre: 'CONSTRUCCION EN SECO' },
-    { id: 'r3', nombre: 'ELECTRICIDAD' },
-    { id: 'r4', nombre: 'PINTURA' },
-    { id: 'r5', nombre: 'CARPINTERIA DE ALUMINIO' },
-    { id: 'r6', nombre: 'MOBILIARIO' },
-    { id: 'r7', nombre: 'PLOMERIA' },
-    { id: 'r8', nombre: 'EXTRACCION' },
-    { id: 'r9', nombre: 'LOGISTICA' },
-    { id: 'r10', nombre: 'PROYECTO Y DIRECCION' },
-    { id: 'r11', nombre: 'LIMPIEZA' },
-  ],
-  materiales: [],
-  mo: [],
-  generales: [],
+  rubros:       [],
+  materiales:   [],
+  mo:           [],
+  generales:    [],
   subcontratos: [],
-  tareas: [],
+  tareas:       [],
 };
+
+const SISMAT_SEED_VERSION = '1';
+
+async function fetchSismatSeed() {
+  try {
+    const res = await fetch('/sismat_seed.json');
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
 
 const CatalogContext = createContext(null);
 
@@ -65,12 +63,24 @@ export function CatalogProvider({ children }) {
   const { markReady } = useAppLoading();
 
   useEffect(() => {
-    loadSharedData('catalog').then(data => {
-      if (data) {
+    loadSharedData('catalog').then(async data => {
+      const needsReseed = localStorage.getItem('kamak_sismat_v') !== SISMAT_SEED_VERSION;
+
+      if (data && !needsReseed) {
         fromRemote.current = true;
         setCatalog(data); localStorage.setItem('kamak_catalog_v4', JSON.stringify(data));
         setTimeout(() => { fromRemote.current = false; }, 0);
-      } else saveSharedData('catalog', catalog); // eslint-disable-line react-hooks/exhaustive-deps
+      } else {
+        // Primera vez o versión desactualizada: importar catálogo Sismat
+        const sismatData = await fetchSismatSeed();
+        const finalData = sismatData || data || catalog; // eslint-disable-line react-hooks/exhaustive-deps
+        fromRemote.current = true;
+        setCatalog(finalData);
+        localStorage.setItem('kamak_catalog_v4', JSON.stringify(finalData));
+        localStorage.setItem('kamak_sismat_v', SISMAT_SEED_VERSION);
+        setTimeout(() => { fromRemote.current = false; }, 0);
+        saveSharedData('catalog', finalData);
+      }
       sbLoaded.current = true;
       markReady();
     });
