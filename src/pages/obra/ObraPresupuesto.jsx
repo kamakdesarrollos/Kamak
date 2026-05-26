@@ -83,6 +83,11 @@ const calcTareaContratada = (tareaId, contratos) =>
 const inputSt = { padding: '5px 8px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, width: '100%', boxSizing: 'border-box', outline: 'none' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3 };
 
+// Estilos del editor inline en celdas del presupuesto (constantes, no varian
+// por celda ni por render). Antes se creaban dentro del .map() por cada tarea.
+const INLINE_CELL_ST  = { fontFamily: T.fontMono, fontSize: 12, color: T.ink2, cursor: 'text', textDecoration: 'underline dotted', textDecorationColor: T.faint2 };
+const INLINE_INPUT_ST = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, border: `1.5px solid ${T.accent}`, borderRadius: 3, padding: '1px 4px', outline: 'none', background: 'white' };
+
 function FRow({ label, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -775,14 +780,17 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                     const ventaTotalRow = ventaUnitRow * tarea.cantidad;
                     const isSelected = selTask?.id === tarea.id;
                     const ie = inlineEdit?.taskId === tarea.id ? inlineEdit : null;
-                    const inlineCellSt = { fontFamily: T.fontMono, fontSize: 12, color: T.ink2, cursor: 'text', textDecoration: 'underline dotted', textDecorationColor: T.faint2 };
-                    const inlineInputSt = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, border: `1.5px solid ${T.accent}`, borderRadius: 3, padding: '1px 4px', outline: 'none', background: 'white' };
 
+                    // InlineNum vive aca para tomar `tarea` y `ie` por closure
+                    // sin pasarlos como props. Definirla DENTRO del .map() era
+                    // un anti-patron (50 funciones nuevas por render con 50
+                    // tareas); ahora las constantes de estilo son globales y
+                    // los handlers vienen del scope superior estables.
                     const InlineNum = ({ field, value, flex, fmt, color }) => (
                       <div className="k-cell" style={{ flex, textAlign: 'right', padding: '2px 6px' }}
                         onClick={e => { e.stopPropagation(); if (!(ie?.taskId === tarea.id && ie?.field === field)) setInlineEdit({ taskId: tarea.id, field, value: String(value) }); }}>
                         {ie?.field === field
-                          ? <input autoFocus type="number" min="0" step="any" style={inlineInputSt} value={ie.value} onClick={e => e.stopPropagation()}
+                          ? <input autoFocus type="number" min="0" step="any" style={INLINE_INPUT_ST} value={ie.value} onClick={e => e.stopPropagation()}
                               onFocus={e => e.target.select()}
                               onChange={e => setInlineEdit(x => ({ ...x, value: e.target.value }))}
                               onBlur={saveInlineCost}
@@ -801,7 +809,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                                 }
                                 if (e.key === 'Escape') setInlineEdit(null);
                               }} />
-                          : <span style={{ ...inlineCellSt, ...(color ? { color } : {}) }}>{fmt ? fmt(value) : value}</span>}
+                          : <span style={{ ...INLINE_CELL_ST, ...(color ? { color } : {}) }}>{fmt ? fmt(value) : value}</span>}
                       </div>
                     );
 
@@ -866,7 +874,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                           <div className="k-cell" style={{ flex: 0.9, textAlign: 'right', padding: '2px 6px' }}
                             onClick={e => { e.stopPropagation(); setInlineEdit({ taskId: tarea.id, field: 'margenLinea', value: tarea.margenLinea != null ? String(tarea.margenLinea) : '' }); }}>
                             {ie?.field === 'margenLinea'
-                              ? <input autoFocus type="number" min="0" step="any" style={{ ...inlineInputSt, width: 56 }} value={ie.value}
+                              ? <input autoFocus type="number" min="0" step="any" style={{ ...INLINE_INPUT_ST, width: 56 }} value={ie.value}
                                   placeholder={`${rubro.margenMat}/${rubro.margenMO}`}
                                   onFocus={e => e.target.select()}
                                   onChange={e => setInlineEdit(x => ({ ...x, value: e.target.value }))}
@@ -884,7 +892,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                                     }
                                     if (e.key === 'Escape') setInlineEdit(null);
                                   }} />
-                              : <span style={{ ...inlineCellSt, color: tarea.margenLinea != null ? T.accent : T.ink3 }}>
+                              : <span style={{ ...INLINE_CELL_ST, color: tarea.margenLinea != null ? T.accent : T.ink3 }}>
                                   {tarea.margenLinea != null ? `${tarea.margenLinea}%` : 'def'}
                                 </span>}
                           </div>
