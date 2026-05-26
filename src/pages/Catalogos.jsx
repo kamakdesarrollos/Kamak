@@ -959,8 +959,8 @@ export default function Catalogos() {
             cols={[
               { key: 'codigo', label: 'Código', mono: true },
               { key: 'nombre', label: 'Nombre' },
-              { key: 'unidad', label: 'Unidad' },
               { key: 'precio', label: 'Precio $', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
+              { key: 'unidad', label: 'Unidad' },
               { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
               { key: 'updatedAt', label: 'Actualizado', mono: true },
             ]}
@@ -991,8 +991,8 @@ export default function Catalogos() {
             cols={[
               { key: 'codigo', label: 'Código', mono: true },
               { key: 'nombre', label: 'Nombre' },
-              { key: 'unidad', label: 'Unidad' },
               { key: 'precio', label: 'Precio $', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
+              { key: 'unidad', label: 'Unidad' },
               { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
               { key: 'updatedAt', label: 'Actualizado', mono: true },
             ]}
@@ -1023,8 +1023,8 @@ export default function Catalogos() {
             cols={[
               { key: 'nombre', label: 'Nombre / Categoría' },
               { key: 'oficio', label: 'Gremio' },
-              { key: 'unidad', label: 'Unidad' },
               { key: 'precioHora', label: '$/h', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
+              { key: 'unidad', label: 'Unidad' },
             ]}
             emptyForm={{ nombre: '', oficio: catalog.rubros[0]?.nombre || '', unidad: 'h', precioHora: 0 }}
             renderForm={(form, setForm) => (
@@ -1048,8 +1048,8 @@ export default function Catalogos() {
             onDelete={id => remove('generales', id)}
             cols={[
               { key: 'nombre', label: 'Concepto' },
-              { key: 'unidad', label: 'Unidad' },
               { key: 'precio', label: 'Precio $', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
+              { key: 'unidad', label: 'Unidad' },
             ]}
             emptyForm={{ nombre: '', unidad: 'gl', precio: 0 }}
             renderForm={(form, setForm) => (
