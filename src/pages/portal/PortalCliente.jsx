@@ -221,10 +221,11 @@ export default function PortalCliente() {
       {/* ── Content ────────────────────────────────────────────────────────── */}
       <div className="portal-content" style={{ maxWidth: 1060, margin: '0 auto' }}>
 
-        {/* Debug panel: solo visible cuando un admin esta viendo el portal en
-            preview. Muestra datos crudos para diagnosticar bugs de moneda /
-            cuotas. NO se le muestra al cliente real. */}
-        {isAdminInternal && (
+        {/* Debug panel: visible si sos admin O si la URL tiene ?debug=1.
+            Util para diagnosticar bugs de moneda / cuotas sin depender de
+            tener sesion iniciada. NO se le muestra al cliente real (a menos
+            que le pases la URL con ?debug=1). */}
+        {(isAdminInternal || typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) && (
           <details style={{ background: '#fff8e0', padding: 10, fontSize: 11, fontFamily: 'monospace', borderRadius: 4, marginBottom: 12, border: '1px solid #f0d878' }}>
             <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#7a5a00' }}>🔍 DEBUG (solo visible para admin)</summary>
             <div style={{ marginTop: 8, lineHeight: 1.6 }}>
