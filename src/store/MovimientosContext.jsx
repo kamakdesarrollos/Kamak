@@ -214,15 +214,25 @@ export function MovimientosProvider({ children }) {
       .sort((a, b) => b.fecha.localeCompare(a.fecha)),
     [movimientos]);
 
+  // Memoizar el value para evitar re-renders en cascada de los consumidores.
+  const value = useMemo(() => ({
+    cajas, movimientos,
+    addCaja, updateCaja, removeCaja,
+    addMovimiento, updateMovimiento, removeMovimiento,
+    traspasar,
+    totalARS, totalUSD,
+    getMovsByObraId, getMovsByCajaId,
+  }), [
+    cajas, movimientos,
+    addCaja, updateCaja, removeCaja,
+    addMovimiento, updateMovimiento, removeMovimiento,
+    traspasar,
+    totalARS, totalUSD,
+    getMovsByObraId, getMovsByCajaId,
+  ]);
+
   return (
-    <CTX.Provider value={{
-      cajas, movimientos,
-      addCaja, updateCaja, removeCaja,
-      addMovimiento, updateMovimiento, removeMovimiento,
-      traspasar,
-      totalARS, totalUSD,
-      getMovsByObraId, getMovsByCajaId,
-    }}>
+    <CTX.Provider value={value}>
       {children}
     </CTX.Provider>
   );

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { adminAction } from '../lib/dbHelpers';
 import { useAppLoading } from './AppLoadingContext';
@@ -205,8 +205,14 @@ export function UsuariosProvider({ children }) {
     setCurrentUser(null);
   }, []);
 
+  // Memoizar el value: critico porque casi todas las paginas leen este context.
+  const value = useMemo(
+    () => ({ usuarios, currentUser, loading, loginByEmail, logout, addUsuario, updateUsuario, removeUsuario, togglePermiso, applyRol, bootstrapAdmin, roles, updateRol, removeRol }),
+    [usuarios, currentUser, loading, loginByEmail, logout, addUsuario, updateUsuario, removeUsuario, togglePermiso, applyRol, bootstrapAdmin, roles, updateRol, removeRol]
+  );
+
   return (
-    <CTX.Provider value={{ usuarios, currentUser, loading, loginByEmail, logout, addUsuario, updateUsuario, removeUsuario, togglePermiso, applyRol, bootstrapAdmin, roles, updateRol, removeRol }}>
+    <CTX.Provider value={value}>
       {children}
     </CTX.Provider>
   );

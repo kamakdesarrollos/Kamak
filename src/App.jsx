@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ObrasProvider } from './store/ObrasContext';
 import { CatalogProvider } from './store/CatalogContext';
@@ -18,31 +18,41 @@ import { AppLoadingProvider, useAppLoading } from './store/AppLoadingContext';
 
 import { AuthProvider, useAuth } from './store/AuthContext';
 
+// Login se importa estatico — es lo primero que se ve si no hay sesion.
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Obras from './pages/Obras';
-import ObraPresupuesto from './pages/obra/ObraPresupuesto';
-import ObraGantt from './pages/obra/ObraGantt';
-import Proveedores from './pages/Proveedores';
-import Clientes from './pages/Clientes';
-import ProveedorCC from './pages/ProveedorCC';
-import Movimientos from './pages/Movimientos';
-import Cajas from './pages/Cajas';
-import Conciliacion from './pages/Conciliacion';
-import Prorrateo from './pages/Prorrateo';
-import Catalogos from './pages/Catalogos';
-import Plantillas from './pages/Plantillas';
-import Reportes from './pages/Reportes';
-import Autorizaciones from './pages/Autorizaciones';
-import Configuracion from './pages/Configuracion';
-import Cheques from './pages/Cheques';
-import WhatsappBuzon from './pages/WhatsappBuzon';
 import WhatsappVerificationBanner from './components/WhatsappVerificationBanner';
-import MobileComprador from './pages/mobile/MobileComprador';
-import MobileDirector from './pages/mobile/MobileDirector';
-import PortalCliente from './pages/portal/PortalCliente';
-import PortalProveedor from './pages/portal/PortalProveedor';
-import PortalAcceso from './pages/portal/PortalAcceso';
+
+// Resto de paginas: lazy load para bajar el bundle inicial. Cada pagina
+// se descarga solo cuando el usuario navega a ella.
+const Dashboard          = lazy(() => import('./pages/Dashboard'));
+const Obras              = lazy(() => import('./pages/Obras'));
+const ObraPresupuesto    = lazy(() => import('./pages/obra/ObraPresupuesto'));
+const ObraGantt          = lazy(() => import('./pages/obra/ObraGantt'));
+const Proveedores        = lazy(() => import('./pages/Proveedores'));
+const Clientes           = lazy(() => import('./pages/Clientes'));
+const ProveedorCC        = lazy(() => import('./pages/ProveedorCC'));
+const Movimientos        = lazy(() => import('./pages/Movimientos'));
+const Cajas              = lazy(() => import('./pages/Cajas'));
+const Conciliacion       = lazy(() => import('./pages/Conciliacion'));
+const Prorrateo          = lazy(() => import('./pages/Prorrateo'));
+const Catalogos          = lazy(() => import('./pages/Catalogos'));
+const Plantillas         = lazy(() => import('./pages/Plantillas'));
+const Reportes           = lazy(() => import('./pages/Reportes'));
+const Autorizaciones     = lazy(() => import('./pages/Autorizaciones'));
+const Configuracion      = lazy(() => import('./pages/Configuracion'));
+const Cheques            = lazy(() => import('./pages/Cheques'));
+const WhatsappBuzon      = lazy(() => import('./pages/WhatsappBuzon'));
+const MobileComprador    = lazy(() => import('./pages/mobile/MobileComprador'));
+const MobileDirector     = lazy(() => import('./pages/mobile/MobileDirector'));
+const PortalCliente      = lazy(() => import('./pages/portal/PortalCliente'));
+const PortalProveedor    = lazy(() => import('./pages/portal/PortalProveedor'));
+const PortalAcceso       = lazy(() => import('./pages/portal/PortalAcceso'));
+
+const RouteFallback = () => (
+  <div style={{ minHeight: '50vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: 13 }}>
+    Cargando…
+  </div>
+);
 
 const INACTIVITY_MS = 15 * 60 * 1000; // 15 minutos
 const WARN_MS       =  1 * 60 * 1000; // aviso 1 minuto antes
@@ -180,41 +190,45 @@ function AppShell() {
   return (
     <DataProviders key={user?.id ?? 'anon'}>
       <BrowserRouter>
-        <Routes>
-          {/* Rutas públicas — sin autenticación (portales para clientes/proveedores) */}
-          <Route path="/portal/cliente/:id" element={<PortalCliente />} />
-          <Route path="/portal/proveedor" element={<PortalProveedor />} />
-          <Route path="/portal/acceso/:token" element={<PortalAcceso />} />
+        {/* Suspense para soportar lazy() de las paginas: muestra "Cargando"
+            mientras descarga el chunk del componente. */}
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            {/* Rutas públicas — sin autenticación (portales para clientes/proveedores) */}
+            <Route path="/portal/cliente/:id" element={<PortalCliente />} />
+            <Route path="/portal/proveedor" element={<PortalProveedor />} />
+            <Route path="/portal/acceso/:token" element={<PortalAcceso />} />
 
-          {/* Rutas internas — requieren autenticación */}
-          <Route path="*" element={
-            <AuthGate>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/obras" element={<Obras />} />
-                <Route path="/obras/:id/presupuesto" element={<ObraPresupuesto />} />
-                <Route path="/obras/:id/gantt" element={<ObraGantt />} />
-                <Route path="/proveedores" element={<Proveedores />} />
-                <Route path="/clientes" element={<Clientes />} />
-                <Route path="/proveedores/:id" element={<ProveedorCC />} />
-                <Route path="/movimientos" element={<Movimientos />} />
-                <Route path="/cajas" element={<Cajas />} />
-                <Route path="/cajas/conciliacion" element={<Conciliacion />} />
-                <Route path="/cheques" element={<Cheques />} />
-                <Route path="/whatsapp" element={<WhatsappBuzon />} />
-                <Route path="/prorrateo" element={<Prorrateo />} />
-                <Route path="/catalogos" element={<Catalogos />} />
-                <Route path="/plantillas" element={<Plantillas />} />
-                <Route path="/reportes" element={<Reportes />} />
-                <Route path="/autorizaciones" element={<Autorizaciones />} />
-                <Route path="/configuracion" element={<Configuracion />} />
-                <Route path="/mobile/comprador" element={<MobileComprador />} />
-                <Route path="/mobile/director" element={<MobileDirector />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </AuthGate>
-          } />
-        </Routes>
+            {/* Rutas internas — requieren autenticación */}
+            <Route path="*" element={
+              <AuthGate>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/obras" element={<Obras />} />
+                  <Route path="/obras/:id/presupuesto" element={<ObraPresupuesto />} />
+                  <Route path="/obras/:id/gantt" element={<ObraGantt />} />
+                  <Route path="/proveedores" element={<Proveedores />} />
+                  <Route path="/clientes" element={<Clientes />} />
+                  <Route path="/proveedores/:id" element={<ProveedorCC />} />
+                  <Route path="/movimientos" element={<Movimientos />} />
+                  <Route path="/cajas" element={<Cajas />} />
+                  <Route path="/cajas/conciliacion" element={<Conciliacion />} />
+                  <Route path="/cheques" element={<Cheques />} />
+                  <Route path="/whatsapp" element={<WhatsappBuzon />} />
+                  <Route path="/prorrateo" element={<Prorrateo />} />
+                  <Route path="/catalogos" element={<Catalogos />} />
+                  <Route path="/plantillas" element={<Plantillas />} />
+                  <Route path="/reportes" element={<Reportes />} />
+                  <Route path="/autorizaciones" element={<Autorizaciones />} />
+                  <Route path="/configuracion" element={<Configuracion />} />
+                  <Route path="/mobile/comprador" element={<MobileComprador />} />
+                  <Route path="/mobile/director" element={<MobileDirector />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </AuthGate>
+            } />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </DataProviders>
   );

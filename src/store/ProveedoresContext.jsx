@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
@@ -187,12 +187,18 @@ export function ProveedoresProvider({ children }) {
     return Object.entries(map).map(([id, nombre]) => ({ id, nombre }));
   }, [ccEntries]);
 
+  const value = useMemo(() => ({
+    proveedores, ccEntries,
+    addProveedor, updateProveedor, removeProveedor,
+    addCC, updateCC, removeCC, getCC, getSaldo, getObrasProveedor,
+  }), [
+    proveedores, ccEntries,
+    addProveedor, updateProveedor, removeProveedor,
+    addCC, updateCC, removeCC, getCC, getSaldo, getObrasProveedor,
+  ]);
+
   return (
-    <CTX.Provider value={{
-      proveedores, ccEntries,
-      addProveedor, updateProveedor, removeProveedor,
-      addCC, updateCC, removeCC, getCC, getSaldo, getObrasProveedor,
-    }}>
+    <CTX.Provider value={value}>
       {children}
     </CTX.Provider>
   );

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
@@ -108,8 +108,13 @@ export function DolarProvider({ children }) {
   const dolarVenta = data.manual ? (data.manualVal || 1070) : (data.venta || 1070);
   const dolarCompra = data.compra || 1060;
 
+  const value = useMemo(
+    () => ({ dolarVenta, dolarCompra, updatedAt: data.updatedAt, loading, error, manual: data.manual, setManual, setAutoMode, fetchBNA }),
+    [dolarVenta, dolarCompra, data.updatedAt, loading, error, data.manual, setManual, setAutoMode, fetchBNA]
+  );
+
   return (
-    <CTX.Provider value={{ dolarVenta, dolarCompra, updatedAt: data.updatedAt, loading, error, manual: data.manual, setManual, setAutoMode, fetchBNA }}>
+    <CTX.Provider value={value}>
       {children}
     </CTX.Provider>
   );

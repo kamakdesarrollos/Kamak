@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
@@ -231,16 +231,16 @@ export function ObrasProvider({ children }) {
     return () => clearTimeout(t);
   }, [obras, detalles]);
 
-  // ── Obras CRUD ──
-  const addObra = (obra) => {
+  // ── Obras CRUD (memoizado para que el value del Provider sea estable)
+  const addObra = useCallback((obra) => {
     const id = `obra-${Date.now()}`;
     setObras(prev => [...prev, { id, nombre: obra.nombre, cliente: obra.cliente, direccion: obra.direccion || '', tipo: obra.tipo || 'Otro', estado: 'en-presupuesto', moneda: obra.moneda || 'ARS', presupuesto: Number(obra.presupuesto) || 0, gastado: 0, avance: 0, margen: 0, fechaInicio: obra.fechaInicio || '', fechaFinEstim: obra.fechaFinEstim || '', fechaFin: '', notas: obra.notas || '', createdAt: new Date().toISOString() }]);
     return id;
-  };
+  }, []);
 
-  const updateObra = (id, changes) => setObras(prev => prev.map(o => o.id === id ? { ...o, ...changes } : o));
+  const updateObra = useCallback((id, changes) => setObras(prev => prev.map(o => o.id === id ? { ...o, ...changes } : o)), []);
 
-  const setEstado = (id, nuevoEstado) => {
+  const setEstado = useCallback((id, nuevoEstado) => {
     const today = new Date().toISOString().split('T')[0];
     setObras(prev => prev.map(o => {
       if (o.id !== id) return o;
@@ -249,25 +249,34 @@ export function ObrasProvider({ children }) {
       if (nuevoEstado === 'finalizada') { ch.avance = 100; ch.fechaFin = today; }
       return { ...o, ...ch };
     }));
-  };
+  }, []);
 
-  const deleteObra = (id) => setObras(prev => prev.filter(o => o.id !== id));
+  const deleteObra = useCallback((id) => setObras(prev => prev.filter(o => o.id !== id)), []);
 
-  const byEstado = (estado) => obras.filter(o => o.estado === estado);
+  // byEstado y getDetalle son derivados — devuelven nueva referencia cada
+  // call (es lo correcto: usar useMemo en el consumidor cuando se necesite).
+  const byEstado = useCallback((estado) => obrasRef.current.filter(o => o.estado === estado), []);
+  const getDetalle = useCallback((id) => detallesRef.current[id] ?? EMPTY_DETALLE, []);
 
-  // ── Detalle CRUD ──
-  const getDetalle = (id) => detalles[id] ?? EMPTY_DETALLE;
-
-  const patchDetalle = (id, fn) => {
+  const patchDetalle = useCallback((id, fn) => {
     setDetalles(prev => {
       const current = prev[id] ?? EMPTY_DETALLE;
       const updated = typeof fn === 'function' ? fn(current) : { ...current, ...fn };
       return { ...prev, [id]: updated };
     });
-  };
+  }, []);
+
+  // Memoizar el value: sin esto, cada render del Provider crea un objeto nuevo
+  // y todos los componentes que consuman este context re-renderizan, aunque
+  // las obras / detalles no hayan cambiado. Era la causa principal de lentitud
+  // al editar inputs (ObraPresupuesto consume 9 contexts).
+  const value = useMemo(
+    () => ({ obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle }),
+    [obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle]
+  );
 
   return (
-    <ObrasContext.Provider value={{ obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle }}>
+    <ObrasContext.Provider value={value}>
       {children}
     </ObrasContext.Provider>
   );

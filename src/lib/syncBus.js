@@ -7,7 +7,10 @@ const _handlers = {};
 function ensureChannel() {
   if (_channel) return _channel;
   _channel = supabase
-    .channel('kamak-data-sync')
+    // `broadcast.self: false` evita que esta misma pestana reciba sus
+    // propios broadcasts (antes el save propio rebotaba y disparaba un
+    // reload innecesario; tambien causaba ecos cruzados entre providers).
+    .channel('kamak-data-sync', { config: { broadcast: { self: false } } })
     .on('broadcast', { event: 'changed' }, ({ payload }) => {
       const key = payload?.key;
       if (key && _handlers[key]) _handlers[key].forEach(fn => fn());

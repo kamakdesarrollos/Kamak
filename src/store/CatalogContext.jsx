@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
@@ -104,23 +104,27 @@ export function CatalogProvider({ children }) {
     return () => clearTimeout(t);
   }, [catalog]);
 
-  const add    = (coll, item)        => setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), { id: newId(), ...item, updatedAt: today() }] }));
-  const update = (coll, id, changes) => setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...changes, updatedAt: today() } : i) }));
-  const remove = (coll, id)          => setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) }));
-  const bulkSeed = (additions) => {
-    const next = {
-      ...catalog,
-      materiales:   [...(catalog.materiales||[]),   ...(additions.materiales||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
-      subcontratos: [...(catalog.subcontratos||[]), ...(additions.subcontratos||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
-      tareas:       [...(catalog.tareas||[]),       ...(additions.tareas||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
-    };
-    setCatalog(next);
-    localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
-    saveSharedData('catalog', next, { silent: true });
-  };
+  const add    = useCallback((coll, item)        => setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), { id: newId(), ...item, updatedAt: today() }] })), []);
+  const update = useCallback((coll, id, changes) => setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...changes, updatedAt: today() } : i) })), []);
+  const remove = useCallback((coll, id)          => setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) })), []);
+  const bulkSeed = useCallback((additions) => {
+    setCatalog(prev => {
+      const next = {
+        ...prev,
+        materiales:   [...(prev.materiales||[]),   ...(additions.materiales||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
+        subcontratos: [...(prev.subcontratos||[]), ...(additions.subcontratos||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
+        tareas:       [...(prev.tareas||[]),       ...(additions.tareas||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
+      };
+      localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
+      saveSharedData('catalog', next, { silent: true });
+      return next;
+    });
+  }, []);
+
+  const value = useMemo(() => ({ catalog, add, update, remove, bulkSeed }), [catalog, add, update, remove, bulkSeed]);
 
   return (
-    <CatalogContext.Provider value={{ catalog, add, update, remove, bulkSeed }}>
+    <CatalogContext.Provider value={value}>
       {children}
     </CatalogContext.Provider>
   );

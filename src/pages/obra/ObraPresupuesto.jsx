@@ -131,9 +131,11 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   const { currentUser } = useUsuarios();
   const isAdmin     = currentUser?.rol === 'Admin';
   // Fail-closed: si la clave de permiso no esta presente, se considera NO autorizado.
-  const verCostos   = currentUser?.permisos?.verCostos   === true;
-  const verMargenes = currentUser?.permisos?.verMargenes === true;
-  const { costo, venta, margen, rubros: rr } = calcObra(detalle.rubros);
+  const verCostos   = isAdmin || currentUser?.permisos?.verCostos   === true;
+  const verMargenes = isAdmin || currentUser?.permisos?.verMargenes === true;
+  // useMemo: calcObra recorre todos los rubros y tareas; sin memoizar se
+  // ejecutaba 5 veces por render y en cada keystroke de inputs.
+  const { costo, venta, margen, rubros: rr } = useMemo(() => calcObra(detalle.rubros), [detalle.rubros]);
   // Avance ponderado por venta de cada rubro; si no hay pricing, promedio simple
   const avanceGeneral = rr.length > 0
     ? venta > 0
