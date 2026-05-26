@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip } from '../components/ui';
+import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useProveedores } from '../store/ProveedoresContext';
@@ -370,31 +371,23 @@ export default function Cajas() {
 
   return (
     <PageLayout breadcrumb={['Cajas']} active="Cajas">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-        <div className="k-h" style={{ fontSize: 28 }}>Cajas</div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <Btn sm onClick={() => setTraspaso(true)}>↔ Traspaso rápido</Btn>
-          {isAdmin && <Btn sm fill onClick={() => setNuevaCaja(true)}>+ Nueva caja</Btn>}
-        </div>
-      </div>
-
-      {/* Totales */}
-      {isAdmin && <div style={{ display: 'flex', gap: 0, background: '#f6efd9', borderRadius: 4, marginBottom: 14, overflow: 'hidden', border: `1px solid #e8d89a` }}>
-        {[
-          { label: 'Total ARS', value: `$ ${fmtN(totalARS)}` },
-          { label: 'Total USD', value: `U$S ${fmtN(totalUSD)}` },
-          { label: 'Equiv. total USD', value: `U$S ${fmtN(equivTotalUSD)}` },
-          { label: 'Equiv. total ARS', value: `$ ${fmtN(totalARS + totalUSDenARS)}` },
-        ].map((s, i) => (
-          <div key={s.label} style={{ flex: 1, padding: '10px 14px', borderLeft: i ? `1px solid #e8d89a` : 'none' }}>
-            <div style={{ fontSize: 9, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>{s.label}</div>
-            <div style={{ fontWeight: 800, fontFamily: T.fontMono, fontSize: 15, color: T.ink }}>{s.value}</div>
-          </div>
-        ))}
-        <div style={{ padding: '10px 14px', borderLeft: `1px solid #e8d89a`, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Chip style={{ fontSize: 9 }}>TC BNA · $ {fmtN(dolarVenta)}</Chip>
-        </div>
-      </div>}
+      <PageHero
+        label="GESTIÓN DE CAJAS"
+        title="Cajas"
+        subtitle={`${cajasActivas.length} cajas activas · TC BNA $ ${fmtN(dolarVenta)}`}
+        actions={
+          <>
+            <Btn sm onClick={() => setTraspaso(true)}>↔ Traspaso rápido</Btn>
+            {isAdmin && <Btn sm fill onClick={() => setNuevaCaja(true)}>+ Nueva caja</Btn>}
+          </>
+        }
+        kpis={isAdmin ? [
+          { label: 'Total ARS',         value: `$ ${fmtN(totalARS)}`,                 color: T.ink },
+          { label: 'Total USD',         value: `U$S ${fmtN(totalUSD)}`,               color: T.ink },
+          { label: 'Equiv. total USD',  value: `U$S ${fmtN(equivTotalUSD)}`,          color: T.accent },
+          { label: 'Equiv. total ARS',  value: `$ ${fmtN(totalARS + totalUSDenARS)}`, color: T.accent },
+        ] : []}
+      />
 
       {/* ARS */}
       {cajasARS.length > 0 && (

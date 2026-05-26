@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
+import PageHero from '../components/ui/PageHero';
 import { Box, Btn, Chip, Divider } from '../components/ui';
 import { T } from '../theme';
 import { usePlantillas } from '../store/PlantillasContext';
@@ -841,15 +842,25 @@ export default function Plantillas() {
     setMenuId(null);
   };
 
+  // ── Stats para PageHero ──────────────────────────────────────────────────
+  const totalRubros  = plantillas.reduce((s, p) => s + (p.rubros || []).length, 0);
+  const totalTareasG = plantillas.reduce((s, p) => s + totalTareas(p), 0);
+  const totalUsos    = plantillas.reduce((s, p) => s + (p.usosCount || 0), 0);
+
   return (
     <PageLayout breadcrumb={['Plantillas']} active="Plantillas">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-        <div>
-          <div className="k-h" style={{ fontSize: 26 }}>Plantillas de presupuesto</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>Modelos reutilizables · hacé click en una para ver el detalle completo</div>
-        </div>
-        <Btn sm fill onClick={startNew}>+ Nueva plantilla</Btn>
-      </div>
+      <PageHero
+        label="MODELOS REUTILIZABLES"
+        title="Plantillas de presupuesto"
+        subtitle="Modelos reutilizables · hacé click en una para ver el detalle"
+        actions={<Btn sm fill onClick={startNew}>+ Nueva plantilla</Btn>}
+        kpis={[
+          { label: 'Plantillas',  value: plantillas.length, color: T.ink },
+          { label: 'Rubros (tot)', value: totalRubros,       color: T.ink },
+          { label: 'Tareas (tot)', value: totalTareasG,      color: T.ink },
+          { label: 'Usos aplicados', value: totalUsos,        sub: 'en obras',  color: T.accent },
+        ]}
+      />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar…"

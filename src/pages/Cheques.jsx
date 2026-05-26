@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
+import PageHero from '../components/ui/PageHero';
 import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
 import { useCheques } from '../store/ChequesContext';
@@ -738,6 +739,15 @@ export default function Cheques() {
   // ── Totales ───────────────────────────────────────────────────────────────
   const totalCartera  = cartera.reduce((s, c) => s + (c.monto || 0), 0);
   const totalEmitidos = emitidos.filter(c => c.estado === 'cartera').reduce((s, c) => s + (c.monto || 0), 0);
+  // Cheques por vencer en los proximos 7 dias (entre los de cartera).
+  const en7Dias = cartera.filter(c => {
+    const f = c.fechaVencimiento;
+    if (!f) return false;
+    const ms = new Date(f).getTime() - Date.now();
+    const dias = Math.ceil(ms / (24 * 60 * 60 * 1000));
+    return dias >= 0 && dias <= 7;
+  });
+  const totalEn7 = en7Dias.reduce((s, c) => s + (c.monto || 0), 0);
 
   const TABS = [
     { key: 'cartera',   label: `Cartera de terceros`,  sub: `$ ${fmtN(totalCartera)}` },
@@ -747,13 +757,20 @@ export default function Cheques() {
 
   return (
     <PageLayout breadcrumb={['Cheques']} active="Cheques">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
-        <div>
-          <div className="k-h" style={{ fontSize: 28 }}>Cheques</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>Cartera de cheques · terceros y propios</div>
-        </div>
-        <Btn fill onClick={() => setModal('nuevo')} style={{ gap: 6 }}>+ Registrar cheque</Btn>
-      </div>
+      <PageHero
+        label="CARTERA DE CHEQUES"
+        title="Cheques"
+        subtitle="Cartera de cheques · terceros y propios"
+        actions={
+          <Btn fill onClick={() => setModal('nuevo')} style={{ gap: 6 }}>+ Registrar cheque</Btn>
+        }
+        kpis={[
+          { label: 'En cartera',     value: cartera.length,                sub: `$ ${fmtN(totalCartera)}`,   color: T.ink },
+          { label: 'Propios emit.',  value: emitidos.filter(c => c.estado === 'cartera').length, sub: `$ ${fmtN(totalEmitidos)}`, color: T.ink },
+          { label: 'Vencen en 7 d',  value: en7Dias.length,                sub: `$ ${fmtN(totalEn7)}`,       color: en7Dias.length > 0 ? T.warn : T.ink },
+          { label: 'Total historial',value: cheques.length,                sub: 'incl. cobrados/anulados',   color: T.accent },
+        ]}
+      />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderBottom: `2px solid ${T.faint2}` }}>
