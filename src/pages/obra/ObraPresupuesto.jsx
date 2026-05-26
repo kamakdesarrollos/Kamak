@@ -128,6 +128,7 @@ function FormPanel({ title, children, onSave, onCancel, style, saveLabel = 'Guar
 function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   const [incluirPagos, setIncluirPagos] = useState(true);
   const { currentUser } = useUsuarios();
+  const isAdmin     = currentUser?.rol === 'Admin';
   const verCostos   = currentUser?.permisos?.verCostos   ?? true;
   const verMargenes = currentUser?.permisos?.verMargenes ?? true;
   const { costo, venta, margen, rubros: rr } = calcObra(detalle.rubros);
@@ -198,8 +199,8 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-        {/* KPI: Total cliente */}
-        {verCostos && totalCliente > 0 && (
+        {/* KPI: Total cliente — solo admin (precio de venta) */}
+        {isAdmin && totalCliente > 0 && (
           <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${T.accent}`, cursor: 'pointer' }}
             onClick={() => onChangeTab?.(1)}>
             <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Total cliente</div>
@@ -243,7 +244,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Financiero</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {[
-              ['Venta total (presu)', toUSD(venta), T.ink, true],
+              ['Venta total (presu)', toUSD(venta), T.ink, isAdmin],
               ['Costo total (presu)', toUSD(costo), T.ink, true],
               ['Margen bruto (presu)', toUSD(venta - costo), margen < 0 ? T.accent : T.ok, verMargenes],
               ['Gastado real', toUSD(totalGastadoReal), totalGastadoReal > costo ? T.accent : T.ink, true],
