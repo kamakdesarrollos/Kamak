@@ -1658,18 +1658,21 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
 
 // ── Handler principal ─────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  // Verificación del webhook (GET de Meta)
+  // Verificación del webhook (GET de Meta) — solo si vienen los query params
+  // tipicos del verify de Meta. Sin esos params, devolvemos el endpoint
+  // diagnostico para chequear que las env vars esten OK.
   if (req.method === 'GET') {
     const mode      = req.query['hub.mode'];
     const token     = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      return res.status(200).send(challenge);
+    if (mode || token || challenge) {
+      // Es un intento de verify de Meta — validar token.
+      if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+        return res.status(200).send(challenge);
+      }
+      return res.status(403).json({ error: 'Forbidden' });
     }
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-
-  if (req.method !== 'POST') {
+    // GET sin params → endpoint diagnostico publico (no sensible).
     return res.status(200).json({
       ok: true,
       vars: {
@@ -1679,11 +1682,14 @@ export default async function handler(req, res) {
         anthropic:      !!ANTHROPIC_KEY,
         supabase:       !!SUPABASE_URL,
         // META_PHONE_NUMBER es el numero humano del bot (no sensible).
-        // Lo exponemos para chequear que este configurado correctamente.
         metaPhoneNumber: process.env.META_PHONE_NUMBER || '(no seteado)',
         portalBaseUrl:   process.env.PORTAL_BASE_URL || '(no seteado, usa fallback kamak.com.ar)',
       },
     });
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
