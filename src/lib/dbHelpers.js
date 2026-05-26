@@ -79,6 +79,16 @@ export async function loadSharedData(key) {
 
 export async function saveSharedData(key, value, { silent = false } = {}) {
   try {
+    // Guard: si no hay sesion auth activa, no intentar guardar.
+    // El portal publico del cliente carga los providers sin auth — esos
+    // saves fallarian con 401/403 y mostrarian el toast "No se pudo
+    // guardar..." al cliente, lo cual es feo y confuso (el cliente solo
+    // lee, no necesita guardar nada).
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return false; // silencioso, sin toast
+    }
+
     const { error } = await supabase.from('shared_data').upsert(
       { key, data: value, updated_at: new Date().toISOString() },
       { onConflict: 'key' }
