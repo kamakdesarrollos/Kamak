@@ -3490,7 +3490,14 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
       {showClienteQR && (
         <ClienteAccesoModal
           obra={obra}
-          cliente={clientes.find(c => (c.nombre || '').toLowerCase().trim() === (obra.cliente || '').toLowerCase().trim()) || { nombre: obra.cliente }}
+          cliente={
+            // Resolver el cliente: primero por clienteId (FK), despues por
+            // nombre (legacy), y si no, fallback con el texto de obra.cliente
+            // para no romper el modal.
+            (obra.clienteId && clientes.find(c => c.id === obra.clienteId)) ||
+            clientes.find(c => (c.nombre || '').toLowerCase().trim() === (obra.cliente || '').toLowerCase().trim()) ||
+            { nombre: obra.cliente }
+          }
           onClose={() => setShowClienteQR(false)}
         />
       )}

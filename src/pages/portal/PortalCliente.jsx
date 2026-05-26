@@ -4,6 +4,7 @@ import { useObras } from '../../store/ObrasContext';
 import { useAuth } from '../../store/AuthContext';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useDolar } from '../../store/DolarContext';
+import { useClientes } from '../../store/ClientesContext';
 import { Box, Btn, Chip, Stat, Bar } from '../../components/ui';
 import { T } from '../../theme';
 
@@ -54,6 +55,7 @@ export default function PortalCliente() {
   const { user } = useAuth();
   const { currentUser } = useUsuarios();
   const { dolarVenta } = useDolar();
+  const { clientes } = useClientes();
   const toUSD = n => `U$S ${fmtN(Math.round(n / (dolarVenta || 1070)))}`;
   const [tab, setTab] = useState(0);
   const [msg, setMsg] = useState('');
@@ -128,6 +130,15 @@ export default function PortalCliente() {
     );
   }
 
+  // Resolver el nombre actual del cliente. Si obra.clienteId apunta a un
+  // cliente existente, usar su nombre actual (que puede ser distinto al
+  // texto guardado en obra.cliente si el cliente se renombro despues).
+  // Fallback: matching por nombre, y si tampoco, el texto crudo.
+  const clienteActual = (obra.clienteId && clientes.find(c => c.id === obra.clienteId))
+    || clientes.find(c => (c.nombre || '').toLowerCase().trim() === (obra.cliente || '').toLowerCase().trim())
+    || null;
+  const clienteNombre = clienteActual?.nombre || obra.cliente || '';
+
   const rubros    = detalle.rubros    || [];
   const cuotas    = detalle.cuotas    || [];
   const documentos = detalle.documentos || [];
@@ -189,7 +200,7 @@ export default function PortalCliente() {
           <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 18 }}>|</div>
           <div>
             <div style={{ color: 'white', fontWeight: 800, fontSize: 15, lineHeight: 1.2 }}>Portal cliente</div>
-            <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>{obra.cliente} · {obra.nombre} — {obra.tipo}</div>
+            <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>{clienteNombre} · {obra.nombre} — {obra.tipo}</div>
           </div>
           <div style={{ marginLeft: 8, padding: '3px 10px', borderRadius: 20, background: estadoInfo.bg, color: estadoInfo.color, fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>
             {estadoInfo.label}
@@ -206,9 +217,9 @@ export default function PortalCliente() {
             </button>
           )}
           <div style={{ width: 32, height: 32, borderRadius: 16, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: 14 }}>
-            {(obra.cliente || '?')[0].toUpperCase()}
+            {(clienteNombre || '?')[0].toUpperCase()}
           </div>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>{obra.cliente}</div>
+          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>{clienteNombre}</div>
         </div>
       </div>
 
@@ -463,7 +474,7 @@ export default function PortalCliente() {
                   return (
                     <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
                       <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>
-                        {mine ? obra.cliente : 'Kamak Desarrollos'} · {ts}
+                        {mine ? clienteNombre : 'Kamak Desarrollos'} · {ts}
                       </div>
                       <div style={{ background: mine ? T.accentSoft : 'white', border: `1.5px solid ${mine ? T.accent : T.faint2}`, borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px', padding: '9px 14px', maxWidth: '72%', fontSize: 13, color: T.ink, lineHeight: 1.45 }}>
                         {m.texto}
