@@ -1202,66 +1202,62 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
 // TAB 2: MATERIALES
 // ─────────────────────────────────────────────────────────────────────────────
 function TabMateriales({ detalle, obra }) {
-  const [selRubroId, setSelRubroId] = useState(null);
+  const [selCategoria, setSelCategoria] = useState(null);
   const { catalog } = useCatalog();
 
-  // Aggregate materials per rubro, grouped by nombre
-  const rubroMats = useMemo(() => {
+  // Aggregate all materials globally, grouped by material category
+  const catMats = useMemo(() => {
     const catalogByNombre = new Map((catalog.tareas || []).map(ct => [ct.nombre, ct]));
-    return detalle.rubros.map(rubro => {
-      const matMap = new Map();
+    const globalMap = new Map();
+    for (const rubro of (detalle.rubros || [])) {
       for (const t of (rubro.tareas || []).filter(t => t.tipo !== 'seccion')) {
         const recipeMats = (t.receta?.materiales || []).length > 0
           ? t.receta.materiales
           : (catalogByNombre.get(t.nombre)?.materiales || []);
         for (const m of recipeMats) {
           if (!m.nombre) continue;
-          const key = m.nombre;
-          // Physical quantity per APU unit: validate stored cantidad against costoUnit/precio
           const stored = m.cantidad || 0;
           const precio = m.precio || 0;
           const costoUnit = m.costoUnit || 0;
           let cantUnit = stored;
           if (stored > 0 && precio > 0 && costoUnit > 0 && Math.abs(stored * precio - costoUnit) > costoUnit * 0.01 + 0.01) {
-            cantUnit = costoUnit / precio; // stored cantidad is inconsistent → derive from cost
+            cantUnit = costoUnit / precio;
           } else if (stored === 0 && precio > 0 && costoUnit > 0) {
-            cantUnit = costoUnit / precio; // only costoUnit available → derive
+            cantUnit = costoUnit / precio;
           }
           const qty = cantUnit * t.cantidad;
-          if (matMap.has(key)) {
-            matMap.get(key).cantidad += qty;
+          if (globalMap.has(m.nombre)) {
+            globalMap.get(m.nombre).cantidad += qty;
           } else {
-            matMap.set(key, { nombre: m.nombre, unidad: m.unidad || '', categoria: m.categoria || 'General', cantidad: qty });
+            globalMap.set(m.nombre, { nombre: m.nombre, unidad: m.unidad || '', categoria: m.categoria || 'General', cantidad: qty });
           }
-        }
-      }
-      return { rubro, materiales: [...matMap.values()].sort((a, b) => a.nombre.localeCompare(b.nombre)) };
-    }).filter(r => r.materiales.length > 0);
-  }, [detalle.rubros, catalog.tareas]);
-
-  // Global aggregate across all rubros
-  const globalMats = useMemo(() => {
-    const matMap = new Map();
-    for (const { rubro, materiales } of rubroMats) {
-      for (const m of materiales) {
-        if (matMap.has(m.nombre)) {
-          matMap.get(m.nombre).cantidad += m.cantidad;
-        } else {
-          matMap.set(m.nombre, { ...m });
         }
       }
     }
-    return [...matMap.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [rubroMats]);
+    // Group by material category
+    const catMap = new Map();
+    for (const mat of globalMap.values()) {
+      const cat = mat.categoria;
+      if (!catMap.has(cat)) catMap.set(cat, []);
+      catMap.get(cat).push(mat);
+    }
+    return [...catMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, 'es'))
+      .map(([categoria, materiales]) => ({ categoria, materiales: materiales.sort((a, b) => a.nombre.localeCompare(b.nombre)) }));
+  }, [detalle.rubros, catalog.tareas]);
 
-  const visibleMats = selRubroId
-    ? (rubroMats.find(r => r.rubro.id === selRubroId)?.materiales || [])
+  const globalMats = useMemo(() => {
+    return catMats.flatMap(c => c.materiales).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [catMats]);
+
+  const visibleMats = selCategoria
+    ? (catMats.find(c => c.categoria === selCategoria)?.materiales || [])
     : globalMats;
 
   const exportarLista = () => {
-    const titulo = selRubroId
-      ? rubroMats.find(r => r.rubro.id === selRubroId)?.rubro.nombre || 'Rubro'
-      : 'Todos los gremios';
+    const titulo = selCategoria
+      ? selCategoria
+      : 'Todos los materiales';
     const fecha = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' });
     const rows = visibleMats.map((m, i) => `
       <tr>
@@ -1310,17 +1306,17 @@ function TabMateriales({ detalle, obra }) {
   return (
     <div style={{ display: 'flex', gap: 12, height: 'calc(100vh - 240px)' }}>
 
-      {/* Sidebar: rubros */}
+      {/* Sidebar: material categories */}
       <div style={{ width: 200, flexShrink: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div onClick={() => setSelRubroId(null)}
-          style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${!selRubroId ? T.accent : T.faint2}`, background: !selRubroId ? T.accentSoft : T.paper }}>
-          <div style={{ fontSize: 12, fontWeight: !selRubroId ? 700 : 400 }}>Todos los gremios</div>
+        <div onClick={() => setSelCategoria(null)}
+          style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${!selCategoria ? T.accent : T.faint2}`, background: !selCategoria ? T.accentSoft : T.paper }}>
+          <div style={{ fontSize: 12, fontWeight: !selCategoria ? 700 : 400 }}>Todos los materiales</div>
           <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, marginTop: 2 }}>{globalMats.length} materiales</div>
         </div>
-        {rubroMats.map(({ rubro, materiales }) => (
-          <div key={rubro.id} onClick={() => setSelRubroId(rubro.id)}
-            style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${selRubroId === rubro.id ? T.accent : T.faint2}`, background: selRubroId === rubro.id ? T.accentSoft : T.paper }}>
-            <div style={{ fontSize: 12, fontWeight: 600 }}>{rubro.nombre}</div>
+        {catMats.map(({ categoria, materiales }) => (
+          <div key={categoria} onClick={() => setSelCategoria(categoria)}
+            style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${selCategoria === categoria ? T.accent : T.faint2}`, background: selCategoria === categoria ? T.accentSoft : T.paper }}>
+            <div style={{ fontSize: 12, fontWeight: 600 }}>{categoria}</div>
             <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, marginTop: 2 }}>{materiales.length} materiales</div>
           </div>
         ))}

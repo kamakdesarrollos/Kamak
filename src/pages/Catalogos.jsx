@@ -1023,7 +1023,7 @@ export default function Catalogos() {
                 { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
                 { key: 'updatedAt', label: 'Actualizado', mono: true },
               ]}
-              emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, rubro: catalog.rubros[0]?.nombre || '', updatedAt: today() }}
+              emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, rubro: rs[0] || '', updatedAt: today() }}
               renderForm={(form, setForm) => (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -1033,9 +1033,8 @@ export default function Catalogos() {
                   <FRow label="Nombre"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
                   <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
                   <FRow label="Rubro">
-                    <select style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))}>
-                      {catalog.rubros.map(r => <option key={r.id}>{r.nombre}</option>)}
-                    </select>
+                    <input list="mat-rubros" style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))} placeholder="Elegí o escribí un rubro…" />
+                    <datalist id="mat-rubros">{rs.map(r => <option key={r} value={r} />)}</datalist>
                   </FRow>
                 </>
               )}
@@ -1061,7 +1060,7 @@ export default function Catalogos() {
                 { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
                 { key: 'updatedAt', label: 'Actualizado', mono: true },
               ]}
-              emptyForm={{ codigo: '', nombre: '', unidad: 'm²', precio: 0, rubro: catalog.rubros[0]?.nombre || '', updatedAt: today() }}
+              emptyForm={{ codigo: '', nombre: '', unidad: 'm²', precio: 0, rubro: rs[0] || '', updatedAt: today() }}
               renderForm={(form, setForm) => (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -1071,9 +1070,8 @@ export default function Catalogos() {
                   <FRow label="Nombre"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
                   <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
                   <FRow label="Rubro">
-                    <select style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))}>
-                      {catalog.rubros.map(r => <option key={r.id}>{r.nombre}</option>)}
-                    </select>
+                    <input list="sub-rubros" style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))} placeholder="Elegí o escribí un rubro…" />
+                    <datalist id="sub-rubros">{rs.map(r => <option key={r} value={r} />)}</datalist>
                   </FRow>
                 </>
               )}

@@ -223,7 +223,7 @@ export default function Dashboard() {
                   </div>
                   {cajas.filter(c => c.activa && c.moneda === 'ARS').map(c => (
                     <div key={c.id}
-                      onClick={() => navigate('/cajas')}
+                      onClick={() => navigate('/cajas', { state: { openCajaId: c.id } })}
                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer' }}
                       onMouseEnter={e => e.currentTarget.style.background = T.faint}
                       onMouseLeave={e => e.currentTarget.style.background = ''}>
@@ -246,7 +246,7 @@ export default function Dashboard() {
                   </div>
                   {cajas.filter(c => c.activa && c.moneda === 'USD').map(c => (
                     <div key={c.id}
-                      onClick={() => navigate('/cajas')}
+                      onClick={() => navigate('/cajas', { state: { openCajaId: c.id } })}
                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer' }}
                       onMouseEnter={e => e.currentTarget.style.background = T.faint}
                       onMouseLeave={e => e.currentTarget.style.background = ''}>

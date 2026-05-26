@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip } from '../components/ui';
 import { T } from '../theme';
@@ -335,6 +335,16 @@ export default function Cajas() {
   const [traspaso, setTraspaso] = useState(false);
   const [nuevaCaja, setNuevaCaja] = useState(false);
   const [cajaSel, setCajaSel] = useState(null);
+  const location = useLocation();
+
+  useEffect(() => {
+    const openId = location.state?.openCajaId;
+    if (!openId) return;
+    const caja = cajas.find(c => c.id === openId);
+    if (caja) setCajaSel(caja);
+    // Clear state so back-navigation doesn't re-open
+    window.history.replaceState({}, '');
+  }, [location.state, cajas]);
 
   const cv = currentUser?.cajasVisibles ?? '*';
   const puedoVer = (c) => cv === '*' || (Array.isArray(cv) && cv.includes(c.id));
