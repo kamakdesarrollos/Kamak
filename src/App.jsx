@@ -136,9 +136,11 @@ function AuthGate({ children }) {
   );
 }
 
-export default function App() {
+// Envuelve los Providers de datos. Se remonta entero cuando cambia el usuario
+// (vía key={user?.id} en AppShell) para que cada context refetcheee con la
+// auth correcta y no quede estado del usuario anterior en memoria.
+function DataProviders({ children }) {
   return (
-    <AuthProvider>
     <AppLoadingProvider>
     <ConfiguracionProvider>
     <DolarProvider>
@@ -154,6 +156,29 @@ export default function App() {
     <SolicitudesProvider>
     <AlertasProvider>
     <UsuariosProvider>
+      {children}
+    </UsuariosProvider>
+    </AlertasProvider>
+    </SolicitudesProvider>
+    </WhatsappPendingProvider>
+    </ChequesProvider>
+    </MovimientosProvider>
+    </ClientesProvider>
+    </ProveedoresProvider>
+    </GastosFijosProvider>
+    </PlantillasProvider>
+    </CatalogProvider>
+    </ObrasProvider>
+    </DolarProvider>
+    </ConfiguracionProvider>
+    </AppLoadingProvider>
+  );
+}
+
+function AppShell() {
+  const { user } = useAuth();
+  return (
+    <DataProviders key={user?.id ?? 'anon'}>
       <BrowserRouter>
         <Routes>
           {/* Rutas públicas — sin autenticación (portales para clientes/proveedores) */}
@@ -191,21 +216,14 @@ export default function App() {
           } />
         </Routes>
       </BrowserRouter>
-    </UsuariosProvider>
-    </AlertasProvider>
-    </SolicitudesProvider>
-    </WhatsappPendingProvider>
-    </ChequesProvider>
-    </MovimientosProvider>
-    </ClientesProvider>
-    </ProveedoresProvider>
-    </GastosFijosProvider>
-    </PlantillasProvider>
-    </CatalogProvider>
-    </ObrasProvider>
-    </DolarProvider>
-    </ConfiguracionProvider>
-    </AppLoadingProvider>
+    </DataProviders>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
     </AuthProvider>
   );
 }

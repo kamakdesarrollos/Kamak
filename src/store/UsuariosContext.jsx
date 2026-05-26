@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { adminAction } from '../lib/dbHelpers';
+import { useAppLoading } from './AppLoadingContext';
 
 const CTX = createContext(null);
 const SESSION_KEY  = 'kamak_session_v1';
@@ -93,14 +94,16 @@ export function UsuariosProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(loadSession);
   const [roles, setRoles] = useState(loadRoles);
   const [loading, setLoading] = useState(true);
+  const { markReady } = useAppLoading();
 
-  // Carga desde Supabase al montar
+  // Carga desde Supabase al montar (re-corre al remontar tras cambio de usuario)
   useEffect(() => {
     supabase.from('app_users').select('*').then(({ data, error }) => {
       if (!error && data) setUsuarios(data.map(rowToUser));
       setLoading(false);
+      markReady();
     });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-insertar usuario actual como Admin si la tabla está vacía
   const bootstrapAdmin = useCallback(async (email, nombre) => {
