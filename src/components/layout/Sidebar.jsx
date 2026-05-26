@@ -11,7 +11,7 @@ const ALL_ITEMS = [
   { section: 'Administración' },
   { icon: '◉', label: 'Proveedores',    path: '/proveedores' },
   { icon: '◎', label: 'Clientes',       path: '/clientes',     adminOnly: true },
-  { icon: '⇄', label: 'Movimientos',    path: '/movimientos' },
+  { icon: '⇄', label: 'Movimientos',    path: '/movimientos',  perm: 'verCaja' },
   { icon: '$', label: 'Cajas',          path: '/cajas',        perm: 'verCaja' },
   { icon: '✓', label: 'Cheques',        path: '/cheques',      adminOnly: true },
   { icon: '⌗', label: 'Gastos Fijos',   path: '/prorrateo',    allowedRoles: ['Admin', 'Administración'] },
@@ -20,7 +20,7 @@ const ALL_ITEMS = [
   { icon: '▦', label: 'Plantillas',     path: '/plantillas',  adminOnly: true },
   { icon: '▦', label: 'Reportes',       path: '/reportes',    adminOnly: true },
   { section: 'Sistema' },
-  { icon: '◐', label: 'Autorizaciones', path: '/autorizaciones' },
+  { icon: '◐', label: 'Autorizaciones', path: '/autorizaciones', adminOnly: true },
   { icon: '⚙', label: 'Configuración', path: '/configuracion', adminOnly: true },
 ];
 

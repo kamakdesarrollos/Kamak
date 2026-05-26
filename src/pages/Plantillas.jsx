@@ -7,6 +7,7 @@ import { usePlantillas } from '../store/PlantillasContext';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { useObras } from '../store/ObrasContext';
 import { useClientes } from '../store/ClientesContext';
+import { useUsuarios } from '../store/UsuariosContext';
 
 const newId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const fmtN  = (n) => Math.round(n).toLocaleString('es-AR');
@@ -764,6 +765,13 @@ function UsarPlantillaModal({ plantilla, onClose, onCrear }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Plantillas() {
   const navigate = useNavigate();
+  const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
+  // Guard: solo Admin (las plantillas tienen costos y margenes).
+  useEffect(() => {
+    if (currentUser && !isAdmin) navigate('/', { replace: true });
+  }, [currentUser, isAdmin, navigate]);
+
   const { addObra, patchDetalle } = useObras();
   const { plantillas, add, update, remove, duplicate, incrementUso } = usePlantillas();
   const [tipoFilt, setTipoFilt] = useState('Todos');

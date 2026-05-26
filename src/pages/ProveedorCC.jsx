@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Label } from '../components/ui';
 import { T } from '../theme';
 import { useProveedores } from '../store/ProveedoresContext';
+import { useUsuarios } from '../store/UsuariosContext';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
 
 const fmtN = (n) => Math.abs(Math.round(n)).toLocaleString('es-AR');
@@ -25,8 +26,15 @@ function Avatar({ nombre, size = 50 }) {
 }
 
 export default function ProveedorCC() {
-  const { id } = useParams();
+  const { currentUser } = useUsuarios();
   const navigate = useNavigate();
+  const isAdmin = currentUser?.rol === 'Admin';
+  // Guard: solo Admin (cuenta corriente expone deudas y pagos del proveedor).
+  useEffect(() => {
+    if (currentUser && !isAdmin) navigate('/', { replace: true });
+  }, [currentUser, isAdmin, navigate]);
+
+  const { id } = useParams();
   const { proveedores, getCC, getSaldo, getObrasProveedor, removeCC } = useProveedores();
   const [pagoOpen, setPagoOpen] = useState(false);
   const [selectedObraId, setSelectedObraId] = useState(null);

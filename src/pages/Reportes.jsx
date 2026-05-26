@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
-import { Box, Btn, Bar, Stat, Chip } from '../components/ui';
+import { Box, Btn, Bar, Chip } from '../components/ui';
 import { T } from '../theme';
 import { useObras } from '../store/ObrasContext';
 import { useProveedores } from '../store/ProveedoresContext';
+import { useUsuarios } from '../store/UsuariosContext';
 
 const CY = new Date().getFullYear();
 const fmtM = (n) => {
@@ -28,6 +29,13 @@ const fmtFechaCorta = (iso) => { if (!iso) return '—'; const [, m, d] = iso.sp
 
 export default function Reportes() {
   const navigate = useNavigate();
+  const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
+  // Guard: solo Admin (reportes muestran facturacion, margenes, totales sensibles).
+  useEffect(() => {
+    if (currentUser && !isAdmin) navigate('/', { replace: true });
+  }, [currentUser, isAdmin, navigate]);
+
   const { obras, detalles } = useObras();
   const { proveedores } = useProveedores();
   const [rubroObraId, setRubroObraId] = useState('');

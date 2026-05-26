@@ -191,13 +191,10 @@ export function UsuariosProvider({ children }) {
       const session = buildSession(u);
       saveSession(session);
       setCurrentUser(session);
-    } else if (usuarios.length === 0) {
-      // Tabla vacía → bootstrap admin en curso
-      const session = { id: 'supabase', nombre: email.split('@')[0], email, rol: 'Admin', permisos: ROLES['Admin'], cajasVisibles: '*', obrasVisibles: '*', tabsOcultos: [] };
-      saveSession(session);
-      setCurrentUser(session);
     } else {
-      // Usuario no registrado en app_users → sin acceso
+      // Usuario no registrado en app_users → sin acceso.
+      // (Antes habia un fallback que auto-promovia a Admin si la tabla estaba
+      // vacia o si la query fallaba — escalada de privilegios trivial.)
       saveSession(null);
       setCurrentUser(null);
     }

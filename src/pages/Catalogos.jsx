@@ -1,8 +1,10 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Divider } from '../components/ui';
 import { T } from '../theme';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
+import { useUsuarios } from '../store/UsuariosContext';
 
 const newId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -970,6 +972,14 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
 const TABS = ['Materiales', 'Sub contratos', 'Mano de Obra', 'Generales', 'Tareas (APU)', 'Rubros / Gremios'];
 
 export default function Catalogos() {
+  const { currentUser } = useUsuarios();
+  const navigate = useNavigate();
+  const isAdmin = currentUser?.rol === 'Admin';
+  // Guard: solo Admin (la pagina maneja catalogos de precios sensibles).
+  useEffect(() => {
+    if (currentUser && !isAdmin) navigate('/', { replace: true });
+  }, [currentUser, isAdmin, navigate]);
+
   const [tab, setTab] = useState(4);
   const { catalog, add, update, remove } = useCatalog();
 

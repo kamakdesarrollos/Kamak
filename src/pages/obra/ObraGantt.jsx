@@ -131,6 +131,10 @@ export default function ObraGantt() {
   const { currentUser } = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
   const canSeeGantt = isAdmin || ['Comprador', 'Director de obra'].includes(currentUser?.rol);
+  // Guard: si el rol no puede ver Gantt, redirigir a /obras (antes el codigo seguia ejecutando).
+  useEffect(() => {
+    if (currentUser && !canSeeGantt) navigate('/obras', { replace: true });
+  }, [currentUser, canSeeGantt, navigate]);
   const rolHiddenTabs = isAdmin ? [] : [
     'Presupuesto', 'Adicionales', 'Contratos MO', 'Portal cliente',
     ...(!canSeeGantt ? ['Gantt'] : []),

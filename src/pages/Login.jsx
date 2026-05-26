@@ -3,14 +3,15 @@ import { Logo, Stripes } from '../components/ui';
 import { T } from '../theme';
 import { useAuth } from '../store/AuthContext';
 
+// Signup publico deshabilitado: la creacion de usuarios se hace solo desde
+// /autorizaciones (admin). Esto evita escalada de privilegios via bootstrapAdmin.
+
 export default function Login() {
-  const { signIn, signUp } = useAuth();
-  const [mode,     setMode]     = useState('login'); // 'login' | 'register'
+  const { signIn } = useAuth();
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [error,    setError]    = useState('');
-  const [msg,      setMsg]      = useState('');
   const [loading,  setLoading]  = useState(false);
 
   const inputSt = {
@@ -25,18 +26,14 @@ export default function Login() {
     if (!email.trim() || !password) return;
     setLoading(true);
     setError('');
-    setMsg('');
 
-    const fn = mode === 'login' ? signIn : signUp;
-    const { error: err } = await fn(email.trim(), password);
+    const { error: err } = await signIn(email.trim(), password);
 
     if (err) {
-      setError(err.message);
+      // Mensaje generico: evita enumerar cuentas (no distinguimos
+      // "email no existe" de "password incorrecto").
+      setError('Email o contraseña inválidos.');
       setLoading(false);
-    } else if (mode === 'register') {
-      setMsg('Cuenta creada. Revisá tu email para confirmar y luego iniciá sesión.');
-      setLoading(false);
-      setMode('login');
     }
     // Si login ok → AuthContext detecta el cambio y App renderiza la app
   };
@@ -55,7 +52,7 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} style={{ padding: '28px 30px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, marginBottom: 2 }}>
-            {mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
+            Iniciar sesión
           </div>
 
           <div>
@@ -83,24 +80,15 @@ export default function Login() {
               {error}
             </div>
           )}
-          {msg && (
-            <div style={{ padding: '8px 12px', background: '#e6f4ea', borderRadius: 4, fontSize: 12, color: T.ok, borderLeft: `3px solid ${T.ok}` }}>
-              {msg}
-            </div>
-          )}
 
           <button type="submit" disabled={loading || !email.trim() || !password}
             style={{ padding: '11px', background: (!email.trim() || !password) ? T.faint2 : T.accent, color: '#fff', border: 'none', borderRadius: 5, fontFamily: T.font, fontSize: 14, fontWeight: 700, cursor: (!email.trim() || !password) ? 'default' : 'pointer', transition: 'background 0.15s', marginTop: 2 }}>
-            {loading ? 'Cargando…' : mode === 'login' ? 'Ingresar →' : 'Crear cuenta →'}
+            {loading ? 'Cargando…' : 'Ingresar →'}
           </button>
         </form>
 
-        <div style={{ padding: '0 30px 20px', fontSize: 12, color: T.ink3, textAlign: 'center' }}>
-          {mode === 'login' ? (
-            <>¿No tenés cuenta? <span onClick={() => { setMode('register'); setError(''); setMsg(''); }} style={{ color: T.accent, cursor: 'pointer', fontWeight: 700 }}>Registrarse</span></>
-          ) : (
-            <>¿Ya tenés cuenta? <span onClick={() => { setMode('login'); setError(''); setMsg(''); }} style={{ color: T.accent, cursor: 'pointer', fontWeight: 700 }}>Iniciar sesión</span></>
-          )}
+        <div style={{ padding: '0 30px 20px', fontSize: 11, color: T.ink3, textAlign: 'center' }}>
+          ¿Necesitás una cuenta? Contactá al administrador.
         </div>
       </div>
     </div>

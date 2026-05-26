@@ -129,8 +129,9 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   const [incluirPagos, setIncluirPagos] = useState(true);
   const { currentUser } = useUsuarios();
   const isAdmin     = currentUser?.rol === 'Admin';
-  const verCostos   = currentUser?.permisos?.verCostos   ?? true;
-  const verMargenes = currentUser?.permisos?.verMargenes ?? true;
+  // Fail-closed: si la clave de permiso no esta presente, se considera NO autorizado.
+  const verCostos   = currentUser?.permisos?.verCostos   === true;
+  const verMargenes = currentUser?.permisos?.verMargenes === true;
   const { costo, venta, margen, rubros: rr } = calcObra(detalle.rubros);
   // Avance ponderado por venta de cada rubro; si no hay pricing, promedio simple
   const avanceGeneral = rr.length > 0
@@ -376,10 +377,12 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const { proveedores: provListPresu } = useProveedores();
-  const verCostos   = currentUser?.permisos?.verCostos   ?? true;
-  const verMargenes = currentUser?.permisos?.verMargenes ?? true;
-  const puedeEditar = (currentUser?.permisos?.editarPresu ?? true) && !frozen;
-  const puedeCargarAvance = currentUser?.permisos?.cargarAvance ?? true;
+  // Fail-closed: defaults restrictivos. Admin tiene todos los permisos por su rol.
+  const isAdmin    = currentUser?.rol === 'Admin';
+  const verCostos   = isAdmin || currentUser?.permisos?.verCostos   === true;
+  const verMargenes = isAdmin || currentUser?.permisos?.verMargenes === true;
+  const puedeEditar = (isAdmin || currentUser?.permisos?.editarPresu === true) && !frozen;
+  const puedeCargarAvance = isAdmin || currentUser?.permisos?.cargarAvance === true;
   const [selTask, setSelTask] = useState(null);
   const [selRubroId, setSelRubroId] = useState(null);
   const [editTask, setEditTask] = useState(null);
@@ -400,8 +403,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
     costoUnit:  verCostos   ? colsUser.costoUnit  : false,
     costoTotal: verCostos   ? colsUser.costoTotal : false,
     margenL:    verMargenes ? colsUser.margenL    : false,
-    ventaUnit:  colsUser.ventaUnit,
-    ventaTotal: colsUser.ventaTotal,
+    // Venta es precio al cliente — solo admin.
+    ventaUnit:  isAdmin ? colsUser.ventaUnit  : false,
+    ventaTotal: isAdmin ? colsUser.ventaTotal : false,
   };
   const { plantillas, add: addPlantilla, incrementUso } = usePlantillas();
   const [showSavePlantilla, setShowSavePlantilla] = useState(false);
@@ -637,8 +641,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
       {/* ── Barra compacta única ──────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexShrink: 0, flexWrap: 'wrap', padding: '6px 10px', background: T.faint, borderRadius: 6, border: `1px solid ${T.faint2}` }}>
 
-        {/* Totales inline */}
-        <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.accent }}>Venta: {fmtVenta(venta)}</span>
+        {/* Totales inline — Venta solo admin (es precio al cliente). */}
+        {isAdmin && <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.accent }}>Venta: {fmtVenta(venta)}</span>}
         {verCostos && <><span style={{ color: T.faint2 }}>·</span><span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#c0392b' }}>Costo: {fmtVenta(costo)}</span></>}
         {verMargenes && <><span style={{ color: T.faint2 }}>·</span><span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: venta - costo < 0 ? '#dc2626' : T.ok }}>Ganancia: {fmtVenta(venta - costo)}</span></>}
 
@@ -654,6 +658,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
         {COLS_DEF.filter(c => {
           if ((c.key === 'costoUnit' || c.key === 'costoTotal') && !verCostos) return false;
           if (c.key === 'margenL' && !verMargenes) return false;
+          if ((c.key === 'ventaUnit' || c.key === 'ventaTotal') && !isAdmin) return false;
           return true;
         }).map(c => (
           <span key={c.key} onClick={() => setColsUser(s => ({ ...s, [c.key]: !s[c.key] }))}

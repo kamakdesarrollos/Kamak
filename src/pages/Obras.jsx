@@ -424,7 +424,7 @@ export default function Obras() {
 
   const ov = currentUser?.obrasVisibles ?? '*';
   const puedeVer = (o) => ov === '*' || (Array.isArray(ov) && ov.includes(o.id));
-  const canCreate = currentUser?.permisos?.crearObra ?? true;
+  const canCreate = isAdmin || currentUser?.permisos?.crearObra === true;
 
   const getStats = (obra) => computeStats(obra, detalles[obra.id] || EMPTY_DETALLE);
 
@@ -458,16 +458,15 @@ export default function Obras() {
     if (!busqueda.trim()) return lista;
     const q = busqueda.toLowerCase();
     return lista.filter(o =>
-      o.nombre.toLowerCase().includes(q) ||
-      o.cliente.toLowerCase().includes(q) ||
-      o.tipo.toLowerCase().includes(q)
+      (o.nombre  || '').toLowerCase().includes(q) ||
+      (o.cliente || '').toLowerCase().includes(q) ||
+      (o.tipo    || '').toLowerCase().includes(q)
     );
   };
 
   const goObra = (o) => navigate(`/obras/${o.id}/presupuesto`);
 
   const handleTransicion = (id, nuevoEstado) => {
-    if (nuevoEstado === 'eliminar') { deleteObra(id); return; }
     setEstado(id, nuevoEstado);
     // Si la obra activa se pasa a 'activa' y estábamos en pestaña en-presupuesto → saltar a activas
     if (nuevoEstado === 'activa' && tabIdx === 1) setTabIdx(0);

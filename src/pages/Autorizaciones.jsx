@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip } from '../components/ui';
 import { T } from '../theme';
@@ -305,17 +306,20 @@ const fmtDatetime = (iso) => {
 };
 
 export default function Autorizaciones() {
+  const { usuarios, currentUser, togglePermiso, applyRol, removeUsuario, updateUsuario, roles, updateRol, removeRol } = useUsuarios();
+  const navigate = useNavigate();
+  const isAdmin = currentUser?.rol === 'Admin';
+  // Guard: solo Admin. La pagina expone CRUD de usuarios — sin esto, un no-admin
+  // podia llamar las funciones desde la consola y escalar privilegios.
+  useEffect(() => {
+    if (currentUser && !isAdmin) navigate('/', { replace: true });
+  }, [currentUser, isAdmin, navigate]);
+
   const { obras } = useObras();
   const { cajas: allCajas, removeMovimiento } = useMovimientos();
-  const { usuarios, currentUser, togglePermiso, applyRol, removeUsuario, updateUsuario, roles, updateRol, removeRol } = useUsuarios();
   const { solicitudes, resolveSolicitud } = useSolicitudes();
 
-  const isAdmin = currentUser?.rol === 'Admin';
-
-  // Non-admins can access to see their own authorization history
-
-  // Non-admins start on solicitudes tab; admins blocked from nothing
-  const [tab, setTab] = useState(isAdmin ? 'solicitudes' : 'solicitudes');
+  const [tab, setTab] = useState('solicitudes');
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editAccesos, setEditAccesos] = useState(null);
   const [resetPassId, setResetPassId] = useState(null);

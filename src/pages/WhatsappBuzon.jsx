@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip } from '../components/ui';
@@ -347,10 +347,17 @@ function MovimientoPendiente({ item, onApprove, onReject }) {
 
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function WhatsappBuzon() {
+  const { currentUser } = useUsuarios();
+  const navigate = useNavigate();
+  const isAdmin = currentUser?.rol === 'Admin';
+  // Guard: solo Admin (aprobar facturas y movs creados por el bot WA).
+  useEffect(() => {
+    if (currentUser && !isAdmin) navigate('/', { replace: true });
+  }, [currentUser, isAdmin, navigate]);
+
   const { pending, reload, rejectItem, confirmItem } = useWhatsappPending();
   const { addMovimiento, cajas } = useMovimientos();
   const { obras, patchDetalle, getDetalle } = useObras();
-  const { currentUser } = useUsuarios();
   const { dolarVenta } = useDolar();
   const [review, setReview] = useState(null);
 

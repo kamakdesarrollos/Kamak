@@ -1,8 +1,19 @@
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Stat, Label, Note } from '../components/ui';
 import { T } from '../theme';
+import { useUsuarios } from '../store/UsuariosContext';
 
 export default function Conciliacion() {
+  const { currentUser } = useUsuarios();
+  const navigate = useNavigate();
+  const isAdmin = currentUser?.rol === 'Admin';
+  // Guard: solo Admin (conciliacion bancaria es operacion financiera).
+  useEffect(() => {
+    if (currentUser && !isAdmin) navigate('/', { replace: true });
+  }, [currentUser, isAdmin, navigate]);
+
   const banco = [
     ['02/05', 'TRF · Don Luis SRL', '-245.000', 'match', T.ok],
     ['04/05', 'TRF · Easy Construccion', '-380.000', 'match', T.ok],
