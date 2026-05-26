@@ -32,26 +32,36 @@ export const esc = (v) => {
 };
 
 /**
- * Abre una nueva ventana e inyecta HTML.
- * NO usa noopener porque en navegadores modernos eso hace que window.open
- * retorne null, perdiendo el handle de la ventana — lo necesitamos para
- * llamar w.focus() y w.print() despues. Usamos noreferrer para no
- * filtrar la URL actual.
+ * Abre una nueva ventana con HTML.
+ *
+ * Usa Blob URL en lugar de document.write porque:
+ * - document.write tiene limites de tamano en algunos navegadores
+ *   (el HTML del presupuesto con QR puede ser >100KB).
+ * - El timing es impredecible: w.print() puede dispararse antes de que
+ *   las fuentes y el QR carguen, resultando en una pestaña en blanco.
+ * - Con Blob URL, el navegador trata el HTML como una pagina real con
+ *   evento onload confiable.
+ *
  * Devuelve la ventana o null si el navegador la bloqueo (popup blocker).
  */
 export const abrirHTML = (html, { width = 860, height = 1200 } = {}) => {
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
   const w = window.open(
-    '',
+    url,
     '_blank',
     `noreferrer,width=${width},height=${height},scrollbars=yes`
   );
-  if (!w) return null;
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-  // Defensa adicional anti-XSS: blanquear window.opener desde el lado del
-  // hijo para que aunque el HTML contenga JS no pueda acceder al padre.
-  // Esto sustituye al efecto de noopener sin perder el handle.
+  if (!w) {
+    URL.revokeObjectURL(url);
+    return null;
+  }
+  // Defensa anti-XSS desde el padre. Como abrimos con Blob URL del mismo
+  // origin, opener sigue conectado — sin esto, el HTML podria tocar
+  // window.opener.
   try { w.opener = null; } catch { /* ignore */ }
+  // Liberar el blob despues de un rato (no inmediato, el browser todavia
+  // necesita la URL hasta que la pestana cargue).
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
   return w;
 };

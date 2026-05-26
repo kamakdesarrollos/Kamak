@@ -474,15 +474,20 @@ export default function ExportModal({ onClose, obra, detalle }) {
         alert('No se pudo abrir la ventana de impresión.\n\nProbablemente el navegador bloqueó la ventana emergente. Permitilas en la configuración del sitio y volvé a intentar.');
         return;
       }
-      // Esperar a que el HTML cargue (incluyendo fonts) antes de imprimir.
-      setTimeout(() => {
+      // Esperar al evento load real (la pestana termino de bajar HTML+fuentes)
+      // antes de disparar el print. Fallback a timeout si onload no llega.
+      const triggerPrint = () => {
         try {
           w.focus();
-          w.print();
+          // Pequeño delay extra para que las fuentes se rendereen bien
+          setTimeout(() => { try { w.print(); } catch (e) { console.warn('[imprimir] print error:', e); } }, 400);
         } catch (e) {
-          console.warn('[imprimir] error al disparar print:', e);
+          console.warn('[imprimir] focus error:', e);
         }
-      }, 900);
+      };
+      w.addEventListener('load', triggerPrint, { once: true });
+      // Fallback: si onload no llega en 3s (raro), disparar igual.
+      setTimeout(triggerPrint, 3000);
     } catch (e) {
       console.error('[imprimir] error:', e);
       alert('Hubo un error al generar la propuesta:\n\n' + (e?.message || e));
