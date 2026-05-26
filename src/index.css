@@ -222,6 +222,20 @@ body {
 .k-page-body { display: flex; flex: 1; overflow: hidden; }
 .k-content { flex: 1; overflow: auto; }
 
+/* ── Rayas (referencia M de Kamak) fijas al viewport ──
+   Las rayas viven como background con attachment:fixed, lo que las pega
+   al viewport (no al elemento). Asi cuando el Topbar y el PageHero usan
+   esta misma clase, ambos muestran "la misma porcion" de rayas segun su
+   posicion en pantalla — parece que la raya se interrumpe en el area
+   blanca intermedia y reaparece abajo, alineada. */
+.k-stripes-bg {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260' viewBox='0 0 260 260'><g transform='rotate(62 130 130)' fill='%231a9b9c'><rect x='-60' y='25' width='420' height='13'/><rect x='-60' y='60' width='420' height='13'/><rect x='-60' y='95' width='420' height='13'/><rect x='-60' y='130' width='420' height='13'/><rect x='-60' y='165' width='420' height='13'/></g></svg>");
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-size: 260px 260px;
+}
+
 /* ── Portal del cliente ──────────────────────── */
 /* Desktop: padding 28px laterales, KPIs en grilla amplia. */
 .portal-page { overflow-x: hidden; }

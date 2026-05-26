@@ -32,10 +32,13 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
       // que da sensacion de "elevacion" sin ser invasivo.
       boxShadow: '0 1px 0 rgba(0,0,0,0.04), 0 6px 14px -8px rgba(20,18,15,0.18)',
     }}>
-      {/* Banner oscuro — bajo perfil, sin rayas (las rayas viven en el Topbar
-          para no superponerse). Sin linea acento abajo para que se vea limpio. */}
-      <div style={{
-        background: T.dark,
+      {/* Banner oscuro — usa la clase k-stripes-bg para mostrar las MISMAS
+          rayas que el Topbar (background fixed al viewport). Asi cuando el
+          usuario ve Topbar arriba y banner abajo, parece que las rayas son
+          una sola "tela" que se interrumpe en el area clara intermedia y
+          reaparece alineada. */}
+      <div className="k-stripes-bg" style={{
+        backgroundColor: T.dark,
         color: '#fff',
         padding: '8px 14px',
         display: 'flex',
