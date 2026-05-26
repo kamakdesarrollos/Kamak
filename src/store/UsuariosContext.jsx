@@ -98,11 +98,14 @@ export function UsuariosProvider({ children }) {
 
   // Carga desde Supabase al montar (re-corre al remontar tras cambio de usuario)
   useEffect(() => {
+    let cancelled = false;
     supabase.from('app_users').select('*').then(({ data, error }) => {
+      if (cancelled) return;
       if (!error && data) setUsuarios(data.map(rowToUser));
       setLoading(false);
       markReady();
     });
+    return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-insertar usuario actual como Admin si la tabla está vacía

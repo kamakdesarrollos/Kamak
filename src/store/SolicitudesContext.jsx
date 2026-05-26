@@ -24,7 +24,9 @@ export function SolicitudesProvider({ children }) {
   const fromRemote = useRef(false);
 
   useEffect(() => {
+    let cancelled = false;
     loadSharedData('solicitudes').then(data => {
+      if (cancelled) return;
       if (data) {
         fromRemote.current = true;
         setSolicitudes(data);
@@ -36,22 +38,31 @@ export function SolicitudesProvider({ children }) {
 
     const unsub = onRemoteChange('solicitudes', () => {
       loadSharedData('solicitudes').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         setSolicitudes(d);
         persist(d);
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     persist(solicitudes);
     if (!sbLoaded.current || fromRemote.current) return;
-    const t = setTimeout(() => saveSharedData('solicitudes', solicitudes), 800);
+    pendingSaveRef.current = solicitudes;
+    const t = setTimeout(() => {
+      saveSharedData('solicitudes', solicitudes);
+      pendingSaveRef.current = null;
+    }, 800);
     return () => clearTimeout(t);
   }, [solicitudes]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) saveSharedData('solicitudes', pendingSaveRef.current, { silent: true });
+  }, []);
 
   const addSolicitud = useCallback((data) => {
     const nueva = {

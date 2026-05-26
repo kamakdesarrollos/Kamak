@@ -254,7 +254,9 @@ export function PlantillasProvider({ children }) {
   const { markReady } = useAppLoading();
 
   useEffect(() => {
+    let cancelled = false;
     loadSharedData('plantillas').then(data => {
+      if (cancelled) return;
       if (data) {
         fromRemote.current = true;
         setPlantillas(data); localStorage.setItem('kamak_plantillas_v1', JSON.stringify(data));
@@ -266,22 +268,31 @@ export function PlantillasProvider({ children }) {
 
     const unsub = onRemoteChange('plantillas', () => {
       loadSharedData('plantillas').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         setPlantillas(d);
         localStorage.setItem('kamak_plantillas_v1', JSON.stringify(d));
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     localStorage.setItem('kamak_plantillas_v1', JSON.stringify(plantillas));
     if (!sbLoaded.current || fromRemote.current) return;
-    const t = setTimeout(() => { saveSharedData('plantillas', plantillas); }, 800);
+    pendingSaveRef.current = plantillas;
+    const t = setTimeout(() => {
+      saveSharedData('plantillas', plantillas);
+      pendingSaveRef.current = null;
+    }, 800);
     return () => clearTimeout(t);
   }, [plantillas]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) saveSharedData('plantillas', pendingSaveRef.current, { silent: true });
+  }, []);
 
   const add = (plt) => setPlantillas(p => [...p, { ...plt, id: newId(), updatedAt: today(), usosCount: 0 }]);
   const update = (id, changes) => setPlantillas(p => p.map(t => t.id === id ? { ...t, ...changes, updatedAt: today() } : t));

@@ -77,7 +77,9 @@ export function ProveedoresProvider({ children }) {
   useEffect(() => { ccRef.current = ccEntries; }, [ccEntries]);
 
   useEffect(() => {
+    let cancelled = false;
     loadSharedData('proveedores').then(data => {
+      if (cancelled) return;
       if (data) {
         fromRemote.current = true;
         if (data.proveedores) { setProveedores(data.proveedores); save(LS_PROVS, data.proveedores); }
@@ -92,23 +94,30 @@ export function ProveedoresProvider({ children }) {
 
     const unsub = onRemoteChange('proveedores', () => {
       loadSharedData('proveedores').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         if (d.proveedores) { setProveedores(d.proveedores); save(LS_PROVS, d.proveedores); }
         if (d.ccEntries)   { setCCEntries(d.ccEntries);     save(LS_CC,    d.ccEntries); }
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
+    pendingSaveRef.current = { proveedores: provsRef.current, ccEntries: ccRef.current };
     const t = setTimeout(() => {
       saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
+      pendingSaveRef.current = null;
     }, 800);
     return () => clearTimeout(t);
   }, [proveedores, ccEntries]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) saveSharedData('proveedores', pendingSaveRef.current, { silent: true });
+  }, []);
 
   // ── Proveedores CRUD ──────────────────────────────────────────────────────
   const addProveedor = useCallback((data) => {

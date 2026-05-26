@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 
@@ -8,16 +8,20 @@ const KEY = 'alertas';
 export function AlertasProvider({ children }) {
   const [alertas, setAlertas] = useState([]);
 
+  const cancelledRef = useRef(false);
+
   const reload = useCallback(() => {
     loadSharedData(KEY).then(data => {
+      if (cancelledRef.current) return;
       setAlertas(Array.isArray(data) ? data : []);
     });
   }, []);
 
   useEffect(() => {
+    cancelledRef.current = false;
     reload();
     const unsub = onRemoteChange(KEY, reload);
-    return unsub;
+    return () => { cancelledRef.current = true; unsub(); };
   }, [reload]);
 
   const marcarLeida = useCallback((id) => {

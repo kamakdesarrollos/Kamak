@@ -53,7 +53,9 @@ export function ConfiguracionProvider({ children }) {
   const { markReady } = useAppLoading();
 
   useEffect(() => {
+    let cancelled = false;
     loadSharedData('config').then(data => {
+      if (cancelled) return;
       if (data) {
         fromRemote.current = true;
         const merged = { ...DEFAULT, ...data }; setConfig(merged); persist(merged);
@@ -65,21 +67,30 @@ export function ConfiguracionProvider({ children }) {
 
     const unsub = onRemoteChange('config', () => {
       loadSharedData('config').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         const merged = { ...DEFAULT, ...d };
         setConfig(merged); persist(merged);
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
-    const t = setTimeout(() => { saveSharedData('config', config); }, 800);
+    pendingSaveRef.current = config;
+    const t = setTimeout(() => {
+      saveSharedData('config', config);
+      pendingSaveRef.current = null;
+    }, 800);
     return () => clearTimeout(t);
   }, [config]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) saveSharedData('config', pendingSaveRef.current, { silent: true });
+  }, []);
 
   const patch = useCallback((section, changes) => {
     setConfig(prev => {

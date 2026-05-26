@@ -67,7 +67,10 @@ export function MovimientosProvider({ children }) {
   useEffect(() => { movsRef.current = movimientos; }, [movimientos]);
 
   useEffect(() => {
+    // Guard de cancelacion: ver comentario en ObrasContext.
+    let cancelled = false;
     loadSharedData('movimientos').then(data => {
+      if (cancelled) return;
       if (data) {
         fromRemote.current = true;
         if (data.cajas)       { setCajas(data.cajas);             persist(LS_CAJAS, data.cajas); }
@@ -82,21 +85,30 @@ export function MovimientosProvider({ children }) {
 
     const unsub = onRemoteChange('movimientos', () => {
       loadSharedData('movimientos').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         if (d.cajas)       { setCajas(d.cajas);             persist(LS_CAJAS, d.cajas); }
         if (d.movimientos) { setMovimientos(d.movimientos); persist(LS_MOVS,  d.movimientos); }
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
-    const t = setTimeout(() => saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current }), 800);
+    pendingSaveRef.current = { cajas: cajasRef.current, movimientos: movsRef.current };
+    const t = setTimeout(() => {
+      saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
+      pendingSaveRef.current = null;
+    }, 800);
     return () => clearTimeout(t);
   }, [cajas, movimientos]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) saveSharedData('movimientos', pendingSaveRef.current, { silent: true });
+  }, []);
 
   // ── Cajas CRUD ────────────────────────────────────────────────────────────
   const addCaja = useCallback((data) => {

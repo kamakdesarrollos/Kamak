@@ -34,7 +34,9 @@ export function DolarProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     loadSharedData('dolar').then(saved => {
+      if (cancelled) return;
       if (saved) {
         fromRemote.current = true;
         setData(saved); saveLS(saved);
@@ -46,20 +48,29 @@ export function DolarProvider({ children }) {
 
     const unsub = onRemoteChange('dolar', () => {
       loadSharedData('dolar').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         setData(d); saveLS(d);
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
-    const t = setTimeout(() => { saveSharedData('dolar', data); }, 800);
+    pendingSaveRef.current = data;
+    const t = setTimeout(() => {
+      saveSharedData('dolar', data);
+      pendingSaveRef.current = null;
+    }, 800);
     return () => clearTimeout(t);
   }, [data]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) saveSharedData('dolar', pendingSaveRef.current, { silent: true });
+  }, []);
 
   const fetchBNA = useCallback(async () => {
     setLoading(true);

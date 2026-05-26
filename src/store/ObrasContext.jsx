@@ -195,7 +195,13 @@ export function ObrasProvider({ children }) {
   useEffect(() => { detallesRef.current = detalles; }, [detalles]);
 
   useEffect(() => {
+    // Guard de cancelacion: si el provider se desmonta antes de que la
+    // respuesta llegue (ej. cambio de usuario remontando DataProviders),
+    // ignoramos el resultado para no escribir state en un componente
+    // desmontado / de la sesion vieja.
+    let cancelled = false;
     loadSharedData('obras').then(data => {
+      if (cancelled) return;
       if (data) {
         fromRemote.current = true;
         if (data.obras)    { setObras(data.obras);       saveObras(data.obras); }
@@ -210,26 +216,33 @@ export function ObrasProvider({ children }) {
 
     const unsub = onRemoteChange('obras', () => {
       loadSharedData('obras').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         if (d.obras)    { setObras(d.obras);       saveObras(d.obras); }
         if (d.detalles) { setDetalles(d.detalles); saveDet(d.detalles); }
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { saveObras(obras); }, [obras]);
   useEffect(() => { saveDet(detalles); }, [detalles]);
 
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
+    pendingSaveRef.current = { obras: obrasRef.current, detalles: detallesRef.current };
     const t = setTimeout(() => {
       saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
+      pendingSaveRef.current = null;
     }, 800);
     return () => clearTimeout(t);
   }, [obras, detalles]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) saveSharedData('obras', pendingSaveRef.current, { silent: true });
+  }, []);
 
   // ── Obras CRUD (memoizado para que el value del Provider sea estable)
   const addObra = useCallback((obra) => {

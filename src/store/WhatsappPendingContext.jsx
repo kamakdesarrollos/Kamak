@@ -10,13 +10,17 @@ export function WhatsappPendingProvider({ children }) {
   const pendingRef = useRef([]);
   useEffect(() => { pendingRef.current = pending; }, [pending]);
 
+  const cancelledRef = useRef(false);
+
   const reload = useCallback(() => {
     loadSharedData(KEY).then(data => {
+      if (cancelledRef.current) return;
       if (Array.isArray(data)) setPending(data);
     });
   }, []);
 
   useEffect(() => {
+    cancelledRef.current = false;
     reload();
     // Polling para recibir facturas nuevas del webhook.
     // Se pausa cuando la pestana esta oculta para no gastar red/CPU innecesario.
@@ -27,6 +31,7 @@ export function WhatsappPendingProvider({ children }) {
     const onVis = () => (document.hidden ? stop() : start());
     document.addEventListener('visibilitychange', onVis);
     return () => {
+      cancelledRef.current = true;
       document.removeEventListener('visibilitychange', onVis);
       stop();
     };

@@ -38,7 +38,9 @@ export function ClientesProvider({ children }) {
   const { markReady } = useAppLoading();
 
   useEffect(() => {
+    let cancelled = false;
     loadSharedData('clientes').then(data => {
+      if (cancelled) return;
       if (data) {
         fromRemote.current = true;
         setClientes(data); save(data);
@@ -50,20 +52,30 @@ export function ClientesProvider({ children }) {
 
     const unsub = onRemoteChange('clientes', () => {
       loadSharedData('clientes').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         setClientes(d); save(d);
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // pendingSaveRef: flush si el provider se desmonta antes del debounce.
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
-    const t = setTimeout(() => { saveSharedData('clientes', clientes); }, 800);
+    pendingSaveRef.current = clientes;
+    const t = setTimeout(() => {
+      saveSharedData('clientes', clientes);
+      pendingSaveRef.current = null;
+    }, 800);
     return () => clearTimeout(t);
   }, [clientes]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) saveSharedData('clientes', pendingSaveRef.current, { silent: true });
+  }, []);
 
   const addCliente = useCallback((data) => {
     const nuevo = { nombre: '', empresa: '', cuit: '', telefono: '', email: '', notas: '', ...data, id: newId() };

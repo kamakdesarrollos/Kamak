@@ -24,7 +24,9 @@ export function ChequesProvider({ children }) {
   useEffect(() => { chequesRef.current = cheques; }, [cheques]);
 
   useEffect(() => {
+    let cancelled = false;
     loadSharedData('cheques').then(data => {
+      if (cancelled) return;
       if (data) {
         fromRemote.current = true;
         setCheques(data); persistLS(data);
@@ -38,20 +40,35 @@ export function ChequesProvider({ children }) {
 
     const unsub = onRemoteChange('cheques', () => {
       loadSharedData('cheques').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         setCheques(d); persistLS(d);
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // pendingSaveRef guarda el estado que esta esperando para guardarse (con
+  // debounce de 800ms). Si el provider se desmonta antes de que pase, hacemos
+  // un flush inmediato en lugar de perder el cambio.
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
-    const t = setTimeout(() => { saveSharedData('cheques', chequesRef.current); }, 800);
+    pendingSaveRef.current = chequesRef.current;
+    const t = setTimeout(() => {
+      saveSharedData('cheques', chequesRef.current);
+      pendingSaveRef.current = null;
+    }, 800);
     return () => clearTimeout(t);
   }, [cheques]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) {
+      // Flush: save sincronicamente (silent para no broadcast en unmount).
+      saveSharedData('cheques', pendingSaveRef.current, { silent: true });
+    }
+  }, []);
 
   // ── CRUD ──────────────────────────────────────────────────────────────────────
   const addCheque = useCallback((data) => {

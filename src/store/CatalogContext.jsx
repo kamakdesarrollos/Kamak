@@ -63,7 +63,9 @@ export function CatalogProvider({ children }) {
   const { markReady } = useAppLoading();
 
   useEffect(() => {
+    let cancelled = false;
     loadSharedData('catalog').then(async data => {
+      if (cancelled) return;
       const needsReseed = localStorage.getItem('kamak_sismat_v') !== SISMAT_SEED_VERSION;
 
       if (data && !needsReseed) {
@@ -73,6 +75,7 @@ export function CatalogProvider({ children }) {
       } else {
         // Primera vez o versión desactualizada: importar catálogo Sismat
         const sismatData = await fetchSismatSeed();
+        if (cancelled) return;
         const finalData = sismatData || data || catalog; // eslint-disable-line react-hooks/exhaustive-deps
         fromRemote.current = true;
         setCatalog(finalData);
@@ -87,22 +90,31 @@ export function CatalogProvider({ children }) {
 
     const unsub = onRemoteChange('catalog', () => {
       loadSharedData('catalog').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         setCatalog(d);
         localStorage.setItem('kamak_catalog_v4', JSON.stringify(d));
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     localStorage.setItem('kamak_catalog_v4', JSON.stringify(catalog));
     if (!sbLoaded.current || fromRemote.current) return;
-    const t = setTimeout(() => { saveSharedData('catalog', catalog); }, 800);
+    pendingSaveRef.current = catalog;
+    const t = setTimeout(() => {
+      saveSharedData('catalog', catalog);
+      pendingSaveRef.current = null;
+    }, 800);
     return () => clearTimeout(t);
   }, [catalog]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) saveSharedData('catalog', pendingSaveRef.current, { silent: true });
+  }, []);
 
   const add    = useCallback((coll, item)        => setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), { id: newId(), ...item, updatedAt: today() }] })), []);
   const update = useCallback((coll, id, changes) => setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...changes, updatedAt: today() } : i) })), []);

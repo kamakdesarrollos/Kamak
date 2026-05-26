@@ -27,7 +27,9 @@ export function GastosFijosProvider({ children }) {
   const { markReady } = useAppLoading();
 
   useEffect(() => {
+    let cancelled = false;
     loadSharedData('gastos_fijos').then(data => {
+      if (cancelled) return;
       if (data) {
         fromRemote.current = true;
         setItemsState(data); localStorage.setItem(LS_KEY, JSON.stringify(data));
@@ -39,21 +41,30 @@ export function GastosFijosProvider({ children }) {
 
     const unsub = onRemoteChange('gastos_fijos', () => {
       loadSharedData('gastos_fijos').then(d => {
-        if (!d) return;
+        if (cancelled || !d) return;
         fromRemote.current = true;
         setItemsState(d);
         localStorage.setItem(LS_KEY, JSON.stringify(d));
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
-    return () => unsub();
+    return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
-    const t = setTimeout(() => { saveSharedData('gastos_fijos', items); }, 800);
+    pendingSaveRef.current = items;
+    const t = setTimeout(() => {
+      saveSharedData('gastos_fijos', items);
+      pendingSaveRef.current = null;
+    }, 800);
     return () => clearTimeout(t);
   }, [items]);
+
+  useEffect(() => () => {
+    if (pendingSaveRef.current) saveSharedData('gastos_fijos', pendingSaveRef.current, { silent: true });
+  }, []);
 
   const setItems = (fn) => {
     setItemsState(prev => {
