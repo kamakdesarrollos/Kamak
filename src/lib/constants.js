@@ -5,7 +5,7 @@
 
 // ── Tiempo / intervalos ─────────────────────────────────────────────────────
 export const MS_PER_DAY              = 24 * 60 * 60 * 1000;   // 86_400_000
-export const SAVE_DEBOUNCE_MS        = 200;                    // debounce de saves a Supabase (corto para que portal y admin se sincronicen rapido)
+export const SAVE_DEBOUNCE_MS        = 500;                    // debounce de saves a Supabase (medio: rapido para sincronizar portal pero sin generar spam de writes)
 export const INACTIVITY_MS           = 15 * 60 * 1000;         // auto-logout
 export const INACTIVITY_WARN_MS      = 60 * 1000;              // aviso 1min antes
 export const DOLAR_REFRESH_MS        = 60 * 60 * 1000;         // refresh dolar BNA

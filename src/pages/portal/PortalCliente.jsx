@@ -68,15 +68,17 @@ export default function PortalCliente() {
   const detalle = getDetalle(id || '');
 
   // Auto-refresh para garantizar que admin y cliente siempre ven lo mismo:
-  // - polling cada 15s mientras la pestana esta activa.
+  // - polling cada 30s mientras la pestana esta activa.
   // - refetch inmediato al volver a la pestana (visibilitychange).
   // - refetch inmediato al volver foco a la ventana (focus).
-  // Sin esto, el cliente podria ver datos viejos si el broadcast de Realtime
-  // se pierde (red intermitente, app en background, etc.).
+  // El polling de fondo es 30s porque ya hay broadcast de Realtime — esto es
+  // solo fallback por si Realtime no llega. El visibilitychange/focus es el
+  // que garantiza la actualizacion inmediata cuando el cliente "vuelve" al
+  // portal despues de hacer otra cosa.
   useEffect(() => {
     if (accessStatus !== 'allowed') return;
     let interval = null;
-    const start = () => { if (!interval) interval = setInterval(refetch, 15000); };
+    const start = () => { if (!interval) interval = setInterval(refetch, 30000); };
     const stop  = () => { if (interval) { clearInterval(interval); interval = null; } };
     const onVis = () => { if (document.hidden) stop(); else { refetch(); start(); } };
     if (!document.hidden) start();
