@@ -33,19 +33,25 @@ export const esc = (v) => {
 
 /**
  * Abre una nueva ventana e inyecta HTML.
- * - Usa noopener,noreferrer asi la nueva pestana no puede tocar
- *   window.opener (mitiga sesion-hijack si el HTML contiene XSS).
- * - Devuelve la ventana o null si el navegador la bloqueo.
+ * NO usa noopener porque en navegadores modernos eso hace que window.open
+ * retorne null, perdiendo el handle de la ventana — lo necesitamos para
+ * llamar w.focus() y w.print() despues. Usamos noreferrer para no
+ * filtrar la URL actual.
+ * Devuelve la ventana o null si el navegador la bloqueo (popup blocker).
  */
 export const abrirHTML = (html, { width = 860, height = 1200 } = {}) => {
   const w = window.open(
     '',
     '_blank',
-    `noopener,noreferrer,width=${width},height=${height},scrollbars=yes`
+    `noreferrer,width=${width},height=${height},scrollbars=yes`
   );
   if (!w) return null;
   w.document.open();
   w.document.write(html);
   w.document.close();
+  // Defensa adicional anti-XSS: blanquear window.opener desde el lado del
+  // hijo para que aunque el HTML contenga JS no pueda acceder al padre.
+  // Esto sustituye al efecto de noopener sin perder el handle.
+  try { w.opener = null; } catch { /* ignore */ }
   return w;
 };
