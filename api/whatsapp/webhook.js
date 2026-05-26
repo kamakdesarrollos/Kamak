@@ -1670,7 +1670,20 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    return res.status(200).json({ ok: true, vars: { meta: !!META_TOKEN, phoneId: !!PHONE_NUMBER_ID, verifyToken: !!VERIFY_TOKEN, anthropic: !!ANTHROPIC_KEY, supabase: !!SUPABASE_URL } });
+    return res.status(200).json({
+      ok: true,
+      vars: {
+        meta:           !!META_TOKEN,
+        phoneId:        !!PHONE_NUMBER_ID,
+        verifyToken:    !!VERIFY_TOKEN,
+        anthropic:      !!ANTHROPIC_KEY,
+        supabase:       !!SUPABASE_URL,
+        // META_PHONE_NUMBER es el numero humano del bot (no sensible).
+        // Lo exponemos para chequear que este configurado correctamente.
+        metaPhoneNumber: process.env.META_PHONE_NUMBER || '(no seteado)',
+        portalBaseUrl:   process.env.PORTAL_BASE_URL || '(no seteado, usa fallback kamak.com.ar)',
+      },
+    });
   }
 
   try {
