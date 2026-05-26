@@ -1,76 +1,27 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
-import { onRemoteChange } from '../lib/syncBus';
-import { useAppLoading } from './AppLoadingContext';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import useSyncedSharedData from '../lib/useSyncedSharedData';
+import { DOLAR_VENTA_FALLBACK, DOLAR_COMPRA_FALLBACK } from '../lib/constants';
 
 const CTX = createContext(null);
 const LS_KEY = 'kamak_dolar_v1';
 const REFRESH_MS = 60 * 60 * 1000; // 1 hora
 
-function loadLS() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { return null; }
-}
-
-function saveLS(data) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {}
-}
-
-const DEFAULT = { venta: 1070, compra: 1060, updatedAt: null, manual: false, manualVal: 1070 };
+const DEFAULT = {
+  venta:     DOLAR_VENTA_FALLBACK,
+  compra:    DOLAR_COMPRA_FALLBACK,
+  updatedAt: null,
+  manual:    false,
+  manualVal: DOLAR_VENTA_FALLBACK,
+};
 
 export function DolarProvider({ children }) {
-  const [data, setData] = useState(() => loadLS() || DEFAULT);
+  const [data, setData] = useSyncedSharedData('dolar', DEFAULT, { lsKey: LS_KEY });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const sbLoaded   = useRef(false);
-  const fromRemote = useRef(false);
-  const { markReady } = useAppLoading();
+  const [error,   setError]   = useState(null);
 
   const patch = useCallback((fn) => {
-    setData(prev => {
-      const next = typeof fn === 'function' ? fn(prev) : { ...prev, ...fn };
-      saveLS(next);
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadSharedData('dolar').then(saved => {
-      if (cancelled) return;
-      if (saved) {
-        fromRemote.current = true;
-        setData(saved); saveLS(saved);
-        setTimeout(() => { fromRemote.current = false; }, 0);
-      } else saveSharedData('dolar', data); // eslint-disable-line react-hooks/exhaustive-deps
-      sbLoaded.current = true;
-      markReady();
-    });
-
-    const unsub = onRemoteChange('dolar', () => {
-      loadSharedData('dolar').then(d => {
-        if (cancelled || !d) return;
-        fromRemote.current = true;
-        setData(d); saveLS(d);
-        setTimeout(() => { fromRemote.current = false; }, 0);
-      });
-    });
-    return () => { cancelled = true; unsub(); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const pendingSaveRef = useRef(null);
-  useEffect(() => {
-    if (!sbLoaded.current || fromRemote.current) return;
-    pendingSaveRef.current = data;
-    const t = setTimeout(() => {
-      saveSharedData('dolar', data);
-      pendingSaveRef.current = null;
-    }, 800);
-    return () => clearTimeout(t);
-  }, [data]);
-
-  useEffect(() => () => {
-    if (pendingSaveRef.current) saveSharedData('dolar', pendingSaveRef.current, { silent: true });
-  }, []);
+    setData(prev => typeof fn === 'function' ? fn(prev) : { ...prev, ...fn });
+  }, [setData]);
 
   const fetchBNA = useCallback(async () => {
     setLoading(true);
@@ -80,8 +31,7 @@ export function DolarProvider({ children }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (!json?.compra && !json?.venta) throw new Error('Respuesta inesperada de dolarapi.com');
-      // Bug previo: usaba json.compra (no la variable local). Si la API solo
-      // mandaba venta, json.compra era undefined y daba NaN.
+      // Si la API solo manda venta, fallback a venta para compra.
       const compra = Number(json.compra) || Number(json.venta);
       const venta  = (Number(json.venta) && Number(json.venta) >= compra)
         ? Number(json.venta)
@@ -97,9 +47,12 @@ export function DolarProvider({ children }) {
     }
   }, [patch]);
 
-  // Auto-fetch al montar si está en modo automático y los datos tienen más de 1 hora
+  // Auto-fetch al montar si esta en modo automatico y los datos tienen mas
+  // de 1 hora (lee de localStorage para evitar trigger cuando llega el
+  // primer load remoto).
   useEffect(() => {
-    const d = loadLS();
+    let d;
+    try { d = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { d = null; }
     if (!d?.manual) {
       const age = d?.updatedAt ? Date.now() - new Date(d.updatedAt).getTime() : Infinity;
       if (age > REFRESH_MS) fetchBNA();
@@ -107,7 +60,7 @@ export function DolarProvider({ children }) {
   }, [fetchBNA]);
 
   const setManual = useCallback((val) => {
-    const n = Math.round(+val) || 1070;
+    const n = Math.round(+val) || DOLAR_VENTA_FALLBACK;
     patch({ manual: true, manualVal: n, venta: n });
   }, [patch]);
 
@@ -116,8 +69,8 @@ export function DolarProvider({ children }) {
     fetchBNA();
   }, [patch, fetchBNA]);
 
-  const dolarVenta = data.manual ? (data.manualVal || 1070) : (data.venta || 1070);
-  const dolarCompra = data.compra || 1060;
+  const dolarVenta  = data.manual ? (data.manualVal || DOLAR_VENTA_FALLBACK) : (data.venta || DOLAR_VENTA_FALLBACK);
+  const dolarCompra = data.compra || DOLAR_COMPRA_FALLBACK;
 
   const value = useMemo(
     () => ({ dolarVenta, dolarCompra, updatedAt: data.updatedAt, loading, error, manual: data.manual, setManual, setAutoMode, fetchBNA }),
