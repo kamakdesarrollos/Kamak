@@ -22,6 +22,7 @@ import { AuthProvider, useAuth } from './store/AuthContext';
 import Login from './pages/Login';
 import WhatsappVerificationBanner from './components/WhatsappVerificationBanner';
 import { ToastProvider } from './components/ui/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Resto de paginas: lazy load para bajar el bundle inicial. Cada pagina
 // se descarga solo cuando el usuario navega a ella.
@@ -192,6 +193,9 @@ function AppShell() {
   return (
     <DataProviders key={user?.id ?? 'anon'}>
       <BrowserRouter>
+        {/* ErrorBoundary captura cualquier error de render para evitar
+            pantalla en blanco. */}
+        <ErrorBoundary>
         {/* Suspense para soportar lazy() de las paginas: muestra "Cargando"
             mientras descarga el chunk del componente. */}
         <Suspense fallback={<RouteFallback />}>
@@ -233,6 +237,7 @@ function AppShell() {
             } />
           </Routes>
         </Suspense>
+        </ErrorBoundary>
       </BrowserRouter>
     </DataProviders>
   );
