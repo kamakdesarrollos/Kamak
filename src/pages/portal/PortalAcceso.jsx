@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { T } from '../../theme';
 
+// PortalAcceso: valida un token magico que el admin envia al cliente por WA.
+// Si es valido, GUARDA el token en sessionStorage y redirige a /portal/cliente/:obraId.
+// PortalCliente luego verifica esa sessionStorage antes de renderizar — sin
+// esto, cualquiera con el ID de obra podia acceder al portal sin token.
+
 export default function PortalAcceso() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -14,6 +19,12 @@ export default function PortalAcceso() {
       .then(data => {
         if (data.error === 'expired') { setEstado('expirado'); return; }
         if (data.error || !data.obraId) { setEstado('invalido'); return; }
+        // Guardar el token validado para esa obra. PortalCliente lo lee y
+        // re-valida en cada carga. sessionStorage (no localStorage) para que
+        // se borre al cerrar la pestana.
+        try {
+          sessionStorage.setItem(`kamak_portal_${data.obraId}`, token);
+        } catch { /* sessionStorage puede no estar disponible */ }
         navigate(`/portal/cliente/${data.obraId}`, { replace: true });
       })
       .catch(() => setEstado('invalido'));

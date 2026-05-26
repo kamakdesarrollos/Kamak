@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useObras } from '../../store/ObrasContext';
 import { useAuth } from '../../store/AuthContext';
+import { useUsuarios } from '../../store/UsuariosContext';
 import { useDolar } from '../../store/DolarContext';
 import { Box, Btn, Chip, Stat, Bar } from '../../components/ui';
 import { T } from '../../theme';
@@ -51,13 +52,70 @@ export default function PortalCliente() {
   const { obras, getDetalle, patchDetalle } = useObras();
 
   const { user } = useAuth();
+  const { currentUser } = useUsuarios();
   const { dolarVenta } = useDolar();
   const toUSD = n => `U$S ${fmtN(Math.round(n / (dolarVenta || 1070)))}`;
   const [tab, setTab] = useState(0);
   const [msg, setMsg] = useState('');
 
+  // GATE de acceso al portal:
+  // - Admin interno (logueado) -> acceso libre para preview.
+  // - Cliente externo -> requiere token validado guardado en sessionStorage
+  //   por PortalAcceso. Re-validamos contra el backend en cada carga por si
+  //   expiro o fue revocado.
+  // Estados: 'checking' | 'allowed' | 'no-token' | 'invalid' | 'expired'
+  const isAdminInternal = currentUser?.rol === 'Admin';
+  const [accessStatus, setAccessStatus] = useState(isAdminInternal ? 'allowed' : 'checking');
+
+  useEffect(() => {
+    if (isAdminInternal) { setAccessStatus('allowed'); return; }
+    if (!id) { setAccessStatus('invalid'); return; }
+    let token = null;
+    try { token = sessionStorage.getItem(`kamak_portal_${id}`); } catch { /* sin sessionStorage */ }
+    if (!token) { setAccessStatus('no-token'); return; }
+    let cancelled = false;
+    fetch(`/api/portal/validate-token?token=${encodeURIComponent(token)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return;
+        if (data.error === 'expired') {
+          try { sessionStorage.removeItem(`kamak_portal_${id}`); } catch {}
+          setAccessStatus('expired');
+          return;
+        }
+        if (data.error || data.obraId !== id) {
+          try { sessionStorage.removeItem(`kamak_portal_${id}`); } catch {}
+          setAccessStatus('invalid');
+          return;
+        }
+        setAccessStatus('allowed');
+      })
+      .catch(() => { if (!cancelled) setAccessStatus('invalid'); });
+    return () => { cancelled = true; };
+  }, [id, isAdminInternal]);
+
   const obra = obras.find(o => o.id === id);
   const detalle = getDetalle(id || '');
+
+  // Pantalla de bloqueo: cuando el cliente no tiene acceso valido,
+  // mostramos un mensaje claro sin revelar info de la obra.
+  if (accessStatus !== 'allowed') {
+    const msgs = {
+      checking:   { icon: '⏳', title: 'Validando acceso…', sub: 'Un momento por favor.' },
+      'no-token': { icon: '🔒', title: 'Acceso restringido',  sub: 'Este portal es privado. Solicitá el enlace de acceso al equipo de Kamak.' },
+      invalid:    { icon: '🚫', title: 'Acceso inválido',     sub: 'El enlace que estás usando no es válido. Solicitá uno nuevo al equipo de Kamak.' },
+      expired:    { icon: '⏰', title: 'Acceso expirado',     sub: 'El enlace caducó. Solicitá uno nuevo al equipo de Kamak.' },
+    };
+    const { icon, title, sub } = msgs[accessStatus] || msgs.invalid;
+    return (
+      <div style={{ fontFamily: T.font, background: T.dark, minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+        <div style={{ fontSize: 56 }}>{icon}</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{title}</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', textAlign: 'center', maxWidth: 360 }}>{sub}</div>
+        <img src="/assets/kamak-logo-light.png" alt="Kamak" style={{ height: 28, opacity: 0.4, marginTop: 32 }} />
+      </div>
+    );
+  }
 
   if (!id || !obra) {
     return (
