@@ -28,21 +28,43 @@ export default function PortalCliente() {
   const { clientes } = useClientes();
   const [tab, setTab] = useState(0);
 
-  // GATE de acceso al portal:
-  // - Admin interno (logueado) -> acceso libre para preview.
-  // - Cliente externo -> requiere token validado guardado en sessionStorage
-  //   por PortalAcceso. Re-validamos contra el backend en cada carga por si
-  //   expiro o fue revocado.
-  // Estados: 'checking' | 'allowed' | 'no-token' | 'invalid' | 'expired'
+  // GATE de acceso al portal + modo de operacion.
+  //
+  // El modo lo define la presencia o ausencia de un token en sessionStorage:
+  // - HAY token (cliente entro por /portal/acceso/[token]) -> MODO CLIENTE.
+  //   Lee datos del endpoint serverless /api/portal/data. Esto vale
+  //   incluso si el navegador tiene sesion admin activa (porque el admin
+  //   esta "previsualizando" desde el link del cliente — debe ver lo mismo).
+  // - NO HAY token + hay sesion admin -> MODO ADMIN PREVIEW.
+  //   Lee del context (mismos datos que ve el admin en su app).
+  // - NO HAY token + NO hay sesion admin -> acceso bloqueado.
+  //
+  // Estados accessStatus: 'checking' | 'allowed' | 'no-token' | 'invalid' | 'expired'
   const isAdminInternal = currentUser?.rol === 'Admin';
-  const [accessStatus, setAccessStatus] = useState(isAdminInternal ? 'allowed' : 'checking');
+  const [hasToken, setHasToken] = useState(() => {
+    try { return !!sessionStorage.getItem(`kamak_portal_${id}`); } catch { return false; }
+  });
+  // El modo "cliente" se activa si hay token, sin importar sesion admin.
+  const isClienteMode = hasToken;
+  // Inicial: si hay token, valido contra backend; si no hay token pero hay
+  // sesion admin, allowed directo; si no, no-token.
+  const [accessStatus, setAccessStatus] = useState(
+    hasToken ? 'checking' : (isAdminInternal ? 'allowed' : 'no-token')
+  );
 
   useEffect(() => {
-    if (isAdminInternal) { setAccessStatus('allowed'); return; }
     if (!id) { setAccessStatus('invalid'); return; }
     let token = null;
     try { token = sessionStorage.getItem(`kamak_portal_${id}`); } catch { /* sin sessionStorage */ }
-    if (!token) { setAccessStatus('no-token'); return; }
+    setHasToken(!!token);
+
+    // Sin token: si es admin permitir preview, si no bloquear.
+    if (!token) {
+      setAccessStatus(isAdminInternal ? 'allowed' : 'no-token');
+      return;
+    }
+
+    // Con token: validar contra backend.
     let cancelled = false;
     fetch(`/api/portal/validate-token?token=${encodeURIComponent(token)}`)
       .then(r => r.json())
@@ -73,8 +95,9 @@ export default function PortalCliente() {
   //   lado backend y devuelve solo los datos de esa obra.
   const [serverData, setServerData] = useState(null);
 
+  // Modo CLIENTE: fetch al endpoint serverless (solo se ejecuta si isClienteMode).
   useEffect(() => {
-    if (isAdminInternal || accessStatus !== 'allowed' || !id) return;
+    if (!isClienteMode || accessStatus !== 'allowed' || !id) return;
     let cancelled = false;
     let interval = null;
     let token = null;
@@ -100,11 +123,11 @@ export default function PortalCliente() {
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', fetchData);
     };
-  }, [id, isAdminInternal, accessStatus]);
+  }, [id, isClienteMode, accessStatus]);
 
-  // Modo admin: usar refetch del context (sincroniza con admin en tiempo real).
+  // Modo ADMIN PREVIEW: usar refetch del context (solo si NO es cliente).
   useEffect(() => {
-    if (!isAdminInternal || accessStatus !== 'allowed') return;
+    if (isClienteMode || accessStatus !== 'allowed') return;
     let interval = null;
     const start = () => { if (!interval) interval = setInterval(refetch, 30000); };
     const stop  = () => { if (interval) { clearInterval(interval); interval = null; } };
@@ -117,18 +140,18 @@ export default function PortalCliente() {
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', refetch);
     };
-  }, [accessStatus, refetch, isAdminInternal]);
+  }, [accessStatus, refetch, isClienteMode]);
 
-  // Resolver fuentes de datos: del context (admin) o del endpoint (cliente).
-  const obra = isAdminInternal
-    ? obras.find(o => o.id === id)
-    : serverData?.obra;
-  const detalle = isAdminInternal
-    ? getDetalle(id || '')
-    : (serverData?.detalle || { rubros: [], adicionales: [], cuotas: [], documentos: [], fotos: [], financiacion: {} });
-  const effectiveDolarVenta = isAdminInternal
-    ? dolarVenta
-    : (serverData?.dolarVenta || 1070);
+  // Resolver fuentes de datos: del endpoint (cliente) o del context (admin preview).
+  const obra = isClienteMode
+    ? serverData?.obra
+    : obras.find(o => o.id === id);
+  const detalle = isClienteMode
+    ? (serverData?.detalle || { rubros: [], adicionales: [], cuotas: [], documentos: [], fotos: [], financiacion: {} })
+    : getDetalle(id || '');
+  const effectiveDolarVenta = isClienteMode
+    ? (serverData?.dolarVenta || 1070)
+    : dolarVenta;
 
   // Pantalla de bloqueo: cuando el cliente no tiene acceso valido,
   // mostramos un mensaje claro sin revelar info de la obra.
@@ -152,7 +175,7 @@ export default function PortalCliente() {
 
   // Modo cliente: si todavia no llego la data del endpoint, mostramos loader
   // (sino se veria "Obra no encontrada" incorrectamente mientras carga).
-  if (!isAdminInternal && !serverData) {
+  if (isClienteMode && !serverData) {
     return (
       <div style={{ fontFamily: T.font, background: T.dark, minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
         <div style={{ fontSize: 56 }}>⏳</div>
@@ -173,16 +196,16 @@ export default function PortalCliente() {
   }
 
   // Resolver el nombre del cliente:
-  // - Modo admin: matching del contexto (clienteId -> nombre actual o fallback).
   // - Modo cliente: viene resuelto del endpoint serverless.
-  const clienteActual = isAdminInternal
-    ? ((obra.clienteId && clientes.find(c => c.id === obra.clienteId))
+  // - Modo admin preview: matching del contexto (clienteId -> nombre actual o fallback).
+  const clienteActual = isClienteMode
+    ? null
+    : ((obra.clienteId && clientes.find(c => c.id === obra.clienteId))
        || clientes.find(c => (c.nombre || '').toLowerCase().trim() === (obra.cliente || '').toLowerCase().trim())
-       || null)
-    : null;
-  const clienteNombre = isAdminInternal
-    ? (clienteActual?.nombre || obra.cliente || '')
-    : (serverData?.clienteNombre || obra.cliente || '');
+       || null);
+  const clienteNombre = isClienteMode
+    ? (serverData?.clienteNombre || obra.cliente || '')
+    : (clienteActual?.nombre || obra.cliente || '');
 
   const rubros    = detalle.rubros    || [];
   const cuotas    = detalle.cuotas    || [];
