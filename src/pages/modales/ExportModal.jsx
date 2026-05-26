@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Btn, Label, Divider } from '../../components/ui';
 import { T } from '../../theme';
 import { useDolar } from '../../store/DolarContext';
-import { esc, abrirHTML } from '../../lib/html';
+import { esc, imprimirHTML } from '../../lib/html';
 import { buildWaMeLink, generateQrDataUrl } from '../../lib/clienteAcceso';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -469,25 +469,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
 
       const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl });
 
-      const w = abrirHTML(html, { width: 794, height: 1000 });
-      if (!w) {
-        alert('No se pudo abrir la ventana de impresión.\n\nProbablemente el navegador bloqueó la ventana emergente. Permitilas en la configuración del sitio y volvé a intentar.');
-        return;
-      }
-      // Esperar al evento load real (la pestana termino de bajar HTML+fuentes)
-      // antes de disparar el print. Fallback a timeout si onload no llega.
-      const triggerPrint = () => {
-        try {
-          w.focus();
-          // Pequeño delay extra para que las fuentes se rendereen bien
-          setTimeout(() => { try { w.print(); } catch (e) { console.warn('[imprimir] print error:', e); } }, 400);
-        } catch (e) {
-          console.warn('[imprimir] focus error:', e);
-        }
-      };
-      w.addEventListener('load', triggerPrint, { once: true });
-      // Fallback: si onload no llega en 3s (raro), disparar igual.
-      setTimeout(triggerPrint, 3000);
+      await imprimirHTML(html);
     } catch (e) {
       console.error('[imprimir] error:', e);
       alert('Hubo un error al generar la propuesta:\n\n' + (e?.message || e));

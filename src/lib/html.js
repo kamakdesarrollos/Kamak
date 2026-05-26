@@ -32,36 +32,82 @@ export const esc = (v) => {
 };
 
 /**
- * Abre una nueva ventana con HTML.
+ * Imprime un HTML usando un iframe oculto en la pagina actual.
  *
- * Usa Blob URL en lugar de document.write porque:
- * - document.write tiene limites de tamano en algunos navegadores
- *   (el HTML del presupuesto con QR puede ser >100KB).
- * - El timing es impredecible: w.print() puede dispararse antes de que
- *   las fuentes y el QR carguen, resultando en una pestaña en blanco.
- * - Con Blob URL, el navegador trata el HTML como una pagina real con
- *   evento onload confiable.
+ * Por que iframe en vez de window.open:
+ * - window.open con noopener retorna null en navegadores modernos.
+ * - Sin noopener, document.write tiene limites de tamano y timing.
+ * - Blob URL puede ser bloqueado por algunos navegadores.
+ * - Popup blocker bloquea ventanas nuevas frecuentemente.
  *
- * Devuelve la ventana o null si el navegador la bloqueo (popup blocker).
+ * iframe oculto:
+ * - No requiere popup permission.
+ * - onload es confiable (espera fuentes + imagenes).
+ * - El navegador renderea el HTML del iframe normalmente, incluyendo
+ *   data URLs largos (QR).
+ * - El dialogo de print del iframe abre el sistema de impresion del
+ *   browser igual que window.print().
+ *
+ * Despues de imprimir, el iframe se remueve.
  */
-export const abrirHTML = (html, { width = 860, height = 1200 } = {}) => {
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const w = window.open(
-    url,
-    '_blank',
-    `noreferrer,width=${width},height=${height},scrollbars=yes`
-  );
-  if (!w) {
-    URL.revokeObjectURL(url);
-    return null;
-  }
-  // Defensa anti-XSS desde el padre. Como abrimos con Blob URL del mismo
-  // origin, opener sigue conectado — sin esto, el HTML podria tocar
-  // window.opener.
-  try { w.opener = null; } catch { /* ignore */ }
-  // Liberar el blob despues de un rato (no inmediato, el browser todavia
-  // necesita la URL hasta que la pestana cargue).
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-  return w;
+export const imprimirHTML = (html) => {
+  return new Promise((resolve, reject) => {
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+    document.body.appendChild(iframe);
+
+    const cleanup = () => {
+      // Esperar un poco antes de remover para que el browser tenga
+      // tiempo de mostrar el dialogo de print.
+      setTimeout(() => {
+        try { document.body.removeChild(iframe); } catch {}
+      }, 1500);
+    };
+
+    const triggerPrint = () => {
+      try {
+        const cw = iframe.contentWindow;
+        if (!cw) {
+          reject(new Error('iframe.contentWindow no disponible'));
+          return;
+        }
+        cw.focus();
+        cw.print();
+        cleanup();
+        resolve();
+      } catch (e) {
+        cleanup();
+        reject(e);
+      }
+    };
+
+    iframe.onload = () => {
+      // Pequeno delay para que fuentes/imagenes terminen de pintarse.
+      setTimeout(triggerPrint, 400);
+    };
+    iframe.onerror = (e) => {
+      cleanup();
+      reject(new Error('Error cargando HTML en iframe: ' + e));
+    };
+
+    // Inyectar HTML via document.write del iframe (no bloqueado por popup).
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!doc) throw new Error('iframe.contentDocument no disponible');
+      doc.open();
+      doc.write(html);
+      doc.close();
+    } catch (e) {
+      cleanup();
+      reject(e);
+    }
+  });
+};
+
+// Alias retro-compatible con el nombre anterior. Si algun caller espera
+// el handle de la ventana, ahora devuelve null (no aplica con iframe).
+export const abrirHTML = (html) => {
+  imprimirHTML(html).catch(e => console.error('[abrirHTML/imprimirHTML]', e));
+  return null;
 };
