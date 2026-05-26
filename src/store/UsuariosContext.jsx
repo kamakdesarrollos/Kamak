@@ -88,12 +88,26 @@ function persistRoles(r) {
   try { localStorage.setItem(ROLES_LS_KEY, JSON.stringify(r)); } catch {}
 }
 
+// Cache de usuarios en localStorage para que la app no espere a Supabase
+// al inicio. Si hay cache, mostramos esa lista al toque y refrescamos en
+// background. Sin esto, la app espera ~1s al fetch de app_users en cada
+// carga, lo que retrasa el render.
+const LS_USUARIOS = 'kamak_usuarios_cache_v1';
+const loadUsuariosCache = () => {
+  try { const r = localStorage.getItem(LS_USUARIOS); return r ? JSON.parse(r) : []; } catch { return []; }
+};
+const saveUsuariosCache = (v) => {
+  try { localStorage.setItem(LS_USUARIOS, JSON.stringify(v)); } catch { /* sin storage */ }
+};
+
 // ── Provider ──────────────────────────────────────────────────────────────────
 export function UsuariosProvider({ children }) {
-  const [usuarios, setUsuarios] = useState([]);
+  const [usuarios, setUsuarios] = useState(loadUsuariosCache);
   const [currentUser, setCurrentUser] = useState(loadSession);
   const [roles, setRoles] = useState(loadRoles);
-  const [loading, setLoading] = useState(true);
+  // Si hay cache de usuarios, loading parte en false (la app puede renderear
+  // ya mismo con esa lista). Sin cache, esperamos a Supabase.
+  const [loading, setLoading] = useState(() => loadUsuariosCache().length === 0);
   const { markReady } = useAppLoading();
 
   // Carga desde Supabase al montar (re-corre al remontar tras cambio de usuario)
@@ -101,7 +115,11 @@ export function UsuariosProvider({ children }) {
     let cancelled = false;
     supabase.from('app_users').select('*').then(({ data, error }) => {
       if (cancelled) return;
-      if (!error && data) setUsuarios(data.map(rowToUser));
+      if (!error && data) {
+        const u = data.map(rowToUser);
+        setUsuarios(u);
+        saveUsuariosCache(u);
+      }
       setLoading(false);
       markReady();
     });
