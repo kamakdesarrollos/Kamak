@@ -2,6 +2,18 @@ import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { broadcastChange } from './syncBus';
 
+// Throttle interno para no spamear el mismo toast cuando la red esta caida
+// y cada provider intenta guardar al mismo tiempo. Mostramos como mucho un
+// toast cada 5 segundos.
+let _lastToastAt = 0;
+const _fireErrorToast = (msg) => {
+  const now = Date.now();
+  if (now - _lastToastAt < 5000) return;
+  _lastToastAt = now;
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('kamak:toast', { detail: { type: 'error', msg } }));
+};
+
 // Llama la Edge Function admin-users (requiere que exista en Supabase)
 export async function adminAction(action, payload) {
   try {
@@ -46,9 +58,16 @@ export async function createAuthUser(email, password) {
 export async function loadSharedData(key) {
   try {
     const { data, error } = await supabase.from('shared_data').select('data').eq('key', key).maybeSingle();
-    if (error) console.error('[loadSharedData] error:', key, error);
+    if (error) {
+      console.error('[loadSharedData] error:', key, error);
+      _fireErrorToast('Sin conexión con la base de datos. Reintentando…');
+    }
     return data?.data ?? null;
-  } catch (e) { console.error('[loadSharedData] exception:', key, e); return null; }
+  } catch (e) {
+    console.error('[loadSharedData] exception:', key, e);
+    _fireErrorToast('Sin conexión con la base de datos. Reintentando…');
+    return null;
+  }
 }
 
 export async function saveSharedData(key, value, { silent = false } = {}) {
@@ -57,8 +76,16 @@ export async function saveSharedData(key, value, { silent = false } = {}) {
       { key, data: value, updated_at: new Date().toISOString() },
       { onConflict: 'key' }
     );
-    if (error) { console.error('[saveSharedData] error:', key, error); return false; }
+    if (error) {
+      console.error('[saveSharedData] error:', key, error);
+      _fireErrorToast('No se pudo guardar. Tus cambios quedan en este dispositivo y se reenvían cuando haya conexión.');
+      return false;
+    }
     if (!silent) broadcastChange(key);
     return true;
-  } catch (e) { console.error('[saveSharedData] exception:', key, e); return false; }
+  } catch (e) {
+    console.error('[saveSharedData] exception:', key, e);
+    _fireErrorToast('No se pudo guardar. Tus cambios quedan en este dispositivo y se reenvían cuando haya conexión.');
+    return false;
+  }
 }

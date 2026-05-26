@@ -21,6 +21,7 @@ import { AuthProvider, useAuth } from './store/AuthContext';
 // Login se importa estatico — es lo primero que se ve si no hay sesion.
 import Login from './pages/Login';
 import WhatsappVerificationBanner from './components/WhatsappVerificationBanner';
+import { ToastProvider } from './components/ui/Toast';
 
 // Resto de paginas: lazy load para bajar el bundle inicial. Cada pagina
 // se descarga solo cuando el usuario navega a ella.
@@ -239,8 +240,10 @@ function AppShell() {
 
 export default function App() {
   return (
+    <ToastProvider>
     <AuthProvider>
       <AppShell />
     </AuthProvider>
+    </ToastProvider>
   );
 }
