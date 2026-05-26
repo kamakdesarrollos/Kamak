@@ -300,3 +300,19 @@ export function useObras() {
   if (!ctx) throw new Error('useObras debe usarse dentro de ObrasProvider');
   return ctx;
 }
+
+// Selectores granulares: devuelven una referencia estable si la obra/detalle
+// no cambia, aunque el resto del array si lo haga. El consumidor sigue
+// re-renderizando porque el Context API no permite suscripcion granular
+// real, pero al menos se evita procesar derivados costosos cuando la obra
+// en cuestion no se modifico (con useMemo aguas abajo).
+
+export function useObra(id) {
+  const { obras } = useObras();
+  return useMemo(() => obras.find(o => o.id === id) || null, [obras, id]);
+}
+
+export function useObraDetalle(id) {
+  const { detalles } = useObras();
+  return useMemo(() => detalles[id] ?? EMPTY_DETALLE, [detalles, id]);
+}

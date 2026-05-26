@@ -62,12 +62,19 @@ export default function Modal({
               {subtitle && <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{subtitle}</div>}
             </div>
             {onClose && (
-              <span
-                style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7, userSelect: 'none' }}
+              <button
+                type="button"
+                aria-label="Cerrar"
                 onClick={onClose}
+                style={{
+                  cursor: 'pointer', fontSize: 20, opacity: 0.7,
+                  userSelect: 'none', background: 'transparent',
+                  border: 'none', color: 'inherit', padding: 0,
+                  lineHeight: 1,
+                }}
               >
                 ✕
-              </span>
+              </button>
             )}
           </div>
         )}

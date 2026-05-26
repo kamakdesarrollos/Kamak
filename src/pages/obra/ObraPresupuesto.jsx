@@ -18,6 +18,10 @@ import { supabase } from '../../lib/supabase';
 import { loadSharedData, saveSharedData } from '../../lib/dbHelpers';
 import { onRemoteChange } from '../../lib/syncBus';
 import { esc, abrirHTML } from '../../lib/html';
+import {
+  cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
+  tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
+} from './helpers';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -25,59 +29,6 @@ const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 const fmtM = (n, moneda) => moneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
 const fmtQ = (n) => { if (!n) return '0'; const r = Math.round(n * 1000) / 1000; return r.toLocaleString('es-AR', { maximumFractionDigits: 3 }); };
 const fmtD = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
-
-// ── Helpers de cuotas (usados en TabCuentaCliente y TabFinanciacion) ───────────
-const cuotaMontoFn = (c, moneda, tc) =>
-  (c._usd || moneda !== 'USD') ? (c.monto || 0) : Math.round((c.monto || 0) / tc);
-const cuotaCobrado = (c, moneda, tc) =>
-  (c.pagos || []).reduce((s, p) => {
-    if (moneda === 'USD') return s + (p.moneda === 'ARS' ? Math.round((p.monto||0) / (p.tc||tc)) : (p.monto||0));
-    return s + (p.moneda === 'USD' ? Math.round((p.monto||0) * (p.tc||tc)) : (p.monto||0));
-  }, 0);
-const cuotaEstadoCalc = (c, moneda, tc) => {
-  const cobrado = cuotaCobrado(c, moneda, tc);
-  if (cobrado <= 0) return 'pendiente';
-  if (cobrado >= cuotaMontoFn(c, moneda, tc)) return 'pagado';
-  return 'parcial';
-};
-
-const tareaVentaUnit = (t, rubro) => {
-  const costoUnit = t.costoMat + (t.costoSub || 0);
-  if (t.margenLinea != null) return costoUnit * (1 + t.margenLinea / 100);
-  return t.costoMat * (1 + rubro.margenMat / 100) + (t.costoSub || 0) * (1 + rubro.margenMO / 100);
-};
-
-const calcRubro = (rubro) => {
-  const tareas = (rubro.tareas || []).filter(t => t.tipo !== 'seccion');
-  let cMat = 0, cSub = 0, venta = 0;
-  for (const t of tareas) {
-    cMat += t.costoMat * t.cantidad;
-    cSub += (t.costoSub || 0) * t.cantidad;
-    venta += tareaVentaUnit(t, rubro) * t.cantidad;
-  }
-  const costo = cMat + cSub;
-  const margen = venta > 0 ? Math.round((venta - costo) / venta * 100) : 0;
-  const avance = tareas.length > 0 ? Math.round(tareas.reduce((s, t) => s + t.avance, 0) / tareas.length) : 0;
-  return { cMat, cSub, costo, venta, margen, avance };
-};
-
-const calcObra = (rubros) => {
-  const rr = rubros.map(r => ({ ...r, ...calcRubro(r) }));
-  const costo = rr.reduce((s, r) => s + r.costo, 0);
-  const venta = rr.reduce((s, r) => s + r.venta, 0);
-  const cMat = rr.reduce((s, r) => s + r.cMat, 0);
-  const cSub = rr.reduce((s, r) => s + r.cSub, 0);
-  const margen = venta > 0 ? Math.round((venta - costo) / venta * 100) : 0;
-  return { costo, venta, cMat, cSub, margen, rubros: rr };
-};
-
-// ── Helpers contratos MO ─────────────────────────────────────────────────────
-const calcTareaContratada = (tareaId, contratos) =>
-  contratos
-    .filter(c => c.estado !== 'anulado' && Array.isArray(c.tareas))
-    .flatMap(c => c.tareas)
-    .filter(t => t.tareaId === tareaId)
-    .reduce((s, t) => s + (t.cantidadContratada || 0), 0);
 
 // ── UI micro-helpers ──────────────────────────────────────────────────────────
 const inputSt = { padding: '5px 8px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, width: '100%', boxSizing: 'border-box', outline: 'none' };

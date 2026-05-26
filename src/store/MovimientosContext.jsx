@@ -251,3 +251,23 @@ export function MovimientosProvider({ children }) {
 }
 
 export const useMovimientos = () => useContext(CTX);
+
+// Selector granular: devuelve los movimientos de una obra puntual con
+// referencia estable mientras esa lista no cambie. Si la lista global de
+// movimientos cambia pero ninguno de la obra pedida se modifico, el resultado
+// mantiene la misma referencia, evitando recomputos costosos aguas abajo.
+export function useMovimientosByObra(obraId) {
+  const { movimientos } = useMovimientos();
+  return useMemo(
+    () => obraId ? movimientos.filter(m => m.obraId === obraId) : [],
+    [movimientos, obraId]
+  );
+}
+
+export function useMovimientosByCaja(cId) {
+  const { movimientos } = useMovimientos();
+  return useMemo(
+    () => cId ? movimientos.filter(m => m.cajaId === cId || m.cajaDestinoId === cId) : [],
+    [movimientos, cId]
+  );
+}
