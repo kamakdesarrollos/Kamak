@@ -321,6 +321,32 @@ export default function PortalCliente() {
       {/* ── Content ────────────────────────────────────────────────────────── */}
       <div className="portal-content" style={{ maxWidth: 1060, margin: '0 auto' }}>
 
+        {/* Debug panel: visible si la URL tiene ?debug=1 (admin o cliente).
+            Util para comparar lo que ve cada uno cuando hay desincronizacion. */}
+        {typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug') && (
+          <details open style={{ background: '#fff8e0', padding: 10, fontSize: 11, fontFamily: 'monospace', borderRadius: 4, marginBottom: 12, border: '1px solid #f0d878' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#7a5a00' }}>🔍 DEBUG ({isClienteMode ? 'MODO CLIENTE (via endpoint)' : 'MODO ADMIN (via context)'})</summary>
+            <div style={{ marginTop: 8, lineHeight: 1.6 }}>
+              <div>modo: <b>{isClienteMode ? 'cliente (endpoint /api/portal/data)' : 'admin preview (context)'}</b></div>
+              <div>obra.id: <b>{obra.id}</b></div>
+              <div>obra.moneda: <b>{obra.moneda || '(none)'}</b></div>
+              <div>obra.cliente (texto): <b>{obra.cliente}</b></div>
+              <div>obra.clienteId: <b>{obra.clienteId || '(none)'}</b></div>
+              <div>clienteNombre (resuelto): <b>{clienteNombre}</b></div>
+              <div>dolarVenta efectivo: <b>{effectiveDolarVenta}</b></div>
+              <div>cuotas.length: <b>{cuotas.length}</b></div>
+              <div style={{ marginTop: 6 }}>cuotas raw:</div>
+              <pre style={{ margin: 0, padding: 6, background: '#fff', borderRadius: 3, fontSize: 10, overflow: 'auto' }}>
+                {JSON.stringify(cuotas.map(c => ({ n: c.n, monto: c.monto, _usd: c._usd, estado: c.estado })), null, 2)}
+              </pre>
+              <div style={{ marginTop: 6 }}>totalCuotasUSD: <b>{totalCuotasUSD}</b></div>
+              <div>totalClienteUSD: <b>{totalClienteUSD}</b></div>
+              <div>fotos.length: <b>{fotos.length}</b></div>
+            </div>
+          </details>
+        )}
+
+
 
 
         {/* TAB 0 — RESUMEN */}
