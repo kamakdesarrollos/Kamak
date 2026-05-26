@@ -229,7 +229,11 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', background: T.dark, color: '#fff', position: 'relative', overflow: 'visible', flexShrink: 0, zIndex: 100 }}>
-      <Stripes style={{ top: -30, right: -10 }} />
+      {/* Wrapper para contener las rayas dentro del Topbar (sin afectar el
+          panel de notificaciones que sale por abajo con position:absolute). */}
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+        <Stripes style={{ top: -30, right: -10 }} />
+      </div>
 
       <Link to="/" style={{ display: 'block', lineHeight: 0 }}><Logo h={26} dark /></Link>
 

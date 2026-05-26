@@ -1,4 +1,4 @@
-import { Box, Stripes } from './index';
+import { Box } from './index';
 import { T } from '../../theme';
 
 // Hero unificado para los encabezados de pagina (Cajas, Cheques, Plantillas,
@@ -32,8 +32,8 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
       // que da sensacion de "elevacion" sin ser invasivo.
       boxShadow: '0 1px 0 rgba(0,0,0,0.04), 0 6px 14px -8px rgba(20,18,15,0.18)',
     }}>
-      {/* Banner oscuro — bajo perfil. Rayas sutiles del mismo lenguaje
-          visual que el Topbar. Linea acento abajo da elegancia sin ruido. */}
+      {/* Banner oscuro — bajo perfil, sin rayas (las rayas viven en el Topbar
+          para no superponerse). Sin linea acento abajo para que se vea limpio. */}
       <div style={{
         background: T.dark,
         color: '#fff',
@@ -44,10 +44,7 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
         position: 'relative',
         overflow: 'hidden',
         gap: 12,
-        borderBottom: `1px solid ${T.accent}`,
       }}>
-        <Stripes style={{ top: -30, right: -10, opacity: 0.07 }} />
-
         <div style={{ position: 'relative', minWidth: 0, flex: 1 }}>
           {label && (
             <div style={{
