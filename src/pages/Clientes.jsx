@@ -79,8 +79,8 @@ export default function Clientes() {
   }, [currentUser, isAdmin, navigate]);
 
   const { clientes, addCliente, updateCliente, removeCliente } = useClientes();
-  const { obras } = useObras();
-  const { movimientos } = useMovimientos();
+  const { obras, updateObra } = useObras();
+  const { movimientos, updateMovimiento } = useMovimientos();
   const [searchParams] = useSearchParams();
   const [modal, setModal] = useState(false);
   const [editCliente, setEditCliente] = useState(null);
@@ -115,6 +115,26 @@ export default function Clientes() {
       (c.cuit    || '').includes(q)
     );
   }, [clientes, search]);
+
+  // Si el nombre del cliente cambio, propagar el nuevo nombre a:
+  // - obras[].cliente  (donde matcheaba con el nombre viejo)
+  // - movimientos[].proveedor (en ingresos que usen el nombre del cliente como
+  //   proveedor; legacy, antes de que existiera clienteId)
+  // Sin esto, las obras y movimientos siguen mostrando el nombre viejo y el
+  // QR del cliente (que se arma con obra.cliente) tambien queda desactualizado.
+  const saveCliente = (initial, data) => {
+    updateCliente(initial.id, data);
+    const oldName = initial.nombre;
+    const newName = data.nombre;
+    if (oldName && newName && oldName !== newName) {
+      obras
+        .filter(o => o.cliente === oldName)
+        .forEach(o => updateObra(o.id, { cliente: newName }));
+      movimientos
+        .filter(m => m.tipo === 'ingreso' && m.proveedor === oldName)
+        .forEach(m => updateMovimiento(m.id, { proveedor: newName }));
+    }
+  };
 
   return (
     <PageLayout breadcrumb={['Clientes']} active="Clientes">
@@ -234,7 +254,7 @@ export default function Clientes() {
         <NuevoClienteModal
           initial={editCliente}
           onClose={() => setEditCliente(null)}
-          onSave={(data) => updateCliente(editCliente.id, data)} />
+          onSave={(data) => saveCliente(editCliente, data)} />
       )}
     </PageLayout>
   );
