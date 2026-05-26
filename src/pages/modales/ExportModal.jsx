@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Btn, Label, Divider } from '../../components/ui';
 import { T } from '../../theme';
 import { useDolar } from '../../store/DolarContext';
+import { esc, abrirHTML } from '../../lib/html';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -71,7 +72,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       <div class="proj-frame">
         <div class="frame-lbl">◆ NOMBRE DE LA OBRA ◆</div>
         ${CORNER_BRACKETS}
-        <div class="proj-name">${(obra?.nombre || 'OBRA').toUpperCase()}</div>
+        <div class="proj-name">${esc((obra?.nombre || 'OBRA').toUpperCase())}</div>
       </div>
       <div class="sub-row">
         <div class="hairline"></div>
@@ -81,8 +82,8 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       <div class="portada-num">${numPresu} &nbsp;·&nbsp; ${fecha}</div>
     </div>
     <div class="portada-ftr">
-      <div><div class="cell-lbl">CLIENTE</div><div class="cell-val">${obra?.cliente || '—'}</div></div>
-      <div><div class="cell-lbl">TIPO DE OBRA</div><div class="cell-val">${obra?.tipo || '—'}</div></div>
+      <div><div class="cell-lbl">CLIENTE</div><div class="cell-val">${esc(obra?.cliente || '—')}</div></div>
+      <div><div class="cell-lbl">TIPO DE OBRA</div><div class="cell-val">${esc(obra?.tipo || '—')}</div></div>
       <div><div class="cell-lbl">FECHA · VIGENCIA</div><div class="cell-val">${fecha}</div><div class="cell-sub">Vigencia: ${vigencia} días</div></div>
       <div><div class="cell-lbl">MONTO TOTAL</div><div class="cell-val-lg">U$S ${toUSD(totalVenta)}</div><div class="cell-sub">+ IVA</div></div>
     </div>
@@ -93,7 +94,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
     const taskRows = rubro.tareas.map((t, ti) => {
       const vu = tareaVentaUnit(t, rubro);
       return `<div class="task-row${ti % 2 === 1 ? ' alt' : ''}">
-        <div class="tc tc-name">${t.nombre}${t.codigo ? ` <span class="t-code">[${t.codigo}]</span>` : ''}</div>
+        <div class="tc tc-name">${esc(t.nombre)}${t.codigo ? ` <span class="t-code">[${esc(t.codigo)}]</span>` : ''}</div>
         <div class="tc tc-un">${t.unidad}</div>
         <div class="tc tc-num">${fmtN(t.cantidad)}</div>
         <div class="tc tc-num">U$S ${toUSD(vu)}</div>
@@ -102,7 +103,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
     }).join('');
 
     return `<div class="rubro-sec">
-      <div class="rubro-ttl"><span class="dmnd-sm"></span>RUBRO ${String(ri + 1).padStart(2, '0')} · ${rubro.nombre.toUpperCase()}</div>
+      <div class="rubro-ttl"><span class="dmnd-sm"></span>RUBRO ${String(ri + 1).padStart(2, '0')} · ${esc(rubro.nombre.toUpperCase())}</div>
       <div class="tbl-hdr">
         <div class="tc tc-name">TAREA / DESCRIPCIÓN</div>
         <div class="tc tc-un">UN</div>
@@ -119,14 +120,14 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
     </div>`;
   }).join('');
 
-  const rubrosList = rr.map((r, i) => `<div>${String(i + 1).padStart(2, '0')} · ${r.nombre}</div>`).join('');
+  const rubrosList = rr.map((r, i) => `<div>${String(i + 1).padStart(2, '0')} · ${esc(r.nombre)}</div>`).join('');
 
   const computo = `
   <div class="comp-flow light">
     <div class="wm-br">${STRIPES_SVG}</div>
     <div class="comp-hdr">
       ${imgDark}
-      <div class="comp-meta">CÓMPUTO Y PRESUPUESTO · ${(obra?.nombre || '').toUpperCase()} · ${numPresu}</div>
+      <div class="comp-meta">CÓMPUTO Y PRESUPUESTO · ${esc((obra?.nombre || '').toUpperCase())} · ${esc(numPresu)}</div>
     </div>
     <div class="comp-body">${rubroSections}</div>
     <div class="totales-strip">
@@ -147,7 +148,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
           <span class="total-val">U$S ${toUSD(totalVenta)} <span class="iva">+ IVA</span></span>
         </div>
         <div style="margin-top:4px;font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1px;text-align:right">TC BNA $${Math.round(tc).toLocaleString('es-AR')}</div>
-        ${nota ? `<div class="nota-pie">${nota}</div>` : ''}
+        ${nota ? `<div class="nota-pie">${esc(nota)}</div>` : ''}
       </div>
     </div>
     <div class="comp-ftr">
@@ -163,7 +164,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
     <div class="wm-bl">${STRIPES_SVG}</div>
     <div class="cond-hdr">
       ${imgLight}
-      <div class="contact-r">${(obra?.nombre || '').toUpperCase()}<br>${numPresu}</div>
+      <div class="contact-r">${esc((obra?.nombre || '').toUpperCase())}<br>${esc(numPresu)}</div>
     </div>
     <div style="height:4px;background:#1a9b9c;"></div>
     <div class="cond-body">
@@ -175,7 +176,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div>
           <div class="cond-sec-lbl">CONDICIONES GENERALES</div>
           <div class="cond-txt">
-            ${formaPago.split('\n').filter(l => l.trim()).map(l => `<p>${l.trim()}</p>`).join('')}
+            ${formaPago.split('\n').filter(l => l.trim()).map(l => `<p>${esc(l.trim())}</p>`).join('')}
             <p style="margin-top:12px;color:#9a9892;font-size:10px">Vigencia: <b>${vigencia} días</b> desde la fecha de emisión · ${fecha}</p>
           </div>
         </div>
@@ -197,7 +198,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
               <span style="font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace">$ ${fmtN(totalVenta)} ARS</span>
             </div>
           </div>
-          ${nota ? `<div class="cond-nota">${nota}</div>` : ''}
+          ${nota ? `<div class="cond-nota">${esc(nota)}</div>` : ''}
         </div>
       </div>
     </div>
@@ -438,11 +439,10 @@ export default function ExportModal({ onClose, obra, detalle }) {
     const logoLight = `${origin}/assets/kamak-logo-light.png`;
     const logoDark = `${origin}/assets/kamak-logo.png`;
     const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta });
-    const w = window.open('', '_blank', 'width=794,height=1000,scrollbars=yes');
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 900);
+    // abrirHTML usa noopener,noreferrer asi la ventana abierta no puede
+    // tocar window.opener (defensa adicional contra XSS).
+    const w = abrirHTML(html, { width: 794, height: 1000 });
+    if (w) setTimeout(() => { w.focus(); w.print(); }, 900);
   };
 
   const PREVIEW_SCALE = 0.38;

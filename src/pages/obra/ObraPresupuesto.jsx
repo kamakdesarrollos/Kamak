@@ -18,6 +18,7 @@ import { useUsuarios } from '../../store/UsuariosContext';
 import { supabase } from '../../lib/supabase';
 import { loadSharedData, saveSharedData } from '../../lib/dbHelpers';
 import { onRemoteChange } from '../../lib/syncBus';
+import { esc, abrirHTML } from '../../lib/html';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -1270,14 +1271,14 @@ function TabMateriales({ detalle, obra }) {
     const rows = visibleMats.map((m, i) => `
       <tr>
         <td>${i + 1}</td>
-        <td><b>${m.nombre}</b></td>
-        <td>${m.categoria}</td>
-        <td>${m.unidad}</td>
+        <td><b>${esc(m.nombre)}</b></td>
+        <td>${esc(m.categoria)}</td>
+        <td>${esc(m.unidad)}</td>
         <td style="text-align:right;font-family:monospace">${fmtQ(m.cantidad)}</td>
         <td style="width:120px"></td>
       </tr>`).join('');
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Lista de Materiales — ${obra?.nombre || ''}</title>
+<title>Lista de Materiales — ${esc(obra?.nombre || '')}</title>
 <style>
   body{font-family:Arial,sans-serif;font-size:12px;padding:16mm 20mm;color:#1a1a1a}
   h2{margin:0 0 2px;font-size:17px;letter-spacing:0.5px}
@@ -1290,8 +1291,8 @@ function TabMateriales({ detalle, obra }) {
   .note{font-size:10px;color:#888;margin-top:14px}
   @media print{body{padding:8mm 12mm}.note{display:none}}
 </style></head><body>
-<h2>LISTA DE MATERIALES · ${(obra?.nombre || '').toUpperCase()}</h2>
-<div class="sub">${titulo} · Para cotización · ${fecha}</div>
+<h2>LISTA DE MATERIALES · ${esc((obra?.nombre || '').toUpperCase())}</h2>
+<div class="sub">${esc(titulo)} · Para cotización · ${esc(fecha)}</div>
 <table>
   <thead><tr>
     <th style="width:32px">#</th>
@@ -1306,9 +1307,7 @@ function TabMateriales({ detalle, obra }) {
 <div class="note">* Lista generada automáticamente desde Kamak · Precios a confirmar por proveedor</div>
 <script>setTimeout(()=>window.print(),400)</script>
 </body></html>`;
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
+    abrirHTML(html);
   };
 
   return (
@@ -1428,10 +1427,10 @@ function generarHTMLAdicionales({ obra, detalle, moneda }) {
         : `<span class="pill warn">pendiente</span>`;
     return `<tr${i % 2 === 1 ? ' class="alt"' : ''}>
       <td>${i + 1}</td>
-      <td class="b">${a.descripcion || '—'}</td>
-      <td>${a.tarea || '—'}</td>
+      <td class="b">${esc(a.descripcion || '—')}</td>
+      <td>${esc(a.tarea || '—')}</td>
       <td class="r">${a.cantidad != null ? fmtNE(a.cantidad) : '—'}</td>
-      <td class="r">${a.unidad || '—'}</td>
+      <td class="r">${esc(a.unidad || '—')}</td>
       <td class="r">${a.costoTotal != null ? fmtME(a.costoTotal, monedaStr) : '—'}</td>
       <td class="r b" style="color:#1a9b9c">${a.valorVentaTotal != null ? fmtME(a.valorVentaTotal, monedaStr) : '—'}</td>
       <td>${estadoPill}</td>
@@ -1439,13 +1438,13 @@ function generarHTMLAdicionales({ obra, detalle, moneda }) {
     </tr>`;
   }).join('');
 
-  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Adicionales — ${obra?.nombre || ''}</title><style>${BASE_CSS}</style></head><body>
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Adicionales — ${esc(obra?.nombre || '')}</title><style>${BASE_CSS}</style></head><body>
 <div class="hdr">
   <div><div class="logo">KAMAK</div><div style="font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;margin-top:2px">KAMAKDESARROLLOS@GMAIL.COM</div></div>
   <div class="hdr-r">ADICIONALES DE OBRA<br>${fechaE()}</div>
 </div>
 <div class="title">ADICIONALES</div>
-<div class="obra-info">${(obra?.nombre || '').toUpperCase()}${obra?.cliente ? ' · ' + obra.cliente : ''}${obra?.tipo ? ' · ' + obra.tipo : ''} · ${adic.length} adicionales · ${aprobados.length} aprobados</div>
+<div class="obra-info">${esc((obra?.nombre || '').toUpperCase())}${obra?.cliente ? ' · ' + esc(obra.cliente) : ''}${obra?.tipo ? ' · ' + esc(obra.tipo) : ''} · ${adic.length} adicionales · ${aprobados.length} aprobados</div>
 <table>
   <thead><tr>
     <th>#</th><th>Descripción</th><th>Tarea</th><th class="r">Cant</th><th class="r">Un</th>
@@ -1670,7 +1669,7 @@ ${fin.notaPortal ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f
         <div style="height:80px"></div>
         <div style="height:1px;background:#1a9b9c;margin-bottom:8px"></div>
         <div style="font-size:8.5px;color:#9a9892;letter-spacing:2px;font-family:'JetBrains Mono',monospace">CONFORMIDAD DEL CLIENTE</div>
-        <div style="font-size:13px;font-weight:700;margin-top:5px;color:#fff">${obra?.cliente || '___________________________'}</div>
+        <div style="font-size:13px;font-weight:700;margin-top:5px;color:#fff">${esc(obra?.cliente || '___________________________')}</div>
         <div style="font-size:9px;color:#9a9892;margin-top:2px">FECHA: ___________________</div>
       </div>
     </div>
@@ -1686,9 +1685,8 @@ ${fin.notaPortal ? `<div style="margin-top:12px;padding:8px 12px;background:#f9f
 }
 
 function abrirExport(html, titulo) {
-  const w = window.open('', '_blank', 'width=794,height=1000,scrollbars=yes');
-  w.document.open(); w.document.write(html); w.document.close();
-  setTimeout(() => { w.focus(); w.print(); }, 800);
+  const w = abrirHTML(html, { width: 794, height: 1000 });
+  if (w) setTimeout(() => { w.focus(); w.print(); }, 800);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

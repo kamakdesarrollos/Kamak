@@ -1,5 +1,6 @@
 import { Btn } from '../../components/ui';
 import { T } from '../../theme';
+import { esc, abrirHTML } from '../../lib/html';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 const fmtM = (n) => `$ ${fmtN(n)}`;
@@ -156,30 +157,30 @@ body{font-family:'Montserrat',sans-serif}
   <div class="teal-rule"><div class="diamond-c"></div></div>
   <div class="port-hero">
     <div class="eyebrow">CONTRATO DE MANO DE OBRA</div>
-    <div class="obra-subtitle">OBRA · <span>${(obra?.nombre || '—').toUpperCase()}</span></div>
+    <div class="obra-subtitle">OBRA · <span>${esc((obra?.nombre || '—').toUpperCase())}</span></div>
     <div class="title-frame">
       <div class="frame-lbl">◆ CONTRATISTA ◆</div>
       <div class="corner c-tl"></div><div class="corner c-tr"></div>
       <div class="corner c-bl"></div><div class="corner c-br"></div>
-      <div class="title-main">${(c.proveedor || c.gremio || '').toUpperCase()}</div>
-      <div class="title-num">${numContrato} &nbsp;·&nbsp; ${fecha}</div>
+      <div class="title-main">${esc((c.proveedor || c.gremio || '').toUpperCase())}</div>
+      <div class="title-num">${esc(numContrato)} &nbsp;·&nbsp; ${esc(fecha)}</div>
     </div>
   </div>
   <div class="info-grid">
     <div><div class="i-lbl">CONTRATANTE</div><div class="i-val">Kamak Desarrollos SRL</div></div>
-    <div><div class="i-lbl">CONTRATISTA</div><div class="i-val">${c.proveedor || '—'}</div>${c.cuit ? `<div class="i-sub">CUIT ${c.cuit}</div>` : ''}</div>
-    <div><div class="i-lbl">OBRA</div><div class="i-val">${obra?.nombre || '—'}</div></div>
-    <div><div class="i-lbl">PERÍODO DE OBRA</div><div class="i-val" style="font-size:12px">${fmtD(c.fechaInicio)} → ${fmtD(c.fechaFin)}</div></div>
+    <div><div class="i-lbl">CONTRATISTA</div><div class="i-val">${esc(c.proveedor || '—')}</div>${c.cuit ? `<div class="i-sub">CUIT ${esc(c.cuit)}</div>` : ''}</div>
+    <div><div class="i-lbl">OBRA</div><div class="i-val">${esc(obra?.nombre || '—')}</div></div>
+    <div><div class="i-lbl">PERÍODO DE OBRA</div><div class="i-val" style="font-size:12px">${esc(fmtD(c.fechaInicio))} → ${esc(fmtD(c.fechaFin))}</div></div>
   </div>
   <div class="port-ftr">
-    <div><div class="cell-lbl">FORMA DE PAGO</div><div class="cell-val">${c.formaPago || 'Por avance certificado'}</div></div>
-    <div><div class="cell-lbl">MONTO TOTAL MO</div><div class="cell-val-lg">${fmtM(monto)}</div><div class="cell-sub">+ IVA · Fondo reparo ${c.fondoReparo || 5}%</div></div>
+    <div><div class="cell-lbl">FORMA DE PAGO</div><div class="cell-val">${esc(c.formaPago || 'Por avance certificado')}</div></div>
+    <div><div class="cell-lbl">MONTO TOTAL MO</div><div class="cell-val-lg">${fmtM(monto)}</div><div class="cell-sub">+ IVA · Fondo reparo ${esc(c.fondoReparo || 5)}%</div></div>
   </div>
 </div>
 
 <div class="pag-light">
   <div class="wm-br">${STRIPES_SVG}</div>
-  <div class="comp-hdr">${imgDark}<div class="comp-meta">CONTRATO MO · ${(c.proveedor || c.gremio || '').toUpperCase()} · ${numContrato}</div></div>
+  <div class="comp-hdr">${imgDark}<div class="comp-meta">CONTRATO MO · ${esc((c.proveedor || c.gremio || '').toUpperCase())} · ${esc(numContrato)}</div></div>
   <div class="sec-ttl"><span class="dmnd-sm"></span>ALCANCE DE TRABAJOS</div>
   <div class="tbl-hdr">
     <div class="tc tc-name">DESCRIPCIÓN</div>
@@ -200,12 +201,12 @@ body{font-family:'Montserrat',sans-serif}
   <div class="sec-ttl" style="margin-top:10px"><span class="dmnd-sm"></span>CONDICIONES CONTRACTUALES</div>
   <div class="cond-sec">
     <div class="cond-grid">
-      <div><div class="c-lbl">FORMA DE PAGO</div><div class="c-val">${c.formaPago || 'Por avance certificado mensualmente'}</div></div>
-      <div><div class="c-lbl">FONDO DE REPARO</div><div class="c-val">${c.fondoReparo || 5}% retenido hasta recepción definitiva</div></div>
-      <div><div class="c-lbl">FECHA INICIO</div><div class="c-val">${fmtD(c.fechaInicio)}</div></div>
-      <div><div class="c-lbl">FECHA FIN ESTIMADA</div><div class="c-val">${fmtD(c.fechaFin)}</div></div>
-      <div><div class="c-lbl">OBRA</div><div class="c-val">${obra?.nombre || '—'}</div></div>
-      <div><div class="c-lbl">CONTRATO N°</div><div class="c-val" style="font-family:'JetBrains Mono',monospace">${numContrato}</div></div>
+      <div><div class="c-lbl">FORMA DE PAGO</div><div class="c-val">${esc(c.formaPago || 'Por avance certificado mensualmente')}</div></div>
+      <div><div class="c-lbl">FONDO DE REPARO</div><div class="c-val">${esc(c.fondoReparo || 5)}% retenido hasta recepción definitiva</div></div>
+      <div><div class="c-lbl">FECHA INICIO</div><div class="c-val">${esc(fmtD(c.fechaInicio))}</div></div>
+      <div><div class="c-lbl">FECHA FIN ESTIMADA</div><div class="c-val">${esc(fmtD(c.fechaFin))}</div></div>
+      <div><div class="c-lbl">OBRA</div><div class="c-val">${esc(obra?.nombre || '—')}</div></div>
+      <div><div class="c-lbl">CONTRATO N°</div><div class="c-val" style="font-family:'JetBrains Mono',monospace">${esc(numContrato)}</div></div>
     </div>
   </div>
   <div class="comp-ftr">
@@ -233,11 +234,8 @@ export default function ContratoMOModal({ onClose, contrato, obra }) {
       logoLight: `${origin}/assets/kamak-logo-light.png`,
       logoDark: `${origin}/assets/kamak-logo.png`,
     });
-    const w = window.open('', '_blank', 'width=860,height=1200,scrollbars=yes');
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 900);
+    const w = abrirHTML(html, { width: 860, height: 1200 });
+    if (w) setTimeout(() => { w.focus(); w.print(); }, 900);
   };
 
   return (
