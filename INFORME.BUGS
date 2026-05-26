@@ -1,0 +1,834 @@
+# INFORME DE BUGS, INCONSISTENCIAS Y PROBLEMAS DE CALIDAD — Kamak
+
+> Generado por análisis profundo de todo el proyecto (3 agentes especializados en seguridad/RBAC, arquitectura/performance y calidad/bugs).
+> Fecha: 2026-05-26.
+> Total de hallazgos únicos: ~95, agrupados por severidad y por área.
+
+---
+
+## Cómo leer este informe
+
+Cada hallazgo tiene:
+
+- **Severidad**: qué tan urgente es (CRÍTICO → ALTO → MEDIO → BAJO).
+- **Dónde**: archivo y línea exactos para que puedas ir directo a verlo.
+- **Qué pasa**: explicación simple, sin jerga.
+- **Por qué importa**: qué pasa en la vida real por culpa de esto.
+- **Cómo arreglar (idea)**: sugerencia concreta, no una solución copy-paste.
+
+### Cómo se mide la severidad
+
+| Símbolo | Significado | Acción esperada |
+|---|---|---|
+| 🔴 **CRÍTICO** | Causa pérdida de datos, agujero de seguridad, escalada de privilegios, o números mal | Arreglar esta semana |
+| 🟠 **ALTO** | Bug visible que afecta operación o seguridad seria | Arreglar este mes |
+| 🟡 **MEDIO** | Deuda técnica, código difícil de mantener, bug poco visible | Arreglar cuando se pueda |
+| ⚪ **BAJO** | Mejora menor, code style, optimización | Cuando hagas un cleanup |
+
+### Resumen ejecutivo — TOP 10 (si solo lees esto)
+
+1. 🔴 **Todos los permisos usan `?? true` como default → usuarios sin permiso explícito quedan habilitados.** Afecta `ObraPresupuesto`, `Obras`, etc.
+2. 🔴 **Páginas sensibles abiertas a no-admin por URL directa** (`/clientes`, `/reportes`, `/catalogos`, `/plantillas`, `/whatsapp`, `/proveedores/:id`, `/conciliacion`). El sidebar las oculta pero la ruta no las protege.
+3. 🔴 **Cualquier usuario puede modificar la tabla `app_users` desde la consola del navegador** y volverse Admin, si la RLS de Supabase no lo bloquea explícitamente.
+4. 🔴 **Portal del cliente accesible solo con el ID de la obra** (`/portal/cliente/baradero`), sin validar token. Cualquiera con el link ve cuotas, saldos y datos del cliente.
+5. 🔴 **`api/whatsapp/send-portal.js` no tiene autenticación** — cualquier persona en internet puede pisar todos los tokens de portal.
+6. 🔴 **`updateMovimiento` no recalcula el saldo de la caja** cuando editás un monto. Las cajas quedan con plata "fantasma".
+7. 🔴 **`fetchBNA` puede guardar `NaN` como dólar** si la API solo devuelve `venta`. Rompe todas las conversiones USD/ARS.
+8. 🔴 **XSS en exports PDF**: nombres de obras, clientes y notas se interpolan crudos al HTML imprimible. Un campo "nota" con `<script>` lo ejecuta al exportar.
+9. 🔴 **Re-renderizado masivo evitable**: los 16 Context providers crean un nuevo `value={{...}}` en cada render → toda página re-renderiza por cualquier cambio. Explica buena parte de la lentitud al editar.
+10. 🔴 **Dos fuentes de la verdad para movimientos**: `Reportes`, `Prorrateo` y `Obras` leen de `detalles[obraId].movimientos` (semilla), pero `Movimientos` y `Cajas` leen del context. Los números no coinciden.
+
+---
+
+# 🔴 CRÍTICOS
+
+## Seguridad / Acceso
+
+### C1. Defaults permisivos `?? true` en chequeos de permisos
+
+- **Dónde**: `src/pages/obra/ObraPresupuesto.jsx:132,133,379–382` y `src/pages/Obras.jsx:427`.
+- **Qué pasa**: Toda la app chequea permisos así: `currentUser?.permisos?.verCostos ?? true`. Si la columna `permisos` viene vacía (usuario viejo, nuevo sin perm explícito, o se rompió la sincronización), JavaScript usa `true` como default → **lo deja pasar**.
+- **Por qué importa**: Cualquier usuario con `permisos = {}` (caso real cuando se crea uno nuevo desde `bootstrapAdmin`) ve costos, márgenes, vende, etc.
+- **Cómo arreglar (idea)**: Cambiar `?? true` por `=== true`. Así si la clave no está, asume `false` (fail-closed):
+  ```js
+  const verCostos = currentUser?.permisos?.verCostos === true;
+  ```
+
+### C2. Páginas sensibles sin guardia de Admin (acceso por URL directa)
+
+- **Dónde**: `src/pages/Clientes.jsx`, `src/pages/ProveedorCC.jsx`, `src/pages/Catalogos.jsx`, `src/pages/Plantillas.jsx`, `src/pages/Reportes.jsx`, `src/pages/WhatsappBuzon.jsx`, `src/pages/Conciliacion.jsx`.
+- **Qué pasa**: El Sidebar oculta el link para no-admin, pero el componente de la página no verifica rol. Un Comprador que escriba `/reportes` en la URL ve facturación YTD, márgenes promedio, top proveedores, todo.
+- **Por qué importa**: Toda la "protección RBAC" se rompe por adivinar la URL. Datos confidenciales (CUIT clientes, deuda proveedores, costos) quedan expuestos.
+- **Cómo arreglar (idea)**: En cada página, agregar el patrón que ya usa `Cheques.jsx:629–631`:
+  ```js
+  useEffect(() => {
+    if (currentUser && currentUser.rol !== 'Admin') navigate('/', { replace: true });
+  }, [currentUser, navigate]);
+  ```
+  Mejor todavía: hacer un componente `<AdminRoute>` y envolver las rutas en `App.jsx`.
+
+### C3. Autorizaciones (CRUD de usuarios) accesible a no-admin
+
+- **Dónde**: `src/pages/Autorizaciones.jsx:310–318` y `src/store/UsuariosContext.jsx:118–164`.
+- **Qué pasa**: La página `/autorizaciones` no redirige a no-admin. Esconde los botones, pero las funciones `addUsuario`, `removeUsuario`, `togglePermiso`, `applyRol` están disponibles desde el contexto. Cualquier usuario con DevTools puede llamarlas desde la consola.
+- **Por qué importa**: **Escalada de privilegios trivial**. Un Comprador puede llamar `applyRol(miId, 'Admin')` y volverse Admin si la RLS de Supabase no lo bloquea (verificar).
+- **Cómo arreglar (idea)**: 3 capas:
+  1. Redirigir no-admin desde la página (`useEffect` con `navigate('/')`).
+  2. **Endurecer la RLS en Supabase Studio** para `app_users`: solo Admin puede `UPDATE/INSERT/DELETE`.
+  3. Mover todas las mutaciones a la Edge Function `admin-users` que ya verifica admin server-side.
+
+### C4. Portal cliente accesible con solo el ID de obra (sin token)
+
+- **Dónde**: `src/App.jsx:185` y `src/pages/portal/PortalCliente.jsx:48–93`.
+- **Qué pasa**: La ruta `/portal/cliente/:id` NO valida ningún token. El componente `PortalAcceso` valida un token y redirige a `/portal/cliente/<id>`, pero el destino no exige que vengas con token. Conociendo el ID de obra (slugs como `baradero`, `tigre`, `pilar`) cualquiera ve el portal.
+- **Por qué importa**: Cualquier persona con un link `kamak.app/portal/cliente/baradero` ve cuotas en USD, total a cobrar, plan de pagos, fechas, avance, fotos, documentos. Puede escribir mensajes haciéndose pasar por el cliente.
+- **Cómo arreglar (idea)**: `PortalAcceso` debería guardar el token validado en `sessionStorage` y `PortalCliente` debería verificarlo en cada carga. Si no hay token válido para esa obra, mostrar "Sin acceso".
+
+### C5. `portal_tokens` guardado en `shared_data` (accesible a cualquier usuario autenticado)
+
+- **Dónde**: `src/pages/obra/ObraPresupuesto.jsx:3610–3611` y `src/lib/dbHelpers.js:68–74`.
+- **Qué pasa**: Los tokens de los links mágicos del portal se guardan en `shared_data` con la key `portal_tokens`. Cualquier usuario logueado puede leerlos con `loadSharedData('portal_tokens')` y conocer todos los tokens, teléfonos de clientes y obras vinculadas.
+- **Por qué importa**: Un Comprador puede listar todos los links activos, robarlos y abrir portales de clientes ajenos. Además expone teléfonos personales.
+- **Cómo arreglar (idea)**: Mover `portal_tokens` a una tabla aparte con RLS estricta (solo el endpoint server-side puede leerla). El endpoint `validate-token` ya usa la service key, así que no necesita exponerse al cliente.
+
+### C6. `api/whatsapp/send-portal.js` no valida autenticación
+
+- **Dónde**: `api/whatsapp/send-portal.js:29–43`.
+- **Qué pasa**: El endpoint POST acepta cualquier request del exterior y escribe en `shared_data.portal_tokens` con los datos del body. Cero validación: cualquiera puede hacer `curl` y crear o pisar tokens.
+- **Por qué importa**: Atacante puede inyectar tokens falsos o borrar todos los existentes (DoS de portales). Permite envenenar la tabla con datos arbitrarios.
+- **Cómo arreglar (idea)**: Validar JWT de Supabase en el header (mismo patrón que `adminAction` en `src/lib/dbHelpers.js:9`), o usar una clave compartida `process.env.PORTAL_API_SECRET` en el header.
+
+### C7. Signup público abierto + `bootstrapAdmin` que auto-promueve
+
+- **Dónde**: `src/pages/Login.jsx:30` (signUp), `src/App.jsx:63–67`, `src/store/UsuariosContext.jsx:109–115, 194–198`.
+- **Qué pasa**: Cualquiera puede registrarse en la app (modo "register" del Login). Si por alguna razón `app_users` queda vacío, el primer usuario logueado se auto-promueve a Admin via `bootstrapAdmin`. Y si la consulta inicial a `app_users` falla por error de red, `loginByEmail` construye una sesión Admin sin validar.
+- **Por qué importa**: Tres formas distintas de obtener Admin sin autorización: signup + bootstrap, fallo de red, o vaciado malicioso de tabla.
+- **Cómo arreglar (idea)**: (a) Quitar el modo "register" del Login. (b) Crear usuarios SOLO desde Autorizaciones via `adminAction('createUser', ...)`. (c) Eliminar el fallback Admin de `loginByEmail`. (d) Eliminar `bootstrapAdmin` (hacer el bootstrap manual con SQL en Supabase Studio una vez).
+
+### C8. XSS en exports PDF (HTML construido con template literals sin escapar)
+
+- **Dónde**: `src/pages/modales/ExportModal.jsx:74,84,85,86,150,178,200`, `src/pages/modales/ContratoMOModal.jsx:159,164,170,171,175,182,191,203,207`, `src/pages/obra/ObraPresupuesto.jsx:1268–1273` (`exportarLista`) y `generarHTMLResumen`.
+- **Qué pasa**: Datos como `obra.nombre`, `obra.cliente`, `nota`, `formaPago`, `proveedor`, `tarea.nombre` se inyectan crudos en HTML que se abre con `document.write`. Si alguno contiene `<script>` o `<img src=x onerror=...>`, se ejecuta.
+- **Por qué importa**: Un cliente con nombre `<img src=x onerror='fetch(...)'>` ejecuta JS al exportar el resumen. El admin que exporta tiene acceso a localStorage (token de Supabase) — robo de sesión posible. También campos "nota" copiados de mail con HTML quedan ejecutables.
+- **Cómo arreglar (idea)**: Crear un helper `escapeHtml(s)` en `src/lib/html.js`:
+  ```js
+  export const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  ```
+  Y usarlo en TODAS las interpolaciones de exports. Además abrir con `noopener,noreferrer` para que la ventana no tenga acceso a `window.opener`.
+
+### C9. Columnas "Venta unit" y "Venta total" del Presupuesto sin gate
+
+- **Dónde**: `src/pages/obra/ObraPresupuesto.jsx:403–405`.
+- **Qué pasa**: `ventaUnit` y `ventaTotal` no están filtradas por `isAdmin`. Si un no-admin accede al tab Presupuesto (oculto por default pero accesible por URL `?tab=1`), puede activar las columnas en el panel de columnas y ver precio de venta y total cliente.
+- **Por qué importa**: Filtración directa de información de venta que el dueño pidió explícitamente ocultar.
+- **Cómo arreglar (idea)**:
+  ```js
+  ventaUnit: isAdmin ? colsUser.ventaUnit : false,
+  ventaTotal: isAdmin ? colsUser.ventaTotal : false,
+  ```
+  Y filtrar también del selector de columnas: `if (c.key === 'ventaUnit' && !isAdmin) return false`.
+
+### C10. WhatsappBuzon (`/whatsapp`) abierto a todos — admite/rechaza facturas
+
+- **Dónde**: `src/pages/WhatsappBuzon.jsx` (sin guard de admin).
+- **Qué pasa**: No-admin puede entrar, aprobar facturas de proveedores y confirmar movimientos pendientes (acciones que crean gastos reales).
+- **Por qué importa**: Escalada operativa: cualquier usuario puede aprobar gastos en nombre del admin.
+- **Cómo arreglar (idea)**: Agregar redirect a `/` si no es admin (mismo patrón de `Cheques`).
+
+## Bugs de lógica
+
+### C11. `updateMovimiento` no actualiza el saldo de la caja
+
+- **Dónde**: `src/store/MovimientosContext.jsx:141–147`.
+- **Qué pasa**: Cuando editás un movimiento (cambias monto, tipo, cajaId o cajaDestinoId), solo se modifica el objeto del movimiento — el saldo de la caja queda con el efecto del monto viejo.
+- **Por qué importa**: Plata "fantasma" en las cajas. Editás un gasto de $100k → $50k y la caja sigue con -$100k.
+- **Cómo arreglar (idea)**: En `updateMovimiento`, revertir el efecto del movimiento viejo (como `removeMovimiento`) y aplicar el nuevo. O bloquear la edición de `monto`/`cajaId` desde la UI (mostrar "borralo y créalo de nuevo").
+
+### C12. Endosar cheque debita falsamente la caja
+
+- **Dónde**: `src/pages/Cheques.jsx:697–722` (`handleEndosar`).
+- **Qué pasa**: Al endosar un cheque de tercero, se crea un movimiento `gasto` que descuenta el monto de la caja. Pero el cheque estaba en cartera (no era efectivo en la caja), así que endosarlo no debería tocar el efectivo.
+- **Por qué importa**: Si endosás un cheque de $1M desde "Caja Pablo", la caja muestra -$1M que nunca salieron físicamente.
+- **Cómo arreglar (idea)**: Endoso debería generar un movimiento tipo "endoso" sin tocar el saldo de efectivo (como el `traspaso`), o no generar movimiento y solo cambiar el estado del cheque.
+
+### C13. Dos fuentes de la verdad para movimientos
+
+- **Dónde**: `src/store/MovimientosContext.jsx` (usado por `Movimientos`, `Cajas`, `Dashboard`) vs `src/store/ObrasContext.jsx:24` (`EMPTY_DETALLE.movimientos`, usado por `Reportes.jsx:38–41`, `Prorrateo.jsx:81–99`, `Obras.jsx:30`, `ObraPresupuesto.jsx:3563`).
+- **Qué pasa**: Hay DOS listas paralelas de movimientos. La página Movimientos opera en una; Reportes y los KPIs de la tarjeta de obra leen de la otra (que viene de seeds + prorrateos).
+- **Por qué importa**: Dashboard, Reportes, tarjeta de obra y página Movimientos muestran números DISTINTOS para la misma cosa. El dueño pierde confianza en el sistema.
+- **Cómo arreglar (idea)**: Borrar `detalle.movimientos` (incluyendo de `EMPTY_DETALLE`) y que todas las páginas filtren `MovimientosContext.movimientos` por `obraId`. Migrar `Prorrateo.confirmar` para usar `addMovimiento`.
+
+### C14. `fetchBNA` puede guardar `NaN` como dólar
+
+- **Dónde**: `src/store/DolarContext.jsx:64–80`.
+- **Qué pasa**: La línea 73 dice `const venta = (json.venta && json.venta >= json.compra) ? json.venta : json.compra * 1.005;`. Si `json.compra` viene `undefined` (API solo mandó `venta`), `undefined * 1.005 = NaN`. Ese NaN se guarda en `data.venta` y se persiste.
+- **Por qué importa**: Todas las conversiones USD/ARS rompen y muestran "NaN" hasta que el usuario active modo manual o la API responda con datos completos.
+- **Cómo arreglar (idea)**: Usar la variable local `compra` (no `json.compra`): `const venta = (json.venta && json.venta >= compra) ? json.venta : compra * 1.005;`. Y validar con `Number.isFinite(compra) && Number.isFinite(venta)` antes de persistir.
+
+### C15. Bundle de 1.15MB sin code splitting
+
+- **Dónde**: `src/App.jsx:21–45` (imports estáticos de 23 páginas) y `vite.config.js` (sin `manualChunks`).
+- **Qué pasa**: El primer load descarga TODO el JavaScript de TODAS las páginas y modales, aunque el usuario solo abra el Dashboard.
+- **Por qué importa**: Primer load lento en 3G/4G y mobile. La página `ObraPresupuesto` sola pesa ~150-250 KB. Multiplicalo por 23 páginas.
+- **Cómo arreglar (idea)**: Convertir cada `import X from 'pages/X'` a `lazy(() => import('pages/X'))` y envolver `<Routes>` con `<Suspense fallback={<Cargando/>}>`. También agregar en `vite.config.js`:
+  ```js
+  build: { rollupOptions: { output: { manualChunks: { supabase: ['@supabase/supabase-js'] } } } }
+  ```
+  Bundle inicial baja de ~277 KB gz a ~100 KB gz.
+
+### C16. Re-renderizado masivo: `value={{...}}` sin memoizar en los 16 providers
+
+- **Dónde**: Todos los archivos de `src/store/*.jsx`. Ej: `ObrasContext.jsx:270`, `MovimientosContext.jsx:212`.
+- **Qué pasa**: Cada vez que React vuelve a renderizar un Provider, el objeto `value={{...}}` es nuevo (referencia distinta). React Context compara por referencia, no por contenido. **Todos los componentes que consumen ese context se re-renderizan**, aunque la data sea idéntica.
+- **Por qué importa**: Al escribir una letra en un input del Tab Presupuesto, `ObraPresupuesto` re-renderiza, y como consume 11 contexts, cualquier context que también re-renderice multiplica el trabajo. **Esta es la causa principal de la lentitud que sentís al editar.**
+- **Cómo arreglar (idea)**: Envolver el `value` con `useMemo` en cada provider:
+  ```js
+  const value = useMemo(() => ({ obras, addObra, updateObra, ... }), [obras, ...]);
+  return <ObrasContext.Provider value={value}>{children}</ObrasContext.Provider>;
+  ```
+  Y envolver todas las funciones con `useCallback`. **Es un cambio chico (~40 líneas tocadas total)** y el impacto en performance es enorme.
+
+---
+
+# 🟠 ALTOS
+
+## Seguridad
+
+### A1. `TabResumen`: "Costo total" y "Gastado real" se muestran a todos
+
+- **Dónde**: `src/pages/obra/ObraPresupuesto.jsx:250–252`.
+- **Qué pasa**: La grilla "Financiero" tiene 4 columnas, la 4ta es el flag `show`. "Costo total" y "Gastado real" tienen `show=true` hardcodeado. Solo "Venta total" está gateada por `isAdmin`.
+- **Por qué importa**: Un usuario con `verCostos:false` debería NO ver totales, pero los ve porque el `true` hardcodeado ignora el permiso. Aunque la caja entera está envuelta en `{verCostos && ...}`, el default permisivo (`?? true`) del C1 lo hace pasar igual.
+- **Cómo arreglar (idea)**: Cambiar los `true` por `verCostos`. Y arreglar C1.
+
+### A2. `TabMovimientos` de obra: filtro por caja deja pasar movs sin `cajaId`
+
+- **Dónde**: `src/pages/obra/ObraPresupuesto.jsx:2519–2523` y `src/pages/Movimientos.jsx:1033–1041`.
+- **Qué pasa**: El filtro es `if (m.cajaId && !cajaIdsMias.includes(m.cajaId)) return false;`. Si un movimiento NO tiene `cajaId` (semilla, importado, mal creado), el filtro lo deja pasar — un Comprador con cajasVisibles restringidas ve movs ajenos sin caja.
+- **Por qué importa**: Fuga de datos cruzados de movimientos de otros usuarios.
+- **Cómo arreglar (idea)**: Cambiar a `if (!m.cajaId || !cajaIdsMias.includes(m.cajaId)) return false;` (fail-closed).
+
+### A3. ComprobantesPanel descarga TODOS los comprobantes del mes (ZIP)
+
+- **Dónde**: `src/pages/Movimientos.jsx:914–988` (panel) e invocado desde `:1151`.
+- **Qué pasa**: No hay restricción de rol. Además, las URLs del bucket `kamak-fotos` son **públicas** — quien conoce el path baja el archivo sin auth.
+- **Por qué importa**: Un Comprador puede bajar facturas/fotos de otros usuarios. Cualquiera que adivine el patrón `<phone>-<timestamp>.jpg` accede directo al bucket.
+- **Cómo arreglar (idea)**: Pasar el bucket de `public` a `private` y servir vía signed URLs desde un endpoint que verifica permisos.
+
+### A4. Default `cajasVisibles: '*'` en usuarios nuevos
+
+- **Dónde**: `src/pages/Cajas.jsx:352–358` y `src/store/UsuariosContext.jsx:39–49`.
+- **Qué pasa**: Si `currentUser.cajasVisibles === '*'`, todas las cajas se muestran. El default al crear un usuario es `'*'` (`userToRow`).
+- **Por qué importa**: Cualquier usuario nuevo nace viendo TODAS las cajas (saldos, rendiciones de otros usuarios).
+- **Cómo arreglar (idea)**: Cambiar default a `[]` en `addUsuario` o, en el cliente, si `rol !== 'Admin'` y `cajasVisibles === '*'` tratar como `[]`.
+
+### A5. `puedeEditar` y `puedeCargarAvance` con default `?? true`
+
+- **Dónde**: `src/pages/obra/ObraPresupuesto.jsx:381–382`.
+- **Qué pasa**: `puedeEditar = (currentUser?.permisos?.editarPresu ?? true) && !frozen`. Un Comprador sin permiso explícito puede editar presupuestos completos.
+- **Por qué importa**: Cambios silenciosos en producción del presupuesto por usuarios no autorizados.
+- **Cómo arreglar (idea)**: `=== true`.
+
+### A6. ObraGantt: `canSeeGantt` con lista hardcoded de roles, sin redirect
+
+- **Dónde**: `src/pages/obra/ObraGantt.jsx:133`.
+- **Qué pasa**: `const canSeeGantt = isAdmin || ['Comprador', 'Director de obra'].includes(currentUser?.rol);`. Si el rol no está en la lista, el código sigue ejecutándose y muestra contratos MO con `cert`, `reparo` y monto total.
+- **Por qué importa**: Roles no listados (`Administración`, `Contador externo`) entran y ven montos contractuales financieros.
+- **Cómo arreglar (idea)**: Si `!canSeeGantt`, hacer `navigate('/', { replace: true })`. Y gatear el bloque de contratos con `verCostos`.
+
+### A7. CardActiva (Obras): el color del avance leak margen indirectamente
+
+- **Dónde**: `src/pages/Obras.jsx:129–219`.
+- **Qué pasa**: A no-admin se ocultan los números de Presupuesto/Gastado/Margen, **pero** el color del círculo de avance usa `margenColor(margen)` — rojo si margen negativo, verde si positivo. Un Comprador puede inferir qué obras tienen sobrecosto.
+- **Por qué importa**: Filtración indirecta de información financiera.
+- **Cómo arreglar (idea)**: Para no-admin, usar color neutro (`T.accent`) y eliminar el chip "sobrecosto" del header.
+
+### A8. Sidebar: "Movimientos" visible a todos sin chequear permiso
+
+- **Dónde**: `src/components/layout/Sidebar.jsx:14`.
+- **Qué pasa**: `{ icon: '⇄', label: 'Movimientos', path: '/movimientos' }` sin `adminOnly` ni `perm`. Todos lo ven.
+- **Por qué importa**: Combinado con A2 y A4, un Comprador ve casi todos los movimientos.
+- **Cómo arreglar (idea)**: Agregar `perm: 'verCaja'` o `allowedRoles: ['Admin','Administración']`.
+
+### A9. `loginByEmail` fallback: si tabla vacía, crea sesión Admin
+
+- **Dónde**: `src/store/UsuariosContext.jsx:194–198`.
+- **Qué pasa**: Si `usuarios.length === 0` (carga falló o tabla vacía), se construye una sesión local con `rol:'Admin'` sin verificar.
+- **Por qué importa**: Si la consulta a `app_users` falla por error de red o RLS bloqueante, todos los usuarios autenticados se vuelven Admin automáticamente.
+- **Cómo arreglar (idea)**: Si no se carga `app_users`, `setCurrentUser(null)` y mostrar "Sin acceso" hasta resolver.
+
+### A10. Tabs ocultos a no-admin se pueden abrir por URL `?tab=N`
+
+- **Dónde**: `src/pages/obra/ObraPresupuesto.jsx:3537–3540, 3577`.
+- **Qué pasa**: `rolHiddenTabs` oculta tabs en la UI, pero la lógica `displayTab` cae al primer tab visible si el index no existe — solo en render. La función `setActiveTab` no valida permisos, y los componentes Tab tampoco tienen guard interno.
+- **Por qué importa**: Combinado con C9, un Comprador navega a `/obras/X/presupuesto?tab=1` y ve venta.
+- **Cómo arreglar (idea)**: Cada Tab debería tener su propio `if (!isAdmin) return null` al inicio.
+
+## Bugs
+
+### A11. `WhatsappPendingContext`: confirm/reject idénticos, `updateItem` no persiste
+
+- **Dónde**: `src/store/WhatsappPendingContext.jsx:28–38`.
+- **Qué pasa**: `rejectItem` y `confirmItem` hacen exactamente lo mismo (`save(pending.filter(...))`). `updateItem` cambia state local pero no llama a `saveSharedData` → se pierde al recargar.
+- **Cómo arreglar (idea)**: Diferenciar reject (marcar `status: 'rejected'`) de confirm (`'confirmed'` + procesar). Persistir en `updateItem`.
+
+### A12. CSV export sin escape de separador (rompe estructura + CSV injection)
+
+- **Dónde**: `src/pages/Movimientos.jsx:1053–1064`.
+- **Qué pasa**: `m.descripcion` puede tener `;` o salto de línea. `rows.map(r => r.join(';')).join('\n')` rompe columnas. También vulnerable a CSV injection (`=cmd|...`) si se abre en Excel.
+- **Cómo arreglar (idea)**: Envolver cada celda en `"..."` y duplicar comillas internas. Prefijar valores que empiecen con `=,@,+,-` con `'`.
+
+### A13. Subida de comprobante falla en silencio
+
+- **Dónde**: `src/pages/Movimientos.jsx:514–521`.
+- **Qué pasa**: Si la subida a Supabase Storage falla, se ignora y el movimiento se guarda sin `comprobanteUrl`. El usuario cree que subió la foto.
+- **Cómo arreglar (idea)**: Si hay error, mostrar alerta y dejar el formulario abierto.
+
+### A14. `NuevaObraModal`: presupuesto pierde decimales
+
+- **Dónde**: `src/pages/modales/NuevaObraModal.jsx:208`.
+- **Qué pasa**: `Number(form.presupuesto.replace(/\D/g, ''))` saca TODOS los caracteres no-dígitos, incluido el punto/coma decimal. `18500000.50` se vuelve `1850000050` (1.850 millones en vez de 18,5).
+- **Cómo arreglar (idea)**: `parseFloat(form.presupuesto.replace(/[^0-9.,]/g, '').replace(',', '.'))`.
+
+### A15. `Obras.jsx`: filtro rompe si `cliente` o `tipo` son `null`
+
+- **Dónde**: `src/pages/Obras.jsx:461–464`.
+- **Qué pasa**: `o.cliente.toLowerCase()` lanza TypeError si la obra tiene `cliente: null`. Usuarios pueden crear obras con campos vacíos.
+- **Cómo arreglar (idea)**: `(o.cliente || '').toLowerCase()`.
+
+### A16. `Configuracion.jsx`: cambiar contraseña sin pedir la actual
+
+- **Dónde**: `src/pages/Configuracion.jsx:149–158`.
+- **Qué pasa**: El usuario cambia su pass sin re-ingresar la actual. Si dejás la sesión abierta, cualquiera con acceso físico la cambia.
+- **Cómo arreglar (idea)**: Pedir contraseña actual primero (Supabase: `signInWithPassword` para validar).
+
+### A17. Traspaso entre monedas no convierte al destino
+
+- **Dónde**: `src/store/MovimientosContext.jsx:170–191` (`traspasar`) y `src/pages/Movimientos.jsx:160–162`.
+- **Qué pasa**: El destino recibe `+Math.abs(monto)` literal, sin conversión por `tcAplicado`. La UI muestra el monto convertido pero al guardar la caja recibe el monto en moneda original.
+- **Por qué importa**: Si traspasás $100k ARS a caja USD, la caja USD queda con +100.000 USD en vez de +~93 USD.
+- **Cómo arreglar (idea)**: En `traspasar`, calcular `montoDestino` aplicando `tcAplicado` si `cajaOrigen.moneda !== cajaDestino.moneda`.
+
+### A18. Navegación a `?tab=10` rota (Cuotas)
+
+- **Dónde**: `src/pages/Dashboard.jsx:514` y `src/pages/Reportes.jsx:339`.
+- **Qué pasa**: Esos clicks abren `/obras/:id/presupuesto?tab=10`, pero `TABS_DEF` solo tiene 10 tabs (índices 0–9). El usuario cae en el primer tab visible ("Resumen") sin entender por qué.
+- **Cómo arreglar (idea)**: Las cuotas viven adentro del panel "Plan de financiación" en tab 1. Cambiar links a `?tab=1` o agregar `&financiacion=1`.
+
+### A19. Cheques: `handleAcreditar` = `handleDepositar` (código duplicado, lógica perdida)
+
+- **Dónde**: `src/pages/Cheques.jsx:683–695`.
+- **Qué pasa**: Los dos handlers son idénticos. "Acreditar" probablemente era para cheques propios y "Depositar" para terceros, pero nunca se diferenció.
+- **Cómo arreglar (idea)**: O borrar `handleAcreditar` y reusar `handleDepositar`, o implementar la diferencia real.
+
+### A20. Sin retry ni feedback al usuario en errores de Supabase
+
+- **Dónde**: `src/lib/dbHelpers.js:68–86` (`loadSharedData`, `saveSharedData`).
+- **Qué pasa**: Si la red falla, el catch hace `console.error` y retorna `null` / `false`. El usuario no se entera. Sus cambios quedan en localStorage pero no llegan al server.
+- **Por qué importa**: Cambios "guardados" que en realidad no se sincronizaron. Cuando otro usuario abre, ve data vieja.
+- **Cómo arreglar (idea)**: Toast global ("Sin conexión — cambios pendientes"), retry exponencial, indicador "Sincronizando..." en topbar.
+
+### A21. Flujo bidireccional sin merge: "último en guardar gana"
+
+- **Dónde**: Patrón en `ObrasContext.jsx:226–232` y todos los demás contexts.
+- **Qué pasa**: Cada `save` reescribe el blob COMPLETO. Si dos usuarios editan obras DISTINTAS al mismo tiempo, el segundo en guardar pisa al primero porque el blob contiene TODAS las obras.
+- **Por qué importa**: Pérdida silenciosa de datos cuando hay >1 usuario activo simultáneo.
+- **Cómo arreglar (idea)**: Migrar a tablas relacionales con upsert por `id`. Mientras tanto, hacer merge del lado cliente (leer antes de escribir).
+
+### A22. `InlineNum` definido DENTRO del render de `TabPresupuesto`
+
+- **Dónde**: `src/pages/obra/ObraPresupuesto.jsx:774`.
+- **Qué pasa**: Cada render crea una NUEVA función-componente `InlineNum`. Como se usa por cada celda de cada tarea, React no recicla DOM ni estado. Cada teclazo remonta inputs vecinos.
+- **Por qué importa**: Lentitud al escribir cantidades, foco perdido, inputs que se vacían.
+- **Cómo arreglar (idea)**: Mover `InlineNum` FUERA del componente padre. Memoizarlo con `React.memo`.
+
+### A23. `calcObra(detalle.rubros)` llamado 5 veces sin `useMemo`
+
+- **Dónde**: `src/pages/obra/ObraPresupuesto.jsx:134, 451, 1942, 2598, 3562`.
+- **Qué pasa**: `calcObra` recorre todos los rubros y tareas con map + 3 reduces. Se ejecuta en cada render. Con un presupuesto grande son ~5000 operaciones por keystroke.
+- **Cómo arreglar (idea)**: `const obra = useMemo(() => calcObra(detalle.rubros), [detalle.rubros])`.
+
+---
+
+# 🟡 MEDIOS
+
+## Arquitectura
+
+### M1. Funciones no memoizadas en `ObrasContext` y otros
+
+- **Dónde**: `src/store/ObrasContext.jsx:235–267`, `AuthContext.jsx:23–28`.
+- **Qué pasa**: Funciones como `addObra`, `updateObra`, `signIn`, `signOut` se redefinen en cada render del provider. Rompe optimizaciones aguas abajo (memoización, `useEffect` dep arrays).
+- **Cómo arreglar**: Envolver con `useCallback`.
+
+### M2. `fromRemote.current = false` con `setTimeout(0)` es frágil
+
+- **Dónde**: `ObrasContext.jsx:203,217` y todos los demás contexts con sync remoto.
+- **Qué pasa**: El flag se desbloquea en el siguiente tick. Si en ese tick el usuario tipea y dispara setState, el debounce de save corre con `fromRemote === false` y puede pisar datos remotos.
+- **Cómo arreglar**: Usar `queueMicrotask` o un sistema de versiones.
+
+### M3. Pérdida de guardados en debounce al desmontar
+
+- **Dónde**: Todos los contexts con patrón `setTimeout(save, 800)`.
+- **Qué pasa**: Si el usuario edita y navega rápido (o `DataProviders` se remonta), el cleanup cancela el timeout. Esos cambios no llegan a Supabase (sí quedan en localStorage).
+- **Cómo arreglar**: Flushear en el cleanup: `return () => { clearTimeout(t); saveSharedData(key, refActual.current); }`.
+
+### M4. `AppLoadingContext` con count hardcoded `11`
+
+- **Dónde**: `src/store/AppLoadingContext.jsx:5`.
+- **Qué pasa**: Si agregás o sacás un provider que llama `markReady()`, el splash se queda colgado para siempre o cierra demasiado pronto.
+- **Cómo arreglar**: Registrar cada loader por nombre con `Set`.
+
+### M5. Solicitudes, Alertas y WhatsappPending no llaman `markReady`
+
+- **Dónde**: `SolicitudesContext.jsx`, `AlertasContext.jsx`, `WhatsappPendingContext.jsx`.
+- **Qué pasa**: El splash no espera por ellos. Pueden mostrar listas vacías al inicio. WhatsappPending además polea cada 20s sin pausar cuando la pestaña está oculta.
+- **Cómo arreglar**: Hacer que también registren `markReady`. Cambiar el polling por suscripción realtime o pausar con `document.hidden`.
+
+### M6. Requests sin cancelación al remontar `DataProviders`
+
+- **Dónde**: `App.jsx:142–176` y cada `loadSharedData` en los providers.
+- **Qué pasa**: Cuando cambia el usuario y `DataProviders` se remonta, las requests en vuelo del usuario A pueden setear estado en los providers del usuario B.
+- **Cómo arreglar**: `let cancelled = false; ...; if (cancelled) return;` en el useEffect, o `AbortController`.
+
+### M7. `ObraPresupuesto.jsx` tiene 3.762 líneas con 10 tabs
+
+- **Dónde**: `src/pages/obra/ObraPresupuesto.jsx`.
+- **Qué pasa**: Imposible navegar, HMR lento (~5s recompila), no se puede lazy-loadear cada tab, difícil de testear.
+- **Cómo arreglar**: Extraer cada tab a `src/pages/obra/tabs/Tab*.jsx`. Cada uno puede ser `lazy()`.
+
+### M8. Archivos >800 líneas que deberían dividirse
+
+- **Dónde**: `Movimientos.jsx` (1155), `Catalogos.jsx` (1158), `Plantillas.jsx` (956), `ObraGantt.jsx` (896), `Cheques.jsx` (809).
+- **Cómo arreglar**: Extraer sub-componentes y modales a archivos propios.
+
+### M9. Acoplamiento alto: páginas leen 6-9 contexts
+
+- **Dónde**: `ObraPresupuesto` lee 9, `Dashboard` lee 6, etc.
+- **Qué pasa**: Cualquier cambio en cualquier context re-renderiza la página entera.
+- **Cómo arreglar**: Separar "datos crudos" de "selectores derivados" con hooks específicos (`useObraById`, `useMovimientosByObra`). A largo plazo, considerar Zustand/Jotai con selectores granulares.
+
+### M10. Listas grandes sin virtualización
+
+- **Dónde**: `Movimientos.jsx`, `ObraPresupuesto` rubros/tareas, `Cheques.jsx`, `Catalogos.jsx`.
+- **Qué pasa**: Si tenés >200 filas, el DOM mete >200 inputs y handlers. Cada re-render del padre re-recorre todas las filas.
+- **Cómo arreglar**: Usar `react-window` (~6 KB gz) en las páginas con listas grandes.
+
+### M11. Cada save reescribe el blob entero
+
+- **Dónde**: Todos los `saveSharedData(key, value)`.
+- **Qué pasa**: Si el blob `obras` pesa 2 MB y editás el nombre de UNA obra, mandás 2 MB al server.
+- **Cómo arreglar**: Migrar a tablas relacionales con `upsert({id, ...})` por entidad.
+
+### M12. Broadcast no filtra mensajes propios (eco)
+
+- **Dónde**: `src/lib/syncBus.js:9`.
+- **Qué pasa**: Cuando un tab guarda, recibe su propio broadcast y dispara reload de los datos que acaba de mandar.
+- **Cómo arreglar**: `.channel('kamak-data-sync', { config: { broadcast: { self: false } } })`. 1 línea.
+
+### M13. `vite.config.js` está vacío
+
+- **Dónde**: `vite.config.js`.
+- **Qué pasa**: Sin `manualChunks`, sin source maps en producción, sin drop de console.
+- **Cómo arreglar**:
+  ```js
+  build: { sourcemap: 'hidden', rollupOptions: { output: { manualChunks: { ... } } } },
+  esbuild: { drop: ['console', 'debugger'] }
+  ```
+
+### M14. `@anthropic-ai/sdk` y `twilio` en `dependencies` del frontend
+
+- **Dónde**: `package.json:13,19`.
+- **Qué pasa**: Esos paquetes se usan en `api/whatsapp/` (Vercel functions), no en el frontend. Si entran al bundle del cliente, lo hinchan.
+- **Cómo arreglar**: Verificar el bundle; si entran, separarlos en `optimizeDeps.exclude` o mover a un package.json aparte para serverless.
+
+## Seguridad (medios)
+
+### M15. Login: errores crudos de Supabase (enumeración de cuentas)
+
+- **Dónde**: `src/pages/Login.jsx:33–35`.
+- **Qué pasa**: Mensajes distintos para "Invalid login credentials" vs "Email not confirmed" permiten saber si un email existe.
+- **Cómo arreglar**: Siempre mostrar "Email o contraseña inválidos".
+
+### M16. localStorage no se limpia al logout
+
+- **Dónde**: `src/store/UsuariosContext.jsx:206–209` (solo limpia `kamak_session_v1`).
+- **Qué pasa**: `kamak_roles_v1`, `kamak_dashboard_widgets_v1`, `kamak_solicitudes_v1` quedan tras logout. En equipo compartido el siguiente usuario los ve.
+- **Cómo arreglar**: En `signOut`, `Object.keys(localStorage).filter(k => k.startsWith('kamak_')).forEach(k => localStorage.removeItem(k))`.
+
+### M17. Logs verbose en webhook y dbHelpers
+
+- **Dónde**: `api/whatsapp/webhook.js:1052,1232,...` y `src/lib/dbHelpers.js:21,27`.
+- **Qué pasa**: `console.log` con teléfono completo, mensajes, emails. En Vercel logs quedan persistidos.
+- **Cómo arreglar**: Reducir verbosidad o filtrar PII en prod.
+
+### M18. Webhook WhatsApp sin verificar firma de Meta
+
+- **Dónde**: `api/whatsapp/webhook.js:1159–1251`.
+- **Qué pasa**: No se verifica el header `X-Hub-Signature-256` (HMAC con el App Secret). Cualquiera con la URL del webhook puede inyectar mensajes falsos.
+- **Por qué importa**: Inyección de gastos/cheques falsos, abuso de Claude (gasto de tokens), DoS.
+- **Cómo arreglar**: Implementar verificación HMAC antes de procesar.
+
+### M19. `validate-token` sin rate limit; tokens predecibles
+
+- **Dónde**: `api/portal/validate-token.js`.
+- **Qué pasa**: Sin rate limit, atacante puede hacer fuerza bruta. Formato `pt-<timestamp>-<8chars>` con timestamp adivinable.
+- **Cómo arreglar**: Usar UUID v4 + rate limit por IP en Vercel.
+
+### M20. CORS abierto `*` en `validate-token`
+
+- **Dónde**: `api/portal/validate-token.js:5`.
+- **Qué pasa**: `Access-Control-Allow-Origin: *` permite que cualquier sitio valide tokens en nombre del usuario.
+- **Cómo arreglar**: Restringir a tu dominio.
+
+### M21. Mockups Mobile y PortalProveedor con datos hardcoded sensibles
+
+- **Dónde**: `src/pages/mobile/MobileComprador.jsx:5–16,103–110`, `PortalProveedor.jsx`.
+- **Qué pasa**: CUITs, nombres, CBUs reales hardcodeados como mock. Confunde y queda en producción.
+- **Cómo arreglar**: Reemplazar mock por data real con permisos, o marcar como "demo".
+
+### M22. Headers de seguridad ausentes en `vercel.json`
+
+- **Dónde**: `vercel.json`.
+- **Qué pasa**: Sin `X-Frame-Options`, `X-Content-Type-Options`, `Content-Security-Policy`, `Referrer-Policy`, `Strict-Transport-Security`.
+- **Por qué importa**: Permite clickjacking del portal cliente; CSP mitigaría XSS de C8.
+- **Cómo arreglar**: Agregar headers básicos al `vercel.json`.
+
+### M23. `WhatsappPendingContext`: cualquier usuario puede sobrescribir las pending
+
+- **Dónde**: `src/store/WhatsappPendingContext.jsx:18–20`.
+- **Qué pasa**: Cualquier usuario logueado puede llamar `save(items)` que sobrescribe `shared_data.whatsapp_pending`. Un Comprador puede borrar todas las pending desde la consola.
+- **Cómo arreglar**: Mover writes a la edge function admin-only.
+
+### M24. Bucket `kamak-fotos` es público
+
+- **Dónde**: `api/whatsapp/webhook.js:99–120`.
+- **Qué pasa**: Path `kamak-fotos/<phone>-<timestamp>.jpg`, bucket público. Cualquiera con la URL ve la imagen.
+- **Cómo arreglar**: Bucket privado + signed URLs.
+
+## Bugs (medios)
+
+### M25. Magic number `1070` (fallback dólar) repetido en 10+ lugares
+
+- **Dónde**: `DolarContext`, `Movimientos`, `Dashboard`, `ObraPresupuesto`, etc.
+- **Cómo arreglar**: Constante en `src/lib/constants.js` o siempre `dolarVenta || 1070`.
+
+### M26. `fmtN` inconsistente (algunos con Math.abs, otros no)
+
+- **Dónde**: `Cajas.jsx:15` y `Cheques.jsx:15` y `Movimientos.jsx:85` y `Dashboard.jsx:13` usan `Math.abs` (siempre positivo); `Topbar.jsx:14`, `ObraPresupuesto.jsx:24`, `Catalogos.jsx:8` no.
+- **Por qué importa**: Saldos negativos se muestran positivos en algunas pantallas pero no en otras → confunde.
+- **Cómo arreglar**: Definir `fmtMonto` único en `src/lib/format.js` con manejo de signo correcto.
+
+### M27. `Math.round(NaN)` → "NaN" en pantalla
+
+- **Dónde**: Varios `fmtN`/`fmtM` no chequean `Number.isFinite`.
+- **Cómo arreglar**: En el formatter, `const safe = Number.isFinite(n) ? n : 0`.
+
+### M28. Hooks con `// eslint-disable-line react-hooks/exhaustive-deps` ocultando bugs
+
+- **Dónde**: 22 ocurrencias. Preocupantes: `Movimientos.jsx:417, 425, 487` (deps faltantes en obras/getDetalle/clientes → stale closures).
+- **Cómo arreglar**: Revisar uno por uno; agregar dep o usar `useRef`.
+
+### M29. `Autorizaciones.jsx:318`: condicional que es siempre igual
+
+- **Qué pasa**: `useState(isAdmin ? 'solicitudes' : 'solicitudes')` — los dos brazos son lo mismo.
+- **Cómo arreglar**: `useState('solicitudes')`.
+
+### M30. `Obras.jsx:469–470`: rama muerta `if (nuevoEstado === 'eliminar')`
+
+- **Cómo arreglar**: Borrar la rama (el menú nunca llama con ese valor).
+
+### M31. `removeMovimiento` deja cheques huérfanos
+
+- **Dónde**: `src/store/MovimientosContext.jsx:149–167`.
+- **Qué pasa**: Si el movimiento tenía un cheque asociado, el cheque queda apuntando a un `movimientoId` que ya no existe.
+- **Cómo arreglar**: Buscar `cheques.find(c => c.movimientoId === id)` y limpiar/anular antes de borrar.
+
+### M32. `m.comprobanteUrl.endsWith('.pdf')` falla con query string
+
+- **Dónde**: `src/pages/Movimientos.jsx:336, 934, 971`.
+- **Qué pasa**: Si la URL tiene `?token=xxx`, `endsWith('.pdf')` devuelve false aunque sea PDF.
+- **Cómo arreglar**: `new URL(url).pathname.endsWith('.pdf')`.
+
+### M33. Cheques propios debitan caja al crearse pero están en cartera
+
+- **Dónde**: Lógica entre `Cheques.jsx` y `Movimientos.jsx:608–624`.
+- **Qué pasa**: Cuando pagás con cheque propio, `addMovimiento` debita la caja, pero el dinero físicamente todavía no salió (cheque en cartera del proveedor).
+- **Cómo arreglar**: Cheques propios no deberían debitar caja hasta que se acrediten. Similar a C12.
+
+### M34. `Conciliacion.jsx`: 100% datos hardcoded
+
+- **Qué pasa**: La página es prototipo. El usuario probablemente no se da cuenta.
+- **Cómo arreglar**: Marcar visiblemente "demo" o esconder del sidebar hasta implementar.
+
+### M35. `Configuracion.jsx`: toggles que no hacen nada real
+
+- **Dónde**: `src/pages/Configuracion.jsx:286–311`.
+- **Qué pasa**: Toggles 2FA, sesiones múltiples, log auditoría, IP whitelist, alertas de stock bajo solo cambian state local. El usuario puede pensar que "2FA" está activo y no es así.
+- **Cómo arreglar**: Sacarlos hasta implementar, o indicar "próximamente".
+
+### M36. `displayRol` por defecto "Administrador" en Topbar
+
+- **Dónde**: `src/components/layout/Topbar.jsx:202`.
+- **Qué pasa**: Si `currentUser` no cargó, muestra "Administrador" como rol del usuario (engañoso).
+- **Cómo arreglar**: Fallback neutro como `'—'` o no mostrar.
+
+### M37. Sin tests
+
+- **Qué pasa**: Sin `vitest`/`jest`. Cualquier refactor de `MovimientosContext` da miedo.
+- **Cómo arreglar**: Empezar con Vitest + tests unitarios de funciones puras (`calcObra`, `calcRubro`, `cuotaEstado`, saldos de cajas).
+
+### M38. README de plantilla Vite por defecto
+
+- **Dónde**: `README.md`.
+- **Cómo arreglar**: Reemplazar con explicación del proyecto, env vars necesarias, comandos.
+
+### M39. `displayName[0]` crash si nombre vacío
+
+- **Dónde**: `src/components/layout/Topbar.jsx:310`.
+- **Cómo arreglar**: `(displayName[0] || '?').toUpperCase()`.
+
+### M40. `addUsuario` no avisa al usuario si falla
+
+- **Dónde**: `src/pages/Autorizaciones.jsx:181–200`.
+- **Qué pasa**: Si `createAuthUser` funciona pero `addUsuario` falla, el usuario queda en Auth sin row en `app_users` → próximo login "Sin acceso" sin explicación.
+- **Cómo arreglar**: Mostrar error en el modal y/o revertir creación en Auth.
+
+### M41. Login: no valida largo mínimo de contraseña al registrar
+
+- **Dónde**: `src/pages/Login.jsx:23–42`.
+- **Qué pasa**: Submit no valida 6 chars mínimo. Supabase devuelve mensaje técnico en inglés ("Password should be at least 6 characters").
+- **Cómo arreglar**: Validar antes del `signUp` y mostrar mensaje en castellano.
+
+### M42. `applyRol`: si `roles[rol]` no existe → `{}` permisivo
+
+- **Dónde**: `src/store/UsuariosContext.jsx:166–168`.
+- **Qué pasa**: Si el rol fue removido pero un usuario aún lo tiene, queda con `PERMISOS_DEFAULT` (todo `false`). OK. Pero `roles` se carga de localStorage; dos admins distintos pueden ver permisos distintos del mismo rol.
+- **Cómo arreglar**: Mover `roles` a `shared_data` para que todos los admins vean lo mismo.
+
+### M43. Inactividad: timer no limpia localStorage extra al cerrar sesión
+
+- **Dónde**: `src/App.jsx:47–97`. Ver M16.
+
+### M44. `data:text/csv,` sin `;charset=utf-8`
+
+- **Dónde**: `src/pages/Reportes.jsx:22` (Movimientos sí lo tiene).
+- **Cómo arreglar**: Agregar `;charset=utf-8` para evitar problemas con acentos.
+
+### M45. `useState(load)` lee localStorage en cada mount
+
+- **Dónde**: Todos los providers.
+- **Qué pasa**: En el remount por cambio de user, lee LS otra vez y hidrata UI con datos del usuario ANTERIOR durante 100-500ms hasta que llega Supabase.
+- **Cómo arreglar**: Scopear las keys por user (`kamak_obras_<userId>_v1`) o limpiar al logout (ver M16).
+
+### M46. StrictMode duplica useEffects en dev
+
+- **Dónde**: `main.jsx:7`.
+- **Qué pasa**: En dev, las cargas iniciales se hacen 2 veces (11 × 2 = 22 requests al inicio). Si la segunda llega antes que la primera, puede haber inconsistencias.
+- **Cómo arreglar**: Código defensivo (`didFetch` ref). NO quitar StrictMode.
+
+---
+
+# ⚪ BAJOS
+
+### B1. Imports no usados
+
+- `src/pages/Dashboard.jsx:4`: `Stat` no usado.
+- `src/pages/Reportes.jsx:4`: `Stat` no usado.
+- `src/pages/obra/ObraPresupuesto.jsx:14`: `PROVEEDORES` no usado.
+- Verificar `Stat`, `Divider` en otros archivos.
+
+### B2. `src/data/proveedores.js` es código muerto
+
+- Solo importado en `ObraPresupuesto.jsx:14` donde no se usa. Borrar.
+
+### B3. `src/App.css` es del template Vite (no usado)
+
+- Borrar.
+
+### B4. WhatsApp links pueden quedar rotos con paréntesis
+
+- **Dónde**: `Proveedores.jsx:269,354`, `Clientes.jsx:170`, `ProveedorCC.jsx:77`.
+- **Cómo arreglar**: `(p.telefono || '').replace(/\D/g, '')` (saca todo lo no-dígito).
+
+### B5. `confirm()` global usado directo (UX inconsistente)
+
+- Reemplazar por modales custom.
+
+### B6. Color hex codes hardcoded por todos lados
+
+- `#1a9b9c`, `#dc2626`, `#d97706`, `#059669`, `#0ea5e9`, `#25d366`, `#c0392b`, `#7c6af7`, `#3d7a4a` repetidos.
+- Extender `src/theme.js` con estos colores nombrados.
+
+### B7. Inputs sin `<label htmlFor>` (a11y)
+
+- Reduce accesibilidad para screen readers.
+
+### B8. `alt=""` en imágenes informativas
+
+- **Dónde**: `Movimientos.jsx:974`.
+- **Cómo arreglar**: Alt descriptivo.
+
+### B9. `Bar` no valida `pct` 0-100
+
+- **Dónde**: `src/components/ui/index.jsx:58`.
+- **Cómo arreglar**: `Math.max(0, Math.min(100, pct))`.
+
+### B10. `Cheques.jsx`: `diasHasta` duplicado con `Topbar.jsx`
+
+- **Cómo arreglar**: Mover a `src/lib/dates.js`.
+
+### B11. Reportes/Dashboard recalculan sin `useMemo` en algunos lugares
+
+- `Reportes.jsx:68` (`obrasConMargen`), `Dashboard.jsx:135–173` (alertas dependen de `getDetalle` no estable).
+
+### B12. `syncBus` sin reconexión
+
+- **Dónde**: `src/lib/syncBus.js:7–19`.
+- **Qué pasa**: Si la conexión Realtime se cae y vuelve, `_subscribed` queda en false y `broadcastChange` no manda.
+- **Cómo arreglar**: Manejar `CHANNEL_ERROR`/`TIMED_OUT` y re-suscribir.
+
+### B13. `Cheques.jsx`: `totalEmitidos` filtra por `estado === 'cartera'` para cheques propios
+
+- **Dónde**: `src/pages/Cheques.jsx:741`.
+- **Qué pasa**: Los cheques propios no transitan por `'cartera'`.
+- **Cómo arreglar**: Definir estados válidos para propios.
+
+### B14. Hardcoded Supabase key en `scripts/import_sismat.js`
+
+- **Dónde**: `scripts/import_sismat.js:15–16`.
+- **Qué pasa**: Tiene una "publishable key" (anon) hardcoded. Archivo NO está en git (verificado), pero si se commitea, leak.
+- **Cómo arreglar**: Mover a `.env.local` y leer con `process.env`.
+
+### B15. `.env.local` y `.env.production` tienen `VERCEL_OIDC_TOKEN`
+
+- **Qué pasa**: Tokens JWT de Vercel en disco. Si alguien accede al equipo, puede usarlos.
+- **Cómo arreglar**: Borrarlos cuando no se usen. Están en `.gitignore` correctamente.
+
+### B16. Anthropic SDK y Twilio en `dependencies` aunque no se usan en frontend
+
+- **Cómo arreglar**: Verificar bundle; mover a serverless aparte si entran.
+
+### B17. Sin password policy
+
+- Supabase default es 6 chars mínimo. Admin puede crear usuario con `123456`.
+- Configurar password policy en Supabase Dashboard.
+
+### B18. Inline `onClick={() => ...}` en listas grandes
+
+- Por sí solo no es problema. Combinado con sub-componentes sin `React.memo`, pérdida menor.
+
+### B19. `new Set([...])` en cuerpo del render
+
+- **Dónde**: `ObraPresupuesto.jsx:3542`.
+- **Cómo arreglar**: `useMemo`.
+
+### B20. Verificar uso real de `BarChart`, `StackedBars`, `Toggle`, `GanttBar`, `Diamond`, `loadUserData`
+
+- Probables candidatos a código muerto.
+
+---
+
+# 📋 Listas de tareas extra
+
+## Código duplicado / patrones repetidos (candidatos a extraer)
+
+| Patrón | Archivos | Sugerencia |
+|---|---|---|
+| `fmtN`, `fmtM`, `fmtFecha` con variantes | ~15 archivos | `src/lib/format.js` |
+| `newId = () => ...` con prefijo | 11 declaraciones | `src/lib/id.js` con `newId(prefix)` |
+| Try/catch vacío de localStorage | 18 ocurrencias | Helpers `lsGet(k, fallback)`, `lsSet(k, v)` |
+| Patrón de sync remoto (load+save+broadcast) | 10 contexts | Hook `useSyncedSharedData(key)` |
+| `cuotaMontoFn`, `cuotaCobradoFn`, `cuotaEstado` | 3 archivos | `src/lib/cuotas.js` |
+| `diasHasta(fecha)` | Cheques, Topbar | `src/lib/dates.js` |
+| Modal con overlay genérico | Casi todos los modales | Componente `<Modal title onClose>` |
+| `inputSt` y `labelSt` redefinidos | Todas las pages y modales | `src/components/ui/forms.js` |
+| Filtro de items visibles por usuario | Cajas, Movimientos, Dashboard, Obras | Helper `puedeVer(item, currentUser, kind)` |
+| HTML escape para exports | ExportModal, ObraPresupuesto | `src/lib/html.js` con `esc()` |
+| `(p.telefono || '').replace(...).replace('+', '')` | 4 archivos | Helper `waLink(telefono)` |
+
+## Código muerto detectado
+
+| Ubicación | Item |
+|---|---|
+| `src/pages/Dashboard.jsx:4` | `Stat` import no usado |
+| `src/pages/Reportes.jsx:4` | `Stat` import no usado |
+| `src/pages/obra/ObraPresupuesto.jsx:14` | `PROVEEDORES` import no usado |
+| `src/data/proveedores.js` | Archivo entero |
+| `src/App.css` | Template Vite por defecto |
+| `src/pages/Obras.jsx:469–470` | Rama `if (nuevoEstado === 'eliminar')` |
+| `src/pages/Autorizaciones.jsx:318` | `useState(isAdmin ? 'solicitudes' : 'solicitudes')` |
+| `src/pages/Cheques.jsx:683–695` | `handleAcreditar` duplicado |
+| `src/store/WhatsappPendingContext.jsx:28–34` | reject/confirm idénticos |
+| Probable | `BarChart`, `StackedBars`, `Toggle`, `GanttBar`, `Diamond`, `loadUserData` |
+
+## Magic numbers/strings detectados
+
+| Valor | Significado | Cantidad de usos |
+|---|---|---|
+| `1070` | Fallback dólar venta | 13+ |
+| `1060` | Fallback dólar compra | 2 |
+| `800` | Debounce save (ms) | 10+ |
+| `15 * 60 * 1000` | Inactividad logout | 1 |
+| `60 * 60 * 1000` | Refresh dólar | 1 |
+| `15000`, `20000` | Polling intervals | 2 |
+| `86400000` | Milisegundos por día | 6 |
+| `45`, `30`, `7` | Días para alertas | 5+ |
+| Estados de cheque/obra como strings sueltos | Sin enum | Muchos |
+| Colores hex (#1a9b9c, etc.) | Tema | Decenas |
+
+---
+
+# 📊 Estadística final
+
+| Severidad | Cantidad |
+|---|---|
+| 🔴 CRÍTICOS | 16 |
+| 🟠 ALTOS | 23 |
+| 🟡 MEDIOS | 46 |
+| ⚪ BAJOS | 20 |
+| **TOTAL** | **~105 hallazgos únicos** |
+
+### Por categoría
+
+| Categoría | Cantidad |
+|---|---|
+| Seguridad / RBAC | ~30 |
+| Bugs de lógica | ~20 |
+| Arquitectura / Performance | ~25 |
+| Code quality / Inconsistencias | ~30 |
+
+---
+
+# ✅ Qué se verificó como OK
+
+- `.gitignore` excluye correctamente `.env`, `.env.local`, `.env*`, `.vercel`, `.claude/settings.local.json`. Ningún `.env` está en git.
+- Las claves secretas (`SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, `META_ACCESS_TOKEN`, `TWILIO_AUTH_TOKEN`) se leen solo de `process.env` en `api/` y `supabase/functions/` (server-side). No están en código cliente.
+- La edge function `admin-users` SÍ valida JWT y SÍ verifica que el caller sea Admin antes de operar.
+- `PortalAcceso.jsx` valida el token via endpoint server-side antes de redirigir.
+- `AuthGate` correctamente espera a `currentUser` y muestra "Sin acceso" si el email no está en `app_users`.
+- `DataProviders` se remontan con `key={user?.id}` al cambiar de usuario (fix del commit `887f04c` funciona).
+- `Cheques` y `Prorrateo` redirigen no-admin (patrón a replicar en otras pages).
+- `Configuracion` muestra vista reducida para no-admin correctamente.
+- `dangerouslySetInnerHTML` no se usa en ninguna parte (0 matches en grep).
+- Uso de `.eq()`/`.filter()` de Supabase es seguro contra SQL injection (parametrizado).
+- `signOut` usa el método oficial de Supabase y limpia la sesión JWT.
+
+---
+
+# 💡 Si solo podés arreglar 10 cosas esta semana
+
+En orden:
+
+1. **C1** — Cambiar todos los `?? true` a `=== true` en chequeos de permisos (~10 líneas, 1 hora). Cierra varios críticos de golpe.
+2. **C2** — Agregar redirect de no-admin en las 7 páginas (~10 min cada una, copy-paste del patrón de `Cheques`).
+3. **C7** — Deshabilitar signUp público en Login y eliminar `bootstrapAdmin` + fallback Admin de `loginByEmail`.
+4. **C3 + Supabase RLS** — Endurecer RLS en Supabase Studio para `app_users` y `shared_data.portal_tokens`.
+5. **C14** — Fix `fetchBNA` NaN (1 línea, evita corrupción).
+6. **C11** — Fix `updateMovimiento` para que recalcule saldo de caja.
+7. **C13** — Decidir y unificar fuente de movimientos (empezar por Reportes y Obras).
+8. **C16** — Memoizar `value={{...}}` en los 16 providers (1 día, app más rápida sin riesgo).
+9. **C8** — Sanitizar HTML en exports (`esc()` helper + `noopener`).
+10. **C9** — Gatear columnas `ventaUnit`/`ventaTotal` del Presupuesto por `isAdmin`.
+
+Con esto cubrís lo más urgente. El resto puede esperar a la fase 2 (ver `PLAN-MEJORAS.MD`).
