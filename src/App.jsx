@@ -11,6 +11,7 @@ import { MovimientosProvider } from './store/MovimientosContext';
 import { ChequesProvider } from './store/ChequesContext';
 import { WhatsappPendingProvider } from './store/WhatsappPendingContext';
 import { AlertasProvider } from './store/AlertasContext';
+import { SolicitudesProvider } from './store/SolicitudesContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
 import { AppLoadingProvider, useAppLoading } from './store/AppLoadingContext';
@@ -150,6 +151,7 @@ export default function App() {
     <MovimientosProvider>
     <ChequesProvider>
     <WhatsappPendingProvider>
+    <SolicitudesProvider>
     <AlertasProvider>
     <UsuariosProvider>
       <BrowserRouter>
@@ -191,6 +193,7 @@ export default function App() {
       </BrowserRouter>
     </UsuariosProvider>
     </AlertasProvider>
+    </SolicitudesProvider>
     </WhatsappPendingProvider>
     </ChequesProvider>
     </MovimientosProvider>

@@ -7,6 +7,7 @@ import { useAuth } from '../../store/AuthContext';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useAlertas } from '../../store/AlertasContext';
 import { useWhatsappPending } from '../../store/WhatsappPendingContext';
+import { useSolicitudes } from '../../store/SolicitudesContext';
 import GlobalSearch from '../GlobalSearch';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -16,8 +17,23 @@ const fmtFecha = (iso) => {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
-function NotifPanel({ alertas, pending, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate }) {
+function NotifPanel({ alertas, pending, solicitudesPendientes, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate }) {
   const items = [];
+
+  // Solicitudes de eliminación pendientes (para admins)
+  (solicitudesPendientes || []).slice(0, 5).forEach(sol => {
+    const mov = sol.movimiento || {};
+    items.push({
+      id:     sol.id,
+      icon:   '🗑',
+      titulo: `Solicitud de eliminación · ${sol.solicitadoPor?.nombre || '—'}`,
+      subtit: `${mov.descripcion || '—'} · $${Math.round(mov.monto || 0).toLocaleString('es-AR')}`,
+      fecha:  fmtFecha(sol.creadoAt),
+      leida:  false,
+      ruta:   '/autorizaciones',
+      tipo:   'solicitud',
+    });
+  });
 
   // Pending WhatsApp approvals
   const pendientesWA = (pending || []).filter(p => p.status === 'pendiente').slice(0, 10);
@@ -149,6 +165,7 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
   const { currentUser } = useUsuarios();
   const { alertas, noLeidas, marcarLeida, marcarTodasLeidas } = useAlertas();
   const { pending } = useWhatsappPending();
+  const { solicitudes } = useSolicitudes();
   const navigate = useNavigate();
   const [showNotif, setShowNotif] = useState(false);
   const bellRef = useRef(null);
@@ -156,9 +173,11 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
   const logout = signOut;
   const displayName = currentUser?.nombre || authUser?.email?.split('@')[0] || 'Usuario';
   const displayRol  = currentUser?.rol || 'Administrador';
+  const isAdmin = currentUser?.rol === 'Admin';
 
   const pendientesWA = (pending || []).filter(p => p.status === 'pendiente').length;
-  const totalNotif   = noLeidas + pendientesWA;
+  const solicitudesPendientes = isAdmin ? solicitudes.filter(s => s.estado === 'pendiente') : [];
+  const totalNotif   = noLeidas + pendientesWA + solicitudesPendientes.length;
 
   // Cerrar panel al hacer click fuera
   useEffect(() => {
@@ -220,6 +239,7 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
               <NotifPanel
                 alertas={alertas}
                 pending={pending}
+                solicitudesPendientes={solicitudesPendientes}
                 noLeidas={noLeidas}
                 marcarLeida={marcarLeida}
                 marcarTodasLeidas={marcarTodasLeidas}

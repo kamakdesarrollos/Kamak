@@ -6,6 +6,7 @@ import { T } from '../theme';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
+import { useSolicitudes } from '../store/SolicitudesContext';
 import { adminAction, createAuthUser } from '../lib/dbHelpers';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
@@ -297,16 +298,23 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
   );
 }
 
+const fmtDatetime = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' +
+    d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+};
+
 export default function Autorizaciones() {
   const { obras } = useObras();
-  const { cajas: allCajas } = useMovimientos();
+  const { cajas: allCajas, removeMovimiento } = useMovimientos();
   const { usuarios, currentUser, togglePermiso, applyRol, removeUsuario, updateUsuario, roles, updateRol, removeRol } = useUsuarios();
+  const { solicitudes, resolveSolicitud } = useSolicitudes();
 
   const navigate = useNavigate();
-  useEffect(() => {
-    if (currentUser && currentUser.rol !== 'Admin') navigate('/', { replace: true });
-  }, [currentUser, navigate]);
-  const [tab, setTab] = useState('usuarios');
+  const isAdmin = currentUser?.rol === 'Admin';
+  // Non-admins start on solicitudes tab; admins blocked from nothing
+  const [tab, setTab] = useState(isAdmin ? 'solicitudes' : 'solicitudes');
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editAccesos, setEditAccesos] = useState(null);
   const [resetPassId, setResetPassId] = useState(null);
@@ -314,6 +322,20 @@ export default function Autorizaciones() {
   const [resetLoading, setResetLoading] = useState(false);
 
   const cajas = allCajas.filter(c => c.activa);
+
+  // Solicitudes visibles según rol
+  const solVisibles = isAdmin
+    ? solicitudes
+    : solicitudes.filter(s => s.solicitadoPor?.id === currentUser?.id || s.solicitadoPor?.email === currentUser?.email);
+  const solPendientes = solVisibles.filter(s => s.estado === 'pendiente');
+
+  const handleApprove = (sol) => {
+    removeMovimiento(sol.movimientoId);
+    resolveSolicitud(sol.id, 'aprobada', currentUser?.nombre || 'Admin');
+  };
+  const handleReject = (sol) => {
+    resolveSolicitud(sol.id, 'rechazada', currentUser?.nombre || 'Admin');
+  };
 
   const obrasLabel = (u) => {
     const ov = u.obrasVisibles;
@@ -336,23 +358,109 @@ export default function Autorizaciones() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
         <div>
           <div className="k-h" style={{ fontSize: 28 }}>Autorizaciones</div>
-          <div style={{ fontSize: 12, color: T.ink2 }}>Matriz de permisos por usuario · solo admins</div>
+          <div style={{ fontSize: 12, color: T.ink2 }}>
+            {isAdmin ? 'Gestión de usuarios y aprobaciones pendientes' : 'Mis solicitudes de eliminación'}
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo usuario</Btn>
-        </div>
+        {isAdmin && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo usuario</Btn>
+          </div>
+        )}
       </div>
 
       <div className="k-tabs" style={{ margin: '8px 0 10px' }}>
-        <span className={`k-tab${tab === 'usuarios' ? ' k-tab-on' : ''}`} onClick={() => setTab('usuarios')}>
-          Usuarios · {usuarios.length}
+        <span className={`k-tab${tab === 'solicitudes' ? ' k-tab-on' : ''}`} onClick={() => setTab('solicitudes')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          Solicitudes de eliminación
+          {solPendientes.length > 0 && (
+            <span style={{ background: '#c0392b', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700 }}>
+              {solPendientes.length}
+            </span>
+          )}
         </span>
-        <span className={`k-tab${tab === 'roles' ? ' k-tab-on' : ''}`} onClick={() => setTab('roles')}>
-          Roles base
-        </span>
+        {isAdmin && (
+          <span className={`k-tab${tab === 'usuarios' ? ' k-tab-on' : ''}`} onClick={() => setTab('usuarios')}>
+            Usuarios · {usuarios.length}
+          </span>
+        )}
+        {isAdmin && (
+          <span className={`k-tab${tab === 'roles' ? ' k-tab-on' : ''}`} onClick={() => setTab('roles')}>
+            Roles base
+          </span>
+        )}
       </div>
 
-      {tab === 'usuarios' && (
+      {tab === 'solicitudes' && (
+        <Box style={{ padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 240px)' }}>
+          {solVisibles.length === 0 ? (
+            <div style={{ padding: 48, textAlign: 'center', color: T.ink3, fontSize: 13 }}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>✓</div>
+              Sin solicitudes de eliminación
+            </div>
+          ) : (
+            <>
+              {/* Header */}
+              <div style={{ display: 'flex', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 14px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, gap: 8 }}>
+                <div style={{ flex: 3 }}>Movimiento</div>
+                <div style={{ flex: 2 }}>Motivo</div>
+                {isAdmin && <div style={{ flex: 1.2 }}>Solicitado por</div>}
+                <div style={{ flex: 1 }}>Fecha</div>
+                <div style={{ flex: 0.8 }}>Estado</div>
+                {isAdmin && <div style={{ width: 140, flexShrink: 0 }}></div>}
+              </div>
+              {solVisibles.map(sol => {
+                const mov = sol.movimiento || {};
+                const isPendiente = sol.estado === 'pendiente';
+                return (
+                  <div key={sol.id} style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.faint2}`, padding: '10px 14px', gap: 8, background: isPendiente ? '#fff7ed' : 'transparent' }}>
+                    <div style={{ flex: 3, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mov.descripcion || '—'}</div>
+                      <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono, marginTop: 2 }}>
+                        {mov.tipo} · ${Math.round(mov.monto || 0).toLocaleString('es-AR')} · {mov.fecha}
+                        {mov.obraNombre && mov.obraNombre !== 'General' && ` · ${mov.obraNombre}`}
+                      </div>
+                    </div>
+                    <div style={{ flex: 2, fontSize: 12, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sol.motivo}>
+                      {sol.motivo}
+                    </div>
+                    {isAdmin && (
+                      <div style={{ flex: 1.2, fontSize: 11, color: T.ink2 }}>{sol.solicitadoPor?.nombre || '—'}</div>
+                    )}
+                    <div style={{ flex: 1, fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{fmtDatetime(sol.creadoAt)}</div>
+                    <div style={{ flex: 0.8 }}>
+                      {sol.estado === 'pendiente' && <span style={{ background: '#fef3c7', color: '#d97706', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>⏳ Pendiente</span>}
+                      {sol.estado === 'aprobada' && <span style={{ background: '#d1fae5', color: '#059669', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>✓ Aprobada</span>}
+                      {sol.estado === 'rechazada' && <span style={{ background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>✕ Rechazada</span>}
+                    </div>
+                    {isAdmin && (
+                      <div style={{ width: 140, flexShrink: 0, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        {isPendiente ? (
+                          <>
+                            <button
+                              onClick={() => handleApprove(sol)}
+                              style={{ padding: '4px 10px', background: '#059669', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              Aprobar
+                            </button>
+                            <button
+                              onClick={() => handleReject(sol)}
+                              style={{ padding: '4px 10px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              Rechazar
+                            </button>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 10, color: T.ink3 }}>Resuelto por {sol.resolvedBy}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </Box>
+      )}
+
+      {tab === 'usuarios' && isAdmin && (
         <Box style={{ padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 240px)' }}>
           {/* Header */}
           <div style={{ display: 'flex', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, position: 'sticky', top: 0, zIndex: 1, minWidth: 0 }}>
@@ -458,7 +566,7 @@ export default function Autorizaciones() {
         </Box>
       )}
 
-      {tab === 'roles' && (
+      {tab === 'roles' && isAdmin && (
         <Box style={{ padding: 16 }}>
           <div style={{ fontSize: 12, color: T.ink2, marginBottom: 14 }}>
             Los roles base definen permisos predeterminados. Al asignar un rol a un usuario, sus permisos se resetean a estos valores. Cada permiso puede ajustarse individualmente por usuario en la pestaña Usuarios.

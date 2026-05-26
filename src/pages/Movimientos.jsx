@@ -9,12 +9,61 @@ import { useProveedores } from '../store/ProveedoresContext';
 import { useClientes } from '../store/ClientesContext';
 import { useDolar } from '../store/DolarContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useSolicitudes } from '../store/SolicitudesContext';
 import { useCatalog } from '../store/CatalogContext';
 import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useCheques } from '../store/ChequesContext';
 import { supabase } from '../lib/supabase';
 
 const DEFAULT_MEDIOS = ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débito', 'Tarjeta'];
+
+// ── Modal para solicitar eliminación (no-admin) ───────────────────────────────
+function SolicitarEliminacionModal({ movimiento, solicitante, onConfirm, onClose }) {
+  const [motivo, setMotivo] = useState('');
+  return (
+    <div className="k-modal-overlay" onClick={onClose}>
+      <div className="k-modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', background: '#c0392b', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: '6px 6px 0 0' }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>Solicitar eliminación de movimiento</div>
+          <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.8 }} onClick={onClose}>✕</span>
+        </div>
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: '#fef3f2', border: '1.5px solid #fca5a5', borderRadius: 4, padding: '10px 12px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#c0392b', marginBottom: 4 }}>Movimiento a eliminar</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{movimiento.descripcion}</div>
+            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 3, fontFamily: 'monospace' }}>
+              {movimiento.tipo} · ${Math.round(movimiento.monto).toLocaleString('es-AR')} · {movimiento.fecha}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+              Motivo de la solicitud <span style={{ color: '#c0392b' }}>*</span>
+            </div>
+            <textarea
+              autoFocus
+              value={motivo}
+              onChange={e => setMotivo(e.target.value)}
+              placeholder="Explicá por qué querés eliminar este movimiento…"
+              style={{ width: '100%', minHeight: 80, padding: '8px 10px', border: '1.2px solid #d1d5db', borderRadius: 4, fontFamily: 'inherit', fontSize: 12, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+            />
+          </div>
+          <div style={{ fontSize: 11, color: '#6b7280' }}>
+            Un administrador recibirá la solicitud y podrá aprobarla o rechazarla.
+          </div>
+        </div>
+        <div style={{ padding: '10px 18px', borderTop: '1.5px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} style={{ padding: '6px 14px', border: '1.5px solid #d1d5db', borderRadius: 4, background: '#fff', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit' }}>Cancelar</button>
+          <button
+            onClick={() => { if (motivo.trim()) { onConfirm(motivo.trim()); onClose(); } }}
+            disabled={!motivo.trim()}
+            style={{ padding: '6px 14px', border: 'none', borderRadius: 4, background: motivo.trim() ? '#c0392b' : '#fca5a5', color: '#fff', cursor: motivo.trim() ? 'pointer' : 'not-allowed', fontSize: 12, fontWeight: 700, fontFamily: 'inherit' }}>
+            Enviar solicitud
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 const MEDIOS_NO_USD = new Set(['Cheque', 'E-cheq', 'Débito']);
 
 const newPagoId = () => `pago-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
@@ -43,14 +92,17 @@ const todayStr = () => new Date().toISOString().split('T')[0];
 const currMes  = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; };
 
 // ── Fila de traspaso ─────────────────────────────────────────────────────────
-function TraspasoRow({ m, cajas, onRemove }) {
+function TraspasoRow({ m, cajas, onRemove, isAdmin, pendingSolIds, onSolicitar }) {
   const [hover, setHover] = useState(false);
+  const [showSolModal, setShowSolModal] = useState(false);
   const origen  = cajas.find(c => c.id === m.cajaId);
   const destino = cajas.find(c => c.id === m.cajaDestinoId);
   const isCross = origen && destino && origen.moneda !== destino.moneda;
+  const isPendingSol = pendingSolIds?.has(m.id);
   return (
+    <>
     <div
-      style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: `1px solid ${T.faint2}`, fontSize: 12, background: hover ? T.faint : 'transparent', transition: 'background .1s', gap: 8 }}
+      style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: `1px solid ${T.faint2}`, fontSize: 12, background: isPendingSol ? '#fff7ed' : hover ? T.faint : 'transparent', transition: 'background .1s', gap: 8 }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}>
       <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, width: 32, flexShrink: 0 }}>{fmtFecha(m.fecha)}</span>
@@ -61,18 +113,31 @@ function TraspasoRow({ m, cajas, onRemove }) {
           <span>→</span>
           <span style={{ background: T.faint2, borderRadius: 2, padding: '0 4px' }}>{destino?.nombre || '—'}</span>
           {isCross && m.tcAplicado && <span style={{ color: T.warn }}>· TC {fmtN(m.tcAplicado)}</span>}
+          {isPendingSol && <span style={{ background: '#fef3c7', color: '#d97706', borderRadius: 2, padding: '0 4px', fontWeight: 700 }}>⏳ solicitud pendiente</span>}
         </div>
       </div>
       <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.ink2, flexShrink: 0 }}>
         ↔ {origen?.moneda === 'USD' ? 'U$S' : '$'} {fmtN(m.monto)}
       </span>
       <span style={{ width: 16, flexShrink: 0 }}>
-        {hover && (
-          <span style={{ color: T.ink3, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
-            onClick={() => { if (confirm('¿Eliminar este traspaso?')) onRemove(m.id); }}>×</span>
+        {hover && !isPendingSol && (
+          isAdmin
+            ? <span style={{ color: T.ink3, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+                onClick={() => { if (confirm('¿Eliminar este traspaso?')) onRemove(m.id); }}>×</span>
+            : <span style={{ color: T.warn, cursor: 'pointer', fontSize: 11, fontWeight: 700, lineHeight: 1 }}
+                title="Solicitar eliminación"
+                onClick={() => setShowSolModal(true)}>✕</span>
         )}
       </span>
     </div>
+    {showSolModal && (
+      <SolicitarEliminacionModal
+        movimiento={m}
+        onConfirm={(motivo) => onSolicitar(m, motivo)}
+        onClose={() => setShowSolModal(false)}
+      />
+    )}
+    </>
   );
 }
 
@@ -168,7 +233,7 @@ function TraspasoForm({ cajas, dolarVenta, onSave, onCancel }) {
 }
 
 // ── Panel de traspasos ────────────────────────────────────────────────────────
-function TraspasoPanel({ traspasos, cajas, dolarVenta, onSave, onRemove, mes }) {
+function TraspasoPanel({ traspasos, cajas, dolarVenta, onSave, onRemove, mes, isAdmin, pendingSolIds, onSolicitar }) {
   const [open, setOpen] = useState(false);
   const sinCajas = cajas.filter(c => c.activa).length < 2;
   const total = traspasos.reduce((s, m) => s + m.monto, 0);
@@ -200,25 +265,28 @@ function TraspasoPanel({ traspasos, cajas, dolarVenta, onSave, onRemove, mes }) 
       {traspasos.length === 0 && !open ? (
         <div style={{ padding: '24px 20px', textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin traspasos en {mesLabel(mes)}</div>
       ) : (
-        traspasos.map(m => <TraspasoRow key={m.id} m={m} cajas={cajas} onRemove={onRemove} />)
+        traspasos.map(m => <TraspasoRow key={m.id} m={m} cajas={cajas} onRemove={onRemove} isAdmin={isAdmin} pendingSolIds={pendingSolIds} onSolicitar={onSolicitar} />)
       )}
     </Box>
   );
 }
 
 // ── Fila de movimiento ────────────────────────────────────────────────────────
-function MovRow({ m, cajas, onRemove }) {
+function MovRow({ m, cajas, onRemove, isAdmin, pendingSolIds, onSolicitar }) {
   const [hover, setHover] = useState(false);
+  const [showSolModal, setShowSolModal] = useState(false);
   const navigate = useNavigate();
   const { proveedores: provsList } = useProveedores();
   const caja = cajas.find(c => c.id === m.cajaId);
   const isIngreso = m.tipo === 'ingreso';
   const cajaIsUSD = caja?.moneda === 'USD';
   const simbolo = cajaIsUSD ? 'USD' : '$';
+  const isPendingSol = pendingSolIds?.has(m.id);
 
   return (
+    <>
     <div
-      style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: `1px solid ${T.faint2}`, fontSize: 12, background: hover ? T.faint : 'transparent', transition: 'background .1s', gap: 8 }}
+      style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: `1px solid ${T.faint2}`, fontSize: 12, background: isPendingSol ? '#fff7ed' : hover ? T.faint : 'transparent', transition: 'background .1s', gap: 8 }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}>
       <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, width: 32, flexShrink: 0 }}>{fmtFecha(m.fecha)}</span>
@@ -253,6 +321,9 @@ function MovRow({ m, cajas, onRemove }) {
               · = ${fmtN(m.montoARS)} ARS
             </span>
           )}
+          {isPendingSol && (
+            <span style={{ background: '#fef3c7', color: '#d97706', borderRadius: 2, padding: '0 4px', fontWeight: 700 }}>⏳ solicitud pendiente</span>
+          )}
         </div>
       </div>
       <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: isIngreso ? T.ok : T.warn, flexShrink: 0 }}>
@@ -266,12 +337,24 @@ function MovRow({ m, cajas, onRemove }) {
         </a>
       )}
       <span style={{ width: 16, flexShrink: 0 }}>
-        {hover && (
-          <span style={{ color: T.ink3, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
-            onClick={() => { if (confirm('¿Eliminar este movimiento?')) onRemove(m.id); }}>×</span>
+        {hover && !isPendingSol && (
+          isAdmin
+            ? <span style={{ color: T.ink3, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+                onClick={() => { if (confirm('¿Eliminar este movimiento?')) onRemove(m.id); }}>×</span>
+            : <span style={{ color: T.warn, cursor: 'pointer', fontSize: 11, fontWeight: 700, lineHeight: 1 }}
+                title="Solicitar eliminación"
+                onClick={() => setShowSolModal(true)}>✕</span>
         )}
       </span>
     </div>
+    {showSolModal && (
+      <SolicitarEliminacionModal
+        movimiento={m}
+        onConfirm={(motivo) => onSolicitar(m, motivo)}
+        onClose={() => setShowSolModal(false)}
+      />
+    )}
+    </>
   );
 }
 
@@ -762,7 +845,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
 }
 
 // ── Panel (ingresos o gastos) ─────────────────────────────────────────────────
-function Panel({ tipo, movs, cajas, obras, proveedores, clientes, dolarVenta, total, mes, addMovimiento, onRemove }) {
+function Panel({ tipo, movs, cajas, obras, proveedores, clientes, dolarVenta, total, mes, addMovimiento, onRemove, isAdmin, pendingSolIds, onSolicitar }) {
   const [open, setOpen] = useState(false);
   const isIngreso = tipo === 'ingreso';
   const color = isIngreso ? T.ok : T.warn;
@@ -822,7 +905,7 @@ function Panel({ tipo, movs, cajas, obras, proveedores, clientes, dolarVenta, to
             )}
           </div>
         )}
-        {movs.map(m => <MovRow key={m.id} m={m} cajas={cajas} onRemove={onRemove} />)}
+        {movs.map(m => <MovRow key={m.id} m={m} cajas={cajas} onRemove={onRemove} isAdmin={isAdmin} pendingSolIds={pendingSolIds} onSolicitar={onSolicitar} />)}
       </div>
     </Box>
   );
@@ -913,8 +996,22 @@ export default function Movimientos() {
   const { clientes }       = useClientes();
   const { dolarVenta }     = useDolar();
   const { currentUser }    = useUsuarios();
+  const { solicitudes, addSolicitud } = useSolicitudes();
   const cv = currentUser?.cajasVisibles ?? '*';
   const cajas = cv === '*' ? allCajas : allCajas.filter(c => Array.isArray(cv) && cv.includes(c.id));
+  const isAdmin = currentUser?.rol === 'Admin';
+  const pendingSolIds = useMemo(() =>
+    new Set(solicitudes.filter(s => s.estado === 'pendiente').map(s => s.movimientoId)),
+    [solicitudes]);
+  const handleSolicitar = (movimiento, motivo) => {
+    addSolicitud({
+      tipo: 'eliminar_movimiento',
+      movimientoId: movimiento.id,
+      movimiento: { ...movimiento },
+      solicitadoPor: { id: currentUser?.id, nombre: currentUser?.nombre, email: currentUser?.email },
+      motivo,
+    });
+  };
 
   const [searchParams] = useSearchParams();
   const [mes,        setMes]        = useState(currMes);
@@ -1007,6 +1104,9 @@ export default function Movimientos() {
           mes={mes}
           addMovimiento={addMovimiento}
           onRemove={removeMovimiento}
+          isAdmin={isAdmin}
+          pendingSolIds={pendingSolIds}
+          onSolicitar={handleSolicitar}
         />
         <Panel
           tipo="gasto"
@@ -1020,6 +1120,9 @@ export default function Movimientos() {
           mes={mes}
           addMovimiento={addMovimiento}
           onRemove={removeMovimiento}
+          isAdmin={isAdmin}
+          pendingSolIds={pendingSolIds}
+          onSolicitar={handleSolicitar}
         />
       </div>
 
@@ -1030,6 +1133,9 @@ export default function Movimientos() {
         onSave={traspasar}
         onRemove={removeMovimiento}
         mes={mes}
+        isAdmin={isAdmin}
+        pendingSolIds={pendingSolIds}
+        onSolicitar={handleSolicitar}
       />
 
       <ComprobantesPanel movimientos={filtered} mes={mes} />

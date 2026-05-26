@@ -2,13 +2,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Diamond } from '../ui';
 import { T } from '../../theme';
 import { useUsuarios } from '../../store/UsuariosContext';
-import { useWhatsappPending } from '../../store/WhatsappPendingContext';
+import { useSolicitudes } from '../../store/SolicitudesContext';
 
 const ALL_ITEMS = [
   { section: 'Operación' },
   { icon: '◧', label: 'Dashboard',      path: '/',             perm: 'verDashboard' },
   { icon: '🏗', label: 'Obras',          path: '/obras' },
-  { icon: '⌨', label: 'WhatsApp',        path: '/whatsapp' },
   { section: 'Administración' },
   { icon: '◉', label: 'Proveedores',    path: '/proveedores' },
   { icon: '◎', label: 'Clientes',       path: '/clientes' },
@@ -21,7 +20,7 @@ const ALL_ITEMS = [
   { icon: '▦', label: 'Plantillas',     path: '/plantillas',  adminOnly: true },
   { icon: '▦', label: 'Reportes',       path: '/reportes',    adminOnly: true },
   { section: 'Sistema' },
-  { icon: '◐', label: 'Autorizaciones', path: '/autorizaciones', adminOnly: true },
+  { icon: '◐', label: 'Autorizaciones', path: '/autorizaciones' },
   { icon: '⚙', label: 'Configuración', path: '/configuracion', adminOnly: true },
 ];
 
@@ -29,9 +28,15 @@ export default function Sidebar({ active }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser } = useUsuarios();
-  const { pending } = useWhatsappPending();
+  const { solicitudes } = useSolicitudes();
   const p = currentUser?.permisos ?? {};
   const isAdmin = currentUser?.rol === 'Admin';
+
+  // Badge: admins see all pending, non-admins see their own pending
+  const solPendientes = isAdmin
+    ? solicitudes.filter(s => s.estado === 'pendiente').length
+    : solicitudes.filter(s => s.estado === 'pendiente' &&
+        (s.solicitadoPor?.id === currentUser?.id || s.solicitadoPor?.email === currentUser?.email)).length;
 
   const items = ALL_ITEMS.filter(it => {
     if (it.section) return true;
@@ -60,9 +65,9 @@ export default function Sidebar({ active }) {
           >
             <span style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0, lineHeight: 1 }}>{it.icon || '·'}</span>
             <span>{it.label}</span>
-            {it.label === 'WhatsApp' && pending.length > 0 && (
-              <span style={{ marginLeft: 'auto', background: '#25803a', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700, lineHeight: '16px' }}>
-                {pending.length}
+            {it.label === 'Autorizaciones' && solPendientes > 0 && (
+              <span style={{ marginLeft: 'auto', background: '#c0392b', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700, lineHeight: '16px' }}>
+                {solPendientes}
               </span>
             )}
           </div>
