@@ -121,10 +121,11 @@ async function uploadToStorage(base64Data, mimeType, filepath) {
 
 // ── Datos del sistema ─────────────────────────────────────────────────────────
 async function getSystemContext() {
-  const [movData, provData, obrasData] = await Promise.all([
+  const [movData, provData, obrasData, cliData] = await Promise.all([
     loadSharedData('movimientos'),
     loadSharedData('proveedores'),
     loadSharedData('obras'),
+    loadSharedData('clientes'),
   ]);
   return {
     cajas:       movData?.cajas       || [],
@@ -132,7 +133,58 @@ async function getSystemContext() {
     proveedores: provData?.proveedores || [],
     obras:       obrasData?.obras?.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto') || [],
     detalles:    obrasData?.detalles  || {},
+    clientes:    Array.isArray(cliData) ? cliData : [],
   };
+}
+
+// ── Helpers cliente / telefono ────────────────────────────────────────────────
+// Normaliza un teléfono al formato E.164 sin "+" que requiere Meta WA.
+// Acepta varios formatos comunes Arg: "+54 11 5555-1234", "01155551234",
+// "5491155551234". Devuelve null si no se puede normalizar razonablemente.
+function normalizePhone(raw) {
+  if (!raw) return null;
+  let d = String(raw).replace(/\D/g, '');
+  if (!d) return null;
+  // 0xxxxxxxxxx (formato local arg con cero inicial) → quitar el 0
+  if (d.startsWith('0')) d = d.slice(1);
+  // Arg sin código país (10 dígitos): "1155551234" → "5491155551234"
+  if (d.length === 10) d = '549' + d;
+  // Arg con código país sin el 9 móvil: "541155551234" (12) → "5491155551234"
+  else if (d.length === 12 && d.startsWith('54')) d = '549' + d.slice(2);
+  // Arg formato "15" móvil viejo (11 dígitos): "1115551234" → ya está bien, +549
+  else if (d.length === 11 && (d.startsWith('11') || d.startsWith('15'))) d = '549' + d.slice(d.startsWith('15') ? 2 : 0);
+  // Validación final: E.164 → 11-15 dígitos
+  if (d.length < 11 || d.length > 15) return null;
+  return d;
+}
+
+// Busca el cliente vinculado a una obra por nombre. obra.cliente es texto
+// libre — matcheamos por lowercase exacto primero, después por inclusión.
+function findClienteByObra(obra, clientes) {
+  if (!obra?.cliente || !clientes?.length) return null;
+  const q = obra.cliente.toLowerCase().trim();
+  const exacto = clientes.find(c => (c.nombre || '').toLowerCase().trim() === q);
+  if (exacto) return exacto;
+  return clientes.find(c => {
+    const n = (c.nombre || '').toLowerCase().trim();
+    return n && (n.includes(q) || q.includes(n));
+  }) || null;
+}
+
+// Formatea un monto con moneda, igual al estilo del resto del bot.
+function fmtMonto(monto, moneda) {
+  const n = Math.round(monto).toLocaleString('es-AR');
+  return moneda === 'USD' ? `U$S ${n}` : `$ ${n}`;
+}
+
+// Manda el WhatsApp de confirmación de cobro al cliente.
+async function notifyClienteCobro({ telefono, clienteNombre, monto, moneda, obraNombre, recibidoPor }) {
+  const msg =
+    `Hola ${clienteNombre} 👋\n\n` +
+    `Te confirmamos que recibimos ${fmtMonto(monto, moneda)} por la obra *${obraNombre}*.\n\n` +
+    `Recibido por: ${recibidoPor}\n\n` +
+    `¡Gracias por confiar en Kamak Desarrollos! 🙏`;
+  await sendWA(telefono, msg);
 }
 
 async function getAllAdmins() {
@@ -594,6 +646,9 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     const obra  = ctx.obras.find(o => o.id === datos.obraId);
     const caja  = ctx.cajas.find(c => c.id === datos.cajaId);
     const monto = Math.round(parseFloat(datos.monto) || 0);
+    const tipoStr = tipo === 'gasto' ? 'gasto' : 'ingreso';
+    const obraMoneda = obra?.moneda || 'ARS';
+    const montoFmt = fmtMonto(monto, obraMoneda);
 
     const nuevoMov = {
       id:               `mov-${Date.now()}`,
@@ -612,8 +667,67 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       comprobanteUrl:   mediaUrl || null,
       creadoPorWA:      true,
       creadoPor:        user.user_name,
-      estadoAprobacion: 'pendiente',
     };
+
+    // ── Rama Admin: auto-aplicar (sin pasar por Autorizaciones) ───────────────
+    if (user.user_rol === 'Admin') {
+      const movData = await loadSharedData('movimientos');
+      const movs  = movData?.movimientos || [];
+      const cajas = movData?.cajas || ctx.cajas;
+      // Actualizar saldo de la caja en el momento.
+      const delta = tipo === 'ingreso' ? monto : -monto;
+      const updatedCajas = cajas.map(c =>
+        c.id === datos.cajaId ? { ...c, saldo: (c.saldo || 0) + delta } : c
+      );
+      await saveSharedData('movimientos', {
+        movimientos: [nuevoMov, ...movs],
+        cajas:       updatedCajas,
+      });
+
+      // Si es gasto → confirmación seca y listo.
+      if (tipo === 'gasto') {
+        return `✅ Gasto de *${montoFmt}* aplicado a *${obra?.nombre || 'General'}* desde *${caja?.nombre || '—'}*.\nQueda editable desde la app.`;
+      }
+
+      // Es ingreso → ofrecer notificar al cliente.
+      if (!obra) {
+        return `✅ Ingreso de *${montoFmt}* aplicado a *${caja?.nombre || '—'}*.\n⚠️ Sin obra asignada, no puedo avisar a ningún cliente.`;
+      }
+
+      const cliente = findClienteByObra(obra, ctx.clientes || []);
+      if (!cliente) {
+        return `✅ Ingreso de *${montoFmt}* aplicado a *${obra.nombre}*.\n⚠️ No encontré a *"${obra.cliente}"* en clientes. Cargalo en la app cuando puedas para poder avisarle automáticamente.`;
+      }
+
+      const tel = normalizePhone(cliente.whatsapp || cliente.telefono);
+      if (!tel) {
+        // Cliente sin teléfono → pedirlo por WA.
+        await saveConversation(user.phone, 'awaiting_client_phone', {
+          clienteId:     cliente.id,
+          clienteNombre: cliente.nombre,
+          obraNombre:    obra.nombre,
+          monto,
+          moneda:        obraMoneda,
+          recibidoPor:   user.user_name,
+        }, []);
+        return `✅ Ingreso de *${montoFmt}* aplicado a *${obra.nombre}*.\n\n📱 *${cliente.nombre}* no tiene WhatsApp cargado. ¿Cuál es su número? (con cód. país, ej. 5491155551234)\n\nO escribí *no* para omitir el aviso.`;
+      }
+
+      // Cliente OK → preguntar antes de mandar.
+      await saveConversation(user.phone, 'awaiting_client_notice', {
+        clienteId:     cliente.id,
+        clienteNombre: cliente.nombre,
+        clienteTel:    tel,
+        obraNombre:    obra.nombre,
+        monto,
+        moneda:        obraMoneda,
+        recibidoPor:   user.user_name,
+      }, []);
+      return `✅ Ingreso de *${montoFmt}* aplicado a *${obra.nombre}*.\n\n¿Aviso a *${cliente.nombre}* por WhatsApp? (sí/no)`;
+    }
+
+    // ── Rama no-Admin: flujo de aprobación (igual que antes) ──────────────────
+    nuevoMov.estadoAprobacion = 'pendiente';
 
     const pendingRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
     const existing = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
@@ -635,12 +749,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     await broadcastChange('whatsapp_pending');
 
     const admins = await getAllAdmins();
-    const montoStr = `$${monto.toLocaleString('es-AR')}`;
-    const tipoStr  = tipo === 'gasto' ? 'gasto' : 'ingreso';
     const msgAdmin =
       `📋 *Nueva solicitud de aprobación*\n\n` +
       `*${user.user_name}* registró un ${tipoStr}:\n` +
-      `• Monto: *${montoStr}*\n` +
+      `• Monto: *${montoFmt}*\n` +
       `• Concepto: ${datos.descripcion || '—'}\n` +
       `• Obra: ${obra?.nombre || 'General'}\n` +
       `• Caja: ${caja?.nombre || '—'}\n` +
@@ -652,7 +764,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       await sendWA(admin.phone, msgAdmin);
     }
 
-    return `✅ Listo. El ${tipoStr} de *${montoStr}* fue enviado a aprobación.\nLos administradores recibirán una notificación.`;
+    return `✅ Listo. El ${tipoStr} de *${montoFmt}* fue enviado a aprobación.\nLos administradores recibirán una notificación.`;
   }
 
   if (tipo === 'factura_compra') {
@@ -1061,7 +1173,12 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
 
     if (confirma) {
       const resultado = await ejecutarAccion(conv.data.accion.tipo, conv.data.accion.datos, { ...user, phone }, ctx, mediaUrl || conv.data.pendingMediaUrl);
-      await clearConversation(phone);
+      // Si la acción dejó la conv en un estado posterior (ej. awaiting_client_notice
+      // tras un ingreso de admin), respetarlo en vez de limpiar.
+      const newConv = await loadConversation(phone);
+      if (newConv.state === 'idle' || newConv.state === 'confirmando') {
+        await clearConversation(phone);
+      }
       await sendWA(phone, resultado);
       return;
     }
@@ -1070,6 +1187,77 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       await sendWA(phone, '❌ Cancelado. ¿En qué más te puedo ayudar?');
       return;
     }
+  }
+
+  // ── Estado: esperando confirmación para avisar al cliente del cobro ─────────
+  if (conv.state === 'awaiting_client_notice' && conv.data?.clienteTel) {
+    const respLower = (messageText || '').trim().toLowerCase();
+    const confirma  = ['sí', 'si', 'dale', 'ok', 'confirmo', 'correcto', 's', 'avisa', 'avisale'].some(p => respLower.startsWith(p));
+    const cancela   = ['no', 'cancelar', 'mal', 'n', 'omiti'].some(p => respLower.startsWith(p));
+
+    if (confirma) {
+      const { clienteTel, clienteNombre, monto, moneda, obraNombre, recibidoPor } = conv.data;
+      try {
+        await notifyClienteCobro({ telefono: clienteTel, clienteNombre, monto, moneda, obraNombre, recibidoPor });
+        await clearConversation(phone);
+        await sendWA(phone, `✅ Listo. Le confirmé el cobro a *${clienteNombre}*.`);
+      } catch (e) {
+        await clearConversation(phone);
+        await sendWA(phone, `⚠️ No pude enviarle el mensaje a *${clienteNombre}*. El ingreso ya quedó cargado igual. (Detalle: ${e.message})`);
+      }
+      return;
+    }
+    if (cancela) {
+      await clearConversation(phone);
+      await sendWA(phone, `👌 No le avisé al cliente. El ingreso quedó cargado igual.`);
+      return;
+    }
+    await sendWA(phone, `Respondeme *sí* para avisarle a ${conv.data.clienteNombre} o *no* para omitir.`);
+    return;
+  }
+
+  // ── Estado: esperando teléfono del cliente que no estaba cargado ────────────
+  if (conv.state === 'awaiting_client_phone' && conv.data?.clienteId) {
+    const respLower = (messageText || '').trim().toLowerCase();
+    const cancela = ['no', 'omiti', 'omitir', 'despues', 'después', 'luego', 'cancelar', 'n'].some(p => respLower === p || respLower.startsWith(p));
+
+    if (cancela) {
+      await clearConversation(phone);
+      await sendWA(phone, `👌 No le avisé. Cargá el WhatsApp en la ficha del cliente cuando puedas para que sea automático la próxima vez.`);
+      return;
+    }
+
+    const tel = normalizePhone(messageText || '');
+    if (!tel) {
+      await sendWA(phone, `🤔 No reconozco ese número. Mandame solo los dígitos con código país (ej. *5491155551234*), o escribí *no* para omitir.`);
+      return;
+    }
+
+    // Guardar el teléfono en la ficha del cliente (persistente).
+    // Se guarda con "+" para que el campo telefono de la app conserve formato
+    // legible (ej. "+5491155551234"). El bot normaliza antes de enviar.
+    try {
+      const clientesData = await loadSharedData('clientes');
+      const clientes = Array.isArray(clientesData) ? clientesData : [];
+      const updated = clientes.map(c =>
+        c.id === conv.data.clienteId ? { ...c, telefono: '+' + tel } : c
+      );
+      await saveSharedData('clientes', updated);
+    } catch (e) {
+      console.error('save cliente phone error:', e.message);
+    }
+
+    // Mandar el aviso al cliente.
+    const { clienteNombre, monto, moneda, obraNombre, recibidoPor } = conv.data;
+    try {
+      await notifyClienteCobro({ telefono: tel, clienteNombre, monto, moneda, obraNombre, recibidoPor });
+      await clearConversation(phone);
+      await sendWA(phone, `✅ Listo. Guardé el WhatsApp en la ficha de *${clienteNombre}* y le confirmé el cobro.`);
+    } catch (e) {
+      await clearConversation(phone);
+      await sendWA(phone, `📱 Guardé el WhatsApp en la ficha, pero no pude enviarle el mensaje. (${e.message})`);
+    }
+    return;
   }
 
   const updatedHistory = [
@@ -1127,7 +1315,13 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
 
   if (claudeRes.estado === 'ejecutar') {
     const resultado = await ejecutarAccion(claudeRes.accion.tipo, claudeRes.accion.datos, { ...user, phone }, ctx, mediaUrl);
-    await saveConversation(phone, 'idle', {}, newHistory);
+    // ejecutarAccion puede dejar la conv en un estado posterior (ej.
+    // awaiting_client_notice tras un ingreso de admin). Solo limpiamos
+    // si quedo en idle/confirmando.
+    const afterExec = await loadConversation(phone);
+    if (afterExec.state === 'idle' || afterExec.state === 'confirmando') {
+      await saveConversation(phone, 'idle', {}, newHistory);
+    }
     await sendWA(phone, resultado);
     return;
   }
