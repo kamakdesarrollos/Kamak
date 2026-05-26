@@ -221,67 +221,47 @@ export default function PortalCliente() {
       {/* ── Content ────────────────────────────────────────────────────────── */}
       <div className="portal-content" style={{ maxWidth: 1060, margin: '0 auto' }}>
 
-        {/* Debug panel: visible si sos admin O si la URL tiene ?debug=1.
-            Util para diagnosticar bugs de moneda / cuotas sin depender de
-            tener sesion iniciada. NO se le muestra al cliente real (a menos
-            que le pases la URL con ?debug=1). */}
-        {(isAdminInternal || typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) && (
-          <details style={{ background: '#fff8e0', padding: 10, fontSize: 11, fontFamily: 'monospace', borderRadius: 4, marginBottom: 12, border: '1px solid #f0d878' }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#7a5a00' }}>🔍 DEBUG (solo visible para admin)</summary>
-            <div style={{ marginTop: 8, lineHeight: 1.6 }}>
-              <div>obra.id: <b>{obra.id}</b></div>
-              <div>obra.moneda: <b>{obra.moneda || '(none)'}</b></div>
-              <div>obra.cliente (texto): <b>{obra.cliente}</b></div>
-              <div>obra.clienteId: <b>{obra.clienteId || '(none, hay que editar la obra y seleccionar cliente del dropdown)'}</b></div>
-              <div>clienteActual resuelto: <b>{clienteActual?.nombre || '(NO matcheo - falla)'}</b> id={clienteActual?.id || '?'}</div>
-              <div>dolarVenta: <b>{dolarVenta}</b></div>
-              <div>cuotas.length: <b>{cuotas.length}</b></div>
-              <div style={{ marginTop: 6 }}>cuotas raw:</div>
-              <pre style={{ margin: 0, padding: 6, background: '#fff', borderRadius: 3, fontSize: 10, overflow: 'auto' }}>
-                {JSON.stringify(cuotas.map(c => ({ n: c.n, monto: c.monto, _usd: c._usd, estado: c.estado, fecha: c.fecha })), null, 2)}
-              </pre>
-              <div style={{ marginTop: 6 }}>conversiones a USD:</div>
-              <pre style={{ margin: 0, padding: 6, background: '#fff', borderRadius: 3, fontSize: 10, overflow: 'auto' }}>
-                {JSON.stringify(cuotas.map(c => ({ n: c.n, monto: c.monto, _usd: !!c._usd, obraEsUSD, enUSD: cuotaEnUSD(c) })), null, 2)}
-              </pre>
-              <div style={{ marginTop: 6 }}>totalCuotasUSD: <b>{totalCuotasUSD}</b></div>
-              <div>totalClienteUSD (calc del presupuesto): <b>{totalClienteUSD}</b></div>
-            </div>
-          </details>
-        )}
 
 
         {/* TAB 0 — RESUMEN */}
         {tab === 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-            {/* KPIs + Datos de la obra unificados arriba */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, background: T.faint, borderRadius: 8, padding: '16px 18px' }}>
+            {/* KPIs visuales (numericos grandes) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, background: T.faint, borderRadius: 8, padding: '16px 18px' }}>
               <Stat label="Avance general"     value={`${obra.avance}%`} />
               <Stat label="Días restantes"     value={diasRestantes !== null ? `${diasRestantes}` : '—'} />
               <Stat label="Cuotas pagadas"     value={`${countPagadas} / ${cuotas.length}`} />
               <Stat label="Entrega estimada"   value={fmtD(obra.fechaFinEstim)} />
-              <Stat label="Tipo de obra"       value={obra.tipo || '—'} />
-              <Stat label="Dirección"          value={obra.direccion || '—'} />
-              <Stat label="Inicio de obra"     value={fmtD(obra.fechaInicio)} />
-              <Stat label="Presupuesto total"  value={fmt(totalClienteUSD || toUSD(obra.presupuesto, obraEsUSD))} />
             </div>
 
-            {/* Notas / aviso del equipo */}
-            {(obra.notas || fin.notaPortal) && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {obra.notas && (
-                  <div style={{ padding: '10px 14px', background: T.faint, borderRadius: 6, fontSize: 12, color: T.ink2, borderLeft: `3px solid ${T.accent}` }}>
-                    {obra.notas}
+            {/* Datos de la obra (formato compacto key-value, font normal) */}
+            <Box style={{ padding: '14px 18px' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: T.ink, textTransform: 'uppercase', letterSpacing: 0.5 }}>Datos de la obra</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px 18px' }}>
+                {[
+                  ['Tipo de obra',      obra.tipo || '—'],
+                  ['Dirección',         obra.direccion || '—'],
+                  ['Inicio de obra',    fmtD(obra.fechaInicio)],
+                  ['Presupuesto total', fmt(totalClienteUSD || toUSD(obra.presupuesto, obraEsUSD))],
+                ].map(([k, v]) => (
+                  <div key={k}>
+                    <div style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3 }}>{k}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, lineHeight: 1.3 }}>{v}</div>
                   </div>
-                )}
-                {fin.notaPortal && (
-                  <div style={{ padding: '10px 14px', background: '#fffbeb', borderRadius: 6, fontSize: 12, color: T.ink, borderLeft: `3px solid #f59e0b` }}>
-                    📋 {fin.notaPortal}
-                  </div>
-                )}
+                ))}
               </div>
-            )}
+              {obra.notas && (
+                <div style={{ marginTop: 12, padding: '10px 14px', background: T.faint, borderRadius: 6, fontSize: 12, color: T.ink2, borderLeft: `3px solid ${T.accent}` }}>
+                  {obra.notas}
+                </div>
+              )}
+              {fin.notaPortal && (
+                <div style={{ marginTop: 10, padding: '10px 14px', background: '#fffbeb', borderRadius: 6, fontSize: 12, color: T.ink, borderLeft: `3px solid #f59e0b` }}>
+                  📋 {fin.notaPortal}
+                </div>
+              )}
+            </Box>
 
             {/* Avance por rubro */}
             {rubros.length > 0 && (
