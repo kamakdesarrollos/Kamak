@@ -268,8 +268,15 @@ export function ObrasProvider({ children }) {
 
   // byEstado y getDetalle son derivados — devuelven nueva referencia cada
   // call (es lo correcto: usar useMemo en el consumidor cuando se necesite).
-  const byEstado = useCallback((estado) => obrasRef.current.filter(o => o.estado === estado), []);
-  const getDetalle = useCallback((id) => detallesRef.current[id] ?? EMPTY_DETALLE, []);
+  //
+  // BUG previo: usaban obrasRef.current / detallesRef.current con deps [].
+  // El ref se actualiza en useEffect — que corre DESPUES del render. Asi que
+  // durante el render que sigue a un cambio de obras, byEstado todavia veia
+  // la version vieja. Sintoma: al editar el cliente de una obra, la tarjeta
+  // seguia mostrando el nombre viejo hasta hacer hard refresh.
+  // Fix: leer del state directamente con [obras]/[detalles] como deps.
+  const byEstado = useCallback((estado) => obras.filter(o => o.estado === estado), [obras]);
+  const getDetalle = useCallback((id) => detalles[id] ?? EMPTY_DETALLE, [detalles]);
 
   const patchDetalle = useCallback((id, fn) => {
     setDetalles(prev => {
