@@ -8,6 +8,7 @@ import { useObras } from '../store/ObrasContext';
 import { useDolar } from '../store/DolarContext';
 import { useAlertas } from '../store/AlertasContext';
 import { useProveedores } from '../store/ProveedoresContext';
+import { useUsuarios } from '../store/UsuariosContext';
 
 const fmtN = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
 const currMes = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; };
@@ -39,6 +40,9 @@ export default function Dashboard() {
   const navigate               = useNavigate();
   const { alertas: alertasWA, noLeidas, marcarLeida, marcarTodasLeidas } = useAlertas();
   const { proveedores }        = useProveedores();
+  const { currentUser }        = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
+  const cv = currentUser?.cajasVisibles ?? '*';
 
   const [editMode,       setEditMode]       = useState(false);
   const [enabledWidgets, setEnabledWidgets] = useState(loadWidgets);
@@ -169,6 +173,74 @@ export default function Dashboard() {
   }, [cajas, obrasActivas, obras, getDetalle]);
 
   const fechaStr = today.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  const cajasVisibles = isAdmin || cv === '*' ? cajas : cajas.filter(c => Array.isArray(cv) && cv.includes(c.id));
+
+  if (!isAdmin) {
+    const misCajas = cajasVisibles.filter(c => c.activa);
+    const misAlertas = alertas.filter(a => {
+      if (!a.obraId) return misCajas.some(c => a.texto.includes(c.nombre));
+      return true;
+    });
+    return (
+      <PageLayout breadcrumb={['Inicio']} active="Dashboard">
+        <div style={{ marginBottom: 16 }}>
+          <div className="k-h" style={{ fontSize: 24 }}>Buen día, {currentUser?.nombre?.split(' ')[0] || 'usuario'}</div>
+          <div style={{ fontSize: 12, color: T.ink2, textTransform: 'capitalize' }}>{fechaStr}</div>
+        </div>
+
+        {/* Mis cajas */}
+        {misCajas.length > 0 && (
+          <Box style={{ marginBottom: 12, padding: 14 }}>
+            <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Mis cajas</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {misCajas.map(c => (
+                <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: T.faint, borderRadius: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: c.color || T.ink2, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>{c.nombre}</span>
+                    <span style={{ fontSize: 10, color: T.ink2 }}>{c.moneda}</span>
+                  </div>
+                  <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: (c.saldo || 0) < 0 ? T.accent : T.ink }}>
+                    {c.moneda === 'USD' ? 'U$S' : '$'} {fmtN(c.saldo || 0)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Box>
+        )}
+
+        {/* Alertas */}
+        <Box style={{ padding: 13 }}>
+          <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>
+            Alertas {(misAlertas.length + alertasWA.filter(a => !a.leida).length) > 0 ? `(${misAlertas.length + alertasWA.filter(a => !a.leida).length})` : ''}
+          </div>
+          {misAlertas.length === 0 && alertasWA.filter(a => !a.leida).length === 0 ? (
+            <div style={{ fontSize: 12, color: T.ok }}>✓ Todo en orden</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
+              {misAlertas.map((a, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                  <Chip accent={a.tipo === 'accent'} warn={a.tipo === 'warn'}>{a.tipo === 'accent' ? '🚨' : '⚠'}</Chip>
+                  <div style={{ flex: 1 }}>{a.texto}</div>
+                </div>
+              ))}
+              {alertasWA.filter(a => !a.leida).map(a => (
+                <div key={a.id} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', background: T.faint, borderRadius: 4, padding: '5px 7px' }}>
+                  <Chip accent>{a.tipo === 'exceso' ? '📊' : '⚠'}</Chip>
+                  <div style={{ flex: 1 }}>
+                    <div>{a.texto}</div>
+                    <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{a.obra}</div>
+                  </div>
+                  <span style={{ fontSize: 10, color: T.ink3, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => marcarLeida(a.id)}>✓</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Box>
+      </PageLayout>
+    );
+  }
 
   return (
     <PageLayout breadcrumb={['Inicio', 'Dashboard']} active="Dashboard">

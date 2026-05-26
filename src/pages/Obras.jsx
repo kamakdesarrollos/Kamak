@@ -126,7 +126,7 @@ function ObraMenu({ obra, onTransicion, onEditar, onEliminar }) {
 }
 
 // ── Card: obra activa ─────────────────────────────────────────────────────────
-function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar }) {
+function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar, isAdmin = true }) {
   const [hover, setHover] = useState(false);
   const navigate = useNavigate();
   const { presupuesto, gastado, avance, margen } = stats;
@@ -178,7 +178,7 @@ function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar }
       </div>
 
       {/* barra de gasto vs presupuesto */}
-      {presupuesto > 0 && (
+      {isAdmin && presupuesto > 0 && (
         <div style={{ marginTop: 6 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.ink2, marginBottom: 3 }}>
             <span>Gasto vs presu</span>
@@ -191,26 +191,30 @@ function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar }
       )}
 
       {/* stats */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11 }}>
-        <div>
-          <Label>Presu</Label>
-          <div className="k-mono" style={{ fontSize: 12 }}>{fmt(presupuesto, obra.moneda)}</div>
+      {isAdmin && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11 }}>
+          <div>
+            <Label>Presu</Label>
+            <div className="k-mono" style={{ fontSize: 12 }}>{fmt(presupuesto, obra.moneda)}</div>
+          </div>
+          <div>
+            <Label>Gastado</Label>
+            <div className="k-mono" style={{ fontSize: 12, color: sobrec ? T.accent : T.ink }}>{fmt(gastado, obra.moneda)}</div>
+          </div>
+          <div>
+            <Label>Margen real</Label>
+            <div className="k-mono" style={{ fontSize: 12, fontWeight: 700, color: margenColor(margen) }}>{margen}%</div>
+          </div>
         </div>
-        <div>
-          <Label>Gastado</Label>
-          <div className="k-mono" style={{ fontSize: 12, color: sobrec ? T.accent : T.ink }}>{fmt(gastado, obra.moneda)}</div>
-        </div>
-        <div>
-          <Label>Margen real</Label>
-          <div className="k-mono" style={{ fontSize: 12, fontWeight: 700, color: margenColor(margen) }}>{margen}%</div>
-        </div>
-      </div>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: T.ink2 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontSize: 9, background: T.faint2, padding: '1px 5px', borderRadius: 3 }}>{obra.tipo}</span>
-          <span>{obra.moneda}</span>
-        </span>
+        {isAdmin ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 9, background: T.faint2, padding: '1px 5px', borderRadius: 3 }}>{obra.tipo}</span>
+            <span>{obra.moneda}</span>
+          </span>
+        ) : <span />}
         <span>fin est. {fmtDate(obra.fechaFinEstim)}</span>
       </div>
     </Box>
@@ -416,6 +420,7 @@ export default function Obras() {
   const navigate = useNavigate();
   const { obras, detalles, addObra, updateObra, setEstado, deleteObra, byEstado } = useObras();
   const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
 
   const ov = currentUser?.obrasVisibles ?? '*';
   const puedeVer = (o) => ov === '*' || (Array.isArray(ov) && ov.includes(o.id));
@@ -446,6 +451,7 @@ export default function Obras() {
     { label: 'Finalizadas',    count: finalizadas.length },
     { label: 'Archivadas',     count: archivadas.length },
   ];
+  const visibleTabs = isAdmin ? TABS : TABS.slice(0, 1); // non-admin: only "Activas"
 
   // Filtro de búsqueda sobre la lista activa
   const filtrar = (lista) => {
@@ -500,7 +506,7 @@ export default function Obras() {
 
       {/* Tabs */}
       <div className="k-tabs" style={{ marginBottom: 14 }}>
-        {TABS.map((t, i) => (
+        {visibleTabs.map((t, i) => (
           <span key={i} className={`k-tab${tabIdx === i ? ' k-tab-on' : ''}`} onClick={() => setTabIdx(i)}>
             {t.label} · {t.count}
           </span>
@@ -516,6 +522,7 @@ export default function Obras() {
               onTransicion={(est) => handleTransicion(o.id, est)}
               onEditar={() => setEditando(o)}
               onEliminar={() => handleEliminar(o.id)}
+              isAdmin={isAdmin}
             />
           ))}
           {!busqueda && canCreate && (

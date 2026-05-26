@@ -313,6 +313,11 @@ export default function Autorizaciones() {
 
   const navigate = useNavigate();
   const isAdmin = currentUser?.rol === 'Admin';
+
+  useEffect(() => {
+    if (currentUser && !isAdmin) navigate('/', { replace: true });
+  }, [currentUser, isAdmin, navigate]);
+
   // Non-admins start on solicitudes tab; admins blocked from nothing
   const [tab, setTab] = useState(isAdmin ? 'solicitudes' : 'solicitudes');
   const [modalNuevo, setModalNuevo] = useState(false);

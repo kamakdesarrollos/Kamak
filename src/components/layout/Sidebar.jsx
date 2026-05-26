@@ -20,7 +20,7 @@ const ALL_ITEMS = [
   { icon: '▦', label: 'Plantillas',     path: '/plantillas',  adminOnly: true },
   { icon: '▦', label: 'Reportes',       path: '/reportes',    adminOnly: true },
   { section: 'Sistema' },
-  { icon: '◐', label: 'Autorizaciones', path: '/autorizaciones' },
+  { icon: '◐', label: 'Autorizaciones', path: '/autorizaciones', adminOnly: true },
   { icon: '⚙', label: 'Configuración', path: '/configuracion', adminOnly: true },
 ];
 

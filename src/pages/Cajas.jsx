@@ -261,7 +261,7 @@ function NuevaCajaModal({ onClose }) {
   );
 }
 
-function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0 }) {
+function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0, canRemove = true }) {
   const isARS = caja.moneda === 'ARS';
   const saldo = caja.saldo || 0;
   const efectivo = saldo - saldoCheques;
@@ -279,8 +279,10 @@ function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0 }) {
         </div>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           {isLow && <Chip warn style={{ fontSize: 9 }}>⚠ bajo</Chip>}
-          <span style={{ color: T.ink3, cursor: 'pointer', fontSize: 16, opacity: 0.4, lineHeight: 1 }}
-            onClick={e => { e.stopPropagation(); onRemove(); }}>×</span>
+          {canRemove && (
+            <span style={{ color: T.ink3, cursor: 'pointer', fontSize: 16, opacity: 0.4, lineHeight: 1 }}
+              onClick={e => { e.stopPropagation(); onRemove(); }}>×</span>
+          )}
         </div>
       </div>
 
@@ -321,6 +323,7 @@ export default function Cajas() {
   const { cajas, removeCaja } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
   const { cheques } = useCheques();
 
   const chequesPorCaja = useMemo(() => {
@@ -371,12 +374,12 @@ export default function Cajas() {
         <div className="k-h" style={{ fontSize: 28 }}>Cajas</div>
         <div style={{ display: 'flex', gap: 6 }}>
           <Btn sm onClick={() => setTraspaso(true)}>↔ Traspaso rápido</Btn>
-          <Btn sm fill onClick={() => setNuevaCaja(true)}>+ Nueva caja</Btn>
+          {isAdmin && <Btn sm fill onClick={() => setNuevaCaja(true)}>+ Nueva caja</Btn>}
         </div>
       </div>
 
       {/* Totales */}
-      <div style={{ display: 'flex', gap: 0, background: '#f6efd9', borderRadius: 4, marginBottom: 14, overflow: 'hidden', border: `1px solid #e8d89a` }}>
+      {isAdmin && <div style={{ display: 'flex', gap: 0, background: '#f6efd9', borderRadius: 4, marginBottom: 14, overflow: 'hidden', border: `1px solid #e8d89a` }}>
         {[
           { label: 'Total ARS', value: `$ ${fmtN(totalARS)}` },
           { label: 'Total USD', value: `U$S ${fmtN(totalUSD)}` },
@@ -391,7 +394,7 @@ export default function Cajas() {
         <div style={{ padding: '10px 14px', borderLeft: `1px solid #e8d89a`, display: 'flex', alignItems: 'center', gap: 6 }}>
           <Chip style={{ fontSize: 9 }}>TC BNA · $ {fmtN(dolarVenta)}</Chip>
         </div>
-      </div>
+      </div>}
 
       {/* ARS */}
       {cajasARS.length > 0 && (
@@ -403,7 +406,7 @@ export default function Cajas() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
             {cajasARS.map(c => (
-              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} saldoCheques={chequesPorCaja[c.id] || 0} />
+              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} saldoCheques={chequesPorCaja[c.id] || 0} canRemove={isAdmin} />
             ))}
           </div>
         </>
@@ -419,7 +422,7 @@ export default function Cajas() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
             {cajasUSD.map(c => (
-              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} />
+              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} canRemove={isAdmin} />
             ))}
           </div>
         </>
@@ -435,7 +438,7 @@ export default function Cajas() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
             {cajasRendicion.map(c => (
-              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} />
+              <CajaCard key={c.id} caja={c} onTraspaso={() => setTraspaso(true)} onRemove={() => handleRemove(c)} onClick={() => setCajaSel(c)} canRemove={isAdmin} />
             ))}
           </div>
           <div style={{ fontSize: 11, color: T.ink2, padding: '6px 10px', background: T.faint, borderRadius: 4, maxWidth: 420 }}>

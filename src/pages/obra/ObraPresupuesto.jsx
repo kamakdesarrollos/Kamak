@@ -3490,7 +3490,14 @@ export default function ObraPresupuesto() {
   const [searchParams] = useSearchParams();
   const { obras, getDetalle, patchDetalle, updateObra } = useObras();
   const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
+  const canSeeGantt = isAdmin || ['Comprador', 'Director de obra'].includes(currentUser?.rol);
+  const rolHiddenTabs = isAdmin ? [] : [
+    'Presupuesto', 'Adicionales', 'Contratos MO', 'Portal cliente',
+    ...(!canSeeGantt ? ['Gantt'] : []),
+  ];
   const tabsOcultos = currentUser?.tabsOcultos ?? [];
+  const allHiddenTabs = new Set([...tabsOcultos, ...rolHiddenTabs]);
   const [activeTab, setActiveTab] = useState(() => {
     const t = parseInt(searchParams.get('tab'), 10);
     return isNaN(t) ? 0 : t;
@@ -3524,7 +3531,7 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
   });
 
   // Filter to visible tab indices; if current tab is hidden, fall back to first visible
-  const visibleTabIndices = TABS_DEF.reduce((acc, t, i) => { if (!tabsOcultos.includes(t)) acc.push(i); return acc; }, []);
+  const visibleTabIndices = TABS_DEF.reduce((acc, t, i) => { if (!allHiddenTabs.has(t)) acc.push(i); return acc; }, []);
   const displayTab = visibleTabIndices.includes(activeTab) ? activeTab : (visibleTabIndices[0] ?? 0);
 
   const handleTab = (i) => {
