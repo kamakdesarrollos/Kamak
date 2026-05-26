@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
-import { Box, Chip, Btn, Stat, Label, Bar, Stripes } from '../components/ui';
+import { Box, Chip, Btn, Label, Bar, Stripes } from '../components/ui';
 import { T } from '../theme';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useObras } from '../store/ObrasContext';

@@ -11,7 +11,6 @@ import { useClientes } from '../../store/ClientesContext';
 import { useDolar } from '../../store/DolarContext';
 import ExportModal from '../modales/ExportModal';
 import ContratoMOModal from '../modales/ContratoMOModal';
-import { PROVEEDORES } from '../../data/proveedores';
 import { useGastosFijos } from '../../store/GastosFijosContext';
 import { useCatalog, calcTarea } from '../../store/CatalogContext';
 import { useUsuarios } from '../../store/UsuariosContext';
