@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Btn, Label, Divider } from '../../components/ui';
 import { T } from '../../theme';
 import { useDolar } from '../../store/DolarContext';
-import { esc, imprimirHTML } from '../../lib/html';
+import { esc } from '../../lib/html';
+import PrintPreviewModal from './PrintPreviewModal';
 import { buildWaMeLink, generateQrDataUrl } from '../../lib/clienteAcceso';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -448,6 +449,8 @@ export default function ExportModal({ onClose, obra, detalle }) {
   const moneda = obra?.moneda || 'ARS';
   const tc = dolarVenta || 1;
 
+  const [previewHTML, setPreviewHTML] = useState(null);
+
   const imprimir = async () => {
     try {
       const origin = window.location.origin;
@@ -468,8 +471,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
       }
 
       const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl });
-
-      await imprimirHTML(html);
+      setPreviewHTML(html);
     } catch (e) {
       console.error('[imprimir] error:', e);
       alert('Hubo un error al generar la propuesta:\n\n' + (e?.message || e));
@@ -589,6 +591,14 @@ export default function ExportModal({ onClose, obra, detalle }) {
           <Btn sm accent onClick={imprimir}>Imprimir / Guardar PDF</Btn>
         </div>
       </div>
+
+      {previewHTML && (
+        <PrintPreviewModal
+          html={previewHTML}
+          title={`Presupuesto · ${obra?.nombre || 'Obra'}`}
+          onClose={() => setPreviewHTML(null)}
+        />
+      )}
     </div>
   );
 }

@@ -342,6 +342,33 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
   const [editSeccionNombre, setEditSeccionNombre] = useState('');
   const [collapsedSections, setCollapsedSections] = useState(new Set());
   const toggleSeccion = (id) => setCollapsedSections(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  // Estado abierto/cerrado de rubros: ANTES vivia dentro del detalle (`rubro.abierto`),
+  // pero cada toggle disparaba patchDetalle -> save remoto -> broadcast eco.
+  // Sintoma: al abrir un rubro tardaba en responder, y a veces el broadcast remoto
+  // pisaba el cambio (lo volvia a cerrar). Ahora vive en state local; el valor
+  // inicial se hidrata desde el detalle por compatibilidad con datos viejos.
+  const [rubrosAbiertos, setRubrosAbiertos] = useState(() => {
+    const s = new Set();
+    for (const r of (detalle.rubros || [])) if (r.abierto !== false) s.add(r.id);
+    return s;
+  });
+  const isRubroAbierto = (id) => rubrosAbiertos.has(id);
+  const toggleRubroAbierto = (id) => setRubrosAbiertos(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+  // Si llega un rubro nuevo (vino de un import de plantilla o creacion local),
+  // lo mostramos abierto por defecto sin que el efecto pise el estado del resto.
+  useEffect(() => {
+    setRubrosAbiertos(prev => {
+      const known = new Set(prev);
+      let changed = false;
+      for (const r of (detalle.rubros || [])) {
+        if (!prev.has(r.id) && r.abierto !== false) { known.add(r.id); changed = true; }
+      }
+      return changed ? known : prev;
+    });
+  }, [detalle.rubros]);
   const [colsUser, setColsUser] = useState({ costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
   // Force-off cost/margin columns based on permissions
   const cols = {
@@ -475,7 +502,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
     patch(d => ({ ...d, rubros: d.rubros.map(r => ({ ...r, tareas: r.tareas.map(t => t.id === tareaId ? { ...t, nombre } : t) })) }));
   };
 
-  const toggleRubro = (id) => patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === id ? { ...r, abierto: !r.abierto } : r) }));
+  // Toggle local: NO toca el detalle ni dispara save remoto. El abrir/cerrar de
+  // un rubro es UI puro, no info compartida con otras sesiones.
+  const toggleRubro = (id) => toggleRubroAbierto(id);
   const deleteTarea = (rubroId, tareaId) => patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, tareas: r.tareas.filter(t => t.id !== tareaId) } : r) }));
   const deleteRubro = (rubroId) => { if (window.confirm('¿Eliminar rubro y todas sus tareas?')) patch(d => ({ ...d, rubros: d.rubros.filter(r => r.id !== rubroId) })); };
 
@@ -672,10 +701,10 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
               onDrop={e => onRubroDrop(e, rubro.id)}
               onDragEnd={onRubroDragEnd}
               style={{ padding: 0, flexShrink: 0, borderTop: dragOverRubroId === rubro.id ? `2px solid ${T.accent}` : '2px solid transparent', opacity: dragRubroRef.current === rubro.id ? 0.5 : 1, transition: 'border-top 0.1s' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.faint, borderBottom: rubro.abierto ? `1px solid ${T.faint2}` : 'none', cursor: 'pointer' }}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.faint, borderBottom: isRubroAbierto(rubro.id) ? `1px solid ${T.faint2}` : 'none', cursor: 'pointer' }}
                 onClick={() => { toggleRubro(rubro.id); setSelRubroId(rubro.id); setSelTask(null); }}>
                 <span style={{ color: T.ink3, cursor: 'grab', userSelect: 'none' }}>⋮⋮</span>
-                <span style={{ fontSize: 12 }}>{rubro.abierto ? '▾' : '▸'}</span>
+                <span style={{ fontSize: 12 }}>{isRubroAbierto(rubro.id) ? '▾' : '▸'}</span>
                 <div className="k-h" style={{ fontSize: 16 }}>{rubro.nombre}</div>
                 <Chip style={{ fontSize: 10 }}>mat {rubro.margenMat}%</Chip>
                 <Chip style={{ fontSize: 10 }}>Sub {rubro.margenMO}%</Chip>
@@ -694,7 +723,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                   onClick={e => { e.stopPropagation(); deleteRubro(rubro.id); }}>🗑</span>}
               </div>
 
-              {rubro.abierto && (
+              {isRubroAbierto(rubro.id) && (
                 <>
                   <div className="k-tr k-th" style={{ background: T.paper, borderBottom: `1px dashed ${T.faint2}` }}>
                     <div className="k-cell" style={{ flex: 3 }}>Tarea</div>
