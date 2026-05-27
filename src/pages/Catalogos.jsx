@@ -5,6 +5,7 @@ import { Box, Btn, Chip, Divider } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
+import { resolverItemAPU, resolverMOAPU } from '../lib/apuPriceResolver';
 import { useUsuarios } from '../store/UsuariosContext';
 
 const newId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
@@ -135,8 +136,15 @@ function InsumoSearch({ items, onSelect, placeholder }) {
 // ── Full-screen APU editor ─────────────────────────────────────────────────────
 const cellInSt = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, border: `1px solid ${T.faint2}`, borderRadius: 3, padding: '2px 5px', outline: 'none', background: T.paper };
 
-function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, onSave, onCancel }) {
-  const costs = useMemo(() => calcTarea(form), [form]);
+function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, generales, onSave, onCancel }) {
+  // Catalog sintético que pasamos a calcTarea — fuerza que tome los precios
+  // de las listas de catálogo (no del campo "precio" hardcoded en el APU,
+  // que el SISMAT cargó mal). Ver src/lib/apuPriceResolver.js.
+  const catalog = useMemo(
+    () => ({ materiales: materiales || [], subcontratos: subcontratos || [], mo: moItems || [], generales: generales || [] }),
+    [materiales, subcontratos, moItems, generales]
+  );
+  const costs = useMemo(() => calcTarea(form, catalog), [form, catalog]);
 
   const addMat = (item) => setForm(f => ({ ...f, materiales: [...f.materiales, { id: newId(), nombre: item.nombre, cantidad: 1, unidad: item.unidad, precio: item.precio }] }));
   const addSub = (item) => setForm(f => ({ ...f, subcontratos: [...(f.subcontratos||[]), { id: newId(), nombre: item.nombre, cantidad: 1, unidad: item.unidad, precio: item.precio }] }));
@@ -227,20 +235,28 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, o
             {form.materiales.length > 0 ? (
               <div>
                 <TableHeader />
-                {form.materiales.map(m => (
-                  <div key={m.id} className="k-tr" style={{ alignItems: 'center' }}>
-                    <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>{m.nombre}</div>
+                {form.materiales.map(m => {
+                  const r = resolverItemAPU(m, materiales);
+                  const warn = !r.encontrado;
+                  const unidadMostrar = r.encontrado ? r.unidadCatalogo : m.unidad;
+                  return (
+                  <div key={m.id} className="k-tr" style={{ alignItems: 'center', background: warn ? '#fff7ed' : 'transparent' }}>
+                    <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>
+                      {m.nombre}
+                      {warn && <span title="Material no encontrado en el catálogo — el precio puede estar desactualizado" style={{ marginLeft: 6, fontSize: 9.5, padding: '1px 5px', borderRadius: 8, background: '#dc2626', color: '#fff', fontWeight: 700, letterSpacing: 0.4 }}>SIN CATÁLOGO</span>}
+                    </div>
                     <div className="k-cell" style={{ flex: 1 }}>
                       <input type="number" min="0" step="0.01" value={m.cantidad} onChange={e => updateMat(m.id, 'cantidad', +e.target.value)} style={cellInSt} />
                     </div>
-                    <div className="k-cell" style={{ flex: 0.8, textAlign: 'center', color: T.ink2, fontSize: 11 }}>{m.unidad}</div>
-                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>$ {fmtN(m.precio)}</div>
-                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 12 }}>$ {fmtN(m.cantidad * m.precio)}</div>
+                    <div className="k-cell" style={{ flex: 0.8, textAlign: 'center', color: T.ink2, fontSize: 11 }}>{unidadMostrar}</div>
+                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>$ {fmtN(r.precioUnitario)}</div>
+                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 12 }}>$ {fmtN(r.subtotal)}</div>
                     <div className="k-cell" style={{ flex: 0.3, textAlign: 'center' }}>
                       <span style={{ color: T.accent, cursor: 'pointer', fontSize: 15 }} onClick={() => removeMat(m.id)}>×</span>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic', padding: '6px 0' }}>Sin materiales. Buscá en el catálogo para agregar.</div>
@@ -256,20 +272,28 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, o
             {(form.subcontratos||[]).length > 0 ? (
               <div>
                 <TableHeader />
-                {(form.subcontratos||[]).map(s => (
-                  <div key={s.id} className="k-tr" style={{ alignItems: 'center' }}>
-                    <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>{s.nombre}</div>
+                {(form.subcontratos||[]).map(s => {
+                  const r = resolverItemAPU(s, subcontratos);
+                  const warn = !r.encontrado;
+                  const unidadMostrar = r.encontrado ? r.unidadCatalogo : s.unidad;
+                  return (
+                  <div key={s.id} className="k-tr" style={{ alignItems: 'center', background: warn ? '#fff7ed' : 'transparent' }}>
+                    <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>
+                      {s.nombre}
+                      {warn && <span title="Sub contrato no encontrado en el catálogo" style={{ marginLeft: 6, fontSize: 9.5, padding: '1px 5px', borderRadius: 8, background: '#dc2626', color: '#fff', fontWeight: 700, letterSpacing: 0.4 }}>SIN CATÁLOGO</span>}
+                    </div>
                     <div className="k-cell" style={{ flex: 1 }}>
                       <input type="number" min="0" step="0.01" value={s.cantidad} onChange={e => updateSub(s.id, 'cantidad', +e.target.value)} style={cellInSt} />
                     </div>
-                    <div className="k-cell" style={{ flex: 0.8, textAlign: 'center', color: T.ink2, fontSize: 11 }}>{s.unidad}</div>
-                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>$ {fmtN(s.precio)}</div>
-                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 12 }}>$ {fmtN(s.cantidad * s.precio)}</div>
+                    <div className="k-cell" style={{ flex: 0.8, textAlign: 'center', color: T.ink2, fontSize: 11 }}>{unidadMostrar}</div>
+                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>$ {fmtN(r.precioUnitario)}</div>
+                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 12 }}>$ {fmtN(r.subtotal)}</div>
                     <div className="k-cell" style={{ flex: 0.3, textAlign: 'center' }}>
                       <span style={{ color: T.accent, cursor: 'pointer', fontSize: 15 }} onClick={() => removeSub(s.id)}>×</span>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic', padding: '6px 0' }}>Sin sub contratos. Buscá en el catálogo para agregar.</div>
@@ -292,20 +316,27 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, o
                   <div className="k-cell" style={{ flex: 1.5, textAlign: 'right' }}>Total $</div>
                   <div className="k-cell" style={{ flex: 0.3 }} />
                 </div>
-                {(form.mo||[]).map(m => (
-                  <div key={m.id} className="k-tr" style={{ alignItems: 'center' }}>
-                    <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>{m.nombre}</div>
+                {(form.mo||[]).map(m => {
+                  const r = resolverMOAPU(m, moItems);
+                  const warn = !r.encontrado;
+                  return (
+                  <div key={m.id} className="k-tr" style={{ alignItems: 'center', background: warn ? '#fff7ed' : 'transparent' }}>
+                    <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>
+                      {m.nombre}
+                      {warn && <span title="Categoría de MO no encontrada en el catálogo" style={{ marginLeft: 6, fontSize: 9.5, padding: '1px 5px', borderRadius: 8, background: '#dc2626', color: '#fff', fontWeight: 700, letterSpacing: 0.4 }}>SIN CATÁLOGO</span>}
+                    </div>
                     <div className="k-cell" style={{ flex: 1 }}>
                       <input type="number" min="0" step="0.01" value={m.horas} onChange={e => updateMO(m.id, 'horas', +e.target.value)} style={cellInSt} />
                     </div>
                     <div className="k-cell" style={{ flex: 0.8, textAlign: 'center', color: T.ink2, fontSize: 11 }}>h</div>
-                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>$ {fmtN(m.precioHora)}</div>
-                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 12 }}>$ {fmtN(m.horas * m.precioHora)}</div>
+                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>$ {fmtN(r.precioHora)}</div>
+                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 12 }}>$ {fmtN(r.subtotal)}</div>
                     <div className="k-cell" style={{ flex: 0.3, textAlign: 'center' }}>
                       <span style={{ color: T.accent, cursor: 'pointer', fontSize: 15 }} onClick={() => removeMO(m.id)}>×</span>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic', padding: '6px 0' }}>Sin mano de obra. Buscá en el catálogo para agregar.</div>
@@ -770,7 +801,7 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
                       </tr>
                     );
                   }
-                  const c = calcTarea(t);
+                  const c = calcTarea(t, catalog);
                   rows.push(
                     <tr key={t.id} onClick={() => startEdit(t)}
                       style={{ cursor: 'pointer', borderBottom: `1px solid ${T.faint2}`, background: editId === t.id ? T.accentSoft : 'transparent' }}>
@@ -806,6 +837,7 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
           materiales={materiales}
           moItems={mo || []}
           subcontratos={subcontratos || []}
+          generales={catalog?.generales || []}
           onSave={save}
           onCancel={cancel}
         />
@@ -939,7 +971,7 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
             </div>
             {activeAPUs.length === 0 && <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic' }}>Sin tareas APU — creá una desde la pestaña "Tareas (APU)"</div>}
             {activeAPUs.map(t => {
-              const c = calcTarea(t);
+              const c = calcTarea(t, catalog);
               return (
                 <div key={t.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, marginBottom: 5, gap: 10 }}>
                   <div style={{ flex: 1 }}>

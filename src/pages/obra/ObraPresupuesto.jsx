@@ -407,7 +407,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
     (catalog.tareas || []).forEach(t => {
       if (seen.has(t.nombre)) return;
       seen.add(t.nombre);
-      const { mat, mo } = calcTarea(t);
+      const { mat, mo } = calcTarea(t, catalog);
       list.push({ nombre: t.nombre, unidad: t.unidad || 'u', costoMat: Math.round(mat), costoSub: Math.round(mo), codigo: t.codigo || '', fuente: 'Catálogo' });
     });
     // From all obras
@@ -521,7 +521,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
     const tareasIniciales = (catalog.tareas || [])
       .filter(t => selectedTareas.has(t.id))
       .map(t => {
-        const { mat, sub, mo, gen } = calcTarea(t);
+        const { mat, sub, mo, gen } = calcTarea(t, catalog);
         return { id: newId(), nombre: t.nombre, codigo: t.codigo || '', unidad: t.unidad || 'u', cantidad: 1, costoMat: Math.round(mat + gen), costoSub: Math.round(sub + mo), receta: { materiales: (t.materiales || []).map(m => ({ id: newId(), nombre: m.nombre, cantidad: m.cantidad || 0, unidad: m.unidad || '', precio: m.precio || 0, costoUnit: (m.cantidad || 0) * (m.precio || 0) })) }, avance: 0 };
       });
     patch(d => ({ ...d, rubros: [...d.rubros, { id: newId(), nombre: catalogRubro.nombre, proveedor: newRubro.proveedor, margenMat: +newRubro.margenMat, margenMO: +newRubro.margenMO, orden: d.rubros.length, abierto: true, tareas: tareasIniciales }] }));
@@ -996,7 +996,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                       : <div style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${T.faint2}`, borderRadius: 4, background: T.paper }}>
                           {tareasDispo.map(t => {
                             const checked = selectedTareas.has(t.id);
-                            const { mat, sub, mo, gen } = calcTarea(t);
+                            const { mat, sub, mo, gen } = calcTarea(t, catalog);
                             return (
                               <div key={t.id} onClick={() => toggleTarea(t.id)}
                                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', background: checked ? T.accentSoft : 'transparent', borderBottom: `1px solid ${T.faint}` }}>

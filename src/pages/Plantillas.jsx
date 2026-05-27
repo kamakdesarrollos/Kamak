@@ -419,7 +419,7 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
     const tareasIniciales = (catalog.tareas || [])
       .filter(t => selectedTareasRubro.has(t.id))
       .map(t => {
-        const { mat, sub, mo, gen } = calcTarea(t);
+        const { mat, sub, mo, gen } = calcTarea(t, catalog);
         return { id: newId(), nombre: t.nombre, codigo: t.codigo || '', unidad: t.unidad || 'u', cantidad: 1, costoMat: Math.round(mat + gen), costoSub: Math.round(sub + mo), receta: { materiales: (t.materiales || []).map(m => ({ id: newId(), nombre: m.nombre, cantidad: m.cantidad || 0, unidad: m.unidad || '', precio: m.precio || 0, costoUnit: (m.cantidad || 0) * (m.precio || 0) })) } };
       });
     const r = { id: newId(), nombre: catalogRubro.nombre, margenMat: +newRubroForm.margenMat, margenMO: +newRubroForm.margenMO, tareas: tareasIniciales };
@@ -665,7 +665,7 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
                       : <div style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${T.faint2}`, borderRadius: 4, background: T.paper }}>
                           {tareasDispo.map(t => {
                             const checked = selectedTareasRubro.has(t.id);
-                            const { mat, sub, mo, gen } = calcTarea(t);
+                            const { mat, sub, mo, gen } = calcTarea(t, catalog);
                             return (
                               <div key={t.id} onClick={() => toggleTareaRubro(t.id)}
                                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', background: checked ? T.accentSoft : 'transparent', borderBottom: `1px solid ${T.faint}` }}>

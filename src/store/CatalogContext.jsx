@@ -2,15 +2,30 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback, us
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
+import { resolverItemAPU, resolverMOAPU } from '../lib/apuPriceResolver';
 
 const newId = () => `cat-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
 
-export const calcTarea = (t) => {
-  const mat = (t.materiales||[]).reduce((s,m) => s + m.cantidad * m.precio, 0);
-  const sub = (t.subcontratos||[]).reduce((s,sc) => s + sc.cantidad * sc.precio, 0);
-  const mo  = (t.mo||[]).reduce((s,m) => s + m.horas * m.precioHora, 0);
-  const gen = (t.generales||[]).reduce((s,g) => s + (g.cantidad||1) * g.precio, 0);
+// calcTarea calcula el costo total de un APU (tarea del catálogo).
+//
+// Segundo argumento opcional: pasando el catálogo, los precios y unidades de
+// los items se resuelven desde ahí (única fuente de verdad). Sin catálogo,
+// usa el precio hardcoded del APU como fallback — comportamiento viejo, pero
+// arrastra el bug del SISMAT (precios desactualizados o mal cargados).
+//
+// PREFERIR siempre pasar el catálogo. El fallback existe sólo para que
+// llamadas legacy no rompan.
+export const calcTarea = (t, catalog = null) => {
+  const matCat = catalog?.materiales;
+  const subCat = catalog?.subcontratos;
+  const moCat  = catalog?.mo;
+  const genCat = catalog?.generales;
+
+  const mat = (t.materiales||[]).reduce((s, m) => s + resolverItemAPU(m, matCat).subtotal, 0);
+  const sub = (t.subcontratos||[]).reduce((s, sc) => s + resolverItemAPU(sc, subCat).subtotal, 0);
+  const mo  = (t.mo||[]).reduce((s, m) => s + resolverMOAPU(m, moCat).subtotal, 0);
+  const gen = (t.generales||[]).reduce((s, g) => s + resolverItemAPU(g, genCat).subtotal, 0);
   return { mat, sub, mo, gen, total: mat + sub + mo + gen };
 };
 
