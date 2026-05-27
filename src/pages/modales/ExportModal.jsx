@@ -315,17 +315,15 @@ body{font-family:'Montserrat',sans-serif}
 .firma-sub{font-size:9px;color:#9a9892}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
 @media print{
-  /* IMPORTANT: NO redeclarar @page acá ni forzar width !important — eso le
-     daba a Chrome dimensiones contradictorias contra el @page global y
-     terminaba partiendo cada hoja A4 en 2 paginas con la mitad en blanco
-     (resultado: 6 hojas en vez de 3). El width:210mm del CSS base ya alcanza. */
-  html,body{margin:0!important;padding:0!important;background:#fff!important}
+  /* IMPORTANT: NO redeclarar @page acá ni forzar width en mm — esos overrides
+     contradecian el @page global y partian cada hoja A4 en 2 (6 hojas vs 3). */
+  html,body{margin:0!important;padding:0!important;background:#1f2024!important}
   .portada-page,.comp-flow,.cond-page{margin:0!important;box-shadow:none!important}
-  /* Sub-pixel rounding: con height exacto 297mm Chrome a veces renderea unos
-     milimetros corto y queda franja blanca abajo en las pages dark. Subimos
-     a 299mm SOLO en print — el overflow:hidden del container corta los 2mm
-     extra pero el background dark llega hasta el borde fisico de la hoja A4. */
-  .portada-page,.cond-page{height:299mm!important}
+  /* 100vh = altura exacta del @page area. Garantiza que las pages dark cubran
+     toda la hoja A4 sin franja blanca por sub-pixel rounding. El comp-flow
+     mantiene su altura natural (fluye en N hojas) pero con su bg blanco propio. */
+  .portada-page,.cond-page{height:100vh!important;min-height:100vh!important;width:100%!important}
+  .comp-flow{background:#fff!important;width:100%!important;min-height:100vh!important}
 }
 @media screen{
   html{background:#555}
