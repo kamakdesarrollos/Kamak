@@ -315,15 +315,14 @@ body{font-family:'Montserrat',sans-serif}
 .firma-sub{font-size:9px;color:#9a9892}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
 @media print{
-  /* IMPORTANT: NO redeclarar @page acá ni forzar width en mm — esos overrides
-     contradecian el @page global y partian cada hoja A4 en 2 (6 hojas vs 3). */
+  /* IMPORTANT: NO tocar width ni height de las pages — el CSS base
+     (210mm x 297mm) coincide con A4 y cualquier override (100vh, !important)
+     terminaba dando dimensiones contradictorias y rompiendo el layout. */
   html,body{margin:0!important;padding:0!important;background:#1f2024!important}
   .portada-page,.comp-flow,.cond-page{margin:0!important;box-shadow:none!important}
-  /* 100vh = altura exacta del @page area. Garantiza que las pages dark cubran
-     toda la hoja A4 sin franja blanca por sub-pixel rounding. El comp-flow
-     mantiene su altura natural (fluye en N hojas) pero con su bg blanco propio. */
-  .portada-page,.cond-page{height:100vh!important;min-height:100vh!important;width:100%!important}
-  .comp-flow{background:#fff!important;width:100%!important;min-height:100vh!important}
+  /* comp-flow tiene fondo blanco explicito + min-height A4 para que, cuando
+     termine antes que la hoja, no se vea el body dark detras. */
+  .comp-flow{background:#fff!important;min-height:297mm!important}
 }
 @media screen{
   html{background:#555}
