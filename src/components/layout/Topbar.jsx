@@ -9,6 +9,9 @@ import { useAlertas } from '../../store/AlertasContext';
 import { useWhatsappPending } from '../../store/WhatsappPendingContext';
 import { useSolicitudes } from '../../store/SolicitudesContext';
 import { useCheques } from '../../store/ChequesContext';
+import { useTareas } from '../../store/TareasContext';
+import { useObras } from '../../store/ObrasContext';
+import { cuotaEstadoCalc, cuotaMontoUSD } from '../../pages/obra/helpers';
 import GlobalSearch from '../GlobalSearch';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -18,8 +21,40 @@ const fmtFecha = (iso) => {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
-function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate }) {
+function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, cuotasUrgentes, tareasNuevas, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate }) {
   const items = [];
+
+  // Cuotas vencidas o próximas a vencer (≤3 días). Vencidas primero.
+  (cuotasUrgentes || []).slice(0, 8).forEach(q => {
+    const fmtFechaCorta = q.fecha ? q.fecha.split('-').reverse().join('/') : '';
+    const titulo = q.urgencia === 'vencida'
+      ? `Cuota vencida${q.dias < 0 ? ` (${Math.abs(q.dias)}d)` : ' hoy'} — ${q.obraNombre}`
+      : `Cuota vence ${q.dias === 1 ? 'mañana' : `en ${q.dias}d`} — ${q.obraNombre}`;
+    items.push({
+      id: q.id,
+      icon: q.urgencia === 'vencida' ? '●' : '◐',
+      titulo,
+      subtit: `Cuota ${q.cuotaN} · ${q.cuotaDesc} · U$S ${Math.round(q.montoUSD).toLocaleString('es-AR')} · vence ${fmtFechaCorta}`,
+      fecha: '',
+      leida: false,
+      ruta: `/obras/${q.obraId}/presupuesto?tab=1`,
+      tipo: 'cuota',
+    });
+  });
+
+  // Tareas nuevas asignadas al usuario (no vistas, no completadas)
+  (tareasNuevas || []).slice(0, 5).forEach(t => {
+    items.push({
+      id:     `tarea-${t.id}`,
+      icon:   '☑',
+      titulo: `Te asignaron una tarea: ${t.titulo}`,
+      subtit: t.descripcion || `Prioridad ${t.prioridad}${t.fechaLimite ? ` · vence ${t.fechaLimite.split('-').reverse().join('/')}` : ''}`,
+      fecha:  fmtFecha(t.creadoAt),
+      leida:  false,
+      ruta:   `/tareas?id=${t.id}`,
+      tipo:   'tarea',
+    });
+  });
 
   // Solicitudes de eliminación pendientes (para admins)
   (solicitudesPendientes || []).slice(0, 5).forEach(sol => {
@@ -194,6 +229,8 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
   const { pending } = useWhatsappPending();
   const { solicitudes } = useSolicitudes();
   const { cheques } = useCheques();
+  const { tareas } = useTareas() ?? { tareas: [] };
+  const { obras, detalles } = useObras();
   const navigate = useNavigate();
   const [showNotif, setShowNotif] = useState(false);
   const bellRef = useRef(null);
@@ -215,7 +252,55 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
       })
     : [];
 
-  const totalNotif = noLeidas + pendientesWA + solicitudesPendientes.length + chequesUrgentes.length;
+  // Cuotas vencidas o próximas a vencer (≤3 días) de obras activas — solo
+  // admin. Se calculan barriendo todas las obras y sus cuotas. Cada item
+  // tiene info para navegar al estado de cuenta de la obra.
+  const cuotasUrgentes = isAdmin ? (() => {
+    const items = [];
+    const tcAhora = dolarVenta || 1070;
+    const hoy = new Date();
+    const hoyStr = hoy.toISOString().slice(0, 10);
+    (obras || []).forEach(o => {
+      if (o.estado !== 'activa' && o.estado !== 'en-presupuesto') return;
+      const det = detalles?.[o.id];
+      if (!det || !det.cuotas) return;
+      det.cuotas.forEach(c => {
+        const estado = cuotaEstadoCalc(c, o.moneda || 'ARS', tcAhora);
+        if (estado === 'pagado') return;
+        if (!c.fecha) return;
+        const d = diasHasta(c.fecha);
+        if (d === null) return;
+        if (d <= 3) {
+          items.push({
+            id: `cuota-${o.id}-${c.id}`,
+            obraId: o.id,
+            obraNombre: o.nombre,
+            cuotaDesc: c.descripcion,
+            cuotaN: c.n,
+            fecha: c.fecha,
+            dias: d,
+            montoUSD: cuotaMontoUSD(c, o.moneda || 'ARS', tcAhora),
+            urgencia: d < 0 || d === 0 ? 'vencida' : 'proxima',
+          });
+        }
+      });
+    });
+    // Orden: vencidas primero (peor primero), luego próximas (más cerca primero).
+    items.sort((a, b) => a.dias - b.dias);
+    return items;
+  })() : [];
+
+  // Tareas asignadas al usuario que aun no vio (no incluye completadas).
+  const tareasNuevas = currentUser
+    ? tareas.filter(t =>
+        (t.asignadoA || []).includes(currentUser.id) &&
+        !(t.vistaPor || []).includes(currentUser.id) &&
+        t.estado !== 'completada' &&
+        t.estado !== 'cancelada'
+      )
+    : [];
+
+  const totalNotif = noLeidas + pendientesWA + solicitudesPendientes.length + chequesUrgentes.length + tareasNuevas.length + cuotasUrgentes.length;
 
   // Cerrar panel al hacer click fuera
   useEffect(() => {
@@ -281,6 +366,8 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
                 pending={pending}
                 solicitudesPendientes={solicitudesPendientes}
                 chequesUrgentes={chequesUrgentes}
+                cuotasUrgentes={cuotasUrgentes}
+                tareasNuevas={tareasNuevas}
                 noLeidas={noLeidas}
                 marcarLeida={marcarLeida}
                 marcarTodasLeidas={marcarTodasLeidas}

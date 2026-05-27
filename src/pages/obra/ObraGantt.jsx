@@ -318,11 +318,31 @@ export default function ObraGantt() {
           ? (d.rubros||[]).map(r => ({ ...r, tareas: r.tareas.map(t => t.id===task.tareaId ? { ...t, avance: avNum } : t) }))
           : (d.rubros||[]);
 
-        // Sync to MO contract — compute avg avance for the rubro
+        // Sync to MO contract — avance PONDERADO por costo de cada tarea.
+        // Antes era promedio simple (todas las tareas pesaban igual), lo
+        // que daba resultados absurdos: poner 100% en una tarea de $58
+        // certificaba como si fuera proporcional al total del contrato.
         let newContratos = d.contratos||[];
         if (task?.rubroNombre) {
           const rubroTasks = next.tasks.filter(t => t.rubroNombre === task.rubroNombre);
-          const rubroAvg   = rubroTasks.length > 0 ? Math.round(rubroTasks.reduce((s,t)=>s+t.avance,0)/rubroTasks.length) : avNum;
+          // Buscar las tareas del detalle (que tienen costo y cantidad) que
+          // matchean con las tasks del Gantt por tareaId.
+          const tareasDelRubro = (d.rubros || [])
+            .filter(r => r.nombre === task.rubroNombre)
+            .flatMap(r => r.tareas || []);
+          let totalCosto = 0, ejecutado = 0;
+          for (const gt of rubroTasks) {
+            const td = tareasDelRubro.find(t => t.id === gt.tareaId);
+            if (!td || td.tipo === 'seccion') continue;
+            const costoUnit = (td.costoMat || 0) + (td.costoSub || 0);
+            const costoTot = costoUnit * (td.cantidad || 0);
+            totalCosto += costoTot;
+            ejecutado  += costoTot * ((gt.avance || 0) / 100);
+          }
+          // Si no hay costos cargados, fallback al promedio simple anterior.
+          const rubroAvg = totalCosto > 0
+            ? Math.round(ejecutado / totalCosto * 100)
+            : (rubroTasks.length > 0 ? Math.round(rubroTasks.reduce((s,t)=>s+t.avance,0)/rubroTasks.length) : avNum);
           newContratos = newContratos.map(c => matchGremio(task.rubroNombre, c.gremio) ? { ...c, avancePct: rubroAvg } : c);
         }
 
@@ -795,25 +815,24 @@ export default function ObraGantt() {
                 )}
               </div>
 
-              {/* Contrato MO vinculado */}
+              {/* Contrato MO vinculado — solo nombre del gremio y % de avance,
+                  SIN valores monetarios. Los montos (cert, reparo, total) se
+                  ven en la pestaña Contratos MO. El Gantt es cronograma, no
+                  vista financiera. */}
               {(() => {
                 const contrato = (detalle.contratos||[]).find(c => matchGremio(selTask.rubroNombre, c.gremio));
                 if (!contrato) return null;
                 const avPct = contrato.avancePct ?? 0;
-                const cert  = Math.round(contrato.monto * avPct / 100);
-                const reparo= Math.round(cert * (contrato.fondoReparo||0) / 100);
-                const fmtN  = (n) => Math.round(n).toLocaleString('es-AR');
                 return (
                   <div style={{ background:T.faint, borderRadius:6, padding:'10px 12px', borderLeft:`3px solid ${rCol(selTask.rubroNombre)}` }}>
                     <div style={{ fontSize:10, fontWeight:800, color:T.ink2, textTransform:'uppercase', letterSpacing:0.5, marginBottom:6 }}>Contrato MO — {contrato.gremio}</div>
-                    <div style={{ fontSize:11, color:T.ink2, marginBottom:4 }}>{contrato.proveedor}</div>
+                    <div style={{ fontSize:11, color:T.ink2, marginBottom:6 }}>{contrato.proveedor}</div>
                     <div style={{ position:'relative', height:10, background:T.faint2, borderRadius:5, overflow:'hidden', marginBottom:6 }}>
                       <div style={{ position:'absolute', left:0, top:0, bottom:0, width:`${avPct}%`, background:rCol(selTask.rubroNombre), transition:'width 0.3s' }} />
                     </div>
-                    <div style={{ display:'flex', justifyContent:'space-between', fontSize:11 }}>
-                      <span style={{ color:T.ok }}>Cert: <b>$ {fmtN(cert)}</b></span>
-                      <span style={{ color:T.warn }}>Reparo: <b>$ {fmtN(reparo)}</b></span>
-                      <span style={{ color:T.ink3 }}>Total: <b>$ {fmtN(contrato.monto)}</b></span>
+                    <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:T.ink2 }}>
+                      <span>Avance del contrato</span>
+                      <b style={{ fontFamily:T.fontMono, color:rCol(selTask.rubroNombre) }}>{avPct}%</b>
                     </div>
                   </div>
                 );

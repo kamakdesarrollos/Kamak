@@ -84,6 +84,10 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
   const sbLoaded   = useRef(false);
   const fromRemote = useRef(false);
   const pendingSaveRef = useRef(null);
+  // Timestamp del último save local. Sirve para que el handler de broadcast
+  // ignore eventos inmediatamente posteriores que pueden traer datos viejos
+  // del server (race que hacía "desaparecer" cambios locales recientes).
+  const lastLocalSaveAt = useRef(0);
   // Marca true cuando el usuario edita ANTES de que llegue el primer fetch
   // a Supabase. Sin esto, el remote pisa el cambio del usuario al cargar.
   const userEditedBeforeFirstLoad = useRef(false);
@@ -126,6 +130,12 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
     });
 
     const unsub = onRemoteChange(key, () => {
+      // Ignorar broadcasts si tenemos save propio pendiente o si acabamos
+      // de hacer uno (< 3s). Sin esto, el broadcast llega con datos del
+      // server SIN nuestro cambio y pisa el state local — sintoma típico:
+      // agregás un item (contrato MO, cuota, etc.) y desaparece al instante.
+      if (pendingSaveRef.current) return;
+      if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData(key).then(d => {
         if (cancelled || d === null || d === undefined) return;
         fromRemote.current = true;
@@ -143,6 +153,7 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
     pendingSaveRef.current = state;
     const t = setTimeout(() => {
       saveSharedData(key, state);
+      lastLocalSaveAt.current = Date.now();
       pendingSaveRef.current = null;
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(t);

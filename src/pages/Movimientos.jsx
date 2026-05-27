@@ -294,21 +294,24 @@ function MovRow({ m, cajas, onRemove, isAdmin, pendingSolIds, onSolicitar }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.descripcion}</div>
         <div style={{ fontSize: 10, color: T.ink3, display: 'flex', gap: 5, marginTop: 1, flexWrap: 'wrap' }}>
+          {/* Links de obra/rubro/proveedor: en gastos usan T.warn (naranja)
+              para mantener coherencia con el color del gasto. En ingresos
+              quedan en T.accent (teal) coherente con el verde del ingreso. */}
           {m.obraNombre && m.obraNombre !== 'General' && (
             <span
-              style={{ background: T.faint2, borderRadius: 2, padding: '0 4px', cursor: m.obraId ? 'pointer' : 'default', color: m.obraId ? T.accent : undefined }}
+              style={{ background: T.faint2, borderRadius: 2, padding: '0 4px', cursor: m.obraId ? 'pointer' : 'default', color: m.obraId ? (isIngreso ? T.accent : T.warn) : undefined }}
               onClick={e => { if (m.obraId) { e.stopPropagation(); navigate(`/obras/${m.obraId}/presupuesto`); } }}>
               {m.obraNombre}
             </span>
           )}
           {m.rubroNombre && (
-            <span style={{ background: '#e8f4f0', color: '#1a9b9c', borderRadius: 2, padding: '0 4px', fontWeight: 600 }}>{m.rubroNombre}</span>
+            <span style={{ background: isIngreso ? '#e8f4f0' : '#fbeede', color: isIngreso ? T.accent : T.warn, borderRadius: 2, padding: '0 4px', fontWeight: 600 }}>{m.rubroNombre}</span>
           )}
           {caja && <span>{caja.nombre}</span>}
           {m.proveedor && (() => {
             const prov = m.proveedorId ? provsList.find(p => p.id === m.proveedorId) : provsList.find(p => p.nombre === m.proveedor);
             return prov
-              ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={e => { e.stopPropagation(); navigate(`/proveedores/${prov.id}`); }}>· {m.proveedor}</span>
+              ? <span style={{ color: isIngreso ? T.accent : T.warn, cursor: 'pointer', textDecoration: 'underline' }} onClick={e => { e.stopPropagation(); navigate(`/proveedores/${prov.id}`); }}>· {m.proveedor}</span>
               : <span>· {m.proveedor}</span>;
           })()}
           {m.medioPago && m.medioPago !== 'Transferencia' && <span>· {m.medioPago}</span>}

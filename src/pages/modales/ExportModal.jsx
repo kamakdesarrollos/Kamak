@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { Btn, Label, Divider } from '../../components/ui';
 import { T } from '../../theme';
 import { useDolar } from '../../store/DolarContext';
-import { esc } from '../../lib/html';
-import PrintPreviewModal from './PrintPreviewModal';
+import { esc, imprimirHTML } from '../../lib/html';
 import { buildWaMeLink, generateQrDataUrl } from '../../lib/clienteAcceso';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -27,14 +26,17 @@ const calcRubroExport = (rubro) => {
   return { cMat, cSub, costo: cMat + cSub, venta };
 };
 
-// SVG con tamano original (620x620). Cualquier intento de extenderlo
-// (overflow:visible o ampliar viewBox) terminaba generando overflow
-// horizontal en el body y Chrome achicaba todo el doc al imprimir.
-// Las stripes quedan en su posicion natural dentro del SVG.
-const STRIPES_SVG = `<svg viewBox="0 0 620 620" width="620" height="620" style="display:block">
-  <rect x="-64" y="245" width="900" height="50" fill="#1a9b9c" transform="rotate(62 386 270)"/>
-  <rect x="-140" y="285" width="900" height="50" fill="#1a9b9c" transform="rotate(62 310 310)"/>
-  <rect x="-216" y="325" width="900" height="50" fill="#1a9b9c" transform="rotate(62 234 350)"/>
+// SVG grande (1100x1300) que cubre la diagonal entera de su esquina del
+// page. Las rayas se mantienen en su posicion relativa dentro del SVG
+// (anchor en lo que era 386,270 = esquina sup derecha del SVG original),
+// pero ahora se extienden suficiente como para que sus extremos opuestos
+// crucen toda la diagonal del page y se corten por el margen VERTICAL
+// (no por el horizontal como antes). Los wm-tr/wm-bl tienen overflow:
+// hidden para garantizar que el SVG no genere overflow al body.
+const STRIPES_SVG = `<svg viewBox="0 0 1100 1300" width="1100" height="1300" style="display:block">
+  <rect x="-200" y="245" width="1800" height="50" fill="#1a9b9c" transform="rotate(62 866 270)"/>
+  <rect x="-280" y="285" width="1800" height="50" fill="#1a9b9c" transform="rotate(62 790 310)"/>
+  <rect x="-360" y="325" width="1800" height="50" fill="#1a9b9c" transform="rotate(62 714 350)"/>
 </svg>`;
 
 const CORNER_BRACKETS = `
@@ -130,7 +132,6 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
 
   const computo = `
   <div class="comp-flow light">
-    <div class="wm-br">${STRIPES_SVG}</div>
     <div class="comp-hdr">
       ${imgDark}
       <div class="comp-meta">CÓMPUTO Y PRESUPUESTO · ${esc((obra?.nombre || '').toUpperCase())} · ${esc(numPresu)}</div>
@@ -231,16 +232,31 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
 @page{size:A4;margin:0}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
 body{font-family:'Montserrat',sans-serif}
-/* Page containers — portrait A4 */
-.portada-page{width:210mm;height:297mm;position:relative;overflow:hidden;display:flex;flex-direction:column;page-break-after:always;break-after:page}
+/* Page containers — portrait A4.
+   Usamos min-height (no height fijo) — eso es lo que hace que el "resumen
+   total" imprima limpio en A4 sin franjas blancas ni achicado. Las pages
+   pueden crecer levemente si el contenido lo necesita, evitando que el
+   sub-pixel rounding del browser corte el render. */
+.portada-page{width:210mm;min-height:297mm;position:relative;overflow:hidden;display:flex;flex-direction:column;page-break-after:always;break-after:page}
 .comp-flow{width:210mm;position:relative}
-.cond-page{width:210mm;height:297mm;position:relative;overflow:hidden;display:flex;flex-direction:column;page-break-before:always;break-before:page}
+.cond-page{width:210mm;min-height:297mm;position:relative;overflow:hidden;display:flex;flex-direction:column;page-break-before:always;break-before:page}
 .dark{background:#1f2024;color:#fff}
 .light{background:#fff;color:#2d2d2d}
-/* watermarks */
-.wm-tr{position:absolute;top:-120px;right:-120px;opacity:.09;pointer-events:none;z-index:0}
-.wm-br{position:absolute;bottom:-180px;right:-120px;opacity:.07;pointer-events:none;z-index:0}
-.wm-bl{position:absolute;bottom:-160px;left:-120px;opacity:.09;pointer-events:none;z-index:0}
+/* watermarks. Los containers tienen tamaño fijo + overflow:hidden:
+   asi el SVG grande del watermark (1100x1300, necesario para que las
+   rayas se corten por el margen vertical y no por el horizontal) no
+   sobresale a generar overflow del body. */
+.wm-tr{position:absolute;top:0;right:0;width:620px;height:620px;overflow:hidden;opacity:.09;pointer-events:none;z-index:0}
+.wm-br{position:absolute;bottom:0;right:0;width:620px;height:620px;overflow:hidden;opacity:.07;pointer-events:none;z-index:0}
+.wm-bl{position:absolute;bottom:0;left:0;width:620px;height:620px;overflow:hidden;opacity:.09;pointer-events:none;z-index:0}
+/* El SVG dentro del watermark se ubica anclado al borde correcto del
+   container para que las rayas (en su zona interna ~700,300) caigan en
+   la esquina deseada del page. wm-bl usa rotate(180) para que las rayas
+   se vean diagonales en la direccion opuesta (esquina inferior izquierda
+   = mirror de la superior derecha en ambos ejes). */
+.wm-tr svg{position:absolute;top:-180px;right:-180px}
+.wm-br svg{position:absolute;bottom:-180px;right:-180px;transform:rotate(180deg)}
+.wm-bl svg{position:absolute;bottom:-180px;left:-180px;transform:rotate(180deg)}
 /* portada */
 .portada-hdr{height:70px;padding:16px 44px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
 .logo{font-weight:900;font-size:24px;letter-spacing:2px}
@@ -315,17 +331,19 @@ body{font-family:'Montserrat',sans-serif}
 .firma-name{font-size:12px;font-weight:700;margin-top:4px;color:#fff}
 .firma-sub{font-size:9px;color:#9a9892}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
-@media print{
-  /* Body/html con dimensiones explicitas A4 sin margenes ni padding. Esto
-     es lo que Chrome necesita para no recalcular escala desde el viewport. */
-  html,body{margin:0;padding:0;width:210mm;overflow:hidden}
-  .portada-page,.comp-flow,.cond-page{box-shadow:none}
-}
 @media screen{
   html{background:#555}
-  body{margin:0 auto;padding:16px 0;width:794px}
-  .portada-page,.comp-flow,.cond-page{margin-bottom:16px;box-shadow:0 4px 24px rgba(0,0,0,.4)}
-}`;
+  body{padding:16px 0;margin:0 auto}
+  .portada-page,.comp-flow,.cond-page{width:794px;margin:0 auto 16px;box-shadow:0 4px 24px rgba(0,0,0,.4)}
+}
+/* Banner instructivo arriba de la pestaña. Solo en pantalla — se oculta al
+   imprimir (display:none en @media print) asi no aparece en el PDF final. */
+.kmk-print-hint{position:fixed;top:0;left:0;right:0;background:#1a9b9c;color:#fff;padding:10px 16px;font-family:'Montserrat',sans-serif;font-size:13px;font-weight:600;text-align:center;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.kmk-print-hint kbd{background:#fff;color:#1a9b9c;padding:2px 8px;border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;margin:0 2px}
+.kmk-print-hint .close{position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;opacity:.7;font-size:18px;line-height:1}
+.kmk-print-hint .close:hover{opacity:1}
+@media print{.kmk-print-hint{display:none!important}}
+@media screen{body{padding-top:58px!important}}`;
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -337,9 +355,23 @@ body{font-family:'Montserrat',sans-serif}
 <style>${css}</style>
 </head>
 <body>
+<div class="kmk-print-hint">
+  Apretá <kbd>Ctrl</kbd>+<kbd>P</kbd> para imprimir o guardar como PDF
+  <span class="close" onclick="this.parentElement.style.display='none';document.body.style.paddingTop='0'">×</span>
+</div>
 ${portada}
 ${computo}
 ${condicionesPage}
+<script>
+  // Auto-print: cuando la pestaña termina de cargar (fuentes, imagenes,
+  // QR), dispara window.print() desde DENTRO de la pestaña. Esto NO
+  // sufre el bug del margen blanco que aparece cuando w.print() se
+  // dispara desde la ventana padre (ExportModal). Si el usuario cancela
+  // el dialogo, puede usar Ctrl+P para reabrirlo.
+  window.addEventListener('load', function() {
+    setTimeout(function() { window.print(); }, 800);
+  });
+</script>
 </body>
 </html>`;
 }
@@ -452,8 +484,6 @@ export default function ExportModal({ onClose, obra, detalle }) {
   const moneda = obra?.moneda || 'ARS';
   const tc = dolarVenta || 1;
 
-  const [previewHTML, setPreviewHTML] = useState(null);
-
   const imprimir = async () => {
     try {
       const origin = window.location.origin;
@@ -474,7 +504,14 @@ export default function ExportModal({ onClose, obra, detalle }) {
       }
 
       const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl });
-      setPreviewHTML(html);
+
+      // Abrir pestaña nueva con el HTML. NO disparamos w.print() automatico:
+      // cuando print se dispara programaticamente, Chrome aplica preferencias
+      // del padre (que dejan margen blanco). En cambio, si el usuario hace
+      // Ctrl+P en la pestaña hija, Chrome respeta @page margin:0 limpio.
+      // Ese es exactamente el flujo que el usuario reportó que funciona.
+      imprimirHTML(html);
+      onClose();
     } catch (e) {
       console.error('[imprimir] error:', e);
       alert('Hubo un error al generar la propuesta:\n\n' + (e?.message || e));
@@ -595,13 +632,6 @@ export default function ExportModal({ onClose, obra, detalle }) {
         </div>
       </div>
 
-      {previewHTML && (
-        <PrintPreviewModal
-          html={previewHTML}
-          title={`Presupuesto · ${obra?.nombre || 'Obra'}`}
-          onClose={() => setPreviewHTML(null)}
-        />
-      )}
     </div>
   );
 }

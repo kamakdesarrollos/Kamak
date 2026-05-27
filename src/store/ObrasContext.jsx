@@ -232,6 +232,14 @@ export function ObrasProvider({ children }) {
     });
 
     const unsub = onRemoteChange('obras', () => {
+      // IGNORAR el broadcast si tenemos un save local pendiente o uno recien
+      // disparado (< 3s atras). El broadcast suele llegar con datos del
+      // servidor que NO incluyen el cambio local todavia → pisaba el state
+      // y los cambios desaparecían momentaneamente. Sintoma reportado: al
+      // agregar un contrato MO (o cualquier patch), el item aparecía y
+      // desaparecía. Esperamos a que el save propio se confirme.
+      if (pendingSaveRef.current) return;
+      if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData('obras').then(d => {
         if (cancelled || !d) return;
         fromRemote.current = true;
@@ -247,11 +255,17 @@ export function ObrasProvider({ children }) {
   useEffect(() => { saveDet(detalles); }, [detalles]);
 
   const pendingSaveRef = useRef(null);
+  // Timestamp del ultimo save local. Sirve para que el handler de
+  // onRemoteChange ignore broadcasts inmediatamente posteriores (que
+  // pueden traer datos viejos del server porque el save aun no se
+  // propago — clasica race que hacia "desaparecer" cambios locales).
+  const lastLocalSaveAt = useRef(0);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
     pendingSaveRef.current = { obras: obrasRef.current, detalles: detallesRef.current };
     const t = setTimeout(() => {
       saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
+      lastLocalSaveAt.current = Date.now();
       pendingSaveRef.current = null;
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(t);

@@ -7,6 +7,11 @@ body {
   background: #f7f4ec;
   color: #2d2d2d;
   -webkit-font-smoothing: antialiased;
+  /* JetBrains Mono por default usa el 0 con un punto adentro (dotted zero)
+     que se confunde con el 8 en bold. Forzamos slashed-zero (0 con barra
+     diagonal) para que sea inequivoco. Aplica a todos los descendientes. */
+  font-variant-numeric: slashed-zero tabular-nums;
+  font-feature-settings: 'zero' 1;
 }
 
 #root {
@@ -106,7 +111,10 @@ body {
 
 .k-tr { display: flex; border-bottom: 1px dashed var(--faint2); }
 .k-tr:last-child { border-bottom: 0; }
-.k-cell { padding: 8px 10px; font-size: 13px; }
+/* min-width:0 permite que las celdas flex respeten su flex-basis aunque
+   el contenido sea más ancho (sin esto el flex se expande y desalinea
+   las columnas entre filas cuando hay muchas columnas visibles). */
+.k-cell { padding: 8px 10px; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .k-th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--ink2); font-weight: 700; }
 
 .k-note { background: #fef4a8; color: #5a4a2a; border: 1.2px solid #d6b85a; padding: 8px 11px; font-family: 'Montserrat', system-ui, sans-serif; font-size: 11px; font-weight: 500; line-height: 1.4; border-radius: 3px; box-shadow: 1px 2px 0 rgba(0,0,0,.08); }

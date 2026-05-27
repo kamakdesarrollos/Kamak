@@ -890,6 +890,10 @@ AVANCE DE OBRA — PARSEO INTELIGENTE:
 - Matcheá obra y tarea por similitud: "revoque grueso" → tarea "Revoque", "ceramicos" → "Cerámicos". No importan mayúsculas ni tildes.
 - Extraé cantidadAvance del número + unidad: "285 mts2" → 285 m², "20 metros lineales" → 20 ml.
 - Mandá siempre los IDs exactos rubroId y tareaId. Calculá % automáticamente: cantidadAvance / total de la tarea.
+- DISTINGUIR "hoy/se hizo" (suma) vs "total acumulado" (corrige):
+  • "150 m² hoy", "hicimos 50 m² hoy", "se colocaron 30 m²" → es AVANCE DEL DIA: datos.esCorreccion=false (se SUMA al avance previo).
+  • "ya van 850 m² en total", "llevamos 700 m² acumulados", "el total es 500 m²" → es CORRECCIÓN/SET: datos.esCorreccion=true (REEMPLAZA el avance, no suma).
+- Si el usuario es ambiguo entre "hoy" vs "total", PREGUNTÁ explícitamente: "¿son los m² que hicieron hoy o el total acumulado de la tarea?".
 
 ORDEN DE PREGUNTAS (nunca más de una a la vez):
 0. SIEMPRE revisá el historial ANTES de hacer preguntas. Si la información ya fue dada, usala. No repitas preguntas.
@@ -917,6 +921,8 @@ ACCIONES DISPONIBLES:
 4. AVANCE_OBRA: obraId(ID exacto de la lista), rubroId(ID del rubro), tareaId(ID de la tarea), cantidadAvance(unidades completadas, ej:75), unidad(ej:'m²'), porcentajeAvance(% a sumar si no hay cantidad), descripcion
 5. CHEQUE_RECIBIDO: obraId, cajaDestinoId
 6. COMANDOS: ayuda | saldo | pendientes | cheques | resumen [obraId] [fecha YYYY-MM-DD]
+7. TAREAS — comandos: tareas (lista mis pendientes), tarea_detalle (con datos.numero=N), completar_item (con datos.numero=N — marca item N de la última tarea vista)
+8. NUEVA_TAREA (solo Admin): si el admin dice "creale tarea a Juan: comprar cemento" o similar, accion.tipo='nueva_tarea' con datos: { titulo, descripcion?, asignadoNombre (nombre del usuario destinatario), prioridad?('baja'|'media'|'alta'), fechaLimite?(YYYY-MM-DD), checklist?[textos] }. Si falta el asignado, preguntar a quién. Si no es admin, responder que solo el admin puede crear tareas para otros — pero cualquier user puede pedir "crear tarea para mí" (auto-asignación).
 
 REGLAS DE FLUJO:
 - El usuario escribe corto y conciso. Interpretá la intención aunque falten datos.
@@ -940,7 +946,7 @@ Respondé ÚNICAMENTE con JSON válido:
   "mensaje": "texto a enviar al usuario (máx 400 chars)",
   "estado": "conversando" | "confirmando" | "ejecutar" | "cancelar" | "comando",
   "accion": {
-    "tipo": "gasto" | "ingreso" | "factura_compra" | "avance_obra" | "cheque_recibido" | "comando" | null,
+    "tipo": "gasto" | "ingreso" | "factura_compra" | "avance_obra" | "cheque_recibido" | "comando" | "nueva_tarea" | null,
     "datos": {}
   }
 }`;
@@ -1242,6 +1248,47 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       );
     }
 
+    // Sync al Gantt: la task del cronograma con tareaId === tarea.id se
+    // actualiza con el nuevo avance. Sin esto, el % cargado por WA no se ve
+    // reflejado en el Gantt visual hasta que el user toque el slider.
+    let updatedGantt = detalle.gantt;
+    if (tarea && detalle.gantt?.tasks && avanceFinal !== avancePrevio) {
+      updatedGantt = {
+        ...detalle.gantt,
+        tasks: detalle.gantt.tasks.map(gt =>
+          gt.tareaId === tarea.id ? { ...gt, avance: avanceFinal } : gt
+        ),
+      };
+    }
+
+    // Sync al contrato MO: recalcular avancePct PONDERADO por costo de
+    // todas las tareas del rubro (mismo cálculo que hace el Gantt frontend).
+    let updatedContratos = detalle.contratos || [];
+    if (rubro && rubro.nombre && avanceFinal !== avancePrevio) {
+      // Sumar costo total y costo ejecutado de todas las tareas del rubro
+      // (usando los avances ya aplicados en updatedRubros).
+      const rubroActualizado = updatedRubros.find(r => r.id === rubro.id);
+      const tareasNoSec = (rubroActualizado?.tareas || []).filter(t => t.tipo !== 'seccion');
+      let totalCosto = 0, ejecutado = 0;
+      for (const t of tareasNoSec) {
+        const costoUnit = (t.costoMat || 0) + (t.costoSub || 0);
+        const costoTot = costoUnit * (t.cantidad || 0);
+        totalCosto += costoTot;
+        ejecutado  += costoTot * ((t.avance || 0) / 100);
+      }
+      const nuevoAvancePct = totalCosto > 0
+        ? Math.round(ejecutado / totalCosto * 100)
+        : Math.round(tareasNoSec.reduce((s, t) => s + (t.avance || 0), 0) / Math.max(1, tareasNoSec.length));
+      // Aplicar el nuevo % a contratos cuyo gremio matchea el rubro.
+      const matchGr = (rNom, gr) => {
+        const r = (rNom || '').toUpperCase(), g = (gr || '').toUpperCase();
+        return r.includes(g) || g.includes(r);
+      };
+      updatedContratos = updatedContratos.map(c =>
+        matchGr(rubro.nombre, c.gremio) ? { ...c, avancePct: nuevoAvancePct } : c
+      );
+    }
+
     const nuevaFoto = mediaUrl ? {
       id:        `foto-${Date.now()}`,
       url:       mediaUrl,
@@ -1254,6 +1301,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     const detalleActualizado = {
       ...detalle,
       rubros:     updatedRubros,
+      gantt:      updatedGantt,
+      contratos:  updatedContratos,
       fotos:      [...(detalle.fotos || []), ...(nuevaFoto ? [nuevaFoto] : [])],
       adicionales: esCorreccion
         ? [
@@ -1396,6 +1445,80 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     return await ejecutarComando(datos.comando, datos, user, ctx);
   }
 
+  // ── Nueva tarea desde WhatsApp ──────────────────────────────────────────────
+  // Admin puede crear y asignar a cualquiera. No-admin solo puede auto-asignarse.
+  // Por la ventana de 24h de WA, NO notificamos por WhatsApp al asignado — el
+  // sistema lo notifica via badge in-app cuando entra a la app web.
+  if (tipo === 'nueva_tarea') {
+    const esAdmin = user.user_rol === 'Admin';
+    const appUsers = await sbGet('app_users', '?select=*');
+    const creadorId = user.user_id || user.id;
+
+    // Resolver asignado: si admin, busca por nombre; si no admin, fuerza self.
+    let asignadoId = creadorId;
+    let asignadoNombre = appUsers.find(u => u.id === creadorId)?.nombre || 'vos';
+    if (esAdmin && datos.asignadoNombre) {
+      const q = String(datos.asignadoNombre).toLowerCase().trim();
+      const match = appUsers.find(u =>
+        u.nombre?.toLowerCase() === q ||
+        u.nombre?.toLowerCase().includes(q) ||
+        u.email?.toLowerCase() === q
+      );
+      if (!match) return `❌ No encontré un usuario con nombre/email "${datos.asignadoNombre}".`;
+      asignadoId = match.id;
+      asignadoNombre = match.nombre;
+    } else if (!esAdmin && datos.asignadoNombre) {
+      const q = String(datos.asignadoNombre).toLowerCase().trim();
+      const selfNombre = (appUsers.find(u => u.id === creadorId)?.nombre || '').toLowerCase();
+      if (!selfNombre.includes(q) && q !== 'mi' && q !== 'a mi' && q !== 'self') {
+        return '❌ Solo el Admin puede crear tareas para otros usuarios. Podés crear tareas para vos mismo.';
+      }
+    }
+
+    if (!datos.titulo || !String(datos.titulo).trim()) {
+      return '❌ Falta el título de la tarea. Probá: "crear tarea: comprar cemento para Juan, mañana, prioridad alta".';
+    }
+
+    const newId = (p) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const nowIso = new Date().toISOString();
+    const checklistItems = (datos.checklist || []).map(texto => ({
+      id: newId('item'),
+      texto: String(texto).trim(),
+      completado: false,
+      completadoPor: null,
+      completadoAt: null,
+    }));
+    const nueva = {
+      id: newId('tarea'),
+      titulo: String(datos.titulo).trim(),
+      descripcion: String(datos.descripcion || '').trim(),
+      asignadoA: [asignadoId],
+      creadoPor: creadorId,
+      obraId: datos.obraId || null,
+      estado: 'pendiente',
+      prioridad: datos.prioridad || 'media',
+      fechaLimite: datos.fechaLimite || null,
+      checklist: checklistItems,
+      comentarios: [],
+      vistaPor: [creadorId],
+      creadoAt: nowIso,
+      actualizadoAt: nowIso,
+      completadoAt: null,
+    };
+
+    const tareas = (await loadSharedData('tareas')) || [];
+    await saveSharedData('tareas', [nueva, ...tareas]);
+
+    const items = checklistItems.length > 0
+      ? `\n📋 ${checklistItems.length} item${checklistItems.length === 1 ? '' : 's'} en el checklist`
+      : '';
+    const venc = nueva.fechaLimite ? `\n📅 Vence: ${nueva.fechaLimite.split('-').reverse().join('/')}` : '';
+    const prio = nueva.prioridad === 'alta' ? ' 🔴' : nueva.prioridad === 'media' ? ' 🟡' : '';
+    const destino = asignadoId === creadorId ? 'para vos' : `para *${asignadoNombre}*`;
+    const notifInfo = asignadoId === creadorId ? '' : '\n\n_(Verá la notificación cuando entre a la app — WhatsApp no puede notificar fuera de la ventana de 24h.)_';
+    return `✅ Tarea creada ${destino}:\n*${nueva.titulo}*${prio}${venc}${items}${notifInfo}`;
+  }
+
   return '✅ Acción registrada correctamente.';
 }
 
@@ -1403,17 +1526,170 @@ async function ejecutarComando(comando, datos, user, ctx) {
   if (comando === 'ayuda') {
     const esAdmin = user.user_rol === 'Admin';
     return (
-      `📋 *Comandos disponibles:*\n\n` +
-      `• *saldo* — Ver saldo de tus cajas\n` +
-      `• *pendientes* — Aprobaciones pendientes\n` +
-      (esAdmin ? `• *cheques* — Cheques próximos a vencer\n` : '') +
-      (esAdmin ? `• *resumen [obra] [fecha]* — Resumen de una obra\n` : '') +
-      `\nTambién podés:\n` +
-      `• Mandar una foto o PDF de una factura\n` +
-      `• Escribir un gasto (ej: "pagué $50k de materiales en Obra Belgrano")\n` +
-      `• Reportar un ingreso\n` +
-      `• Mandar foto de un cheque`
+      `👋 *Hola ${user.user_name?.split(' ')[0] || ''}, así me podés hablar:*\n\n` +
+      `*◆ AVANCE DE OBRA* (foto + texto)\n` +
+      `Indicá *qué tarea*, *en qué obra* y cuánto se hizo. Tres formas:\n` +
+      ` ✓ Cuanto se hizo HOY (se suma a lo que ya había):\n` +
+      `    _"150 m² de revoque grueso en Baradero"_\n` +
+      ` ✓ TOTAL acumulado (corrige el avance):\n` +
+      `    _"van 850 m² de revoque en total en Baradero"_\n` +
+      ` ✓ Porcentaje directo:\n` +
+      `    _"30% de pintura en Belgrano"_\n` +
+      `Mandá foto del trabajo y el bot registra avance + sube la foto al portal del cliente.\n\n` +
+
+      `*◆ GASTO* (foto de factura o texto)\n` +
+      `Ej: _"pagué $50.000 de materiales en Baradero"_\n` +
+      `O mandá foto/PDF de factura — el bot extrae proveedor, monto, CUIT.\n\n` +
+
+      `*◆ INGRESO / COBRO*\n` +
+      `Ej: _"cobré U$S 5.000 de cuota 2 en Baradero"_\n` +
+      `La cuota se marca pagada automáticamente.\n\n` +
+
+      `*◆ CHEQUE RECIBIDO*\n` +
+      `Mandá foto del cheque, el bot lo registra en cartera.\n\n` +
+
+      `*◆ TAREAS ASIGNADAS*\n` +
+      `• *tareas* — ver tus pendientes\n` +
+      `• *tarea N* — detalle de la tarea N\n` +
+      `• *hice el item X* — marca un item completado\n` +
+      (esAdmin ? `• _"crear tarea para Juan: comprar cemento"_ — asignar nueva\n` : '') +
+
+      `\n*◆ CONSULTAS RÁPIDAS*\n` +
+      `• *saldo* — saldo de tus cajas\n` +
+      `• *pendientes* — aprobaciones pendientes\n` +
+      (esAdmin ? `• *cheques* — cheques por vencer\n` : '') +
+      (esAdmin ? `• *resumen [obra] [fecha]* — resumen del día\n` : '') +
+
+      `\n_Escribí *ayuda* cuando quieras volver a ver este menú._`
     );
+  }
+
+  // ── Tareas ────────────────────────────────────────────────────────────────
+  // Listado de tareas pendientes del usuario, numeradas. Guarda el mapping
+  // numero→tareaId en la conversación para que despues pueda decir "tarea 2".
+  if (comando === 'tareas') {
+    const tareas = (await loadSharedData('tareas')) || [];
+    const mias = tareas.filter(t =>
+      Array.isArray(t.asignadoA) &&
+      t.asignadoA.includes(user.user_id || user.id) &&
+      t.estado !== 'completada' &&
+      t.estado !== 'cancelada'
+    );
+    if (!mias.length) return '✅ No tenés tareas pendientes. ¡Buen trabajo!';
+
+    const prioRank = { alta: 0, media: 1, baja: 2 };
+    mias.sort((a, b) => {
+      const va = a.fechaLimite ? 0 : 1, vb = b.fechaLimite ? 0 : 1;
+      if (va !== vb) return va - vb;
+      if (a.fechaLimite && b.fechaLimite && a.fechaLimite !== b.fechaLimite) return a.fechaLimite < b.fechaLimite ? -1 : 1;
+      return (prioRank[a.prioridad] ?? 9) - (prioRank[b.prioridad] ?? 9);
+    });
+
+    // Guardar mapping para referencia posterior por numero.
+    if (user.phone) {
+      const conv = await loadConversation(user.phone);
+      await saveConversation(user.phone, conv.state || 'idle', {
+        ...(conv.data || {}),
+        lastTareasList: mias.map(t => t.id),
+      }, conv.history || []);
+    }
+
+    const lineas = mias.slice(0, 10).map((t, i) => {
+      const totalItems = (t.checklist || []).length;
+      const completos = (t.checklist || []).filter(it => it.completado).length;
+      const progress = totalItems > 0 ? ` (${completos}/${totalItems})` : '';
+      const venc = t.fechaLimite ? ` · vence ${t.fechaLimite.split('-').reverse().join('/')}` : '';
+      const prio = t.prioridad === 'alta' ? '🔴' : t.prioridad === 'media' ? '🟡' : '⚪';
+      return `${i + 1}. ${prio} *${t.titulo}*${progress}${venc}`;
+    });
+
+    const extra = mias.length > 10 ? `\n\n_…y ${mias.length - 10} más. Vé la lista completa en la app._` : '';
+    return `📋 *Tus tareas pendientes (${mias.length}):*\n\n${lineas.join('\n')}${extra}\n\nEscribí *tarea N* para ver el detalle.`;
+  }
+
+  // Detalle de una tarea por numero (1-based desde la última lista).
+  if (comando === 'tarea_detalle') {
+    const num = parseInt(datos.numero, 10);
+    if (!num || num < 1) return 'Decime qué tarea querés ver. Ej: *tarea 2*';
+
+    const conv = user.phone ? await loadConversation(user.phone) : { data: {} };
+    const tareaId = (conv.data?.lastTareasList || [])[num - 1];
+    if (!tareaId) return 'No encontré esa tarea. Escribí *tareas* primero para ver la lista.';
+
+    const tareas = (await loadSharedData('tareas')) || [];
+    const t = tareas.find(x => x.id === tareaId);
+    if (!t) return 'La tarea ya no existe.';
+
+    // Guardar la última tarea vista para que despues pueda decir "completé item 3"
+    if (user.phone) {
+      await saveConversation(user.phone, conv.state || 'idle', {
+        ...(conv.data || {}),
+        lastTareaId: tareaId,
+      }, conv.history || []);
+    }
+
+    const totalItems = (t.checklist || []).length;
+    const completos = (t.checklist || []).filter(it => it.completado).length;
+    const progressBar = totalItems > 0 ? ` (${completos}/${totalItems})` : '';
+    const venc = t.fechaLimite ? `\n📅 Vence: ${t.fechaLimite.split('-').reverse().join('/')}` : '';
+    const prio = t.prioridad === 'alta' ? '🔴 Alta' : t.prioridad === 'media' ? '🟡 Media' : '⚪ Baja';
+    const desc = t.descripcion ? `\n\n${t.descripcion}` : '';
+    const items = (t.checklist || []).length === 0
+      ? '\n\n_Sin items en el checklist._'
+      : '\n\n*Checklist:*\n' + (t.checklist || []).map((it, i) =>
+          `${i + 1}. ${it.completado ? '✅' : '⬜'} ${it.texto}`
+        ).join('\n');
+
+    return `*${t.titulo}*${progressBar}\n${prio}${venc}${desc}${items}\n\n_Para marcar un item: "hice el item 2"_`;
+  }
+
+  // Completar un item del checklist por numero (de la ultima tarea vista).
+  if (comando === 'completar_item') {
+    const num = parseInt(datos.numero, 10);
+    if (!num || num < 1) return 'Decime qué item querés marcar. Ej: *hice el item 2*';
+
+    const conv = user.phone ? await loadConversation(user.phone) : { data: {} };
+    const tareaId = conv.data?.lastTareaId;
+    if (!tareaId) return 'No sé de qué tarea hablás. Escribí *tareas* y luego *tarea N* primero.';
+
+    const tareas = (await loadSharedData('tareas')) || [];
+    const t = tareas.find(x => x.id === tareaId);
+    if (!t) return 'La tarea ya no existe.';
+    const item = (t.checklist || [])[num - 1];
+    if (!item) return `Esa tarea solo tiene ${(t.checklist || []).length} item${(t.checklist || []).length === 1 ? '' : 's'}.`;
+    if (item.completado) return `Ese item ya estaba marcado: "${item.texto}". ✅`;
+
+    // Actualizar tarea
+    const userId = user.user_id || user.id;
+    const nowIso = new Date().toISOString();
+    const newTareas = tareas.map(x => {
+      if (x.id !== tareaId) return x;
+      const newChecklist = (x.checklist || []).map((it, i) =>
+        i === num - 1 ? { ...it, completado: true, completadoPor: userId, completadoAt: nowIso } : it
+      );
+      const completosAhora = newChecklist.filter(it => it.completado).length;
+      const totalAhora = newChecklist.length;
+      let estado = 'pendiente';
+      if (completosAhora === totalAhora && totalAhora > 0) estado = 'completada';
+      else if (completosAhora > 0) estado = 'en_progreso';
+      return {
+        ...x,
+        checklist: newChecklist,
+        estado,
+        actualizadoAt: nowIso,
+        completadoAt: estado === 'completada' ? nowIso : null,
+      };
+    });
+    await saveSharedData('tareas', newTareas);
+
+    const tareaActualizada = newTareas.find(x => x.id === tareaId);
+    const totalItems = tareaActualizada.checklist.length;
+    const completos = tareaActualizada.checklist.filter(it => it.completado).length;
+    const allDone = completos === totalItems && totalItems > 0;
+
+    return allDone
+      ? `✅ Item "${item.texto}" marcado.\n\n🎉 *¡Tarea completa!* "${t.titulo}" — ${completos}/${totalItems} items.`
+      : `✅ Item "${item.texto}" marcado.\n\nProgreso: *${completos}/${totalItems}* items.`;
   }
 
   if (comando === 'saldo') {
@@ -1481,6 +1757,31 @@ async function ejecutarComando(comando, datos, user, ctx) {
 }
 
 // ── Flujo principal ───────────────────────────────────────────────────────────
+// Detecta si el mensaje es un saludo simple (sin contenido extra).
+function esSaludo(texto) {
+  const t = (texto || '').toLowerCase().trim().replace(/[!¡¿?.,]/g, '');
+  if (!t) return false;
+  const exactos = ['hola', 'holaa', 'hi', 'buen dia', 'buenas', 'buen día', 'buenos dias', 'buenos días',
+                   'buenas tardes', 'buenas noches', 'que tal', 'qué tal', 'que onda', 'qué onda',
+                   'hey', 'ey', 'che', 'saludos', 'ola', 'hello'];
+  if (exactos.includes(t)) return true;
+  const primera = t.split(/\s+/)[0];
+  return ['hola', 'buenas', 'hey', 'che', 'saludos'].includes(primera) && t.length < 12;
+}
+
+// Detecta si el mensaje pregunta por tareas pendientes — en lenguaje natural.
+// Cubre: "tareas", "tareas pendientes", "que tareas tengo", "mis tareas",
+// "hola tareas pendientes", "que tengo pendiente", etc.
+function pideTareas(texto) {
+  const t = (texto || '').toLowerCase().trim().replace(/[!¡¿?.,]/g, '');
+  if (!t) return false;
+  // Mencion directa a "tarea(s)"
+  if (/\btareas?\b/.test(t)) return true;
+  // "pendientes" o "que tengo pendiente" sin la palabra tarea
+  if (/\b(mis pendientes|que tengo pendiente|pendientes que tengo|que hago hoy|que tengo hoy)\b/.test(t)) return true;
+  return false;
+}
+
 async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv) {
   const ctx = await getSystemContext();
 
@@ -1495,6 +1796,25 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       mediaUrl = await uploadToStorage(base64Media, mimeType, filepath);
       console.log(`MEDIA uploaded: ${mediaUrl}`);
     }
+  }
+
+  // ── El usuario pide ver sus tareas (en lenguaje natural) ───────────────────
+  // Detecta "tareas", "tareas pendientes", "que tareas tengo", "hola tareas
+  // pendientes", etc., y responde con la lista. Esto evita que el usuario
+  // tenga que escribir el comando exacto.
+  if (!mediaId && conv.state === 'idle' && pideTareas(messageText)) {
+    const respuesta = await ejecutarComando('tareas', {}, { ...user, phone }, ctx);
+    await sendWA(phone, respuesta);
+    return;
+  }
+
+  // ── Saludo solo (sin pedir tareas): respuesta cortés breve ─────────────────
+  // No invadimos con info que el usuario no pidio. Si quiere ver tareas,
+  // escribe "tareas" o cualquier variante (manejado arriba).
+  if (!mediaId && conv.state === 'idle' && esSaludo(messageText)) {
+    const nombre = (user.nombre || '').split(' ')[0] || '';
+    await sendWA(phone, `👋 ¡Hola${nombre ? ' ' + nombre : ''}! ¿En qué te ayudo?\n\n_Escribí *ayuda* para ver los comandos o *tareas* para tus pendientes._`);
+    return;
   }
 
   if (conv.state === 'confirmando' && conv.data?.accion) {

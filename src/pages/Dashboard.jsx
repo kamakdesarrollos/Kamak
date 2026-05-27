@@ -509,23 +509,37 @@ export default function Dashboard() {
               {cuotasProximas.length === 0 ? (
                 <div style={{ padding: '20px 14px', fontSize: 12, color: T.ok }}>✓ Sin cuotas vencidas ni próximas</div>
               ) : (
-                cuotasProximas.map((c, i) => (
-                  <div key={`${c.obraId}-${c.id}`}
-                    onClick={() => navigate(`/obras/${c.obraId}/presupuesto?tab=10`)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: i < cuotasProximas.length - 1 ? `1px solid ${T.faint2}` : 'none', cursor: 'pointer', fontSize: 12 }}
-                    onMouseEnter={e => e.currentTarget.style.background = T.faint}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <div style={{ width: 36, height: 36, borderRadius: 6, background: c.diasRestantes < 0 ? T.accent : c.diasRestantes <= 7 ? T.warn + '33' : T.faint2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: c.diasRestantes < 0 ? 'white' : c.diasRestantes <= 7 ? T.warn : T.ink3, flexShrink: 0 }}>
-                      {c.diasRestantes < 0 ? 'VEN' : `${c.diasRestantes}d`}
+                cuotasProximas.map((c, i) => {
+                  // Coloreo coherente con Estado de cuenta:
+                  // rojo (vencida/hoy) / amarillo (≤3 días) / gris (resto).
+                  const isVenc = c.diasRestantes <= 0;
+                  const isProx = c.diasRestantes > 0 && c.diasRestantes <= 3;
+                  const bg = isVenc ? '#fee2e2' : isProx ? '#fff7e0' : 'transparent';
+                  const badgeBg = isVenc ? '#dc2626' : isProx ? '#d97706' : T.faint2;
+                  const badgeColor = isVenc || isProx ? '#fff' : T.ink3;
+                  const badgeTxt = isVenc
+                    ? (c.diasRestantes < 0 ? `${Math.abs(c.diasRestantes)}d` : 'HOY')
+                    : `${c.diasRestantes}d`;
+                  return (
+                    <div key={`${c.obraId}-${c.id}`}
+                      onClick={() => navigate(`/obras/${c.obraId}/presupuesto?tab=1`)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: i < cuotasProximas.length - 1 ? `1px solid ${T.faint2}` : 'none', cursor: 'pointer', fontSize: 12, background: bg, borderLeft: `3px solid ${isVenc ? '#dc2626' : isProx ? '#d97706' : 'transparent'}` }}
+                      onMouseEnter={e => e.currentTarget.style.background = isVenc ? '#fecaca' : isProx ? '#fef3c7' : T.faint}
+                      onMouseLeave={e => e.currentTarget.style.background = bg}
+                    >
+                      <div style={{ width: 36, height: 36, borderRadius: 6, background: badgeBg, color: badgeColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+                        {badgeTxt}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.descripcion}
+                        </div>
+                        <div style={{ fontSize: 10, color: T.ink3 }}>{c.obraNombre} · {fmtD(c.fecha)}</div>
+                      </div>
+                      <div style={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, fontSize: 12, flexShrink: 0, color: isVenc ? '#dc2626' : T.ink }}>$ {fmtN(c.monto)}</div>
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.descripcion}</div>
-                      <div style={{ fontSize: 10, color: T.ink3 }}>{c.obraNombre} · {fmtD(c.fecha)}</div>
-                    </div>
-                    <div style={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, fontSize: 12, flexShrink: 0, color: c.diasRestantes < 0 ? T.accent : T.ink }}>$ {fmtN(c.monto)}</div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </Box>
           )}
@@ -540,7 +554,7 @@ export default function Dashboard() {
               ) : (
                 adicionalesPendientes.map((a, i) => (
                   <div key={`${a.obraId}-${a.id}`}
-                    onClick={() => navigate(`/obras/${a.obraId}/presupuesto?tab=3`)}
+                    onClick={() => navigate(`/obras/${a.obraId}/presupuesto?tab=1`)}
                     style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: i < adicionalesPendientes.length - 1 ? `1px solid ${T.faint2}` : 'none', cursor: 'pointer', fontSize: 12 }}
                     onMouseEnter={e => e.currentTarget.style.background = T.faint}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}

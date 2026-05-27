@@ -7,3 +7,5 @@ dist/
 
 # Local IDE / Claude Code settings — contienen permisos y a veces secretos
 .claude/settings.local.json
+
+.env*

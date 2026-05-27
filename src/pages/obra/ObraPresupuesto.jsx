@@ -43,7 +43,6 @@ const INLINE_INPUT_ST = { width: '100%', textAlign: 'right', fontFamily: T.fontM
 // TAB 0: RESUMEN
 // ─────────────────────────────────────────────────────────────────────────────
 function TabResumen({ obra, detalle, moneda, onChangeTab }) {
-  const [incluirPagos, setIncluirPagos] = useState(true);
   const { currentUser } = useUsuarios();
   const isAdmin     = currentUser?.rol === 'Admin';
   // Fail-closed: si la clave de permiso no esta presente, se considera NO autorizado.
@@ -114,129 +113,125 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-      {/* Botón exportar resumen — solo admin (el PDF incluye precios de venta) */}
-      {isAdmin && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.ink2, cursor: 'pointer' }}>
-            <input type="checkbox" checked={incluirPagos} onChange={e => setIncluirPagos(e.target.checked)} />
-            Incluir plan de pagos
-          </label>
-          <Btn sm onClick={() => { const origin = window.location.origin; abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight: `${origin}/assets/kamak-logo-light.png` }), 'Resumen'); }}>↗ Exportar resumen total</Btn>
-        </div>
-      )}
-
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-        {[
-          { label: 'Avance general', value: `${avanceGeneral}%`, color: avanceGeneral >= 85 ? T.warn : T.ok, show: true },
-          { label: 'Margen real', value: `${margen}%`, color: margen < 0 ? T.accent : margen < 20 ? T.warn : T.ok, show: verMargenes },
-          { label: 'Días al vencimiento', value: diasRest !== null ? diasRest : '—', color: diasRest !== null && diasRest < 30 ? T.warn : T.ink, show: true },
-        ].filter(k => k.show).map((k, i) => (
-          <Box key={i} style={{ padding: '12px 14px' }}>
-            <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>{k.label}</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: k.color }}>{k.value}</div>
-          </Box>
-        ))}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-        {/* KPI: Total cliente — solo admin (precio de venta) */}
-        {isAdmin && totalClienteUSD > 0 && (
-          <Box style={{ padding: '12px 14px', borderLeft: `3px solid ${T.accent}`, cursor: 'pointer' }}
-            onClick={() => onChangeTab?.(1)}>
-            <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Total cliente</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.accent }}>{fmtUSD(totalClienteUSD)}</div>
-            {adicionalClienteUSD > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>incl. {fmtUSD(adicionalClienteUSD)} adicionales</div>}
-            {Math.abs(diferenciaPlanUSD) > 1 && cuotasPlan.length > 0 && (
-              <div style={{ fontSize: 10, color: T.warn, marginTop: 4, fontWeight: 700 }}>
-                ⚠ Faltan {fmtUSD(diferenciaPlanUSD)} por asignar en cuotas
+      {/* KPIs — solo Estado de obra. La info de cuenta cliente (monto, cobrado,
+          saldo, adicionales, gastado) vive ahora en la pestaña "Cuenta
+          corriente", no se duplica más en Resumen. */}
+      {(() => {
+        const gastadoSobrec = totalGastadoReal > costo && costo > 0;
+        return (
+          <>
+            {/* Bloque chico de gastado a proveedores — el unico dato financiero
+                que mantenemos en Resumen porque es operativo (vs. plata cliente
+                que es comercial y vive en su tab). */}
+            {(verCostos && totalGastadoReal > 0) && (
+              <div>
+                <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
+                  ◆ Costos a proveedores
+                </div>
+                <Box style={{ padding: '13px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Gastado</div>
+                      <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: gastadoSobrec ? T.accent : T.ink, lineHeight: 1.1 }}>{fmtPesos(totalGastadoReal)}</div>
+                    </div>
+                    {costo > 0 && (
+                      <div style={{ fontSize: 11, color: T.ink3 }}>
+                        de <b style={{ color: T.ink2 }}>{fmtPesos(costo)}</b> presupuestado · <b>{Math.round((totalGastadoReal / costo) * 100)}%</b> consumido
+                      </div>
+                    )}
+                  </div>
+                </Box>
               </div>
             )}
-            <div style={{ fontSize: 10, color: T.accent, marginTop: 4 }}>Ver plan de cuotas →</div>
-          </Box>
-        )}
-        {/* KPI: Cuotas — solo admin (montos cobrados al cliente) */}
-        {isAdmin && cuotasPlan.length > 0 && (
-          <Box style={{ padding: '12px 14px', cursor: 'pointer' }}
-            onClick={() => onChangeTab?.(1)}>
-            <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>Cuotas cobradas</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: T.ok }}>{fmtUSD(cuotasPagadasUSD)}</div>
-            <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{cuotasPlan.filter(c => cuotaEstadoCalc(c, obra.moneda || 'ARS', tc) === 'pagado').length} / {cuotasPlan.length} cuotas cobradas</div>
-          </Box>
-        )}
-      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        {/* Avance por rubro */}
-        <Box style={{ padding: 14, cursor: 'pointer' }} onClick={() => onChangeTab?.(1)}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Avance por rubro</div>
-            <span style={{ fontSize: 11, color: T.accent }}>Ver presupuesto →</span>
-          </div>
-          {rr.length === 0 && <div style={{ color: T.ink3, fontSize: 12 }}>Sin rubros cargados</div>}
-          {rr.map(r => (
-            <div key={r.id} style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
-                <span style={{ fontWeight: 600 }}>{r.nombre}</span>
-                <span style={{ fontFamily: T.fontMono, color: r.avance === 100 ? T.ok : T.ink2 }}>{r.avance}%</span>
+            {/* ESTADO */}
+            <div>
+              <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
+                ◆ Estado de obra
               </div>
-              <Bar pct={r.avance} ok={r.avance === 100} warn={r.avance < 50 && r.avance > 0} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                <Box style={{ padding: '11px 14px' }}>
+                  <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Avance general</div>
+                  <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 19, color: avanceGeneral >= 85 ? T.warn : T.ok, lineHeight: 1.1 }}>{avanceGeneral}%</div>
+                </Box>
+                {verMargenes && (
+                  <Box style={{ padding: '11px 14px' }}>
+                    <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Margen real</div>
+                    <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 19, color: margen < 0 ? T.accent : margen < 20 ? T.warn : T.ok, lineHeight: 1.1 }}>{margen}%</div>
+                  </Box>
+                )}
+                <Box style={{ padding: '11px 14px' }}>
+                  <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Días al vencimiento</div>
+                  <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 19, color: diasRest !== null && diasRest < 30 ? T.warn : T.ink, lineHeight: 1.1 }}>{diasRest !== null ? diasRest : '—'}</div>
+                </Box>
+              </div>
             </div>
-          ))}
-        </Box>
+          </>
+        );
+      })()}
 
-        {/* Financiero */}
-        {verCostos && <Box style={{ padding: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Financiero</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {[
-              // Venta al cliente: SIEMPRE USD (Kamak no vende en pesos).
-              ['Venta total (presu)', fmtUSD(arsToUSD(venta, tc)), T.ink, isAdmin],
-              // Compras a proveedores: SIEMPRE pesos (las compras se hacen en pesos).
-              ['Costo total (presu)', fmtPesos(costo), T.ink, true],
-              ['Margen bruto (presu)', fmtUSD(arsToUSD(venta - costo, tc)), margen < 0 ? T.accent : T.ok, verMargenes],
-              ['Gastado real', fmtPesos(totalGastadoReal), totalGastadoReal > costo ? T.accent : T.ink, true],
-            ].filter(([,,, show]) => show).map(([l, v, c], i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${T.faint2}`, fontSize: 12 }}>
-                <span style={{ color: T.ink2 }}>{l}</span>
-                <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: c }}>{v}</span>
+      {/* Avance por rubro */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase' }}>
+            ◆ Avance por rubro
+          </div>
+          <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer' }} onClick={() => onChangeTab?.(1)}>Ver presupuesto →</span>
+        </div>
+        <Box style={{ padding: 14, cursor: 'pointer' }} onClick={() => onChangeTab?.(1)}>
+          {rr.length === 0 && <div style={{ color: T.ink3, fontSize: 12 }}>Sin rubros cargados</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: rr.length > 4 ? '1fr 1fr' : '1fr', gap: rr.length > 4 ? '6px 20px' : 0 }}>
+            {rr.map(r => (
+              <div key={r.id} style={{ marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                  <span style={{ fontWeight: 600 }}>{r.nombre}</span>
+                  <span style={{ fontFamily: T.fontMono, color: r.avance === 100 ? T.ok : T.ink2 }}>{r.avance}%</span>
+                </div>
+                <Bar pct={r.avance} ok={r.avance === 100} warn={r.avance < 50 && r.avance > 0} />
               </div>
             ))}
           </div>
-        </Box>}
+        </Box>
       </div>
 
       {/* Alertas */}
       {alertas.length > 0 && (
-        <Box style={{ padding: 12 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Alertas</div>
-          {alertas.map((a, i) => (
-            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '7px 10px', borderRadius: 4, marginBottom: 5, background: a.tipo === 'danger' ? '#fae6e0' : a.tipo === 'warn' ? '#fff7e6' : T.accentSoft, borderLeft: `3px solid ${a.tipo === 'danger' ? T.accent : a.tipo === 'warn' ? T.warn : T.accent}` }}>
-              <span>{a.tipo === 'danger' ? '⚠' : a.tipo === 'warn' ? '⏰' : 'ℹ'}</span>
-              <span style={{ fontSize: 12 }}>{a.msg}</span>
-            </div>
-          ))}
-        </Box>
+        <div>
+          <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
+            ◆ Alertas
+          </div>
+          <Box style={{ padding: 12 }}>
+            {alertas.map((a, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '7px 10px', borderRadius: 4, marginBottom: 5, background: a.tipo === 'danger' ? '#fae6e0' : a.tipo === 'warn' ? '#fff7e6' : T.accentSoft, borderLeft: `3px solid ${a.tipo === 'danger' ? T.accent : a.tipo === 'warn' ? T.warn : T.accent}` }}>
+                <span>{a.tipo === 'danger' ? '⚠' : a.tipo === 'warn' ? '⏰' : 'ℹ'}</span>
+                <span style={{ fontSize: 12 }}>{a.msg}</span>
+              </div>
+            ))}
+          </Box>
+        </div>
       )}
 
       {/* Últimos movimientos — solo admin (no-admin los ve filtrados por cajasVisibles en tab Movimientos) */}
       {isAdmin && detalle.movimientos.length > 0 && (
-        <Box style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '8px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 700, fontSize: 13 }}>Últimos movimientos</span>
-            <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer' }}
-              onClick={() => onChangeTab?.(5)}>Ver todos →</span>
-          </div>
-          {[...detalle.movimientos].reverse().slice(0, 5).map(m => (
-            <div key={m.id} style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.faint2}`, fontSize: 12, borderLeft: `3px solid ${m.tipo === 'ingreso' ? T.ok : T.accent}` }}>
-              <span style={{ flex: 0.7, fontFamily: T.fontMono, color: T.ink2 }}>{fmtD(m.fecha)}</span>
-              <span style={{ flex: 3 }}>{m.descripcion}</span>
-              <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: m.tipo === 'ingreso' ? T.ok : T.accent }}>
-                {m.tipo === 'ingreso' ? '+' : '-'}{fmtM(m.monto, moneda)}
-              </span>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase' }}>
+              ◆ Últimos movimientos
             </div>
-          ))}
-        </Box>
+            <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer' }} onClick={() => onChangeTab?.(5)}>Ver todos →</span>
+          </div>
+          <Box style={{ padding: 0, overflow: 'hidden' }}>
+            {[...detalle.movimientos].reverse().slice(0, 5).map(m => (
+              <div key={m.id} style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.faint2}`, fontSize: 12, borderLeft: `3px solid ${m.tipo === 'ingreso' ? T.ok : T.warn}` }}>
+                <span style={{ flex: 0.7, fontFamily: T.fontMono, color: T.ink2 }}>{fmtD(m.fecha)}</span>
+                <span style={{ flex: 3 }}>{m.descripcion}</span>
+                <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: m.tipo === 'ingreso' ? T.ok : T.warn }}>
+                  {m.tipo === 'ingreso' ? '+' : '-'}{fmtM(m.monto, moneda)}
+                </span>
+              </div>
+            ))}
+          </Box>
+        </div>
       )}
     </div>
   );
@@ -318,7 +313,7 @@ function buildVisibleTareas(tareas, collapsedSections) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 1: PRESUPUESTO
 // ─────────────────────────────────────────────────────────────────────────────
-function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExport }) {
+function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReopen, onExport }) {
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const { proveedores: provListPresu } = useProveedores();
@@ -343,11 +338,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
   const [collapsedSections, setCollapsedSections] = useState(new Set());
   const toggleSeccion = (id) => setCollapsedSections(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  // Estado abierto/cerrado de rubros: ANTES vivia dentro del detalle (`rubro.abierto`),
-  // pero cada toggle disparaba patchDetalle -> save remoto -> broadcast eco.
-  // Sintoma: al abrir un rubro tardaba en responder, y a veces el broadcast remoto
-  // pisaba el cambio (lo volvia a cerrar). Ahora vive en state local; el valor
-  // inicial se hidrata desde el detalle por compatibilidad con datos viejos.
+  // Estado abierto/cerrado de rubros: vive en state local (no en el detalle
+  // persistido, que generaba race conditions con el broadcast realtime).
+  // Valor inicial: todos los rubros que tienen abierto !== false en el detalle.
   const [rubrosAbiertos, setRubrosAbiertos] = useState(() => {
     const s = new Set();
     for (const r of (detalle.rubros || [])) if (r.abierto !== false) s.add(r.id);
@@ -357,17 +350,23 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
   const toggleRubroAbierto = (id) => setRubrosAbiertos(prev => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
-  // Si llega un rubro nuevo (vino de un import de plantilla o creacion local),
-  // lo mostramos abierto por defecto sin que el efecto pise el estado del resto.
+  // Ref de rubros YA VISTOS por el state local — sirve para distinguir
+  // "rubro nuevo (recien agregado)" de "rubro existente que el user cerró".
+  // Sin esto, el useEffect re-abria todo rubro que el user cerraba apenas
+  // detalle.rubros cambiaba por cualquier motivo (BUG reportado: "los cierro
+  // y se vuelven a abrir solos"), porque "no esta en prev" se interpretaba
+  // erroneamente como "es nuevo".
+  const seenRubrosRef = useRef(new Set((detalle.rubros || []).map(r => r.id)));
   useEffect(() => {
+    const seen = seenRubrosRef.current;
+    const nuevos = (detalle.rubros || []).filter(r => !seen.has(r.id));
+    if (nuevos.length === 0) return;
     setRubrosAbiertos(prev => {
-      const known = new Set(prev);
-      let changed = false;
-      for (const r of (detalle.rubros || [])) {
-        if (!prev.has(r.id) && r.abierto !== false) { known.add(r.id); changed = true; }
-      }
-      return changed ? known : prev;
+      const next = new Set(prev);
+      for (const r of nuevos) if (r.abierto !== false) next.add(r.id);
+      return next;
     });
+    for (const r of nuevos) seen.add(r.id);
   }, [detalle.rubros]);
   const [colsUser, setColsUser] = useState({ costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
   // Force-off cost/margin columns based on permissions
@@ -610,7 +609,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden', height: 'calc(100vh - 190px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden', height: 'calc(100vh - 250px)', minHeight: 520 }}>
 
       {/* ── Barra compacta única ──────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexShrink: 0, flexWrap: 'wrap', padding: '6px 10px', background: T.faint, borderRadius: 6, border: `1px solid ${T.faint2}` }}>
@@ -646,10 +645,16 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
         <div style={{ flex: 1 }} />
 
         {/* Acciones */}
-        {frozen
-          ? <span style={{ fontSize: 11, color: '#1a9b9c', fontWeight: 700 }}>🔒 Aprobado{detalle.fechaAprobacion ? ` ${fmtD(detalle.fechaAprobacion)}` : ''}</span>
-          : onApprove && <Btn sm fill onClick={onApprove} style={{ background: T.ok, borderColor: T.ok, color: '#fff' }}>✓ Aprobar</Btn>
-        }
+        {frozen ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, color: T.ok, fontWeight: 700 }}>
+              Aprobado{detalle.fechaAprobacion ? ` ${fmtD(detalle.fechaAprobacion)}` : ''}
+            </span>
+            {onReopen && <Btn sm onClick={onReopen}>↩ Editar</Btn>}
+          </div>
+        ) : (
+          onApprove && <Btn sm fill onClick={onApprove} style={{ background: T.ok, borderColor: T.ok, color: '#fff' }}>✓ Aprobar</Btn>
+        )}
         {onExport && <Btn sm onClick={onExport}>↗</Btn>}
         {puedeEditar && <Btn sm fill onClick={() => setAddingRubro(true)}>+ Rubro</Btn>}
         {puedeEditar && <Btn sm onClick={() => setShowPlantillas(true)}>📋</Btn>}
@@ -658,8 +663,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
 
     <div style={{ display: 'flex', gap: 10, flex: 1, overflow: 'hidden' }}>
       {/* Left: rubro navigation sidebar */}
-      <Box style={{ width: 160, flexShrink: 0, padding: '8px 6px', overflow: 'auto' }}>
-        <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, padding: '0 4px', marginBottom: 6 }}>Por rubro</div>
+      <Box style={{ width: 138, flexShrink: 0, padding: '7px 5px', overflow: 'auto' }}>
+        <div style={{ fontSize: 8.5, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, padding: '0 4px', marginBottom: 5 }}>Por rubro</div>
         {rr.map(r => {
           const isActive = selRubroId === r.id;
           const num = r.nombre.match(/^(\d+)/)?.[1];
@@ -725,17 +730,17 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
 
               {isRubroAbierto(rubro.id) && (
                 <>
-                  <div className="k-tr k-th" style={{ background: T.paper, borderBottom: `1px dashed ${T.faint2}` }}>
-                    <div className="k-cell" style={{ flex: 3 }}>Tarea</div>
-                    <div className="k-cell" style={{ flex: 0.8, textAlign: 'right' }}>{puedeCargarAvance ? 'Cant / Av ✏' : 'Cant'}</div>
-                    <div className="k-cell" style={{ flex: 0.6 }}>Un</div>
-                    {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Mat ✏` : `${viewUSD?'U$S':'$'} Mat`}</div>}
-                    {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Sub ✏` : `${viewUSD?'U$S':'$'} Sub`}</div>}
-                    {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>{viewUSD?'U$S':'$'} Costo u</div>}
-                    {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b' }}>{viewUSD?'U$S':'$'} Costo T</div>}
-                    {cols.margenL   && <div className="k-cell" style={{ flex: 0.9, textAlign: 'right', color: T.ok }}>Margen % {puedeEditar ? '✏' : ''}</div>}
-                    {cols.ventaUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: T.accent }}>{viewUSD?'U$S':'$'} Venta u</div>}
-                    {cols.ventaTotal && <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', color: T.accent }}>{viewUSD?'U$S':'$'} Venta T</div>}
+                  <div className="k-tr k-th" style={{ background: T.paper, borderBottom: `1px dashed ${T.faint2}`, whiteSpace: 'nowrap' }}>
+                    <div className="k-cell" style={{ flex: 3, whiteSpace: 'nowrap' }}>Tarea</div>
+                    <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', fontSize: 9, whiteSpace: 'nowrap' }}>{puedeCargarAvance ? 'CANTIDAD ✏' : 'CANTIDAD'}</div>
+                    <div className="k-cell" style={{ flex: 0.4, whiteSpace: 'nowrap' }}>U</div>
+                    {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Mat ✏` : `${viewUSD?'U$S':'$'} Mat`}</div>}
+                    {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Sub ✏` : `${viewUSD?'U$S':'$'} Sub`}</div>}
+                    {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b', whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Costo u</div>}
+                    {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#c0392b', whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Costo T</div>}
+                    {cols.margenL   && <div className="k-cell" style={{ flex: 0.9, textAlign: 'right', color: T.ok, whiteSpace: 'nowrap' }}>Margen % {puedeEditar ? '✏' : ''}</div>}
+                    {cols.ventaUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Venta u</div>}
+                    {cols.ventaTotal && <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Venta T</div>}
                     <div className="k-cell" style={{ flex: 0.4 }}></div>
                   </div>
 
@@ -754,8 +759,12 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                     // tareas); ahora las constantes de estilo son globales y
                     // los handlers vienen del scope superior estables.
                     const InlineNum = ({ field, value, flex, fmt, color }) => (
-                      <div className="k-cell" style={{ flex, textAlign: 'right', padding: '2px 6px' }}
-                        onClick={e => { e.stopPropagation(); if (!(ie?.taskId === tarea.id && ie?.field === field)) setInlineEdit({ taskId: tarea.id, field, value: String(value) }); }}>
+                      <div className="k-cell" style={{ flex, textAlign: 'right', padding: '2px 6px', cursor: puedeEditar ? 'text' : 'inherit' }}
+                        onClick={e => {
+                          if (!puedeEditar) return; // bloqueado si presupuesto aprobado
+                          e.stopPropagation();
+                          if (!(ie?.taskId === tarea.id && ie?.field === field)) setInlineEdit({ taskId: tarea.id, field, value: String(value) });
+                        }}>
                         {ie?.field === field
                           ? <input autoFocus type="number" min="0" step="any" style={INLINE_INPUT_ST} value={ie.value} onClick={e => e.stopPropagation()}
                               onFocus={e => e.target.select()}
@@ -827,10 +836,45 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
                         onClick={() => { setSelTask(tarea); setSelRubroId(rubro.id); setEditTask(null); }}>
                         <div className="k-cell" style={{ flex: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ color: T.ink3, cursor: 'grab', userSelect: 'none', fontSize: 10 }}>⋮⋮</span>
-                          {tarea.nombre}
+                          {ie?.field === 'nombre' ? (
+                            <input
+                              autoFocus
+                              defaultValue={tarea.nombre}
+                              onBlur={e => {
+                                const val = e.target.value.trim();
+                                if (val && val !== tarea.nombre) {
+                                  patch(d => ({
+                                    ...d,
+                                    rubros: d.rubros.map(r => r.id === rubro.id
+                                      ? { ...r, tareas: r.tareas.map(t => t.id === tarea.id ? { ...t, nombre: val } : t) }
+                                      : r),
+                                  }));
+                                }
+                                setInlineEdit(null);
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') e.target.blur();
+                                if (e.key === 'Escape') { setInlineEdit(null); e.target.blur(); }
+                              }}
+                              onClick={e => e.stopPropagation()}
+                              style={{ flex: 1, padding: '2px 6px', border: `1.2px solid ${T.accent}`, borderRadius: 3, fontFamily: T.font, fontSize: 13, background: T.paper, outline: 'none' }}
+                            />
+                          ) : (
+                            <span
+                              onDoubleClick={e => {
+                                if (!puedeEditar) return;
+                                e.stopPropagation();
+                                setInlineEdit({ taskId: tarea.id, field: 'nombre', value: tarea.nombre });
+                              }}
+                              title={puedeEditar ? 'Doble click para editar' : ''}
+                              style={{ flex: 1, cursor: puedeEditar ? 'text' : 'inherit' }}
+                            >
+                              {tarea.nombre}
+                            </span>
+                          )}
                         </div>
-                        {InlineNum({ field: 'cantidad', value: tarea.cantidad, flex: 0.8 })}
-                        <div className="k-cell" style={{ flex: 0.6 }}>{tarea.unidad}</div>
+                        {InlineNum({ field: 'cantidad', value: tarea.cantidad, flex: 1.1 })}
+                        <div className="k-cell" style={{ flex: 0.4 }}>{tarea.unidad}</div>
                         {InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#c0392b' })}
                         {InlineNum({ field: 'costoSub', value: viewUSD ? Math.round((tarea.costoSub || 0) / tc) : (tarea.costoSub || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#c0392b' })}
 
@@ -1041,143 +1085,11 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onExp
         </div>
       )}
 
-      {/* APU panel */}
-      <Box style={{ width: 280, padding: 12, flexShrink: 0, overflow: 'auto' }}>
-        {selTask && !editTask ? (
-          <>
-            <Label>Tarea seleccionada</Label>
-            <div className="k-h" style={{ fontSize: 16, marginTop: 3 }}>{selTask.nombre}</div>
-            {selTask.codigo && <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>{selTask.codigo}</div>}
-            <div style={{ fontSize: 11, color: T.ink2, marginBottom: 6 }}>{selTask.cantidad} {selTask.unidad}</div>
-            <Divider style={{ margin: '6px 0' }} />
-
-            {/* Receta */}
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.ink2, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Receta / componentes</div>
-
-            {/* Subcontrato */}
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 9, color: T.ink3, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>Subcontrato $/un</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: (selTask.costoSub || 0) > 0 ? '#fdf0ed' : T.faint, borderRadius: 3, padding: '4px 8px' }}>
-                <span style={{ fontSize: 11, color: T.ink2 }}>Precio por unidad</span>
-                <span className="k-mono" style={{ fontWeight: 700, fontSize: 12, color: '#c0392b' }}>$ {fmtN(selTask.costoSub || 0)}</span>
-              </div>
-            </div>
-
-            {/* Materiales */}
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <div style={{ fontSize: 9, color: T.ink3, letterSpacing: 1, textTransform: 'uppercase' }}>Materiales $/un</div>
-                <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer', fontWeight: 700 }}
-                  onClick={() => {
-                    const receta = selTask.receta || { materiales: [] };
-                    patchTaskReceta(selTask.id, { ...receta, materiales: [...receta.materiales, { id: newId(), nombre: 'Nuevo material', categoria: 'General', costoUnit: 0 }] });
-                  }}>+ agregar</span>
-              </div>
-              {(selTask.receta?.materiales || []).length === 0 ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: selTask.costoMat > 0 ? '#fdf0ed' : T.faint, borderRadius: 3, padding: '4px 8px' }}>
-                  <span style={{ fontSize: 11, color: T.ink2 }}>Total materiales</span>
-                  <span className="k-mono" style={{ fontWeight: 700, fontSize: 12, color: '#c0392b' }}>$ {fmtN(selTask.costoMat)}</span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  {(selTask.receta.materiales).map((m, mi) => (
-                    <div key={m.id} style={{ background: '#fdf0ed', borderRadius: 3, padding: '4px 6px' }}>
-                      <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 3 }}>
-                        <input value={m.nombre} style={{ flex: 1, fontSize: 10, padding: '1px 4px', border: `1px solid ${T.faint2}`, borderRadius: 2, fontFamily: T.font }}
-                          onChange={e => {
-                            const mats = selTask.receta.materiales.map((x, xi) => xi === mi ? { ...x, nombre: e.target.value } : x);
-                            patchTaskReceta(selTask.id, { ...selTask.receta, materiales: mats });
-                          }} />
-                        <span style={{ fontSize: 10, color: T.accent, cursor: 'pointer' }}
-                          onClick={() => {
-                            const mats = selTask.receta.materiales.filter((_, xi) => xi !== mi);
-                            patchTaskReceta(selTask.id, { ...selTask.receta, materiales: mats });
-                          }}>✕</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                        <select value={m.categoria} style={{ flex: 1, fontSize: 9, padding: '1px 3px', border: `1px solid ${T.faint2}`, borderRadius: 2, fontFamily: T.font, color: T.ink2 }}
-                          onChange={e => {
-                            const mats = selTask.receta.materiales.map((x, xi) => xi === mi ? { ...x, categoria: e.target.value } : x);
-                            patchTaskReceta(selTask.id, { ...selTask.receta, materiales: mats });
-                          }}>
-                          {['General', 'Logística', 'Estructura', 'Terminaciones', 'Herramientas', 'Otro'].map(c => <option key={c}>{c}</option>)}
-                        </select>
-                        <span style={{ fontSize: 9, color: T.ink3 }}>$</span>
-                        <input type="number" min="0" step="any" value={m.costoUnit} style={{ width: 60, fontSize: 10, padding: '1px 4px', border: `1px solid ${T.faint2}`, borderRadius: 2, fontFamily: T.fontMono, textAlign: 'right' }}
-                          onChange={e => {
-                            const mats = selTask.receta.materiales.map((x, xi) => xi === mi ? { ...x, costoUnit: +e.target.value || 0 } : x);
-                            patchTaskReceta(selTask.id, { ...selTask.receta, materiales: mats });
-                          }} />
-                      </div>
-                    </div>
-                  ))}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 6px', background: T.faint, borderRadius: 3, fontSize: 11, fontWeight: 700 }}>
-                    <span style={{ color: T.ink2 }}>Total mat</span>
-                    <span className="k-mono" style={{ color: '#c0392b' }}>$ {fmtN(selTask.costoMat)}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <Divider style={{ margin: '6px 0' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
-              <span style={{ color: '#c0392b', fontWeight: 600 }}>Costo total</span>
-              <b className="k-mono" style={{ color: '#c0392b' }}>$ {fmtN((selTask.costoMat + (selTask.costoSub || 0)) * selTask.cantidad)}</b>
-            </div>
-            {selRubro && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                <span style={{ color: T.accent, fontWeight: 600 }}>Venta total</span>
-                <b className="k-mono" style={{ color: T.accent }}>$ {fmtN(tareaVentaUnit(selTask, selRubro) * selTask.cantidad)}</b>
-              </div>
-            )}
-            <div style={{ marginTop: 8 }}>
-              <Label>% Avance</Label>
-              <div style={{ marginTop: 4 }}>
-                <Bar pct={selTask.avance} ok={selTask.avance === 100} />
-                <div style={{ fontSize: 11, color: T.ink2, textAlign: 'right', marginTop: 2 }}>{selTask.avance}%</div>
-              </div>
-            </div>
-            {selRubro && (
-              <div style={{ marginTop: 6, fontSize: 10, color: T.ink2 }}>
-                Rubro: <b>{selRubro.nombre}</b> · mat +{selRubro.margenMat}% · sub +{selRubro.margenMO}%
-                {selTask.margenLinea != null && <span style={{ color: T.accent }}> · override {selTask.margenLinea}%</span>}
-              </div>
-            )}
-            <Btn sm fill style={{ width: '100%', justifyContent: 'center', marginTop: 8 }} onClick={() => setEditTask({ ...selTask })}>Editar tarea</Btn>
-          </>
-        ) : editTask ? (
-          <>
-            <Label>Editar tarea</Label>
-            <div className="k-h" style={{ fontSize: 16, marginTop: 3, marginBottom: 10 }}>{editTask.nombre}</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <FInput label="Nombre" value={editTask.nombre} onChange={v => updateEditField('nombre', v)} />
-              <FInput label="Código" value={editTask.codigo} onChange={v => updateEditField('codigo', v)} />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <FInput label="Cantidad" value={editTask.cantidad} onChange={v => updateEditField('cantidad', v)} type="number" />
-                <FInput label="Unidad" value={editTask.unidad} onChange={v => updateEditField('unidad', v)} />
-              </div>
-              <FInput label="$ Materiales unit" value={editTask.costoMat} onChange={v => updateEditField('costoMat', v)} type="number" />
-              <FInput label="$ Subcontrato unit" value={editTask.costoSub || 0} onChange={v => updateEditField('costoSub', v)} type="number" />
-              <div>
-                <div style={labelSt}>Avance %</div>
-                <input type="range" min={0} max={100} step={5} value={editTask.avance}
-                  onChange={e => updateEditField('avance', +e.target.value)}
-                  style={{ width: '100%', accentColor: T.accent }} />
-                <div style={{ textAlign: 'right', fontSize: 11, color: T.ink2 }}>{editTask.avance}%</div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <Btn sm style={{ flex: 1 }} onClick={() => setEditTask(null)}>Cancelar</Btn>
-              <Btn sm accent style={{ flex: 1 }} onClick={saveEditTask}>Guardar</Btn>
-            </div>
-          </>
-        ) : (
-          <div style={{ color: T.ink3, fontSize: 12, marginTop: 20, textAlign: 'center' }}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>←</div>
-            Hacé click en una tarea para ver su detalle y editarla
-          </div>
-        )}
-      </Box>
+      {/* Panel APU eliminado: la edicion de cantidad, costo mat, costo sub,
+          margen, venta y avance ya se hace inline en la tabla del cómputo.
+          El nombre tambien es editable con doble-click. La receta detallada
+          (componentes individuales) queda pendiente — si se necesita, se
+          accede via un boton/modal por tarea. */}
     </div>
     </div>
   );
@@ -1461,7 +1373,9 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, l
   }).join('');
 
   const adicRows = adic.map((a, i) => `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td style="padding-left:20px">${a.descripcion}</td><td class="r">${a.cantidad != null ? fmtNE(a.cantidad) : ''}</td><td class="r">${a.unidad || ''}</td><td class="r" style="color:#1a9b9c">${toUSD(a.valorVentaTotal ?? a.monto ?? 0)}</td></tr>`).join('');
-  const totalAdic = adic.reduce((s, a) => s + (a.valorVentaTotal ?? a.monto ?? 0), 0);
+  // Fórmula unificada con TabFinanciacion / TabResumen / TabCuentaCorriente:
+  // valorVentaTotal > costoTotal > monto (para que el PDF coincida con la UI).
+  const totalAdic = adic.reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
   const interes = parseFloat(fin.interes) || 0;
   const totalCliente = Math.round((ventaBase + totalAdic) * (1 + interes / 100));
 
@@ -1778,7 +1692,7 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
   );
 
   return (
-    <div style={{ maxWidth: 1020 }}>
+    <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <div style={{ fontSize: 12, color: T.ink2, display: 'flex', gap: 16 }}>
           <span>{detalle.adicionales.length} adicionales</span>
@@ -1916,16 +1830,35 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const [cuotaForm, setCuotaForm] = useState({ descripcion: '', monto: '', fecha: '', n: '' });
   const [editCuotaId, setEditCuotaId] = useState(null);
   const [genAuto, setGenAuto] = useState(false);
-  const [genForm, setGenForm] = useState({ n: '6', primerFecha: '', intervalo: '1-meses', anticipo: '', anticipoFecha: '' });
+  // anticipoPct: porcentaje del total cliente (0-100). El monto se calcula
+  // automaticamente al generar las cuotas. Antes era monto absoluto en USD,
+  // pero pensar en % es mas natural para el user (ej. "30% de adelanto").
+  const [genForm, setGenForm] = useState({ n: '6', primerFecha: '', intervalo: '1-meses', anticipoPct: '', anticipoFecha: '' });
 
   const { venta: ventaBase } = calcObra(detalle.rubros);
+  // FILTRO importante: solo adicionales aprobados Y que apliquen al cliente.
+  // Antes este lugar no filtraba aplicaACliente y sobreestimaba el total.
   const adicionalCliente = (detalle.adicionales || [])
-    .filter(a => a.estado === 'aprobado')
+    .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
     .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
   const interes = parseFloat(fin.interes) || 0;
   const baseTotal = ventaBase + adicionalCliente;
-  const totalConInteres = Math.round(baseTotal * (1 + interes / 100));
   const tc = dolarVenta || 1070;
+
+  // Input de interes — controlled con state local. interesLive es el valor
+  // que se está mostrando en el input AHORA (no el del detalle): el "Total
+  // cliente" se recalcula en vivo mientras tipeas, sin esperar al blur.
+  // Al blur, handleInteresChange persiste el valor al detalle.
+  const [interesEdit, setInteresEdit] = useState(String(interes));
+  useEffect(() => { setInteresEdit(String(interes)); }, [interes]);
+  const handleInteresChange = (val) => {
+    const num = parseFloat(val);
+    if (isNaN(num)) return;
+    patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), interes: num } }));
+  };
+  const interesLive = interesEdit === '' ? 0 : (parseFloat(interesEdit) || 0);
+  // Total cliente se calcula con interesLive (live preview del input).
+  const totalConInteres = Math.round(baseTotal * (1 + interesLive / 100));
   const totalUSD = Math.round(totalConInteres / tc);
   const fmtUSD = n => `U$S ${fmtN(n)}`;
   // cuotas antiguas en obras moneda:USD tenían monto en ARS; _usd:true marca las nuevas
@@ -1974,11 +1907,13 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const generarAutomatico = () => {
     const num = parseInt(genForm.n) || 1;
     if (!num) return;
-    const anticipoMonto = parseFloat(genForm.anticipo) || 0;
+    // Adelanto en % → monto: si pct=30 y totalUSD=10000 → adelanto=3000.
+    const pct = parseFloat(genForm.anticipoPct) || 0;
+    const anticipoMonto = pct > 0 ? Math.round(totalUSD * pct / 100) : 0;
     const saldo = totalUSD - anticipoMonto;
     const nuevas = [];
     if (anticipoMonto > 0) {
-      nuevas.push({ id: newId(), n: 1, descripcion: 'Adelanto de obra', monto: anticipoMonto, fecha: genForm.anticipoFecha || '', estado: 'pendiente', _usd: true });
+      nuevas.push({ id: newId(), n: 1, descripcion: `Adelanto de obra (${pct}%)`, monto: anticipoMonto, fecha: genForm.anticipoFecha || '', estado: 'pendiente', _usd: true });
     }
     const offset = nuevas.length;
     const montoCuota = num > 0 ? Math.round(saldo / num) : 0;
@@ -2006,86 +1941,109 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
     patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), propuestaEnviada: false, propuestaConfirmada: false } }));
   };
 
-  const statSt = { display: 'flex', flexDirection: 'column', gap: 3 };
-  const kSt = { fontSize: 10, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6 };
-  const vSt = { fontSize: 16, fontWeight: 800, fontFamily: T.fontMono, color: T.ink };
+  const kSt = { fontSize: 9, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: T.fontMono };
+  const vSt = { fontSize: 14, fontWeight: 800, fontFamily: T.fontMono, color: T.ink, marginTop: 2 };
+
+  // (interesEdit / handleInteresChange ya declarados arriba junto a los
+  // cálculos de totalConInteres / totalUSD que dependen de interesLive.)
 
   return (
-    <div style={{ maxWidth: 860, display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-      {/* Banner estado propuesta */}
+      {/* Banner: plan cerrado/aprobado. Bloquea toda edición. */}
       {confirmada && (
-        <div style={{ padding: '12px 16px', background: '#064e3b', borderRadius: 7, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '11px 14px', background: '#f0faf2', borderLeft: `3px solid ${T.ok}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: '#6ee7b7' }}>✓ Propuesta confirmada — financiación aprobada</div>
-            <div style={{ fontSize: 11, color: 'rgba(110,231,183,.6)', marginTop: 2 }}>
-              {fin.fechaConfirmacion ? `Confirmada el ${fmtD(fin.fechaConfirmacion)}` : ''}{fin.fechaPropuesta ? ` · Enviada el ${fmtD(fin.fechaPropuesta)}` : ''}
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>Plan de pagos cerrado</div>
+            <div style={{ fontSize: 11, color: '#15803d', marginTop: 2, opacity: 0.85 }}>
+              {fin.fechaConfirmacion ? `Aprobado el ${fmtD(fin.fechaConfirmacion)}` : ''}
+              {' · '}Para modificarlo hay que reabrirlo.
             </div>
           </div>
-          <Btn sm onClick={reabrirNegociacion} style={{ background: 'rgba(255,255,255,.1)', color: '#6ee7b7', border: 'none' }}>↩ Reabrir negociación</Btn>
-        </div>
-      )}
-      {enviada && !confirmada && (
-        <div style={{ padding: '10px 16px', background: '#0f5132', borderRadius: 7, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#d1fae5' }}>📤 Propuesta enviada{fin.fechaPropuesta ? ` el ${fmtD(fin.fechaPropuesta)}` : ''}</div>
-            <div style={{ fontSize: 11, color: 'rgba(209,250,229,.6)', marginTop: 2 }}>Esperando confirmación del cliente. Confirmá cuando acepte.</div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <Btn sm fill onClick={confirmarPropuesta} style={{ background: '#6ee7b7', color: '#064e3b', border: 'none', fontWeight: 800 }}>✓ Confirmar aceptada</Btn>
-            <Btn sm onClick={reabrirNegociacion} style={{ background: 'rgba(255,255,255,.12)', color: '#d1fae5', border: 'none' }}>↩ Reabrir</Btn>
-          </div>
+          <Btn sm onClick={reabrirNegociacion}>Editar plan</Btn>
         </div>
       )}
 
-      {/* Resumen financiero */}
-      <Box style={{ padding: 18 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Resumen financiero</div>
-          {!locked && <Btn sm onClick={() => { setFinForm({ interes: String(fin.interes || 0), notaPortal: fin.notaPortal || '' }); setEditingFin(true); }}>✎ Editar</Btn>}
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 16 }}>
-          <div style={statSt}><div style={kSt}>Presupuesto venta</div><div style={vSt}>{fmtUSD(Math.round(ventaBase / tc))}</div></div>
-          <div style={statSt}><div style={kSt}>Adicionales (cliente)</div><div style={{ ...vSt, color: adicionalCliente > 0 ? T.accent : T.ink }}>{fmtUSD(Math.round(adicionalCliente / tc))}</div></div>
-          <div style={statSt}><div style={kSt}>Interés aplicado</div><div style={{ ...vSt, color: interes > 0 ? T.warn : T.ink3 }}>{interes > 0 ? `${interes}%` : '—'}</div></div>
-          {moneda === 'ARS' && <div style={statSt}><div style={kSt}>TC BNA (venta)</div><div style={{ ...vSt, fontSize: 12, color: T.ink2 }}>${fmtN(tc)}</div></div>}
-          <div style={{ ...statSt, borderLeft: `3px solid ${T.accent}`, paddingLeft: 12 }}>
-            <div style={kSt}>Total cliente</div>
-            <div style={{ ...vSt, color: T.accent, fontSize: 20 }}>{fmtUSD(totalUSD)}</div>
-          </div>
-        </div>
-
-        {!locked && editingFin && (
-          <FormPanel title="Configurar financiación" onSave={saveFin} onCancel={() => setEditingFin(false)} style={{ marginTop: 8 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
-              <FInput label="Interés (%)" value={finForm.interes} onChange={v => setFinForm(p => ({ ...p, interes: v }))} type="number" placeholder="0" />
-              <FInput label="Nota para portal del cliente" value={finForm.notaPortal} onChange={v => setFinForm(p => ({ ...p, notaPortal: v }))} placeholder="Ej: Plan de pagos acordado el 01/01/2025" />
-            </div>
-          </FormPanel>
-        )}
-
-        {fin.notaPortal && (
-          <div style={{ marginTop: 12, padding: '8px 12px', background: T.faint, borderRadius: 5, fontSize: 12, color: T.ink2, borderLeft: `3px solid ${T.accent}` }}>
-            📋 Nota portal: {fin.notaPortal}
-          </div>
-        )}
-      </Box>
-
-      {/* Plan de cuotas */}
+      {/* Bloque unificado: KPIs + interés editable + cuotas. Todo en un solo
+          Box para no fragmentar visualmente la info de financiación. */}
       <Box style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '12px 18px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Plan de cuotas (en USD)</div>
+        {/* KPIs strip — fondo blanco para que los numeros (lo MAS importante)
+            no compitan con el fondo. Cada KPI separado por divider sutil. */}
+        <div style={{
+          padding: '14px 16px',
+          display: 'grid',
+          gridTemplateColumns: `1fr 1fr 1fr ${moneda === 'ARS' ? '1fr ' : ''}1fr 1.3fr`,
+          gap: 0,
+          alignItems: 'center',
+        }}>
+          <div style={{ paddingRight: 14 }}>
+            <div style={kSt}>Presupuesto venta</div>
+            <div style={{ ...vSt, fontSize: 17 }}>{fmtUSD(Math.round(ventaBase / tc))}</div>
+          </div>
+          <div style={{ paddingLeft: 14, paddingRight: 14, borderLeft: `1px solid ${T.faint2}` }}>
+            <div style={kSt}>Adicionales</div>
+            <div style={{ ...vSt, fontSize: 17, color: adicionalCliente > 0 ? T.accent : T.ink }}>{fmtUSD(Math.round(adicionalCliente / tc))}</div>
+          </div>
+          <div style={{ paddingLeft: 14, paddingRight: 14, borderLeft: `1px solid ${T.faint2}` }}>
+            <div style={kSt}>Base total</div>
+            <div style={{ ...vSt, fontSize: 17 }}>{fmtUSD(Math.round(baseTotal / tc))}</div>
+          </div>
+          {moneda === 'ARS' && (
+            <div style={{ paddingLeft: 14, paddingRight: 14, borderLeft: `1px solid ${T.faint2}` }}>
+              <div style={kSt}>TC BNA</div>
+              <div style={{ ...vSt, fontSize: 13, color: T.ink2 }}>${fmtN(tc)}</div>
+            </div>
+          )}
+          <div style={{ paddingLeft: 14, paddingRight: 14, borderLeft: `1px solid ${T.faint2}` }}>
+            <div style={kSt}>Interés</div>
+            {locked ? (
+              <div style={{ ...vSt, fontSize: 17, color: interes > 0 ? T.warn : T.ink3 }}>{interes > 0 ? `${interes}%` : '—'}</div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, marginTop: 2 }}>
+                <input
+                  type="number"
+                  value={interesEdit}
+                  onChange={e => setInteresEdit(e.target.value)}
+                  onBlur={() => handleInteresChange(interesEdit)}
+                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                  placeholder="0"
+                  style={{
+                    width: 56,
+                    padding: '2px 6px',
+                    border: `1.2px solid ${T.faint2}`,
+                    borderRadius: 4,
+                    fontFamily: T.fontMono,
+                    fontSize: 17,
+                    fontWeight: 800,
+                    color: interes > 0 ? T.warn : T.ink,
+                    background: T.paper,
+                    outline: 'none',
+                    textAlign: 'right',
+                  }}
+                />
+                <span style={{ fontFamily: T.fontMono, fontSize: 14, fontWeight: 700, color: T.ink2 }}>%</span>
+              </div>
+            )}
+          </div>
+          <div style={{ paddingLeft: 14, borderLeft: `3px solid ${T.accent}` }}>
+            <div style={kSt}>Total cliente</div>
+            <div style={{ ...vSt, color: T.accent, fontSize: 22 }}>{fmtUSD(totalUSD)}</div>
+          </div>
+        </div>
+
+        {/* Sub-header cuotas — sin fondo gris para no robar protagonismo. */}
+        <div style={{ padding: '8px 16px', borderTop: `1px solid ${T.faint2}`, borderBottom: `1px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 11, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1, fontWeight: 700, textTransform: 'uppercase' }}>
+            Plan de cuotas
             {cuotas.length > 0 && (
-              <div style={{ fontSize: 11, color: T.ink3, marginTop: 2, fontFamily: T.fontMono }}>
+              <span style={{ marginLeft: 12, color: T.ink2, letterSpacing: 0, textTransform: 'none', fontWeight: 500, fontSize: 11 }}>
                 {fmtUSD(cuotasPagadas)} cobrado · {fmtUSD(saldoCuotas)} saldo
                 {Math.abs(diferencia) > 1 && (
-                  <span style={{ color: diferencia > 0 ? T.warn : T.ok, marginLeft: 10 }}>
-                    {diferencia > 0 ? `⚠ faltan U$S ${fmtN(diferencia)} en cuotas` : `✓ U$S ${fmtN(Math.abs(diferencia))} extra en cuotas`}
+                  <span style={{ color: diferencia > 0 ? T.warn : T.ok, marginLeft: 6 }}>
+                    {diferencia > 0 ? `· ⚠ faltan U$S ${fmtN(diferencia)}` : `· ✓ U$S ${fmtN(Math.abs(diferencia))} extra`}
                   </span>
                 )}
-              </div>
+              </span>
             )}
           </div>
           {!locked && (
@@ -2100,38 +2058,56 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
         {!locked && genAuto && (
           <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.faint2}`, background: T.faint }}>
             <FormPanel title="Generar cuotas automáticamente" onSave={generarAutomatico} onCancel={() => setGenAuto(false)} saveLabel="Generar">
-              <div style={{ marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${T.faint2}` }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>Adelanto de obra (opcional)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <FInput label="Monto adelanto (U$S)" value={genForm.anticipo} onChange={v => setGenForm(p => ({ ...p, anticipo: v }))} type="number" placeholder="0" />
-                  <FInput label="Fecha del adelanto" value={genForm.anticipoFecha} onChange={v => setGenForm(p => ({ ...p, anticipoFecha: v }))} type="date" />
-                </div>
-              </div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>Saldo en cuotas</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                <FInput label="Cantidad de cuotas" value={genForm.n} onChange={v => setGenForm(p => ({ ...p, n: v }))} type="number" placeholder="6" />
-                <FInput label="Primera fecha de pago" value={genForm.primerFecha} onChange={v => setGenForm(p => ({ ...p, primerFecha: v }))} type="date" />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <label style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6 }}>Cada</label>
-                  <select value={genForm.intervalo} onChange={e => setGenForm(p => ({ ...p, intervalo: e.target.value }))}
-                    style={{ padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper }}>
-                    <option value="7-dias">7 días</option>
-                    <option value="15-dias">15 días</option>
-                    <option value="1-meses">1 mes</option>
-                    <option value="2-meses">2 meses</option>
-                    <option value="3-meses">3 meses</option>
-                    <option value="6-meses">6 meses</option>
-                  </select>
-                </div>
-              </div>
-              {genForm.n && (
-                <div style={{ marginTop: 8, fontSize: 11, color: T.ink3 }}>
-                  {parseFloat(genForm.anticipo) > 0 && <span>Adelanto {fmtUSD(parseFloat(genForm.anticipo))} + </span>}
-                  {genForm.n} cuota{genForm.n !== '1' ? 's' : ''} de aprox. {fmtUSD(Math.round((totalUSD - (parseFloat(genForm.anticipo) || 0)) / (parseInt(genForm.n) || 1)))} c/u
-                  {genForm.intervalo && <span>, cada {genForm.intervalo.replace('-', ' ')}</span>}
-                  {totalUSD > 0 && <span> · Total {fmtUSD(totalUSD)}</span>}
-                </div>
-              )}
+              {(() => {
+                const pct = parseFloat(genForm.anticipoPct) || 0;
+                const anticipoMonto = pct > 0 ? Math.round(totalUSD * pct / 100) : 0;
+                const saldo = totalUSD - anticipoMonto;
+                const cantCuotas = parseInt(genForm.n) || 0;
+                const montoCuota = cantCuotas > 0 ? Math.round(saldo / cantCuotas) : 0;
+                return (
+                  <>
+                    <div style={{ marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${T.faint2}` }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>Adelanto de obra (opcional)</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <div>
+                          <FInput label="Adelanto (%)" value={genForm.anticipoPct} onChange={v => setGenForm(p => ({ ...p, anticipoPct: v }))} type="number" placeholder="Ej: 30" />
+                          {pct > 0 && totalUSD > 0 && (
+                            <div style={{ fontSize: 10.5, color: T.accent, marginTop: 3, fontFamily: T.fontMono, fontWeight: 700 }}>
+                              ≈ {fmtUSD(anticipoMonto)} · queda {fmtUSD(saldo)} en cuotas
+                            </div>
+                          )}
+                        </div>
+                        <FInput label="Fecha del adelanto" value={genForm.anticipoFecha} onChange={v => setGenForm(p => ({ ...p, anticipoFecha: v }))} type="date" />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>Saldo en cuotas</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                      <FInput label="Cantidad de cuotas" value={genForm.n} onChange={v => setGenForm(p => ({ ...p, n: v }))} type="number" placeholder="6" />
+                      <FInput label="Primera fecha de pago" value={genForm.primerFecha} onChange={v => setGenForm(p => ({ ...p, primerFecha: v }))} type="date" />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6 }}>Cada</label>
+                        <select value={genForm.intervalo} onChange={e => setGenForm(p => ({ ...p, intervalo: e.target.value }))}
+                          style={{ padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper }}>
+                          <option value="7-dias">7 días</option>
+                          <option value="15-dias">15 días</option>
+                          <option value="1-meses">1 mes</option>
+                          <option value="2-meses">2 meses</option>
+                          <option value="3-meses">3 meses</option>
+                          <option value="6-meses">6 meses</option>
+                        </select>
+                      </div>
+                    </div>
+                    {cantCuotas > 0 && (
+                      <div style={{ marginTop: 8, fontSize: 11, color: T.ink3 }}>
+                        {anticipoMonto > 0 && <span>Adelanto {fmtUSD(anticipoMonto)} ({pct}%) + </span>}
+                        {cantCuotas} cuota{cantCuotas !== 1 ? 's' : ''} de aprox. {fmtUSD(montoCuota)} c/u
+                        {genForm.intervalo && <span>, cada {genForm.intervalo.replace('-', ' ')}</span>}
+                        {totalUSD > 0 && <span> · Total {fmtUSD(totalUSD)}</span>}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </FormPanel>
           </div>
         )}
@@ -2162,24 +2138,16 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
                 <th style={{ ...colH2, textAlign: 'left' }}>Descripción</th>
                 <th style={colH2}>Monto (USD)</th>
                 <th style={colH2}>Fecha</th>
-                <th style={{ ...colH2, textAlign: 'center' }}>Estado</th>
                 <th style={colH2}></th>
               </tr>
             </thead>
             <tbody>
-              {cuotas.map((c, i) => {
-                const est = cuotaEstadoCalc(c, moneda, tc);
-                return (
+              {cuotas.map((c, i) => (
                 <tr key={c.id} style={{ borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none' }}>
                   <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: T.ink2 }}>{c.n}</td>
                   <td style={{ padding: '10px 12px', fontSize: 12, color: T.ink }}>{c.descripcion}</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 700, color: est === 'pagado' ? T.ok : T.ink }}>{fmtUSD(cuotaMonto(c))}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 13, fontWeight: 700, color: T.ink }}>{fmtUSD(cuotaMonto(c))}</td>
                   <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, color: T.ink3 }}>{fmtD(c.fecha)}</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                    <Chip ok={est === 'pagado'} warn={est === 'parcial'} accent={!['pagado','parcial'].includes(est) && c.estado === 'proximo'} style={{ fontSize: 10 }}>
-                      {est === 'pagado' ? '✓ pagado' : est === 'parcial' ? '~ parcial' : c.estado === 'proximo' ? 'próximo' : 'pendiente'}
-                    </Chip>
-                  </td>
                   <td style={{ padding: '10px 12px', textAlign: 'right' }}>
                     {!locked && (
                       <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
@@ -2189,8 +2157,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
                     )}
                   </td>
                 </tr>
-                );
-              })}
+              ))}
             </tbody>
             {cuotas.length > 1 && (
               <tfoot>
@@ -2209,7 +2176,23 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
       {!locked && cuotas.length > 0 && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn onClick={() => onExport?.()} style={{ padding: '8px 18px' }}>↗ Generar propuesta</Btn>
-          <Btn fill onClick={enviarPropuesta} style={{ padding: '8px 18px', fontSize: 13 }}>📤 Guardar como enviada</Btn>
+          <Btn fill onClick={() => {
+            // No dejar cerrar si las cuotas no cubren el total (diferencia >1 USD
+            // de tolerancia para errores de redondeo).
+            if (Math.abs(diferencia) > 1) {
+              alert(
+                diferencia > 0
+                  ? `No se puede cerrar el plan: faltan U$S ${fmtN(diferencia)} por asignar en cuotas.\n\nAjustá los montos o agregá una cuota más para cubrir el total.`
+                  : `No se puede cerrar el plan: las cuotas suman U$S ${fmtN(Math.abs(diferencia))} más que el total acordado.\n\nAjustá los montos para que coincidan con el total.`
+              );
+              return;
+            }
+            if (!confirm('¿Cerrar el plan de pagos?\n\nUna vez cerrado, no podrás modificar interés, cuotas, montos ni fechas. Para volver a editar, hay que reabrirlo con "↩ Editar plan".')) return;
+            patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), propuestaConfirmada: true, fechaConfirmacion: new Date().toISOString().split('T')[0] } }));
+          }} style={{ padding: '8px 18px', fontSize: 13, opacity: Math.abs(diferencia) > 1 ? 0.6 : 1 }}
+            title={Math.abs(diferencia) > 1 ? `El plan debe sumar exactamente el total acordado (faltan/sobran U$S ${fmtN(Math.abs(diferencia))})` : 'Cerrar el plan'}>
+            🔒 Cerrar plan de pagos
+          </Btn>
         </div>
       )}
     </div>
@@ -2571,6 +2554,11 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
   const tc = dolarVenta || 1070;
   const navigate = useNavigate();
   const [expandedId, setExpandedId] = useState(null);
+  // Para el boton de exportar resumen total (movido aca desde TabResumen
+  // por pedido del user: la accion vive donde estan los datos de cobranza).
+  const [incluirPagos, setIncluirPagos] = useState(true);
+  const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
 
   // En Kamak la venta al cliente SIEMPRE se expresa en USD (independiente
   // de la moneda nominal de la obra). Las compras a proveedores quedan en
@@ -2579,9 +2567,11 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
 
   // Totales financieros — todo convertido a USD para el display al cliente.
   const { venta: ventaBaseARS } = calcObra(detalle.rubros || []);
+  // Misma fórmula que TabFinanciacion / TabResumen / TabCuentaCorriente para
+  // evitar diferencias: prefiere valorVentaTotal, sino costoTotal, sino monto.
   const adicionalClienteARS = (detalle.adicionales || [])
     .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
-    .reduce((s, a) => s + (a.monto || 0), 0);
+    .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
   const interes = parseFloat((detalle.financiacion || {}).interes) || 0;
   const totalARS = Math.round((ventaBaseARS + adicionalClienteARS) * (1 + interes / 100));
   const total = arsToUSD(totalARS, tc);
@@ -2620,35 +2610,44 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
   });
 
   return (
-    <div style={{ maxWidth: 820 }}>
-      {obra?.cliente && (
-        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-          <span style={{ color: T.ink2 }}>Cliente:</span>
-          <span style={{ color: T.accent, cursor: 'pointer', fontWeight: 700, textDecoration: 'underline' }}
-            onClick={() => navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`)}>
-            {obra.cliente}
+    <div>
+      {/* Header sección — mismo formato que todos los otros bloques del Resumen
+          (◆ + mono uppercase verde accent, link/info a la derecha). */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 6,
+        flexWrap: 'wrap',
+        gap: 8,
+      }}>
+        <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase' }}>
+          ◆ Detalle de cobranza
+          <span style={{ marginLeft: 8, color: T.ink3, letterSpacing: 1, fontWeight: 600 }}>
+            {cuotasPagadas} / {cuotas.length} cuotas cobradas
           </span>
         </div>
-      )}
-
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
-        <Box style={{ padding: '14px 18px', borderLeft: `4px solid ${T.accent}` }}>
-          <div style={{ fontSize: 10, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Total a cobrar</div>
-          <div style={{ fontSize: 26, fontWeight: 800, fontFamily: T.fontMono, color: T.accent }}>{fmt(total)}</div>
-          <div style={{ fontSize: 10, color: T.ink3, marginTop: 4 }}>
-            Venta {fmt(ventaDisplay)}{adicDisplay > 0 ? ` + Adic. ${fmt(adicDisplay)}` : ''}{interes > 0 ? ` + ${interes}% interés` : ''}
-          </div>
-          <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{cuotasPagadas} / {cuotas.length} cuotas cobradas</div>
-        </Box>
-        <Box style={{ padding: '14px 18px' }}>
-          <div style={{ fontSize: 10, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Cobrado</div>
-          <div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontMono, color: T.ok }}>{fmt(totalCobrado)}</div>
-        </Box>
-        <Box style={{ padding: '14px 18px', borderLeft: saldoPendiente > 0 ? `4px solid ${T.warn}` : `4px solid ${T.ok}` }}>
-          <div style={{ fontSize: 10, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Saldo pendiente</div>
-          <div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontMono, color: saldoPendiente > 0 ? T.warn : T.ok }}>{fmt(saldoPendiente)}</div>
-        </Box>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {obra?.cliente && (
+            <div style={{ fontSize: 11, color: T.ink2, display: 'flex', alignItems: 'center', gap: 4 }}>
+              Cliente:
+              <span style={{ color: T.accent, cursor: 'pointer', fontWeight: 700 }}
+                onClick={() => navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`)}>
+                {obra.cliente} ↗
+              </span>
+            </div>
+          )}
+          {/* Exportar resumen total — solo admin (PDF incluye precios de venta) */}
+          {isAdmin && (
+            <>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.ink2, cursor: 'pointer' }}>
+                <input type="checkbox" checked={incluirPagos} onChange={e => setIncluirPagos(e.target.checked)} />
+                Incluir plan de pagos
+              </label>
+              <Btn sm onClick={() => { const origin = window.location.origin; abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight: `${origin}/assets/kamak-logo-light.png` }), 'Resumen'); }}>↗ Exportar resumen total</Btn>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Banner: cuotas no cubren el total acordado */}
@@ -2656,15 +2655,15 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
         <div style={{
           background: diferenciaPlan > 0 ? '#fff4e5' : '#ffe5e5',
           border: `1.5px solid ${diferenciaPlan > 0 ? T.warn : T.accent}`,
-          borderRadius: 6,
-          padding: '10px 14px',
-          marginBottom: 14,
+          borderRadius: 4,
+          padding: '9px 14px',
+          marginBottom: 10,
           display: 'flex',
           alignItems: 'center',
           gap: 10,
           fontSize: 12,
         }}>
-          <span style={{ fontSize: 18 }}>⚠️</span>
+          <span style={{ fontSize: 16 }}>⚠️</span>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, color: T.ink }}>
               {diferenciaPlan > 0
@@ -2681,13 +2680,32 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
         </div>
       )}
 
-      {/* Lista de cuotas */}
+      {/* Lista de cuotas con header de tabla */}
       {cuotas.length === 0 ? (
         <Box style={{ padding: '32px 20px', textAlign: 'center', color: T.ink3, fontSize: 13 }}>
-          Sin cuotas definidas. Configurá el plan de pagos en la pestaña Financiación.
+          Sin cuotas definidas. Configurá el plan de pagos en la pestaña Presupuesto → Plan de pagos y cuotas.
         </Box>
       ) : (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
+          {/* Header tabla */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '7px 14px',
+            background: T.dark,
+            color: '#fff',
+            fontSize: 9.5,
+            fontFamily: T.fontMono,
+            letterSpacing: 1.2,
+            fontWeight: 700,
+          }}>
+            <div style={{ width: 28, flexShrink: 0, textAlign: 'center' }}>#</div>
+            <div style={{ flex: 1 }}>CUOTA</div>
+            <div style={{ width: 110, textAlign: 'right' }}>MONTO (USD)</div>
+            <div style={{ width: 90, textAlign: 'center' }}>ESTADO</div>
+            <div style={{ width: 14, flexShrink: 0 }} />
+          </div>
           {cuotas.map((c, i) => {
             const estado = cuotaEstadoCalc(c, moneda, tc);
             // Mostramos en USD (regla: venta al cliente siempre en USD).
@@ -2700,18 +2718,20 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
               <div key={c.id}>
                 <div style={rowSt(i)} onClick={() => setExpandedId(isOpen ? null : c.id)}>
                   <div style={numSt(estado)}>{c.n}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{c.descripcion}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.descripcion}</div>
                     {c.fecha && <div style={{ fontSize: 11, color: T.ink2 }}>{fmtD(c.fecha)}</div>}
                   </div>
-                  <div style={{ textAlign: 'right' }}>
+                  <div style={{ width: 110, textAlign: 'right' }}>
                     <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 13 }}>{fmt(monto)}</div>
                     {estado === 'parcial' && (
                       <div style={{ fontSize: 10, color: T.warn }}>cobrado {fmt(cobrado)} · falta {fmt(saldo)}</div>
                     )}
                   </div>
-                  <Chip ok={estado === 'pagado'} warn={estado === 'parcial'} style={{ fontSize: 10, flexShrink: 0 }}>{estado}</Chip>
-                  <span style={{ fontSize: 10, color: T.ink3, flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>
+                  <div style={{ width: 90, textAlign: 'center' }}>
+                    <Chip ok={estado === 'pagado'} warn={estado === 'parcial'} style={{ fontSize: 10 }}>{estado}</Chip>
+                  </div>
+                  <span style={{ width: 14, fontSize: 10, color: T.ink3, flexShrink: 0, textAlign: 'right' }}>{isOpen ? '▲' : '▼'}</span>
                 </div>
 
                 {/* Detalle de pagos */}
@@ -2745,6 +2765,387 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
           })}
         </Box>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB CUENTA CORRIENTE — wrapper que agrupa Adicionales + Plan de pagos +
+// Detalle de cobranza en una sola pestaña con KPIs arriba. Reemplaza la
+// info dispersa que antes estaba en Resumen (bloque cuenta cliente),
+// Presupuesto (acordeón plan de pagos) y la tab Adicionales.
+// ─────────────────────────────────────────────────────────────────────────────
+function TabCuentaCorriente({ obra, detalle, patch, moneda, onExport }) {
+  const { dolarVenta } = useDolar();
+  const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
+  const tc = dolarVenta || 1070;
+  const obraMon = obra?.moneda || 'ARS';
+
+  // Toggle U$S / $ — coherente con el Resumen.
+  const [vistaMoneda, setVistaMoneda] = useState('USD');
+  // Acordeones — todos abiertos por default; el user los colapsa si quiere.
+  const [showAdicionales, setShowAdicionales] = useState(true);
+  const [showPlan, setShowPlan] = useState(true);
+  // Para el botón exportar resumen total (vive en el header de cuenta cte).
+  const [incluirPagos, setIncluirPagos] = useState(true);
+
+  // ── KPIs ──────────────────────────────────────────────────────────────────
+  const { venta: ventaBaseARS } = calcObra(detalle.rubros || []);
+  const adicionalARS = (detalle.adicionales || [])
+    .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
+    .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
+  const interes = parseFloat((detalle.financiacion || {}).interes) || 0;
+  const totalARS = Math.round((ventaBaseARS + adicionalARS) * (1 + interes / 100));
+  const totalUSD = arsToUSD(totalARS, tc);
+  const adicionalUSD = arsToUSD(adicionalARS, tc);
+  const cuotas = detalle.cuotas || [];
+  const cobradoUSD = cuotas.reduce((s, c) => s + cuotaCobrado(c, 'USD', tc), 0);
+  const saldoUSD = Math.max(0, totalUSD - cobradoUSD);
+
+  const fmtPesos = (n) => `$ ${fmtN(n)}`;
+  const fmtUSD = (n) => `U$S ${fmtN(n)}`;
+  const enUSD = vistaMoneda === 'USD';
+  const fmtMon = enUSD ? fmtUSD : fmtPesos;
+  const usdToMon = (n) => enUSD ? n : Math.round(n * tc);
+
+  // Header de acordeón reutilizable.
+  const AccordionHeader = ({ label, open, onToggle, extra }) => (
+    <div
+      onClick={onToggle}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 0',
+        cursor: 'pointer',
+        userSelect: 'none',
+        borderTop: `1.5px solid ${T.faint2}`,
+        borderBottom: open ? `1.5px solid ${T.faint2}` : 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ display: 'inline-block', width: 8, height: 8, background: T.accent, transform: 'rotate(45deg)', flexShrink: 0 }} />
+        <span className="k-h" style={{ fontSize: 14, lineHeight: 1.1, color: T.ink }}>{label}</span>
+        {extra}
+      </div>
+      <span style={{ fontSize: 10.5, color: T.ink3, fontWeight: 600, fontFamily: T.fontMono, letterSpacing: 0.5 }}>
+        {open ? '▲ Cerrar' : '▼ Ver'}
+      </span>
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {/* ── KPIs ──────────────────────────────────────────────────────────── */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase' }}>
+            ◆ Cuenta corriente del cliente
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            {obra?.cliente && (
+              <span style={{ fontSize: 11, color: T.ink2 }}>
+                Cliente: <span style={{ color: T.accent, fontWeight: 700 }}>{obra.cliente}</span>
+              </span>
+            )}
+            {/* Toggle moneda */}
+            <div style={{ display: 'flex', border: `1px solid ${T.faint2}`, borderRadius: 4, overflow: 'hidden', fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>
+              <span onClick={() => setVistaMoneda('USD')}
+                style={{ padding: '3px 10px', cursor: 'pointer', background: enUSD ? T.accent : T.paper, color: enUSD ? '#fff' : T.ink2, transition: 'all .12s' }}>U$S</span>
+              <span onClick={() => setVistaMoneda('ARS')}
+                style={{ padding: '3px 10px', cursor: 'pointer', background: !enUSD ? T.accent : T.paper, color: !enUSD ? '#fff' : T.ink2, transition: 'all .12s', borderLeft: `1px solid ${T.faint2}` }}>$</span>
+            </div>
+            {/* Exportar resumen total */}
+            {isAdmin && (
+              <>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.ink2, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={incluirPagos} onChange={e => setIncluirPagos(e.target.checked)} />
+                  Incluir plan de pagos
+                </label>
+                <Btn sm onClick={() => { const origin = window.location.origin; abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight: `${origin}/assets/kamak-logo-light.png` }), 'Resumen'); }}>↗ Exportar resumen total</Btn>
+              </>
+            )}
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <Box style={{ padding: '13px 16px', borderLeft: `3px solid ${T.accent}` }}>
+            <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Monto total obra</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: T.accent, lineHeight: 1.1 }}>{fmtMon(usdToMon(totalUSD))}</div>
+          </Box>
+          <Box style={{ padding: '13px 16px' }}>
+            <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Adicionales</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: adicionalUSD > 0 ? T.warn : T.ink3, lineHeight: 1.1 }}>{fmtMon(usdToMon(adicionalUSD))}</div>
+          </Box>
+          <Box style={{ padding: '13px 16px' }}>
+            <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Cobrado</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: T.ok, lineHeight: 1.1 }}>{fmtMon(usdToMon(cobradoUSD))}</div>
+          </Box>
+          <Box style={{ padding: '13px 16px' }}>
+            <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Saldo a cobrar</div>
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: saldoUSD > 0 ? T.warn : T.ok, lineHeight: 1.1 }}>{fmtMon(usdToMon(saldoUSD))}</div>
+          </Box>
+        </div>
+      </div>
+
+      {/* ── Acordeón Adicionales ──────────────────────────────────────────── */}
+      <div>
+        <AccordionHeader
+          label="Adicionales"
+          open={showAdicionales}
+          onToggle={() => setShowAdicionales(v => !v)}
+          extra={(detalle.adicionales || []).length > 0 && (
+            <span style={{ fontSize: 11, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 0.8, fontWeight: 600 }}>
+              {(detalle.adicionales || []).length}
+            </span>
+          )}
+        />
+        {showAdicionales && (
+          <div style={{ paddingTop: 14 }}>
+            <TabAdicionales detalle={detalle} patch={patch} moneda={moneda} obra={obra} />
+          </div>
+        )}
+      </div>
+
+      {/* ── Acordeón Estado de cuenta ────────────────────────────────────
+          Solo cobranza: muestra cuotas con estado, cobrado, falta. SIN edición
+          (las cuotas se marcan pagadas automáticamente al registrar el ingreso
+          en Movimientos). La edición del plan vive en Presupuesto. */}
+      <div>
+        <AccordionHeader
+          label="Estado de cuenta"
+          open={showPlan}
+          onToggle={() => setShowPlan(v => !v)}
+          extra={(detalle.cuotas || []).length > 0 && (
+            <span style={{ fontSize: 11, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 0.8, fontWeight: 600 }}>
+              {(detalle.cuotas || []).filter(c => cuotaEstadoCalc(c, obraMon, tc) === 'pagado').length} / {(detalle.cuotas || []).length} cuotas pagas
+            </span>
+          )}
+        />
+        {showPlan && (
+          <div style={{ paddingTop: 14 }}>
+            <EstadoDeCuenta obra={obra} detalle={detalle} tc={tc} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EstadoDeCuenta — vista de cobranza pura: muestra estado de cada cuota,
+// cuándo se cobró, cuánto. SIN edición manual (las cuotas se marcan pagadas
+// automáticamente cuando se registra un ingreso asociado a la cuota desde
+// Movimientos). La edición del plan vive en Presupuesto → Plan de pagos.
+//
+// Coloreo por urgencia de vencimiento (cuotas no pagadas):
+//   - verde: faltan más de 3 días
+//   - amarillo: vence en 0-3 días
+//   - rojo: vencida (hoy o anterior)
+// ─────────────────────────────────────────────────────────────────────────────
+function urgenciaCuota(c, estado, hoyStr) {
+  if (estado === 'pagado') return 'pagado';
+  if (!c.fecha) return 'sin-fecha';
+  if (c.fecha < hoyStr) return 'vencida';
+  if (c.fecha === hoyStr) return 'vencida'; // hoy = ya tendría que estar cobrada
+  // Diff en días
+  const d1 = new Date(hoyStr);
+  const d2 = new Date(c.fecha);
+  const dias = Math.round((d2 - d1) / 86400000);
+  if (dias <= 3) return 'proxima';
+  return 'a-tiempo';
+}
+
+function EstadoDeCuenta({ obra, detalle, tc }) {
+  const navigate = useNavigate();
+  const obraMon = obra?.moneda || 'ARS';
+  const cuotas = detalle.cuotas || [];
+  const fmtUSD = (n) => `U$S ${fmtN(n)}`;
+  const hoyStr = new Date().toISOString().slice(0, 10);
+
+  // Conteo para banner de alerta arriba.
+  const cuotasUrgentes = cuotas.map(c => ({ c, estado: cuotaEstadoCalc(c, obraMon, tc) }))
+    .filter(({ estado }) => estado !== 'pagado')
+    .map(({ c, estado }) => urgenciaCuota(c, estado, hoyStr));
+  const vencidas = cuotasUrgentes.filter(u => u === 'vencida').length;
+  const proximas = cuotasUrgentes.filter(u => u === 'proxima').length;
+
+  if (cuotas.length === 0) {
+    return (
+      <Box style={{ padding: '32px 20px', textAlign: 'center', color: T.ink3, fontSize: 13 }}>
+        Sin cuotas definidas. Armá el plan de pagos en{' '}
+        <span style={{ color: T.accent, cursor: 'pointer', fontWeight: 700 }}
+          onClick={() => navigate(`/obras/${obra.id}/presupuesto?tab=2`)}>
+          Presupuesto → Plan de pagos y cuotas
+        </span>.
+      </Box>
+    );
+  }
+
+  return (
+    <div>
+      {/* Banner alerta: cuotas vencidas o próximas a vencer (3 días). */}
+      {(vencidas > 0 || proximas > 0) && (
+        <div style={{
+          background: vencidas > 0 ? '#fef2f2' : '#fffbeb',
+          borderLeft: `3px solid ${vencidas > 0 ? '#b91c1c' : '#b45309'}`,
+          padding: '9px 14px',
+          marginBottom: 10,
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 10,
+          fontSize: 12,
+        }}>
+          <span style={{ fontSize: 10, fontFamily: T.fontMono, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: vencidas > 0 ? '#b91c1c' : '#b45309' }}>
+            {vencidas > 0 ? 'Atención' : 'Aviso'}
+          </span>
+          <div style={{ flex: 1, color: vencidas > 0 ? '#7f1d1d' : '#78350f' }}>
+            <span style={{ fontWeight: 700 }}>
+              {vencidas > 0 && `${vencidas} cuota${vencidas !== 1 ? 's' : ''} vencida${vencidas !== 1 ? 's' : ''}`}
+              {vencidas > 0 && proximas > 0 && ' · '}
+              {proximas > 0 && `${proximas} próxima${proximas !== 1 ? 's' : ''} (≤3 días)`}
+            </span>
+            <span style={{ marginLeft: 6, opacity: 0.75, fontSize: 11 }}>· revisá el detalle abajo.</span>
+          </div>
+        </div>
+      )}
+      <Box style={{ padding: 0, overflow: 'hidden' }}>
+      {/* Header tabla */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '7px 14px',
+        background: T.dark,
+        color: '#fff',
+        fontSize: 9.5,
+        fontFamily: T.fontMono,
+        letterSpacing: 1.2,
+        fontWeight: 700,
+      }}>
+        <div style={{ width: 28, flexShrink: 0, textAlign: 'center' }}>#</div>
+        <div style={{ flex: 1 }}>CUOTA</div>
+        <div style={{ width: 95, textAlign: 'right' }}>VENCE</div>
+        <div style={{ width: 100, textAlign: 'right' }}>MONTO USD</div>
+        <div style={{ width: 100, textAlign: 'right' }}>COBRADO</div>
+        <div style={{ width: 100, textAlign: 'center' }}>ESTADO</div>
+      </div>
+      {cuotas.map((c, i) => {
+        const estado = cuotaEstadoCalc(c, obraMon, tc);
+        const pagada = estado === 'pagado';
+        const parcial = estado === 'parcial';
+        const monto = cuotaMontoUSD(c, obraMon, tc);
+        const cobrado = cuotaCobrado(c, 'USD', tc);
+        const ultimoPago = (c.pagos || []).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))[0];
+        const urg = urgenciaCuota(c, estado, hoyStr);
+        // Colores por urgencia: verde claro (a tiempo), amarillo (próxima),
+        // rojo (vencida), verde sólido (pagada).
+        const rowBg = pagada ? '#f0faf2'
+          : urg === 'vencida' ? '#fee2e2'
+          : urg === 'proxima' ? '#fff7e0'
+          : urg === 'a-tiempo' ? '#f4faf5'
+          : 'transparent';
+        const borderLeftColor = pagada ? T.ok
+          : urg === 'vencida' ? '#dc2626'
+          : urg === 'proxima' ? '#d97706'
+          : urg === 'a-tiempo' ? T.ok
+          : T.faint2;
+        // Días para vencer (texto extra debajo de la fecha para guiar al ojo).
+        const diasEtiqueta = (() => {
+          if (pagada || !c.fecha) return null;
+          const d1 = new Date(hoyStr), d2 = new Date(c.fecha);
+          const dias = Math.round((d2 - d1) / 86400000);
+          if (dias < 0) return { txt: `${Math.abs(dias)}d vencida`, color: '#dc2626' };
+          if (dias === 0) return { txt: 'HOY', color: '#dc2626' };
+          if (dias === 1) return { txt: 'mañana', color: '#d97706' };
+          if (dias <= 3) return { txt: `en ${dias}d`, color: '#d97706' };
+          return null;
+        })();
+        return (
+          <div key={c.id} style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '10px 14px',
+            borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none',
+            background: rowBg,
+            borderLeft: `3px solid ${borderLeftColor}`,
+          }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 14, flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: 800, fontSize: 12,
+              background: pagada ? T.ok : urg === 'vencida' ? '#dc2626' : parcial ? T.warn : T.faint2,
+              color: pagada || urg === 'vencida' || parcial ? '#fff' : T.ink3,
+            }}>{c.n}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.descripcion}</div>
+              {pagada && ultimoPago?.fecha && (
+                <div style={{ fontSize: 11, color: '#166534', fontFamily: T.fontMono, marginTop: 1 }}>
+                  Cobrada el {fmtD(ultimoPago.fecha)}
+                </div>
+              )}
+              {parcial && (
+                <div style={{ fontSize: 11, color: '#92400e', fontFamily: T.fontMono, marginTop: 1 }}>
+                  Pendiente U$S {fmtN(monto - cobrado)}
+                </div>
+              )}
+            </div>
+            <div style={{ width: 95, textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: T.ink3, fontFamily: T.fontMono }}>{fmtD(c.fecha)}</div>
+              {diasEtiqueta && (
+                <div style={{ fontSize: 9.5, color: diasEtiqueta.color, fontFamily: T.fontMono, fontWeight: 800, marginTop: 1, letterSpacing: 0.5 }}>
+                  {diasEtiqueta.txt}
+                </div>
+              )}
+            </div>
+            <div style={{ width: 100, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700, fontSize: 13, color: T.ink }}>{fmtUSD(monto)}</div>
+            <div style={{ width: 100, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700, fontSize: 13, color: cobrado > 0 ? T.ok : T.ink3 }}>
+              {cobrado > 0 ? fmtUSD(cobrado) : '—'}
+            </div>
+            <div style={{ width: 100, textAlign: 'center' }}>
+              {pagada ? (
+                <span style={{ fontSize: 10, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: '1px solid #bbf7d0' }}>Pagada</span>
+              ) : urg === 'vencida' ? (
+                <span style={{ fontSize: 10, background: '#fef2f2', color: '#991b1b', padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: '1px solid #fecaca' }}>Vencida</span>
+              ) : urg === 'proxima' ? (
+                <span style={{ fontSize: 10, background: '#fffbeb', color: '#78350f', padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: '1px solid #fde68a' }}>Próxima</span>
+              ) : parcial ? (
+                <span style={{ fontSize: 10, background: '#fffbeb', color: '#92400e', padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: '1px solid #fde68a' }}>Parcial</span>
+              ) : (
+                <span style={{ fontSize: 10, background: T.faint, color: T.ink2, padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: `1px solid ${T.faint2}` }}>Al día</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      {/* Footer total */}
+      {cuotas.length > 1 && (() => {
+        const totalUSD = cuotas.reduce((s, c) => s + cuotaMontoUSD(c, obraMon, tc), 0);
+        const cobradoUSD = cuotas.reduce((s, c) => s + cuotaCobrado(c, 'USD', tc), 0);
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: T.faint, borderTop: `1.5px solid ${T.faint2}`, fontSize: 12 }}>
+            <div style={{ width: 28, flexShrink: 0 }} />
+            <div style={{ flex: 1, fontWeight: 700, color: T.ink2, fontFamily: T.fontMono, letterSpacing: 1, fontSize: 11, textTransform: 'uppercase' }}>Total</div>
+            <div style={{ width: 95 }} />
+            <div style={{ width: 100, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, fontSize: 13 }}>{fmtUSD(totalUSD)}</div>
+            <div style={{ width: 100, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.ok }}>{fmtUSD(cobradoUSD)}</div>
+            <div style={{ width: 100 }} />
+          </div>
+        );
+      })()}
+      <div style={{ padding: '8px 14px', fontSize: 10.5, color: T.ink3, background: T.faint, borderTop: `1px solid ${T.faint2}` }}>
+        Las cuotas se marcan pagadas automáticamente al registrar el ingreso en{' '}
+        <span style={{ color: T.accent, cursor: 'pointer', fontWeight: 700 }} onClick={() => navigate(`/movimientos?obra=${obra.id}`)}>
+          Movimientos
+        </span>
+        . Para editar el plan →{' '}
+        <span style={{ color: T.accent, cursor: 'pointer', fontWeight: 700 }} onClick={() => navigate(`/obras/${obra.id}/presupuesto?tab=2`)}>
+          Presupuesto → Plan de pagos
+        </span>
+      </div>
+    </Box>
     </div>
   );
 }
@@ -3451,9 +3852,48 @@ function TabFotos({ detalle, patch, obraId }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TabArchivos — wrapper de Documentos + Fotos en una sola tab con sub-tabs
+// internas. Antes eran dos tabs separadas (Documentos / Fotos); unificadas
+// porque conceptualmente ambos son archivos adjuntos de la obra.
+// ─────────────────────────────────────────────────────────────────────────────
+function TabArchivos({ detalle, patch, obraId }) {
+  const [sub, setSub] = useState('docs'); // 'docs' | 'fotos'
+  const docsCount = (detalle.documentos || []).length;
+  const fotosCount = (detalle.fotos || []).length;
+
+  const tabSt = (active) => ({
+    padding: '8px 16px',
+    fontSize: 12,
+    fontWeight: active ? 700 : 500,
+    color: active ? T.accent : T.ink2,
+    borderBottom: active ? `2px solid ${T.accent}` : '2px solid transparent',
+    cursor: 'pointer',
+    marginBottom: -1.5,
+    transition: 'color .15s, border-bottom .15s',
+  });
+
+  return (
+    <div>
+      <div style={{ display: 'flex', borderBottom: `1.5px solid ${T.faint2}`, gap: 4, marginBottom: 14 }}>
+        <span onClick={() => setSub('docs')} style={tabSt(sub === 'docs')}>
+          Documentos{docsCount > 0 ? ` · ${docsCount}` : ''}
+        </span>
+        <span onClick={() => setSub('fotos')} style={tabSt(sub === 'fotos')}>
+          Fotos{fotosCount > 0 ? ` · ${fotosCount}` : ''}
+        </span>
+      </div>
+      {sub === 'docs' && <TabDocumentos detalle={detalle} patch={patch} obraId={obraId} />}
+      {sub === 'fotos' && <TabFotos detalle={detalle} patch={patch} obraId={obraId} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
-const TABS_DEF = ['Resumen', 'Presupuesto', 'Materiales', 'Adicionales', 'Gantt', 'Movimientos', 'Contratos MO', 'Documentos', 'Fotos', 'Portal cliente'];
+// "Adicionales" eliminado como tab — su contenido vive ahora dentro de
+// "Cuenta corriente" como acordeón. Documentos+Fotos unificados en "Archivos".
+const TABS_DEF = ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Archivos', 'Portal cliente'];
 
 export default function ObraPresupuesto() {
   const { id } = useParams();
@@ -3465,7 +3905,7 @@ export default function ObraPresupuesto() {
   const isAdmin = currentUser?.rol === 'Admin';
   const canSeeGantt = isAdmin || ['Comprador', 'Director de obra'].includes(currentUser?.rol);
   const rolHiddenTabs = isAdmin ? [] : [
-    'Presupuesto', 'Adicionales', 'Contratos MO', 'Portal cliente',
+    'Presupuesto', 'Cuenta corriente', 'Contratos MO', 'Portal cliente',
     ...(!canSeeGantt ? ['Gantt'] : []),
   ];
   const tabsOcultos = currentUser?.tabsOcultos ?? [];
@@ -3475,7 +3915,6 @@ export default function ObraPresupuesto() {
     return isNaN(t) ? 0 : t;
   });
   const [showExport, setShowExport] = useState(false);
-const [showFinanciacion, setShowFinanciacion] = useState(false);
   const [showClienteQR, setShowClienteQR] = useState(false);
 
   const obra = obras.find(o => o.id === id) ?? { id, nombre: id, cliente: '', moneda: 'ARS', presupuesto: 0, avance: 0 };
@@ -3483,16 +3922,41 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
   const patch = (fn) => patchDetalle(id, fn);
   const moneda = obra.moneda;
 
+  // Acordeones de la tab Presupuesto: abiertos por default EXCEPTO cuando
+  // ya están aprobados/cerrados (quedan minimizados como referencia, no se
+  // pueden modificar). El user puede maximizarlos manualmente. Si los
+  // aprueba en runtime, se minimizan solos.
+  // NOTA: estos useState van DESPUES de declarar `detalle` — meterlos arriba
+  // tira TDZ "Cannot access 'detalle' before initialization".
+  // Override local "estoy editando" — prevale sobre el detalle aunque un
+  // broadcast remoto traiga presupuestoAprobado=true. Sin esto, cuando el
+  // user apretaba Editar, el broadcast inmediato pisaba el state y la
+  // edición quedaba bloqueada de nuevo.
+  const [forcedUnfrozenPresu, setForcedUnfrozenPresu] = useState(false);
+  const [forcedUnfrozenPlan,  setForcedUnfrozenPlan]  = useState(false);
+  const presupuestoFrozenReal = !!detalle.presupuestoAprobado && !forcedUnfrozenPresu;
+  const planAprobado = !!detalle.financiacion?.propuestaConfirmada && !forcedUnfrozenPlan;
+  // Acordeones de Presupuesto: state local que NO se re-sincroniza por
+  // useEffect. Se controla solo por los handlers (handleApprove minimiza,
+  // handleReopen maximiza). El useEffect sincronizador anterior generaba un
+  // loop con el broadcast remoto.
+  const [showComputo, setShowComputo] = useState(!detalle.presupuestoAprobado);
+  const [showFinanciacion, setShowFinanciacion] = useState(!planAprobado);
+
   const { costo, venta, margen } = calcObra(detalle.rubros);
   const gastado = detalle.movimientos.filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0);
 
+  // Labels con contador. Indices:
+  // 0 Resumen · 1 Cuenta corriente · 2 Presupuesto · 3 Materiales · 4 Gantt
+  // 5 Movimientos · 6 Contratos MO · 7 Archivos · 8 Portal cliente
   const tabLabels = TABS_DEF.map((t, i) => {
-    if (i === 1) return 'Presupuesto';
-    if (i === 3) return `Adicionales${detalle.adicionales.length > 0 ? ' · ' + detalle.adicionales.length : ''}`;
+    if (i === 1 && (detalle.adicionales || []).length > 0) return `Cuenta corriente · ${detalle.adicionales.length} adic.`;
     if (i === 5) return `Movimientos${detalle.movimientos.length > 0 ? ' · ' + detalle.movimientos.length : ''}`;
     if (i === 6) return `Contratos MO${detalle.contratos.length > 0 ? ' · ' + detalle.contratos.length : ''}`;
-    if (i === 7) return `Docs${detalle.documentos.length > 0 ? ' · ' + detalle.documentos.length : ''}`;
-    if (i === 8) return `Fotos${detalle.fotos.length > 0 ? ' · ' + detalle.fotos.length : ''}`;
+    if (i === 7) {
+      const total = (detalle.documentos || []).length + (detalle.fotos || []).length;
+      return total > 0 ? `Archivos · ${total}` : 'Archivos';
+    }
     return t;
   });
 
@@ -3509,10 +3973,27 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
   const estadoColor = { activa: T.ok, 'en-presupuesto': T.ink2, pausada: T.warn, finalizada: T.accent, archivada: T.ink3 };
 
   const handleApprove = () => {
-    if (!confirm('¿Aprobar y congelar el presupuesto?\n\nUna vez aprobado no podrás modificar rubros ni tareas.\nLos cambios futuros van en la pestaña Adicionales.')) return;
+    if (!confirm('¿Aprobar y congelar el presupuesto?\n\nUna vez aprobado no podrás modificar rubros ni tareas.\nLos cambios futuros van en Cuenta corriente → Adicionales.')) return;
     patch(d => ({ ...d, presupuestoAprobado: true, fechaAprobacion: new Date().toISOString().split('T')[0] }));
     if (obra.estado === 'en-presupuesto') updateObra(obra.id, { estado: 'activa' });
-    handleTab(1);
+    setForcedUnfrozenPresu(false);
+    setShowComputo(false);
+    handleTab(2);
+  };
+
+  const handleReopen = () => {
+    if (!confirm('¿Reabrir el presupuesto para editar?\n\nEl plan de pagos también se va a reabrir para que ajustes los montos a los nuevos totales.')) return;
+    // Override local primero — para que ni un broadcast remoto pueda volver
+    // a bloquear la edicion mientras el user está corrigiendo.
+    setForcedUnfrozenPresu(true);
+    setForcedUnfrozenPlan(true);
+    patch(d => ({
+      ...d,
+      presupuestoAprobado: false,
+      financiacion: { ...(d.financiacion || {}), propuestaConfirmada: false, propuestaEnviada: false },
+    }));
+    setShowComputo(true);
+    setShowFinanciacion(true);
   };
 
   return (
@@ -3547,40 +4028,84 @@ const [showFinanciacion, setShowFinanciacion] = useState(false);
         })}
       </div>
 
-      {/* Content */}
-      {displayTab === 0 && <>
+      {/* Content. Indices nuevos despues de insertar "Cuenta corriente" en
+          posicion 1 y eliminar "Adicionales":
+          0 Resumen · 1 Cuenta corriente · 2 Presupuesto · 3 Materiales
+          4 Gantt (redirect) · 5 Movimientos · 6 Contratos MO · 7 Docs
+          8 Fotos · 9 Portal cliente (redirect). */}
+      {displayTab === 0 && (
         <TabResumen obra={obra} detalle={detalle} moneda={moneda} onChangeTab={handleTab} />
-        {/* Cuenta del cliente — solo admin (cliente, total a cobrar, saldo, cuotas) */}
-        {isAdmin && (
-          <div style={{ marginTop: 24, borderTop: `2px solid ${T.faint2}`, paddingTop: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 12 }}>Cuenta del cliente</div>
-            <TabCuentaCliente detalle={detalle} moneda="USD" obra={obra} />
-          </div>
-        )}
-      </>}
-      {displayTab === 1 && <>
-        <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} frozen={!!detalle.presupuestoAprobado} onApprove={handleApprove} onExport={() => setShowExport(true)} />
-        <div style={{ marginTop: 20, border: `1.5px solid ${T.ink}`, borderRadius: 6, overflow: 'hidden' }}>
+      )}
+      {displayTab === 1 && (
+        <TabCuentaCorriente obra={obra} detalle={detalle} patch={patch} moneda={moneda} onExport={() => setShowExport(true)} />
+      )}
+      {displayTab === 2 && (
+        <>
+          {/* Acordeón "Cómputo y presupuesto" — la edición del cómputo + tareas
+              + rubros. Default: abierto, salvo presupuesto aprobado. */}
           <div
-            onClick={() => setShowFinanciacion(v => !v)}
-            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 14px', cursor: 'pointer', userSelect: 'none', background: T.faint, borderBottom: showFinanciacion ? `1.5px solid ${T.ink}` : 'none' }}
+            onClick={() => setShowComputo(v => !v)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 0',
+              cursor: 'pointer',
+              userSelect: 'none',
+              borderTop: `1.5px solid ${T.faint2}`,
+              borderBottom: showComputo ? `1.5px solid ${T.faint2}` : 'none',
+              marginBottom: showComputo ? 14 : 0,
+            }}
           >
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Plan de financiación y cuotas</div>
-            <span style={{ fontSize: 12, color: T.ink3, fontWeight: 600 }}>{showFinanciacion ? '▲ Cerrar' : '▼ Ver'}</span>
-          </div>
-          {showFinanciacion && (
-            <div style={{ padding: '4px 4px 8px' }}>
-              <TabFinanciacion obra={obra} detalle={detalle} patch={patch} moneda="USD" onExport={() => setShowExport(true)} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ display: 'inline-block', width: 8, height: 8, background: T.accent, transform: 'rotate(45deg)', flexShrink: 0 }} />
+              <span className="k-h" style={{ fontSize: 14, lineHeight: 1.1, color: T.ink }}>Cómputo y presupuesto</span>
             </div>
+            <span style={{ fontSize: 10.5, color: T.ink3, fontWeight: 600, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.5 }}>
+              {showComputo ? '▲ Cerrar' : '▼ Ver'}
+            </span>
+          </div>
+          {showComputo && (
+            <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} frozen={presupuestoFrozenReal} onApprove={handleApprove} onReopen={handleReopen} onExport={() => setShowExport(true)} />
           )}
-        </div>
-      </>}
-      {displayTab === 2 && <TabMateriales detalle={detalle} obra={obra} />}
-      {displayTab === 3 && <TabAdicionales detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
+
+          {/* Acordeón "Plan de pagos y cuotas" — armar el plan con intereses
+              y cuotas. La cobranza (cuotas pagadas) se ve en Cuenta corriente
+              → Estado de cuenta, no acá. */}
+          <div style={{ marginTop: 20 }}>
+            <div
+              onClick={() => setShowFinanciacion(v => !v)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 0',
+                cursor: 'pointer',
+                userSelect: 'none',
+                borderTop: `1.5px solid ${T.faint2}`,
+                borderBottom: showFinanciacion ? `1.5px solid ${T.faint2}` : 'none',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ display: 'inline-block', width: 8, height: 8, background: T.accent, transform: 'rotate(45deg)', flexShrink: 0 }} />
+                <span className="k-h" style={{ fontSize: 14, lineHeight: 1.1, color: T.ink }}>Plan de pagos y cuotas</span>
+              </div>
+              <span style={{ fontSize: 10.5, color: T.ink3, fontWeight: 600, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.5 }}>
+                {showFinanciacion ? '▲ Cerrar' : '▼ Ver'}
+              </span>
+            </div>
+            {showFinanciacion && (
+              <div style={{ paddingTop: 14 }}>
+                <TabFinanciacion obra={obra} detalle={detalle} patch={patch} moneda="USD" onExport={() => setShowExport(true)} />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+      {displayTab === 3 && <TabMateriales detalle={detalle} obra={obra} />}
       {displayTab === 5 && <TabMovimientos obra={obra} moneda={moneda} />}
       {displayTab === 6 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
-      {displayTab === 7 && <TabDocumentos detalle={detalle} patch={patch} obraId={id} />}
-      {displayTab === 8 && <TabFotos detalle={detalle} patch={patch} obraId={id} />}
+      {displayTab === 7 && <TabArchivos detalle={detalle} patch={patch} obraId={id} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
 

@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
-import { Box, Btn, Chip, Bar, Label, ImgPh } from '../components/ui';
+import { Box, Btn, Chip, Bar, Label } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useObras, EMPTY_DETALLE } from '../store/ObrasContext';
 import NuevaObraModal from './modales/NuevaObraModal';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
+import { calcObra } from './obra/helpers';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n, moneda) => {
@@ -30,33 +31,32 @@ const margenColor = (m) => m < 0 ? T.accent : m < 20 ? T.warn : T.ok;
 function computeStats(obra, detalle, movimientos) {
   const rubros = detalle.rubros || [];
 
+  // Usar calcObra (la MISMA funcion que el interior de la obra) para que
+  // los numeros de la tarjeta coincidan exactamente con lo que el usuario
+  // ve al entrar a la obra: venta, costo, margen teorico del presupuesto.
+  // Antes habia un calculo duplicado aca que daba diferencias por:
+  // - obra.presupuesto manual sobreescribia el calculado,
+  // - margen se calculaba como (presupuesto - gastado)/presupuesto en vez
+  //   de (venta - costo)/venta como el interior.
+  const { costo, venta, margen } = calcObra(rubros);
+
+  // Gastado: suma de movimientos tipo "gasto" con obraId. Identico al
+  // calculo del header de ObraPresupuesto.
   const gastado = (movimientos || [])
     .filter(m => m.tipo === 'gasto' && m.obraId === obra.id)
     .reduce((s, m) => s + (m.monto || 0), 0);
 
+  // Avance: promedio simple de avance de tareas (mismo criterio que usa
+  // el interior cuando no hay un avance manual cargado en la obra).
   const todasTareas = rubros.flatMap(r => r.tareas || []);
   const avance = todasTareas.length > 0
     ? Math.round(todasTareas.reduce((s, t) => s + (t.avance || 0), 0) / todasTareas.length)
     : (obra.avance || 0);
 
-  // Presupuesto: usa el valor manual si fue ingresado,
-  // sino lo calcula desde los rubros (precio de venta al cliente)
-  let presupuesto = obra.presupuesto || 0;
-  if (!presupuesto && rubros.length > 0) {
-    presupuesto = Math.round(rubros.reduce((s, rubro) => {
-      return s + (rubro.tareas || []).reduce((rs, t) => {
-        const ventaUnit = t.margenLinea != null
-          ? (t.costoMat + (t.costoSub || 0)) * (1 + t.margenLinea / 100)
-          : t.costoMat * (1 + (rubro.margenMat || 0) / 100)
-            + (t.costoSub || 0) * (1 + (rubro.margenMO || 0) / 100);
-        return rs + ventaUnit * (t.cantidad || 0);
-      }, 0);
-    }, 0));
-  }
-
-  const margen = presupuesto > 0 ? Math.round((presupuesto - gastado) / presupuesto * 100) : 0;
-
-  return { presupuesto, gastado, avance, margen };
+  // "presupuesto" se mantiene como alias de venta para no romper consumers
+  // (CardActiva, CardFinalizada). Es lo mismo que ve el usuario en el
+  // interior como "venta total al cliente".
+  return { presupuesto: venta, venta, costo, gastado, avance, margen };
 }
 
 // ── Menu contextual de una obra ───────────────────────────────────────────────
@@ -170,19 +170,44 @@ function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar, 
         </div>
       </div>
 
-      <ImgPh w="100%" h={68} label={obra.tipo} style={{ marginTop: 8 }} />
+      {/* Bloque KPIs (Presu / Gastado / Margen) — destacado en caja gris
+          para que se lea de un vistazo. Antes habia una foto-placeholder
+          arriba que no aportaba; ahora el espacio se usa para info real. */}
+      {isAdmin && (
+        <div style={{
+          marginTop: 10,
+          background: T.faint,
+          borderRadius: 4,
+          padding: '8px 10px',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: 6,
+        }}>
+          <div>
+            <div style={{ fontSize: 8.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase' }}>Presu</div>
+            <div className="k-mono" style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 1 }}>{fmt(presupuesto, obra.moneda)}</div>
+          </div>
+          <div style={{ borderLeft: `1px solid ${T.faint2}`, paddingLeft: 8 }}>
+            <div style={{ fontSize: 8.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase' }}>Gastado</div>
+            <div className="k-mono" style={{ fontSize: 13, fontWeight: 700, color: sobrec ? T.accent : T.ink, marginTop: 1 }}>{fmt(gastado, obra.moneda)}</div>
+          </div>
+          <div style={{ borderLeft: `1px solid ${T.faint2}`, paddingLeft: 8 }}>
+            <div style={{ fontSize: 8.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase' }}>Margen</div>
+            <div className="k-mono" style={{ fontSize: 13, fontWeight: 800, color: margenColor(margen), marginTop: 1 }}>{margen}%</div>
+          </div>
+        </div>
+      )}
 
-      {/* avance de ejecución */}
-      <div style={{ marginTop: 8 }}>
+      {/* Barras de progreso */}
+      <div style={{ marginTop: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.ink2, marginBottom: 3 }}>
           <span>Avance tareas</span><span className="k-mono">{avance}%</span>
         </div>
         <Bar pct={avance} ok={avance === 100} warn={alertCerrar && !sobrec} accent={sobrec} />
       </div>
 
-      {/* barra de gasto vs presupuesto */}
       {isAdmin && presupuesto > 0 && (
-        <div style={{ marginTop: 6 }}>
+        <div style={{ marginTop: 7 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.ink2, marginBottom: 3 }}>
             <span>Gasto vs presu</span>
             <span className="k-mono" style={{ color: sobrec ? T.accent : T.ink2 }}>{pctGastado}%</span>
@@ -193,32 +218,15 @@ function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar, 
         </div>
       )}
 
-      {/* stats */}
-      {isAdmin && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11 }}>
-          <div>
-            <Label>Presu</Label>
-            <div className="k-mono" style={{ fontSize: 12 }}>{fmt(presupuesto, obra.moneda)}</div>
-          </div>
-          <div>
-            <Label>Gastado</Label>
-            <div className="k-mono" style={{ fontSize: 12, color: sobrec ? T.accent : T.ink }}>{fmt(gastado, obra.moneda)}</div>
-          </div>
-          <div>
-            <Label>Margen real</Label>
-            <div className="k-mono" style={{ fontSize: 12, fontWeight: 700, color: margenColor(margen) }}>{margen}%</div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: T.ink2 }}>
+      {/* Footer: tipo · moneda · fecha estim */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 8, borderTop: `1px dashed ${T.faint2}`, fontSize: 10.5, color: T.ink2 }}>
         {isAdmin ? (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 9, background: T.faint2, padding: '1px 5px', borderRadius: 3 }}>{obra.tipo}</span>
-            <span>{obra.moneda}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 9, background: T.faint2, padding: '1.5px 6px', borderRadius: 3, fontWeight: 600 }}>{obra.tipo}</span>
+            <span style={{ fontFamily: T.fontMono, fontSize: 9.5 }}>{obra.moneda}</span>
           </span>
         ) : <span />}
-        <span>fin est. {fmtDate(obra.fechaFinEstim)}</span>
+        <span style={{ fontFamily: T.fontMono, fontSize: 9.5 }}>fin est. {fmtDate(obra.fechaFinEstim)}</span>
       </div>
     </Box>
   );
@@ -509,22 +517,22 @@ export default function Obras() {
             {canCreate && <Btn sm fill onClick={() => setShowNueva(true)}>+ Nueva obra</Btn>}
           </>
         }
-        kpis={[
-          { label: 'Activas',        value: activas.length,      color: T.ok },
-          { label: 'En presupuesto', value: enPresu.length,      color: T.accent },
-          { label: 'Finalizadas',    value: finalizadas.length,  color: T.ink },
-          { label: 'Archivadas',     value: archivadas.length,   color: T.ink3 },
-        ]}
+        kpis={(isAdmin
+          ? [
+              { label: 'Activas',        value: activas.length,     color: T.ok,    onClick: () => setTabIdx(0), active: tabIdx === 0 },
+              { label: 'En presupuesto', value: enPresu.length,     color: T.accent, onClick: () => setTabIdx(1), active: tabIdx === 1 },
+              { label: 'Finalizadas',    value: finalizadas.length, color: T.ink,    onClick: () => setTabIdx(2), active: tabIdx === 2 },
+              { label: 'Archivadas',     value: archivadas.length,  color: T.ink3,   onClick: () => setTabIdx(3), active: tabIdx === 3 },
+            ]
+          : [
+              { label: 'Activas', value: activas.length, color: T.ok, active: true },
+            ]
+        )}
       />
 
-      {/* Tabs */}
-      <div className="k-tabs" style={{ marginBottom: 14 }}>
-        {visibleTabs.map((t, i) => (
-          <span key={i} className={`k-tab${tabIdx === i ? ' k-tab-on' : ''}`} onClick={() => setTabIdx(i)}>
-            {t.label} · {t.count}
-          </span>
-        ))}
-      </div>
+      {/* Tabs separados eliminados: ahora los KPIs del banner funcionan
+          como filtros clickeables. El KPI activo se ve resaltado. */}
+      <div style={{ marginBottom: 14 }} />
 
       {/* ── TAB 0: Activas ── */}
       {tabIdx === 0 && (

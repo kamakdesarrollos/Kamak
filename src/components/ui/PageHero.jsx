@@ -93,14 +93,18 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
           {kpis.map((k, i) => (
             <div
               key={i}
+              onClick={k.onClick}
               style={{
                 padding: '8px 14px',
                 borderRight: i < kpis.length - 1 ? `1px solid rgba(212, 207, 191, 0.5)` : 'none',
                 minWidth: 0,
-                transition: 'background 0.18s ease',
+                cursor: k.onClick ? 'pointer' : 'default',
+                background: k.active ? '#f3eedf' : '',
+                borderBottom: k.active ? `2px solid ${T.accent}` : '2px solid transparent',
+                transition: 'background 0.18s ease, border-bottom 0.18s ease',
               }}
-              onMouseEnter={e => e.currentTarget.style.background = '#f3eedf'}
-              onMouseLeave={e => e.currentTarget.style.background = ''}
+              onMouseEnter={e => { if (k.onClick && !k.active) e.currentTarget.style.background = '#f3eedf'; }}
+              onMouseLeave={e => { if (!k.active) e.currentTarget.style.background = ''; }}
             >
               <div style={{
                 fontSize: 8.5,

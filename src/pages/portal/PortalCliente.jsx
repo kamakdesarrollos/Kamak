@@ -253,7 +253,7 @@ export default function PortalCliente() {
     ? Math.max(0, Math.ceil((new Date(obra.fechaFinEstim) - new Date()) / 86400000))
     : null;
 
-  const tabs = ['Resumen', 'Avance', 'Plan de pagos', 'Documentos'];
+  const tabs = ['Resumen', 'Avance', 'Cuenta corriente', 'Documentos'];
 
   // Estado chip colors
   const estadoChip = {
@@ -341,16 +341,87 @@ export default function PortalCliente() {
 
 
         {/* TAB 0 — RESUMEN */}
-        {tab === 0 && (
+        {tab === 0 && (() => {
+          // Avance ponderado por venta del rubro (mismo cálculo que el admin).
+          // Se nutre de los avances cargados en el Gantt — única fuente de
+          // verdad del progreso real de obra.
+          const rubrosConVenta = (rubros || []).map(r => {
+            // Calcular venta del rubro (suma de tareas con su margen)
+            let venta = 0;
+            (r.tareas || []).filter(t => t.tipo !== 'seccion').forEach(t => {
+              const ventaUnit = t.margenLinea != null
+                ? (t.costoMat + (t.costoSub || 0)) * (1 + t.margenLinea / 100)
+                : t.costoMat * (1 + (r.margenMat || 0) / 100) + (t.costoSub || 0) * (1 + (r.margenMO || 0) / 100);
+              venta += ventaUnit * (t.cantidad || 0);
+            });
+            return { ...r, venta, avance: rubroAvance(r) };
+          });
+          const ventaTotalRubros = rubrosConVenta.reduce((s, r) => s + r.venta, 0);
+          const avancePonderado = ventaTotalRubros > 0
+            ? Math.round(rubrosConVenta.reduce((s, r) => s + r.venta * r.avance, 0) / ventaTotalRubros)
+            : (obra.avance || 0);
+          // Monto ejecutado = avance% sobre el TOTAL ACORDADO con el cliente.
+          const ejecutadoUSD = Math.round(totalClienteUSD * avancePonderado / 100);
+          // Cuotas urgentes para banner.
+          const hoyStr = new Date().toISOString().slice(0, 10);
+          const vencidas = (cuotas || []).filter(c => {
+            const e = cuotaEstadoCalc(c, obraM, tc);
+            return e !== 'pagado' && c.fecha && c.fecha <= hoyStr;
+          }).length;
+          return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            {/* Banner alerta (cuotas vencidas) */}
+            {vencidas > 0 && (
+              <div style={{ background: '#fef2f2', borderLeft: '3px solid #b91c1c', padding: '10px 14px', display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 12 }}>
+                <span style={{ fontSize: 10, fontFamily: T.fontMono, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#b91c1c' }}>Atención</span>
+                <div style={{ flex: 1, color: '#7f1d1d' }}>
+                  <span style={{ fontWeight: 700 }}>{vencidas} cuota{vencidas !== 1 ? 's' : ''} vencida{vencidas !== 1 ? 's' : ''}</span>
+                  <span style={{ marginLeft: 6, opacity: 0.85, fontSize: 11 }}>· revisalo en Cuenta corriente.</span>
+                </div>
+              </div>
+            )}
 
             {/* KPIs visuales (numericos grandes) */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, background: T.faint, borderRadius: 8, padding: '16px 18px' }}>
-              <Stat label="Avance general"     value={`${obra.avance}%`} />
+              <Stat label="Avance general"     value={`${avancePonderado}%`} />
               <Stat label="Días restantes"     value={diasRestantes !== null ? `${diasRestantes}` : '—'} />
               <Stat label="Cuotas pagadas"     value={`${countPagadas} / ${cuotas.length}`} />
               <Stat label="Entrega estimada"   value={fmtD(obra.fechaFinEstim)} />
             </div>
+
+            {/* Avance ejecutado en monto — referencia clave para el cliente.
+                Ej: si vamos 70% de avance y el total es U$S 100k, ya ejecutamos
+                U$S 70k. Útil cuando el cliente compara contra lo pagado. */}
+            {totalClienteUSD > 0 && (
+              <Box style={{ padding: '14px 18px', borderLeft: `3px solid ${T.accent}` }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Trabajo ejecutado</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                      <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 24, color: T.accent, lineHeight: 1.1 }}>{fmt(ejecutadoUSD)}</div>
+                      <div style={{ fontSize: 13, color: T.ink2, fontWeight: 700 }}>· {avancePonderado}% de obra</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: T.ink3, maxWidth: 260, textAlign: 'right', lineHeight: 1.4 }}>
+                    Calculado sobre el avance real de cada rubro en el Gantt aplicado al total acordado.
+                  </div>
+                </div>
+                <div style={{ height: 6, background: T.faint2, borderRadius: 3, overflow: 'hidden', marginTop: 12 }}>
+                  <div style={{ width: `${Math.min(avancePonderado, 100)}%`, height: '100%', background: T.accent, transition: 'width .3s' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: T.ink2 }}>
+                  <span>Pagado hasta ahora: <b style={{ color: T.ok, fontFamily: T.fontMono }}>{fmt(pagadoCuotasUSD)}</b></span>
+                  {(() => {
+                    const dif = ejecutadoUSD - pagadoCuotasUSD;
+                    if (Math.abs(dif) < 1) return <span style={{ color: T.ink3 }}>· al día con la obra</span>;
+                    return dif > 0
+                      ? <span style={{ color: '#b45309' }}>· faltan <b style={{ fontFamily: T.fontMono }}>{fmt(dif)}</b> para emparejar el avance</span>
+                      : <span style={{ color: '#166534' }}>· vas <b style={{ fontFamily: T.fontMono }}>{fmt(Math.abs(dif))}</b> adelantado al avance</span>;
+                  })()}
+                </div>
+              </Box>
+            )}
 
             {/* Datos de la obra (formato compacto key-value, font normal) */}
             <Box style={{ padding: '14px 18px' }}>
@@ -434,7 +505,8 @@ export default function PortalCliente() {
             )}
 
           </div>
-        )}
+          );
+        })()}
 
         {/* TAB 1 — AVANCE / FOTOS */}
         {tab === 1 && (
@@ -468,59 +540,158 @@ export default function PortalCliente() {
           </Box>
         )}
 
-        {/* TAB 2 — CUOTAS */}
-        {tab === 2 && (
+        {/* TAB 2 — CUENTA CORRIENTE */}
+        {tab === 2 && (() => {
+          const saldoUSD = Math.max(0, totalClienteUSD - pagadoCuotasUSD);
+          const hoyStr = new Date().toISOString().slice(0, 10);
+          // Calcula urgencia de cada cuota (vencida / proxima / a-tiempo).
+          const urgenciaPortal = (c, estado) => {
+            if (estado === 'pagado') return 'pagado';
+            if (!c.fecha) return 'sin-fecha';
+            if (c.fecha <= hoyStr) return 'vencida';
+            const d1 = new Date(hoyStr), d2 = new Date(c.fecha);
+            const dias = Math.round((d2 - d1) / 86400000);
+            if (dias <= 3) return 'proxima';
+            return 'a-tiempo';
+          };
+          const adicionalesAprobados = (detalle.adicionales || [])
+            .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false);
+          const vencidas = cuotas.filter(c => {
+            const e = cuotaEstadoCalc(c, obraM, tc);
+            return urgenciaPortal(c, e) === 'vencida';
+          }).length;
+          return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Summary bar */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, background: T.faint, borderRadius: 8, padding: '16px 20px' }}>
-              <Stat label="Total presupuestado" value={fmt(totalCuotasUSD)} />
-              <Stat label="Cobrado"             value={fmt(pagadoCuotasUSD)} />
-              <Stat label="Saldo"               value={fmt(totalCuotasUSD - pagadoCuotasUSD)} />
-              <Stat label="Cuotas pagadas"       value={`${countPagadas} / ${cuotas.length}`} />
+            {/* KPIs principales — Monto total / Pagado / Saldo / Cuotas pagadas
+                Nota: en el portal del cliente decimos "Pagado" (desde su POV).
+                En el panel admin decimos "Cobrado" (desde POV de Kamak). */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+              <Box style={{ padding: '13px 16px', borderLeft: `3px solid ${T.accent}` }}>
+                <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Monto total</div>
+                <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: T.accent, lineHeight: 1.1 }}>{fmt(totalClienteUSD)}</div>
+              </Box>
+              <Box style={{ padding: '13px 16px' }}>
+                <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Pagado</div>
+                <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: T.ok, lineHeight: 1.1 }}>{fmt(pagadoCuotasUSD)}</div>
+              </Box>
+              <Box style={{ padding: '13px 16px' }}>
+                <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Saldo</div>
+                <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: saldoUSD > 0 ? T.warn : T.ok, lineHeight: 1.1 }}>{fmt(saldoUSD)}</div>
+              </Box>
+              <Box style={{ padding: '13px 16px' }}>
+                <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Cuotas pagas</div>
+                <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: T.ink, lineHeight: 1.1 }}>{countPagadas} / {cuotas.length}</div>
+              </Box>
             </div>
 
-            <Box style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '12px 16px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}` }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Plan de pagos</div>
+            {/* Banner de vencidas (solo si las hay) */}
+            {vencidas > 0 && (
+              <div style={{ background: '#fef2f2', borderLeft: `3px solid #b91c1c`, padding: '9px 14px', display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 12 }}>
+                <span style={{ fontSize: 10, fontFamily: T.fontMono, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#b91c1c' }}>Atención</span>
+                <div style={{ flex: 1, color: '#7f1d1d' }}>
+                  <span style={{ fontWeight: 700 }}>{vencidas} cuota{vencidas !== 1 ? 's' : ''} vencida{vencidas !== 1 ? 's' : ''}</span>
+                  <span style={{ marginLeft: 6, opacity: 0.75, fontSize: 11 }}>· revisá el detalle abajo.</span>
+                </div>
               </div>
-              {totalClienteUSD > 0 && (
-            <div style={{ padding: '10px 16px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-              <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total acordado</span><div style={{ fontWeight: 800, fontFamily: T.fontMono, color: T.ink }}>{fmt(totalClienteUSD)}</div></div>
-              {adicionalClienteUSD > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Incluye adicionales</span><div style={{ fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{fmt(adicionalClienteUSD)}</div></div>}
-              {interes > 0 && <div><span style={{ fontSize: 10, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.5 }}>Interés aplicado</span><div style={{ fontWeight: 700, color: T.ink2 }}>{interes}%</div></div>}
-            </div>
-          )}
-          {cuotas.length === 0 ? (
+            )}
+
+            {/* Adicionales aprobados (si hay) */}
+            {adicionalesAprobados.length > 0 && (
+              <Box style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '10px 16px', background: T.dark, color: '#fff', fontSize: 11, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase' }}>
+                  Adicionales aprobados · total {fmt(adicionalClienteUSD)}
+                </div>
+                {adicionalesAprobados.map((a, i) => {
+                  const montoUSD = toUSD(a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0, false);
+                  return (
+                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: i < adicionalesAprobados.length - 1 ? `1px solid ${T.faint2}` : 'none', fontSize: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, color: T.ink }}>{a.descripcion}</div>
+                        {a.fecha && <div style={{ fontSize: 10.5, color: T.ink3, fontFamily: T.fontMono, marginTop: 1 }}>{fmtD(a.fecha)}</div>}
+                      </div>
+                      <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 13, color: T.accent, flexShrink: 0 }}>+ {fmt(montoUSD)}</div>
+                    </div>
+                  );
+                })}
+              </Box>
+            )}
+
+            {/* Estado de cuenta — tabla de cuotas con coloreo por urgencia */}
+            <Box style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '10px 16px', background: T.dark, color: '#fff', fontSize: 11, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase' }}>
+                Plan de pagos · {countPagadas} / {cuotas.length} cuotas pagas
+                {interes > 0 && <span style={{ marginLeft: 8, color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>· {interes}% interés aplicado</span>}
+              </div>
+              {cuotas.length === 0 ? (
                 <div style={{ color: T.ink3, fontSize: 13, textAlign: 'center', padding: '40px 0' }}>Sin cuotas registradas.</div>
               ) : (
                 cuotas.map((c, i) => {
-                  const estadoCuota = cuotaEstadoCalc(c, obraM, tc);
-                  const isPagado = estadoCuota === 'pagado';
-                  const isParcial = estadoCuota === 'parcial';
-                  const isProximo = !isPagado && c.estado === 'proximo';
-                  const dotBg = isPagado ? T.ok : (isParcial || isProximo) ? T.accent : T.faint2;
-                  const dotColor = (isPagado || isParcial || isProximo) ? 'white' : T.ink3;
-                  const etiqueta = isPagado ? 'pagado' : isParcial ? 'parcial' : isProximo ? 'próximo' : 'pendiente';
+                  const estado = cuotaEstadoCalc(c, obraM, tc);
+                  const isPagado = estado === 'pagado';
+                  const isParcial = estado === 'parcial';
+                  const urg = urgenciaPortal(c, estado);
+                  const ultimoPago = (c.pagos || []).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))[0];
+                  const rowBg = isPagado ? '#f0faf2'
+                    : urg === 'vencida' ? '#fef2f2'
+                    : urg === 'proxima' ? '#fffbeb'
+                    : 'transparent';
+                  const borderLeftColor = isPagado ? T.ok
+                    : urg === 'vencida' ? '#b91c1c'
+                    : urg === 'proxima' ? '#b45309'
+                    : 'transparent';
+                  const dot = {
+                    bg: isPagado ? T.ok : urg === 'vencida' ? '#b91c1c' : isParcial ? T.warn : T.faint2,
+                    color: isPagado || urg === 'vencida' || isParcial ? '#fff' : T.ink3,
+                  };
                   return (
-                    <div key={c.id} style={{ display: 'flex', alignItems: 'center', padding: '13px 16px', borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none', gap: 14 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 16, background: dotBg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: dotColor, fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
-                        {isPagado ? '✓' : c.n}
+                    <div key={c.id} style={{
+                      display: 'flex', alignItems: 'center', padding: '12px 16px',
+                      borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none',
+                      gap: 14, background: rowBg, borderLeft: `3px solid ${borderLeftColor}`,
+                    }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 16, background: dot.bg, color: dot.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
+                        {c.n}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{c.descripcion}</div>
-                        <div style={{ fontSize: 11, color: T.ink2 }}>{fmtD(c.fecha)}</div>
+                        <div style={{ fontSize: 11, color: T.ink2, marginTop: 1 }}>
+                          {fmtD(c.fecha)}
+                          {isPagado && ultimoPago?.fecha && (
+                            <span style={{ color: '#166534', marginLeft: 6, fontFamily: T.fontMono }}>
+                              · Pagada el {fmtD(ultimoPago.fecha)}
+                            </span>
+                          )}
+                          {isParcial && (
+                            <span style={{ color: '#92400e', marginLeft: 6, fontFamily: T.fontMono }}>
+                              · Pendiente {fmt(cuotaEnUSD(c) - toUSD(c.pagos?.reduce((s, p) => s + (p.monto || 0), 0) || 0, c._usd || obraEsUSD))}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14, flexShrink: 0, color: isPagado ? T.ok : T.ink }}>
                         {fmt(cuotaEnUSD(c))}
                       </div>
-                      <Chip ok={isPagado} accent={isParcial || isProximo} style={{ fontSize: 10, flexShrink: 0 }}>{etiqueta}</Chip>
+                      <div style={{ flexShrink: 0 }}>
+                        {isPagado ? (
+                          <span style={{ fontSize: 10, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: '1px solid #bbf7d0' }}>Pagada</span>
+                        ) : urg === 'vencida' ? (
+                          <span style={{ fontSize: 10, background: '#fef2f2', color: '#991b1b', padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: '1px solid #fecaca' }}>Vencida</span>
+                        ) : urg === 'proxima' ? (
+                          <span style={{ fontSize: 10, background: '#fffbeb', color: '#78350f', padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: '1px solid #fde68a' }}>Próxima</span>
+                        ) : isParcial ? (
+                          <span style={{ fontSize: 10, background: '#fffbeb', color: '#92400e', padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: '1px solid #fde68a' }}>Parcial</span>
+                        ) : (
+                          <span style={{ fontSize: 10, background: T.faint, color: T.ink2, padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: `1px solid ${T.faint2}` }}>Al día</span>
+                        )}
+                      </div>
                     </div>
                   );
                 })
               )}
             </Box>
           </div>
-        )}
+          );
+        })()}
 
         {/* TAB 3 — DOCUMENTOS */}
         {tab === 3 && (

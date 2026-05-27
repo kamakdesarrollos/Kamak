@@ -12,6 +12,7 @@ import { ChequesProvider } from './store/ChequesContext';
 import { WhatsappPendingProvider } from './store/WhatsappPendingContext';
 import { AlertasProvider } from './store/AlertasContext';
 import { SolicitudesProvider } from './store/SolicitudesContext';
+import { TareasProvider } from './store/TareasContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
 import { AppLoadingProvider, useAppLoading } from './store/AppLoadingContext';
@@ -41,6 +42,7 @@ const Catalogos          = lazy(() => import('./pages/Catalogos'));
 const Plantillas         = lazy(() => import('./pages/Plantillas'));
 const Reportes           = lazy(() => import('./pages/Reportes'));
 const Autorizaciones     = lazy(() => import('./pages/Autorizaciones'));
+const Tareas             = lazy(() => import('./pages/Tareas'));
 const Usuarios           = lazy(() => import('./pages/Usuarios'));
 const Configuracion      = lazy(() => import('./pages/Configuracion'));
 const Cheques            = lazy(() => import('./pages/Cheques'));
@@ -167,11 +169,13 @@ function DataProviders({ children }) {
     <ChequesProvider>
     <WhatsappPendingProvider>
     <SolicitudesProvider>
+    <TareasProvider>
     <AlertasProvider>
     <UsuariosProvider>
       {children}
     </UsuariosProvider>
     </AlertasProvider>
+    </TareasProvider>
     </SolicitudesProvider>
     </WhatsappPendingProvider>
     </ChequesProvider>
@@ -227,6 +231,7 @@ function AppShell() {
                   <Route path="/plantillas" element={<Plantillas />} />
                   <Route path="/reportes" element={<Reportes />} />
                   <Route path="/autorizaciones" element={<Autorizaciones />} />
+                  <Route path="/tareas" element={<Tareas />} />
                   <Route path="/usuarios" element={<Usuarios />} />
                   <Route path="/configuracion" element={<Configuracion />} />
                   <Route path="/mobile/comprador" element={<MobileComprador />} />

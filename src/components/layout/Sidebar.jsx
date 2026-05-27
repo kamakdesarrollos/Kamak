@@ -4,11 +4,13 @@ import { T } from '../../theme';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useSolicitudes } from '../../store/SolicitudesContext';
 import { useWhatsappPending } from '../../store/WhatsappPendingContext';
+import { useTareas } from '../../store/TareasContext';
 
 const ALL_ITEMS = [
   { section: 'Operación' },
   { icon: '◧', label: 'Dashboard',      path: '/',             perm: 'verDashboard' },
   { icon: '🏗', label: 'Obras',          path: '/obras' },
+  { icon: '☑', label: 'Tareas',         path: '/tareas' },
   { section: 'Administración' },
   { icon: '◉', label: 'Proveedores',    path: '/proveedores' },
   { icon: '◎', label: 'Clientes',       path: '/clientes',     adminOnly: true },
@@ -32,6 +34,7 @@ export default function Sidebar({ active }) {
   const { currentUser } = useUsuarios();
   const { solicitudes } = useSolicitudes();
   const { pending: waPending } = useWhatsappPending();
+  const { tareas } = useTareas() ?? { tareas: [] };
   const p = currentUser?.permisos ?? {};
   const isAdmin = currentUser?.rol === 'Admin';
 
@@ -44,6 +47,17 @@ export default function Sidebar({ active }) {
   const solPendientes = (isAdmin
     ? solicitudes.filter(s => s.estado === 'pendiente').length
     : 0) + waPendientes;
+
+  // Badge "Tareas": tareas asignadas al usuario logueado que no estan
+  // completadas ni canceladas. No distingue "no vistas" — el badge solo
+  // muestra carga de trabajo pendiente.
+  const tareasPendientes = currentUser
+    ? tareas.filter(t =>
+        (t.asignadoA || []).includes(currentUser.id) &&
+        t.estado !== 'completada' &&
+        t.estado !== 'cancelada'
+      ).length
+    : 0;
 
   const items = ALL_ITEMS.filter(it => {
     if (it.section) return true;
@@ -65,7 +79,10 @@ export default function Sidebar({ active }) {
           );
         }
         const isActive = active ? active === it.label : location.pathname === it.path || (it.path !== '/' && location.pathname.startsWith(it.path));
-        const hasBadge = it.label === 'Autorizaciones' && solPendientes > 0 && isAdmin;
+        const isAutorizBadge = it.label === 'Autorizaciones' && solPendientes > 0 && isAdmin;
+        const isTareasBadge = it.label === 'Tareas' && tareasPendientes > 0;
+        const hasBadge = isAutorizBadge || isTareasBadge;
+        const badgeCount = isAutorizBadge ? solPendientes : tareasPendientes;
         return (
           <div
             key={i}
@@ -97,7 +114,7 @@ export default function Sidebar({ active }) {
                 flexShrink: 0,
                 boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
               }}>
-                {solPendientes}
+                {badgeCount}
               </span>
             )}
           </div>
