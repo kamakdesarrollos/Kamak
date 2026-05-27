@@ -315,8 +315,11 @@ body{font-family:'Montserrat',sans-serif}
 .firma-sub{font-size:9px;color:#9a9892}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
 @media print{
-  html,body{margin:0!important;padding:0!important;width:100%!important}
-  .portada-page,.comp-flow,.cond-page{margin:0!important;box-shadow:none!important;width:100%!important}
+  /* Fuerza tamano A4 sin margenes en TODOS los renglones del print. El default
+     de Chrome a veces deja 6mm de margen blanco aunque @page diga margin:0. */
+  @page{size:210mm 297mm;margin:0}
+  html,body{margin:0!important;padding:0!important;width:210mm!important;background:#fff!important}
+  .portada-page,.comp-flow,.cond-page{margin:0!important;box-shadow:none!important;width:210mm!important;max-width:210mm!important}
 }
 @media screen{
   html{background:#555}
@@ -329,7 +332,7 @@ body{font-family:'Montserrat',sans-serif}
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=794, initial-scale=1.0">
-<title>Presupuesto — ${obra?.nombre || 'KAMAK'}</title>
+<title>${esc((obra?.nombre || 'Obra'))}${obra?.cliente ? ' - ' + esc(obra.cliente) : ''}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>${css}</style>
