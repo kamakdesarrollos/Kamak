@@ -192,12 +192,16 @@ export default function Proveedores() {
     );
   }, [proveedores, search, tab, sort, getSaldo]);
 
+  const totalPagadoSum = Object.values(totalPagado).reduce((s, v) => s + v, 0);
+
   return (
     <PageLayout breadcrumb={['Proveedores']} active="Proveedores">
       <PageHero
         label="GESTIÓN DE PROVEEDORES"
         title="Proveedores"
-        subtitle={`${proveedores.length} proveedores · ${moCount} mano de obra · ${matCount} materiales`}
+        subtitle={isAdmin
+          ? `$ ${fmtN(totalDeuda)} en deuda · $ ${fmtN(totalPagadoSum)} pagado histórico`
+          : `${proveedores.length} proveedores · ${moCount} mano de obra · ${matCount} materiales`}
         actions={
           <>
             <input value={search} onChange={e => setSearch(e.target.value)}
@@ -219,23 +223,14 @@ export default function Proveedores() {
             <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo proveedor</Btn>
           </>
         }
-        kpis={isAdmin ? [
-          { label: 'Total',           value: proveedores.length,                       sub: 'proveedores',     color: T.ink },
-          { label: 'Con saldo',       value: conSaldo.length,                          sub: 'pendiente',       color: T.warn },
-          { label: 'Deuda total',     value: `$ ${fmtN(totalDeuda)}`,                  sub: 'suma de saldos',  color: T.warn },
-          { label: 'Total pagado',    value: `$ ${fmtN(Object.values(totalPagado).reduce((s, v) => s + v, 0))}`, sub: 'histórico', color: T.ok },
-        ] : []}
+        kpis={tabs.map(t => ({
+          label: t.label,
+          value: t.count,
+          color: tab === t.key ? T.accent : (t.key === 'conSaldo' ? T.warn : T.ink),
+          active: tab === t.key,
+          onClick: () => setTab(t.key),
+        }))}
       />
-
-      {/* Tabs */}
-      <div className="k-tabs" style={{ marginBottom: 14 }}>
-        {tabs.map(t => (
-          <span key={t.key} className={`k-tab${tab === t.key ? ' k-tab-on' : ''}`} onClick={() => setTab(t.key)}>
-            {t.label}
-            <span style={{ fontSize: 10, opacity: 0.65, marginLeft: 5 }}>· {t.count}</span>
-          </span>
-        ))}
-      </div>
 
       {/* Vacío */}
       {filtered.length === 0 && (

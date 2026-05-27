@@ -1016,17 +1016,16 @@ export default function Catalogos() {
   const [tab, setTab] = useState(4);
   const { catalog, add, update, remove } = useCatalog();
 
-  const tabLabel = (i) => {
-    const counts = [
-      catalog.materiales.length,
-      (catalog.subcontratos||[]).length,
-      catalog.mo.length,
-      catalog.generales.length,
-      catalog.tareas.length,
-      catalog.rubros.length,
-    ];
-    return `${TABS[i]} · ${counts[i]}`;
-  };
+  // KPIs = tabs (clickeables). Reemplaza la fila de tabs duplicada que había
+  // abajo del banner — single source of truth para la navegación.
+  const tabCounts = [
+    catalog.materiales.length,
+    (catalog.subcontratos||[]).length,
+    catalog.mo.length,
+    catalog.generales.length,
+    catalog.tareas.length,
+    catalog.rubros.length,
+  ];
 
   return (
     <PageLayout breadcrumb={['Catálogos', TABS[tab]]} active="Catálogos">
@@ -1040,19 +1039,14 @@ export default function Catalogos() {
             const a = document.createElement('a'); a.href = 'data:text/json,' + encodeURIComponent(data); a.download = 'kamak_catalog.json'; a.click();
           }}>↓ Exportar JSON</Btn>
         }
-        kpis={[
-          { label: 'Materiales',  value: catalog.materiales.length,          color: T.ink },
-          { label: 'Mano de obra', value: catalog.mo.length,                   color: T.ink },
-          { label: 'Tareas APU',   value: catalog.tareas.length,               color: T.accent },
-          { label: 'Rubros',       value: catalog.rubros.length,               color: T.ink },
-        ]}
+        kpis={TABS.map((label, i) => ({
+          label,
+          value: tabCounts[i],
+          color: tab === i ? T.accent : T.ink,
+          active: tab === i,
+          onClick: () => setTab(i),
+        }))}
       />
-
-      <div className="k-tabs" style={{ marginBottom: 10 }}>
-        {TABS.map((_, i) => (
-          <span key={i} className={`k-tab${tab === i ? ' k-tab-on' : ''}`} onClick={() => setTab(i)}>{tabLabel(i)}</span>
-        ))}
-      </div>
 
       <div style={{ height: 'calc(100vh - 230px)', overflow: 'hidden' }}>
         {tab === 0 && (() => {

@@ -271,6 +271,7 @@ export default function Tareas() {
   const [tab, setTab] = useState('mias');           // mias | creadas | completadas | todas
   const [filtroPrio, setFiltroPrio] = useState(''); // '' | baja | media | alta
   const [filtroObra, setFiltroObra] = useState(''); // '' | obraId | 'sin-obra'
+  const [filtroEstado, setFiltroEstado] = useState(''); // '' | 'en_progreso' | 'vencidas'
   const [editingId, setEditingId] = useState(null); // null | 'nueva' | tareaId
   const [expandedId, setExpandedId] = useState(null); // tarea expandida inline
 
@@ -322,6 +323,8 @@ export default function Tareas() {
     if (filtroPrio) base = base.filter(t => t.prioridad === filtroPrio);
     if (filtroObra === 'sin-obra') base = base.filter(t => !t.obraId);
     else if (filtroObra) base = base.filter(t => t.obraId === filtroObra);
+    if (filtroEstado === 'en_progreso') base = base.filter(t => t.estado === 'en_progreso');
+    else if (filtroEstado === 'vencidas') base = base.filter(t => isVencida(t.fechaLimite, t.estado));
 
     // Orden: vencidas primero, luego por fecha limite (las que tienen),
     // luego por prioridad (alta > media > baja), luego por creacion desc.
@@ -354,13 +357,34 @@ export default function Tareas() {
     const completadasMias = tareas.filter(t =>
       (t.asignadoA || []).includes(currentUser.id) && t.estado === 'completada'
     );
+    const enMiasSinFiltro = tab === 'mias' && !filtroEstado;
     return [
-      { label: 'Mis pendientes', value: mias.length },
-      { label: 'En progreso', value: enProgreso.length, color: '#d97706' },
-      { label: 'Vencidas', value: vencidas.length, color: vencidas.length > 0 ? '#dc2626' : T.ink },
-      { label: 'Completadas (mias)', value: completadasMias.length, color: T.ok },
+      {
+        label: 'Mis pendientes', value: mias.length,
+        color: enMiasSinFiltro ? T.accent : T.ink,
+        active: enMiasSinFiltro,
+        onClick: () => { setTab('mias'); setFiltroEstado(''); setFiltroPrio(''); setFiltroObra(''); },
+      },
+      {
+        label: 'En progreso', value: enProgreso.length,
+        color: tab === 'mias' && filtroEstado === 'en_progreso' ? T.accent : '#d97706',
+        active: tab === 'mias' && filtroEstado === 'en_progreso',
+        onClick: () => filtrarPorKPI('en_progreso'),
+      },
+      {
+        label: 'Vencidas', value: vencidas.length,
+        color: tab === 'mias' && filtroEstado === 'vencidas' ? T.accent : (vencidas.length > 0 ? '#dc2626' : T.ink),
+        active: tab === 'mias' && filtroEstado === 'vencidas',
+        onClick: () => filtrarPorKPI('vencidas'),
+      },
+      {
+        label: 'Completadas (mias)', value: completadasMias.length,
+        color: tab === 'completadas' ? T.accent : T.ok,
+        active: tab === 'completadas',
+        onClick: () => cambiarTab('completadas'),
+      },
     ];
-  }, [tareas, currentUser]);
+  }, [tareas, currentUser, tab, filtroEstado]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Conteos por tab (sin filtros aplicados, para que el contador siempre
   // refleje el total real y el user no piense que está vacío por un filtro).
@@ -399,6 +423,15 @@ export default function Tareas() {
     setTab(newTab);
     setFiltroPrio('');
     setFiltroObra('');
+    setFiltroEstado('');
+  };
+
+  // Toggle de filtros desde los KPIs del banner.
+  const filtrarPorKPI = (estadoFiltro) => {
+    setTab('mias');
+    setFiltroPrio('');
+    setFiltroObra('');
+    setFiltroEstado(prev => prev === estadoFiltro ? '' : estadoFiltro);
   };
 
   return (

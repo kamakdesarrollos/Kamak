@@ -320,6 +320,7 @@ export default function Usuarios() {
   const { cajas: allCajas } = useMovimientos();
 
   const [tab, setTab] = useState('usuarios');
+  const [filtroRol, setFiltroRol] = useState(null); // null | 'Admin' | 'otros'
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editAccesos, setEditAccesos] = useState(null);
   const [resetPassId, setResetPassId] = useState(null);
@@ -327,6 +328,16 @@ export default function Usuarios() {
   const [resetLoading, setResetLoading] = useState(false);
 
   const cajas = allCajas.filter(c => c.activa);
+
+  const usuariosFiltrados = usuarios.filter(u =>
+    !filtroRol ? true : filtroRol === 'Admin' ? u.rol === 'Admin' : u.rol !== 'Admin'
+  );
+
+  // Toggle helper: si ya está en ese filtro, lo limpia; sino lo setea + va al tab usuarios.
+  const toggleFiltroRol = (v) => {
+    setTab('usuarios');
+    setFiltroRol(prev => (prev === v ? null : v));
+  };
 
   const obrasLabel = (u) => {
     const ov = u.obrasVisibles;
@@ -352,21 +363,32 @@ export default function Usuarios() {
         subtitle="Usuarios, permisos y roles del sistema"
         actions={<Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo usuario</Btn>}
         kpis={[
-          { label: 'Total usuarios', value: usuarios.length,                                    color: T.ink },
-          { label: 'Admins',         value: usuarios.filter(u => u.rol === 'Admin').length,    color: T.accent },
-          { label: 'Otros roles',    value: usuarios.filter(u => u.rol !== 'Admin').length,    color: T.ink },
-          { label: 'Roles base',     value: (roles || []).length,                              color: T.ink },
+          {
+            label: 'Usuarios', value: usuarios.length,
+            color: tab === 'usuarios' && !filtroRol ? T.accent : T.ink,
+            active: tab === 'usuarios' && !filtroRol,
+            onClick: () => { setTab('usuarios'); setFiltroRol(null); },
+          },
+          {
+            label: 'Roles base', value: (roles || []).length,
+            color: tab === 'roles' ? T.accent : T.ink,
+            active: tab === 'roles',
+            onClick: () => { setTab('roles'); setFiltroRol(null); },
+          },
+          {
+            label: 'Admins', value: usuarios.filter(u => u.rol === 'Admin').length,
+            color: tab === 'usuarios' && filtroRol === 'Admin' ? T.accent : T.ink,
+            active: tab === 'usuarios' && filtroRol === 'Admin',
+            onClick: () => toggleFiltroRol('Admin'),
+          },
+          {
+            label: 'Otros roles', value: usuarios.filter(u => u.rol !== 'Admin').length,
+            color: tab === 'usuarios' && filtroRol === 'otros' ? T.accent : T.ink,
+            active: tab === 'usuarios' && filtroRol === 'otros',
+            onClick: () => toggleFiltroRol('otros'),
+          },
         ]}
       />
-
-      <div className="k-tabs" style={{ margin: '8px 0 10px' }}>
-        <span className={`k-tab${tab === 'usuarios' ? ' k-tab-on' : ''}`} onClick={() => setTab('usuarios')}>
-          Usuarios · {usuarios.length}
-        </span>
-        <span className={`k-tab${tab === 'roles' ? ' k-tab-on' : ''}`} onClick={() => setTab('roles')}>
-          Roles base
-        </span>
-      </div>
 
       {tab === 'usuarios' && (
         <Box style={{ padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 240px)' }}>
@@ -386,7 +408,7 @@ export default function Usuarios() {
           </div>
 
           {/* Rows */}
-          {usuarios.map(u => (
+          {usuariosFiltrados.map(u => (
             <div key={u.id} style={{ display: 'flex', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', minWidth: 0 }}>
 
               {/* Nombre + avatar */}

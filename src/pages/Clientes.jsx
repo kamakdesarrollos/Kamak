@@ -86,6 +86,7 @@ export default function Clientes() {
   const [modal, setModal] = useState(false);
   const [editCliente, setEditCliente] = useState(null);
   const [search, setSearch] = useState(() => searchParams.get('q') || '');
+  const [filtroKPI, setFiltroKPI] = useState(null); // null | 'conObras' | 'sinObras'
 
   useEffect(() => {
     const q = searchParams.get('q');
@@ -110,12 +111,15 @@ export default function Clientes() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return clientes.filter(c =>
+    let base = clientes;
+    if (filtroKPI === 'conObras') base = base.filter(c => obrasCount[c.id] > 0);
+    else if (filtroKPI === 'sinObras') base = base.filter(c => !obrasCount[c.id]);
+    return base.filter(c =>
       !q || (c.nombre || '').toLowerCase().includes(q) ||
       (c.empresa || '').toLowerCase().includes(q) ||
       (c.cuit    || '').includes(q)
     );
-  }, [clientes, search]);
+  }, [clientes, search, filtroKPI, obrasCount]);
 
   // Propaga el nombre actual del cliente a obras y movimientos vinculados.
   // Estrategia:
@@ -165,10 +169,25 @@ export default function Clientes() {
           </>
         }
         kpis={[
-          { label: 'Total clientes',    value: clientes.length,                                                                  color: T.ink },
-          { label: 'Con obras activas', value: clientes.filter(c => obrasCount[c.id] > 0).length,                                color: T.ok },
-          { label: 'Total obras',       value: Object.values(obrasCount).reduce((s, v) => s + v, 0),                              color: T.ink },
-          { label: 'Total facturado',   value: `$ ${Math.round(Object.values(totalFacturado).reduce((s, v) => s + v, 0)).toLocaleString('es-AR')}`, color: T.ok },
+          {
+            label: 'Total clientes', value: clientes.length,
+            color: !filtroKPI ? T.accent : T.ink,
+            active: !filtroKPI,
+            onClick: () => setFiltroKPI(null),
+          },
+          {
+            label: 'Con obras', value: clientes.filter(c => obrasCount[c.id] > 0).length,
+            color: filtroKPI === 'conObras' ? T.accent : T.ok,
+            active: filtroKPI === 'conObras',
+            onClick: () => setFiltroKPI(prev => prev === 'conObras' ? null : 'conObras'),
+          },
+          {
+            label: 'Sin obras', value: clientes.filter(c => !obrasCount[c.id]).length,
+            color: filtroKPI === 'sinObras' ? T.accent : T.ink3,
+            active: filtroKPI === 'sinObras',
+            onClick: () => setFiltroKPI(prev => prev === 'sinObras' ? null : 'sinObras'),
+          },
+          { label: 'Total facturado', value: `$ ${Math.round(Object.values(totalFacturado).reduce((s, v) => s + v, 0)).toLocaleString('es-AR')}`, color: T.ok },
         ]}
       />
 

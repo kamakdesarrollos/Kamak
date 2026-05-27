@@ -470,34 +470,41 @@ export default function Autorizaciones() {
         subtitle="Eliminaciones de movimientos + items recibidos por WhatsApp"
         actions={<Btn sm onClick={reload}>↺ Actualizar</Btn>}
         kpis={[
-          { label: 'Pendientes',  value: countPendientes,                                                       sub: 'requieren acción', color: countPendientes > 0 ? T.warn : T.ink },
-          { label: 'WhatsApp',    value: buckets.pendientes.facturas.length + buckets.pendientes.movimientos.length, sub: 'del bot',          color: T.accent },
-          { label: 'Aprobadas',   value: countAprobadas,                                                        sub: 'historial',        color: T.ok },
-          { label: 'Rechazadas',  value: countRechazadas,                                                       sub: 'historial',        color: T.ink3 },
+          {
+            label: 'Pendientes', value: countPendientes,
+            color: tab === 'pendientes' ? T.accent : (countPendientes > 0 ? T.warn : T.ink),
+            active: tab === 'pendientes',
+            onClick: () => { setTab('pendientes'); setSearchParams(p => { p.delete('tab'); return p; }); },
+          },
+          {
+            label: 'Aprobadas', value: countAprobadas,
+            color: tab === 'aprobadas' ? T.accent : T.ok,
+            active: tab === 'aprobadas',
+            onClick: () => { setTab('aprobadas'); setSearchParams(p => { p.set('tab', 'aprobadas'); return p; }); },
+          },
+          {
+            label: 'Rechazadas', value: countRechazadas,
+            color: tab === 'rechazadas' ? T.accent : T.ink3,
+            active: tab === 'rechazadas',
+            onClick: () => { setTab('rechazadas'); setSearchParams(p => { p.set('tab', 'rechazadas'); return p; }); },
+          },
+          {
+            label: 'WhatsApp', value: buckets.pendientes.facturas.length + buckets.pendientes.movimientos.length,
+            sub: 'pendientes del bot',
+            color: origenParam === 'whatsapp' ? T.accent : (tab === 'pendientes' ? T.accent : T.ink3),
+            active: origenParam === 'whatsapp',
+            onClick: () => {
+              setTab('pendientes');
+              setSearchParams(p => {
+                p.delete('tab');
+                if (origenParam === 'whatsapp') p.delete('origen');
+                else p.set('origen', 'whatsapp');
+                return p;
+              });
+            },
+          },
         ]}
       />
-
-      {/* Tabs por estado */}
-      <div className="k-tabs" style={{ margin: '8px 0 10px' }}>
-        <span className={`k-tab${tab === 'pendientes' ? ' k-tab-on' : ''}`}
-          onClick={() => { setTab('pendientes'); setSearchParams(p => { p.delete('tab'); return p; }); }}
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          Pendientes
-          {countPendientes > 0 && (
-            <span style={{ background: '#c0392b', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700 }}>
-              {countPendientes}
-            </span>
-          )}
-        </span>
-        <span className={`k-tab${tab === 'aprobadas' ? ' k-tab-on' : ''}`}
-          onClick={() => { setTab('aprobadas'); setSearchParams(p => { p.set('tab', 'aprobadas'); return p; }); }}>
-          Aprobadas · {countAprobadas}
-        </span>
-        <span className={`k-tab${tab === 'rechazadas' ? ' k-tab-on' : ''}`}
-          onClick={() => { setTab('rechazadas'); setSearchParams(p => { p.set('tab', 'rechazadas'); return p; }); }}>
-          Rechazadas · {countRechazadas}
-        </span>
-      </div>
 
       {/* Filtro origen (si esta aplicado por query) */}
       {origenParam && (

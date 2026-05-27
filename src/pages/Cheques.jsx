@@ -639,6 +639,7 @@ export default function Cheques() {
   const [tab, setTab]     = useState('cartera');
   const [modal, setModal] = useState(null); // null | 'nuevo' | { action, cheque }
   const [buscar, setBuscar] = useState('');
+  const [filtroVencer7, setFiltroVencer7] = useState(false);
 
   const closeModal = () => setModal(null);
 
@@ -658,7 +659,21 @@ export default function Cheques() {
     );
   }, [cheques, buscar]);
 
-  const visibles = tab === 'cartera' ? cartera : tab === 'emitidos' ? emitidos : historial;
+  // En 7 días — calculado acá temprano para poder filtrar `visibles` con él.
+  const en7Dias = useMemo(() => cartera.filter(c => {
+    const f = c.fechaVencimiento;
+    if (!f) return false;
+    const ms = new Date(f).getTime() - Date.now();
+    const dias = Math.ceil(ms / (24 * 60 * 60 * 1000));
+    return dias >= 0 && dias <= 7;
+  }), [cartera]);
+  const totalEn7 = useMemo(() => en7Dias.reduce((s, c) => s + (c.monto || 0), 0), [en7Dias]);
+
+  let visibles = tab === 'cartera' ? cartera : tab === 'emitidos' ? emitidos : historial;
+  if (filtroVencer7) {
+    const idsEn7 = new Set(en7Dias.map(c => c.id));
+    visibles = visibles.filter(c => idsEn7.has(c.id));
+  }
 
   // ── Acciones ──────────────────────────────────────────────────────────────
   const onAccion = (action, cheque) => {
@@ -739,15 +754,6 @@ export default function Cheques() {
   // ── Totales ───────────────────────────────────────────────────────────────
   const totalCartera  = cartera.reduce((s, c) => s + (c.monto || 0), 0);
   const totalEmitidos = emitidos.filter(c => c.estado === 'cartera').reduce((s, c) => s + (c.monto || 0), 0);
-  // Cheques por vencer en los proximos 7 dias (entre los de cartera).
-  const en7Dias = cartera.filter(c => {
-    const f = c.fechaVencimiento;
-    if (!f) return false;
-    const ms = new Date(f).getTime() - Date.now();
-    const dias = Math.ceil(ms / (24 * 60 * 60 * 1000));
-    return dias >= 0 && dias <= 7;
-  });
-  const totalEn7 = en7Dias.reduce((s, c) => s + (c.monto || 0), 0);
 
   const TABS = [
     { key: 'cartera',   label: `Cartera de terceros`,  sub: `$ ${fmtN(totalCartera)}` },
@@ -765,23 +771,32 @@ export default function Cheques() {
           <Btn fill onClick={() => setModal('nuevo')} style={{ gap: 6 }}>+ Registrar cheque</Btn>
         }
         kpis={[
-          { label: 'En cartera',     value: cartera.length,                sub: `$ ${fmtN(totalCartera)}`,   color: T.ink },
-          { label: 'Propios emit.',  value: emitidos.filter(c => c.estado === 'cartera').length, sub: `$ ${fmtN(totalEmitidos)}`, color: T.ink },
-          { label: 'Vencen en 7 d',  value: en7Dias.length,                sub: `$ ${fmtN(totalEn7)}`,       color: en7Dias.length > 0 ? T.warn : T.ink },
-          { label: 'Total historial',value: cheques.length,                sub: 'incl. cobrados/anulados',   color: T.accent },
+          {
+            label: 'Cartera de terceros', value: cartera.length, sub: `$ ${fmtN(totalCartera)}`,
+            color: tab === 'cartera' && !filtroVencer7 ? T.accent : T.ink,
+            active: tab === 'cartera' && !filtroVencer7,
+            onClick: () => { setTab('cartera'); setFiltroVencer7(false); },
+          },
+          {
+            label: 'Propios emitidos', value: emitidos.filter(c => c.estado === 'cartera').length, sub: `$ ${fmtN(totalEmitidos)}`,
+            color: tab === 'emitidos' && !filtroVencer7 ? T.accent : T.ink,
+            active: tab === 'emitidos' && !filtroVencer7,
+            onClick: () => { setTab('emitidos'); setFiltroVencer7(false); },
+          },
+          {
+            label: 'Historial', value: cheques.length, sub: 'incl. cobrados/anulados',
+            color: tab === 'historial' && !filtroVencer7 ? T.accent : T.ink,
+            active: tab === 'historial' && !filtroVencer7,
+            onClick: () => { setTab('historial'); setFiltroVencer7(false); },
+          },
+          {
+            label: 'Vencen en 7 d', value: en7Dias.length, sub: `$ ${fmtN(totalEn7)}`,
+            color: filtroVencer7 ? T.accent : (en7Dias.length > 0 ? T.warn : T.ink),
+            active: filtroVencer7,
+            onClick: () => { setTab('cartera'); setFiltroVencer7(prev => !prev); },
+          },
         ]}
       />
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderBottom: `2px solid ${T.faint2}` }}>
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            style={{ padding: '8px 18px', border: 'none', background: 'transparent', fontFamily: T.font, cursor: 'pointer', borderBottom: tab === t.key ? `2px solid ${T.accent}` : '2px solid transparent', marginBottom: -2, color: tab === t.key ? T.accent : T.ink2, fontWeight: tab === t.key ? 700 : 400, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
-            <span style={{ fontSize: 13 }}>{t.label}</span>
-            <span style={{ fontSize: 10, fontFamily: T.fontMono, opacity: 0.8 }}>{t.sub}</span>
-          </button>
-        ))}
-      </div>
 
       {/* Resumen vencimientos (solo cartera) */}
       {tab === 'cartera' && <ResumenBand cheques={cheques} />}
