@@ -27,15 +27,14 @@ const calcRubroExport = (rubro) => {
   return { cMat, cSub, costo: cMat + cSub, venta };
 };
 
-// SVG mas grande (820x820) con stripes que naturalmente alcanzan los bordes,
-// SIN usar overflow:visible. El overflow:visible que tenia antes hacia que
-// las stripes sobresalieran del SVG, generando overflow horizontal en el
-// body, y Chrome achicaba todo el doc al imprimir → margen blanco a la
-// derecha y abajo con elementos de diseno dentro.
-const STRIPES_SVG = `<svg viewBox="0 0 820 820" width="820" height="820" style="display:block">
-  <rect x="-100" y="345" width="1300" height="55" fill="#1a9b9c" transform="rotate(62 510 372)"/>
-  <rect x="-180" y="395" width="1300" height="55" fill="#1a9b9c" transform="rotate(62 430 422)"/>
-  <rect x="-260" y="445" width="1300" height="55" fill="#1a9b9c" transform="rotate(62 350 472)"/>
+// SVG con tamano original (620x620). Cualquier intento de extenderlo
+// (overflow:visible o ampliar viewBox) terminaba generando overflow
+// horizontal en el body y Chrome achicaba todo el doc al imprimir.
+// Las stripes quedan en su posicion natural dentro del SVG.
+const STRIPES_SVG = `<svg viewBox="0 0 620 620" width="620" height="620" style="display:block">
+  <rect x="-64" y="245" width="900" height="50" fill="#1a9b9c" transform="rotate(62 386 270)"/>
+  <rect x="-140" y="285" width="900" height="50" fill="#1a9b9c" transform="rotate(62 310 310)"/>
+  <rect x="-216" y="325" width="900" height="50" fill="#1a9b9c" transform="rotate(62 234 350)"/>
 </svg>`;
 
 const CORNER_BRACKETS = `
@@ -317,10 +316,9 @@ body{font-family:'Montserrat',sans-serif}
 .firma-sub{font-size:9px;color:#9a9892}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
 @media print{
-  /* Minimo absoluto: solo limpiar margenes de html/body y sombras de las
-     pages. Sin overrides de width/height/background — el CSS base ya
-     define las pages como 210mm x 297mm con el background correcto. */
-  html,body{margin:0;padding:0}
+  /* Body/html con dimensiones explicitas A4 sin margenes ni padding. Esto
+     es lo que Chrome necesita para no recalcular escala desde el viewport. */
+  html,body{margin:0;padding:0;width:210mm;overflow:hidden}
   .portada-page,.comp-flow,.cond-page{box-shadow:none}
 }
 @media screen{
