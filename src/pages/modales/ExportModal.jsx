@@ -321,6 +321,11 @@ body{font-family:'Montserrat',sans-serif}
      (resultado: 6 hojas en vez de 3). El width:210mm del CSS base ya alcanza. */
   html,body{margin:0!important;padding:0!important;background:#fff!important}
   .portada-page,.comp-flow,.cond-page{margin:0!important;box-shadow:none!important}
+  /* Sub-pixel rounding: con height exacto 297mm Chrome a veces renderea unos
+     milimetros corto y queda franja blanca abajo en las pages dark. Subimos
+     a 299mm SOLO en print — el overflow:hidden del container corta los 2mm
+     extra pero el background dark llega hasta el borde fisico de la hoja A4. */
+  .portada-page,.cond-page{height:299mm!important}
 }
 @media screen{
   html{background:#555}
