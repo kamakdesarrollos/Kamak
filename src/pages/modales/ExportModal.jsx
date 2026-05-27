@@ -333,7 +333,6 @@ body{font-family:'Montserrat',sans-serif}
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=794, initial-scale=1.0">
 <title>${esc((obra?.nombre || 'Obra'))}${obra?.cliente ? ' - ' + esc(obra.cliente) : ''}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
