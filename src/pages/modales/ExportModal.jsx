@@ -205,14 +205,14 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
           </div>
           ${nota ? `<div class="cond-nota">${esc(nota)}</div>` : ''}
           ${qrDataUrl ? `
-          <div style="margin-top:18px;background:#171818;padding:14px 14px 12px;position:relative;display:flex;align-items:center;gap:14px">
-            <div style="background:#fff;padding:6px;border-radius:4px;flex-shrink:0">
-              <img src="${qrDataUrl}" alt="QR de acceso al portal" style="width:115px;height:115px;display:block"/>
+          <div style="margin-top:14px;background:#171818;padding:12px;display:flex;align-items:center;gap:12px">
+            <div style="background:#fff;padding:5px;border-radius:3px;flex-shrink:0">
+              <img src="${qrDataUrl}" alt="QR portal cliente" style="width:95px;height:95px;display:block"/>
             </div>
             <div style="flex:1;min-width:0">
-              <div style="font-size:9px;letter-spacing:2px;color:#1a9b9c;font-family:'JetBrains Mono',monospace;margin-bottom:6px">PORTAL DEL CLIENTE</div>
-              <div style="font-size:11px;font-weight:700;color:#fff;line-height:1.25;margin-bottom:5px">Seguí tu obra desde el celular</div>
-              <div style="font-size:9px;color:#9a9892;line-height:1.4">Escaneá el QR con la cámara del teléfono. Se abre WhatsApp con el mensaje listo para enviar.</div>
+              <div style="font-size:8.5px;letter-spacing:1.8px;color:#1a9b9c;font-family:'JetBrains Mono',monospace;margin-bottom:4px">PORTAL DEL CLIENTE</div>
+              <div style="font-size:10.5px;font-weight:700;color:#fff;line-height:1.2;margin-bottom:4px">Seguí la obra desde tu celular</div>
+              <div style="font-size:8.5px;color:#9a9892;line-height:1.35">Escaneá el QR — se abre WhatsApp con el mensaje listo para enviar.</div>
             </div>
           </div>` : ''}
         </div>
