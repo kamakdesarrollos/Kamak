@@ -1,15 +1,24 @@
-import { useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { T } from '../../theme';
 
 // Modal full-screen que muestra un HTML en un iframe visible y permite
-// imprimirlo desde el browser. Reemplaza el approach de "abrir pestaña
-// nueva con window.open" que Chrome bloqueaba o renderizaba en blanco.
+// imprimirlo desde el browser.
 //
-// El iframe usa srcDoc (no document.write, no Blob URL) — es la forma
-// mas directa y confiable de inyectar HTML en un iframe.
+// Usamos Blob URL en vez de srcDoc: srcDoc tiene limites de tamano en
+// algunos browsers y con el QR del cliente (PNG base64 grande) a veces
+// truncaba el contenido y solo mostraba la portada.
 
 export default function PrintPreviewModal({ html, title = 'Vista previa', onClose }) {
   const iframeRef = useRef(null);
+  const [blobUrl, setBlobUrl] = useState(null);
+
+  useEffect(() => {
+    if (!html) return;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    setBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [html]);
 
   const handlePrint = () => {
     try {
@@ -49,6 +58,9 @@ export default function PrintPreviewModal({ html, title = 'Vista previa', onClos
             ← Cerrar
           </span>
           <span style={{ fontWeight: 700, fontSize: 13 }}>{title}</span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginLeft: 6 }}>
+            (scrolleá dentro del documento para ver todas las páginas)
+          </span>
         </div>
         <button
           onClick={handlePrint}
@@ -71,18 +83,20 @@ export default function PrintPreviewModal({ html, title = 'Vista previa', onClos
         </button>
       </div>
 
-      {/* Iframe con el HTML — visible y full-size */}
-      <iframe
-        ref={iframeRef}
-        srcDoc={html}
-        title={title}
-        style={{
-          flex: 1,
-          width: '100%',
-          border: 'none',
-          background: '#555',
-        }}
-      />
+      {/* Iframe con el HTML — Blob URL para soportar QR grandes sin truncar */}
+      {blobUrl && (
+        <iframe
+          ref={iframeRef}
+          src={blobUrl}
+          title={title}
+          style={{
+            flex: 1,
+            width: '100%',
+            border: 'none',
+            background: '#555',
+          }}
+        />
+      )}
     </div>
   );
 }
