@@ -315,11 +315,12 @@ body{font-family:'Montserrat',sans-serif}
 .firma-sub{font-size:9px;color:#9a9892}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
 @media print{
-  /* Fuerza tamano A4 sin margenes en TODOS los renglones del print. El default
-     de Chrome a veces deja 6mm de margen blanco aunque @page diga margin:0. */
-  @page{size:210mm 297mm;margin:0}
-  html,body{margin:0!important;padding:0!important;width:210mm!important;background:#fff!important}
-  .portada-page,.comp-flow,.cond-page{margin:0!important;box-shadow:none!important;width:210mm!important;max-width:210mm!important}
+  /* IMPORTANT: NO redeclarar @page acá ni forzar width !important — eso le
+     daba a Chrome dimensiones contradictorias contra el @page global y
+     terminaba partiendo cada hoja A4 en 2 paginas con la mitad en blanco
+     (resultado: 6 hojas en vez de 3). El width:210mm del CSS base ya alcanza. */
+  html,body{margin:0!important;padding:0!important;background:#fff!important}
+  .portada-page,.comp-flow,.cond-page{margin:0!important;box-shadow:none!important}
 }
 @media screen{
   html{background:#555}
