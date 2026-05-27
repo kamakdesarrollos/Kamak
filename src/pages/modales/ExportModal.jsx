@@ -27,10 +27,13 @@ const calcRubroExport = (rubro) => {
   return { cMat, cSub, costo: cMat + cSub, venta };
 };
 
-const STRIPES_SVG = `<svg viewBox="0 0 620 620" width="620" height="620" style="display:block">
-  <rect x="-64" y="245" width="900" height="50" fill="#1a9b9c" transform="rotate(62 386 270)"/>
-  <rect x="-140" y="285" width="900" height="50" fill="#1a9b9c" transform="rotate(62 310 310)"/>
-  <rect x="-216" y="325" width="900" height="50" fill="#1a9b9c" transform="rotate(62 234 350)"/>
+// overflow:visible + rectangulos extendidos (width 1500) para que las 3 rayas
+// lleguen de borde a borde del margen, no solo la del centro. Antes con width
+// 900 las laterales se cortaban antes de tocar el borde del SVG.
+const STRIPES_SVG = `<svg viewBox="0 0 620 620" width="620" height="620" style="display:block;overflow:visible">
+  <rect x="-364" y="245" width="1500" height="50" fill="#1a9b9c" transform="rotate(62 386 270)"/>
+  <rect x="-440" y="285" width="1500" height="50" fill="#1a9b9c" transform="rotate(62 310 310)"/>
+  <rect x="-516" y="325" width="1500" height="50" fill="#1a9b9c" transform="rotate(62 234 350)"/>
 </svg>`;
 
 const CORNER_BRACKETS = `
@@ -201,6 +204,17 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
             </div>
           </div>
           ${nota ? `<div class="cond-nota">${esc(nota)}</div>` : ''}
+          ${qrDataUrl ? `
+          <div style="margin-top:18px;background:#171818;padding:14px 14px 12px;position:relative;display:flex;align-items:center;gap:14px">
+            <div style="background:#fff;padding:6px;border-radius:4px;flex-shrink:0">
+              <img src="${qrDataUrl}" alt="QR de acceso al portal" style="width:115px;height:115px;display:block"/>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:9px;letter-spacing:2px;color:#1a9b9c;font-family:'JetBrains Mono',monospace;margin-bottom:6px">PORTAL DEL CLIENTE</div>
+              <div style="font-size:11px;font-weight:700;color:#fff;line-height:1.25;margin-bottom:5px">Seguí tu obra desde el celular</div>
+              <div style="font-size:9px;color:#9a9892;line-height:1.4">Escaneá el QR con la cámara del teléfono. Se abre WhatsApp con el mensaje listo para enviar.</div>
+            </div>
+          </div>` : ''}
         </div>
       </div>
     </div>
@@ -324,19 +338,6 @@ body{font-family:'Montserrat',sans-serif}
 ${portada}
 ${computo}
 ${condicionesPage}
-${qrDataUrl ? `
-<div class="qr-page" style="width:794px;min-height:1123px;background:#fff;padding:80px 60px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;page-break-before:always">
-  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:3px;color:#1a9b9c;margin-bottom:14px">ACCESO AL PORTAL DEL CLIENTE</div>
-  <div style="font-family:'Montserrat',sans-serif;font-size:30px;font-weight:800;color:#171818;margin-bottom:8px;line-height:1.15">Seguí tu obra<br/>desde tu celular</div>
-  <div style="font-family:'Montserrat',sans-serif;font-size:14px;color:#5b5a55;max-width:460px;margin:18px 0 32px">Escaneá este código con la cámara de tu teléfono. Se abrirá WhatsApp con un mensaje listo para enviar. Al mandarlo recibís el link directo al portal de tu obra: avance, fotos, documentos y plan de pagos.</div>
-  <div style="background:#fff;border:2px solid #1a9b9c;border-radius:14px;padding:22px;position:relative">
-    <img src="${qrDataUrl}" alt="QR de acceso" style="width:280px;height:280px;display:block"/>
-  </div>
-  <div style="margin-top:26px;font-family:'Montserrat',sans-serif;font-size:12px;color:#171818;font-weight:600">¿No tenés la cámara con lector?</div>
-  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5b5a55;margin-top:4px">Escribinos al WhatsApp: <b style="color:#171818">${obra?.cliente ? esc(obra.cliente) : 'tu nombre'}</b> + nombre de la obra</div>
-  <div style="margin-top:60px;font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:1.5px;color:#9a9892">KAMAK DESARROLLOS · PORTAL CLIENTE</div>
-</div>
-` : ''}
 </body>
 </html>`;
 }
