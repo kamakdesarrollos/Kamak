@@ -27,13 +27,15 @@ const calcRubroExport = (rubro) => {
   return { cMat, cSub, costo: cMat + cSub, venta };
 };
 
-// overflow:visible + rectangulos extendidos (width 1500) para que las 3 rayas
-// lleguen de borde a borde del margen, no solo la del centro. Antes con width
-// 900 las laterales se cortaban antes de tocar el borde del SVG.
-const STRIPES_SVG = `<svg viewBox="0 0 620 620" width="620" height="620" style="display:block;overflow:visible">
-  <rect x="-364" y="245" width="1500" height="50" fill="#1a9b9c" transform="rotate(62 386 270)"/>
-  <rect x="-440" y="285" width="1500" height="50" fill="#1a9b9c" transform="rotate(62 310 310)"/>
-  <rect x="-516" y="325" width="1500" height="50" fill="#1a9b9c" transform="rotate(62 234 350)"/>
+// SVG mas grande (820x820) con stripes que naturalmente alcanzan los bordes,
+// SIN usar overflow:visible. El overflow:visible que tenia antes hacia que
+// las stripes sobresalieran del SVG, generando overflow horizontal en el
+// body, y Chrome achicaba todo el doc al imprimir → margen blanco a la
+// derecha y abajo con elementos de diseno dentro.
+const STRIPES_SVG = `<svg viewBox="0 0 820 820" width="820" height="820" style="display:block">
+  <rect x="-100" y="345" width="1300" height="55" fill="#1a9b9c" transform="rotate(62 510 372)"/>
+  <rect x="-180" y="395" width="1300" height="55" fill="#1a9b9c" transform="rotate(62 430 422)"/>
+  <rect x="-260" y="445" width="1300" height="55" fill="#1a9b9c" transform="rotate(62 350 472)"/>
 </svg>`;
 
 const CORNER_BRACKETS = `
@@ -315,14 +317,11 @@ body{font-family:'Montserrat',sans-serif}
 .firma-sub{font-size:9px;color:#9a9892}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
 @media print{
-  /* IMPORTANT: NO tocar width ni height de las pages — el CSS base
-     (210mm x 297mm) coincide con A4 y cualquier override (100vh, !important)
-     terminaba dando dimensiones contradictorias y rompiendo el layout. */
-  html,body{margin:0!important;padding:0!important;background:#1f2024!important}
-  .portada-page,.comp-flow,.cond-page{margin:0!important;box-shadow:none!important}
-  /* comp-flow tiene fondo blanco explicito + min-height A4 para que, cuando
-     termine antes que la hoja, no se vea el body dark detras. */
-  .comp-flow{background:#fff!important;min-height:297mm!important}
+  /* Minimo absoluto: solo limpiar margenes de html/body y sombras de las
+     pages. Sin overrides de width/height/background — el CSS base ya
+     define las pages como 210mm x 297mm con el background correcto. */
+  html,body{margin:0;padding:0}
+  .portada-page,.comp-flow,.cond-page{box-shadow:none}
 }
 @media screen{
   html{background:#555}
