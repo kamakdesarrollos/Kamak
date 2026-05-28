@@ -983,9 +983,10 @@ ACCIONES DISPONIBLES:
 3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(neto sin IVA), montoTotal(con IVA), concepto
 4. AVANCE_OBRA: obraId(ID exacto de la lista), rubroId(ID del rubro), tareaId(ID de la tarea), cantidadAvance(unidades completadas, ej:75), unidad(ej:'m²'), porcentajeAvance(% a sumar si no hay cantidad), descripcion
 5. CHEQUE_RECIBIDO: obraId, cajaDestinoId
-6. COMANDOS: ayuda | saldo | pendientes | cheques | resumen [obraId] [fecha YYYY-MM-DD]
+6. COMANDOS: ayuda | saldo | pendientes | cheques | resumen [obraId] [fecha YYYY-MM-DD] | como_va_obra (datos.obra=nombre) | cc_proveedor (datos.proveedor=nombre) | contacto_proveedor (datos.proveedor=nombre)
 7. TAREAS — comandos: tareas (lista mis pendientes), tarea_detalle (con datos.numero=N), completar_item (con datos.numero=N — marca item N de la última tarea vista)
 8. NUEVA_TAREA (solo Admin): si el admin dice "creale tarea a Juan: comprar cemento" o similar, accion.tipo='nueva_tarea' con datos: { titulo, descripcion?, asignadoNombre (nombre del usuario destinatario), prioridad?('baja'|'media'|'alta'), fechaLimite?(YYYY-MM-DD), checklist?[textos] }. Si falta el asignado, preguntar a quién. Si no es admin, responder que solo el admin puede crear tareas para otros — pero cualquier user puede pedir "crear tarea para mí" (auto-asignación).
+9. TRASPASO (solo Admin): si el admin dice "pasá $200k de Caja Franco a Banco Galicia" o similar, accion.tipo='traspaso' con datos: { monto, cajaId (ID de la caja origen), cajaDestinoId (ID de la caja destino), montoDestino?(opcional para cross-moneda con TC distinto), descripcion? }. Matchear nombre de caja por nombre parcial. Si las cajas son de moneda distinta y el user no aclaró tipo de cambio, preguntá.
 
 REGLAS DE FLUJO:
 - El usuario escribe corto y conciso. Interpretá la intención aunque falten datos.
@@ -1009,7 +1010,7 @@ Respondé ÚNICAMENTE con JSON válido:
   "mensaje": "texto a enviar al usuario (máx 400 chars)",
   "estado": "conversando" | "confirmando" | "ejecutar" | "cancelar" | "comando",
   "accion": {
-    "tipo": "gasto" | "ingreso" | "factura_compra" | "avance_obra" | "cheque_recibido" | "comando" | "nueva_tarea" | null,
+    "tipo": "gasto" | "ingreso" | "factura_compra" | "avance_obra" | "cheque_recibido" | "comando" | "nueva_tarea" | "traspaso" | null,
     "datos": {}
   }
 }`;
@@ -1210,6 +1211,59 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     }
 
     return `✅ Factura${datos.tipoFactura ? ` ${datos.tipoFactura}` : ''} de *${datos.proveedor || 'proveedor'}* recibida.\n${datos.montoTotal != null ? `Monto: *${montoStr}*\n` : ''}Los administradores la revisarán para aprobarla.`;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // TRASPASO entre cajas (FASE 2)
+  // ─────────────────────────────────────────────────────────────────────────
+  if (tipo === 'traspaso') {
+    const cajaOrigen  = ctx.cajas.find(c => c.id === datos.cajaId);
+    const cajaDestino = ctx.cajas.find(c => c.id === datos.cajaDestinoId);
+    const monto = Math.round(parseFloat(datos.monto) || 0);
+    if (!cajaOrigen || !cajaDestino) return '❌ No encontré alguna de las cajas. Verificá los nombres.';
+    if (cajaOrigen.id === cajaDestino.id) return '❌ La caja origen y destino son la misma.';
+    if (!monto || monto <= 0) return '❌ El monto del traspaso debe ser mayor a 0.';
+
+    const montoDestino = parseFloat(datos.montoDestino) || monto;
+    const fmt = (n, mon) => `${mon === 'USD' ? 'U$S' : '$'} ${Math.round(n).toLocaleString('es-AR')}`;
+
+    if (user.user_rol === 'Admin') {
+      const movData = await loadSharedData('movimientos');
+      const movs    = movData?.movimientos || [];
+      const cajas   = movData?.cajas || ctx.cajas;
+      const nuevoMov = {
+        id:           `mov-${Date.now()}`,
+        tipo:         'traspaso',
+        descripcion:  datos.descripcion || `Traspaso ${cajaOrigen.nombre} → ${cajaDestino.nombre}`,
+        monto,
+        montoDestino,
+        fecha:        datos.fecha || new Date().toISOString().split('T')[0],
+        obraId:       null,
+        obraNombre:   'General',
+        cajaId:       cajaOrigen.id,
+        cajaDestinoId: cajaDestino.id,
+        proveedor:    '',
+        categoria:    'traspaso',
+        medioPago:    'Interno',
+        creadoPorWA:  true,
+        creadoPor:    user.user_name,
+      };
+      // Actualizar saldos
+      const updatedCajas = cajas.map(c => {
+        if (c.id === cajaOrigen.id)  return { ...c, saldo: (c.saldo || 0) - monto };
+        if (c.id === cajaDestino.id) return { ...c, saldo: (c.saldo || 0) + montoDestino };
+        return c;
+      });
+      await saveSharedData('movimientos', { movimientos: [nuevoMov, ...movs], cajas: updatedCajas });
+      return (
+        `✅ *Traspaso registrado*\n\n` +
+        `${fmt(monto, cajaOrigen.moneda)} de *${cajaOrigen.nombre}*\n` +
+        `→ ${fmt(montoDestino, cajaDestino.moneda)} a *${cajaDestino.nombre}*` +
+        (cajaOrigen.moneda !== cajaDestino.moneda ? ` _(cross-moneda)_` : '')
+      );
+    } else {
+      return '⚠️ Los traspasos entre cajas los puede hacer solo un Admin.';
+    }
   }
 
   if (tipo === 'avance_obra') {
@@ -1622,6 +1676,11 @@ async function ejecutarComando(comando, datos, user, ctx) {
       `• *pendientes* — aprobaciones pendientes\n` +
       (esAdmin ? `• *cheques* — cheques por vencer\n` : '') +
       (esAdmin ? `• *resumen [obra] [fecha]* — resumen del día\n` : '') +
+      `• _"como va [obra]"_ — KPIs: avance, gastado, próx. cuota, top gastos\n` +
+      (esAdmin ? `• _"cuánto le debo a [proveedor]"_ — CC + últimas certs/pagos\n` : '') +
+      `• _"contacto [proveedor]"_ — tel/wa/email\n` +
+      (esAdmin ? `• _"aprobar N"_ / _"rechazar N"_ — sobre pendientes (escribí *pendientes* para verlos)\n` : '') +
+      (esAdmin ? `• _"pasá $200k de Caja X a Caja Y"_ — traspaso entre cajas\n` : '') +
 
       `\n_Escribí *ayuda* cuando quieras volver a ver este menú._`
     );
@@ -1769,12 +1828,70 @@ async function ejecutarComando(comando, datos, user, ctx) {
   if (comando === 'pendientes') {
     const pendingRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
     const pending = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
-    const movsPendientes = pending.filter(p => p.tipoPendiente === 'movimiento');
-    if (!movsPendientes.length) return '✅ No hay movimientos pendientes de aprobación.';
-    const lineas = movsPendientes.slice(0, 5).map(p =>
-      `• ${p.creadoPor}: $${Math.round(p.movimiento?.monto || 0).toLocaleString('es-AR')} — ${p.movimiento?.descripcion || '—'}`
+    const activos = pending.filter(p => p.status !== 'confirmed' && p.status !== 'rejected');
+    if (!activos.length) return '✅ No hay pendientes de aprobación.';
+
+    // Guardar IDs para que el admin pueda decir "aprobar 1" / "rechazar 2".
+    if (user.phone) {
+      const conv = await loadConversation(user.phone);
+      await saveConversation(user.phone, {
+        state: conv.state || 'idle',
+        data: { ...(conv.data || {}), lastPendientesList: activos.slice(0, 10).map(p => p.id) },
+      });
+    }
+
+    const lineas = activos.slice(0, 10).map((p, i) => {
+      const num = `*${i + 1}.*`;
+      if (p.tipoPendiente === 'factura') {
+        return `${num} 🧾 Factura ${p.proveedor || '—'} · $${Math.round(p.montoTotal || 0).toLocaleString('es-AR')}`;
+      }
+      const mov = p.movimiento || {};
+      const icono = mov.tipo === 'ingreso' ? '🔺' : '🔻';
+      return `${num} ${icono} ${p.creadoPor}: $${Math.round(mov.monto || 0).toLocaleString('es-AR')} — ${mov.descripcion || '—'}`;
+    });
+    const esAdmin = user.user_rol === 'Admin';
+    const ayuda = esAdmin
+      ? `\n\nPara aprobar/rechazar: *aprobar N* o *rechazar N*`
+      : '';
+    return `⏳ *Pendientes (${activos.length}):*\n\n${lineas.join('\n')}${ayuda}`;
+  }
+
+  // Admin: aprobar pendiente por número de la última lista vista.
+  if (comando === 'aprobar_pendiente' || comando === 'rechazar_pendiente') {
+    if (user.user_rol !== 'Admin') return '❌ Solo un admin puede aprobar/rechazar pendientes.';
+    const num = parseInt(datos.numero, 10);
+    if (!num || num < 1) return 'Decime qué número. Ej: *aprobar 1*. Escribí *pendientes* primero para ver la lista.';
+    const conv = user.phone ? await loadConversation(user.phone) : { data: {} };
+    const pendienteId = (conv.data?.lastPendientesList || [])[num - 1];
+    if (!pendienteId) return 'No encontré ese pendiente. Escribí *pendientes* primero para ver la lista.';
+
+    const pendingRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
+    const pending = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
+    const item = pending.find(p => p.id === pendienteId);
+    if (!item) return 'El pendiente ya no existe (quizás fue resuelto desde la app).';
+
+    const accion = comando === 'aprobar_pendiente' ? 'confirmed' : 'rejected';
+    const updated = pending.map(p => p.id === pendienteId
+      ? { ...p, status: accion, resolvedBy: user.user_name, resolvedAt: new Date().toISOString() }
+      : p
     );
-    return `⏳ *Pendientes de aprobación (${movsPendientes.length}):*\n\n${lineas.join('\n')}\n\nRevisalos en Kamak → Buzón WhatsApp.`;
+    await saveSharedData('whatsapp_pending', updated);
+
+    // Si es aprobación de movimiento → aplicarlo de verdad
+    if (accion === 'confirmed' && item.tipoPendiente === 'movimiento' && item.movimiento) {
+      const movData = await loadSharedData('movimientos');
+      const movs  = movData?.movimientos || [];
+      const cajas = movData?.cajas || ctx.cajas;
+      const mov = { ...item.movimiento, id: `mov-${Date.now()}`, creadoPorWA: true };
+      const delta = mov.tipo === 'ingreso' ? mov.monto : -mov.monto;
+      const updatedCajas = cajas.map(c =>
+        c.id === mov.cajaId ? { ...c, saldo: (c.saldo || 0) + delta } : c
+      );
+      await saveSharedData('movimientos', { movimientos: [mov, ...movs], cajas: updatedCajas });
+    }
+
+    const verbo = accion === 'confirmed' ? '✅ Aprobado' : '❌ Rechazado';
+    return `${verbo} pendiente #${num}.`;
   }
 
   if (comando === 'cheques') {
@@ -1816,10 +1933,223 @@ async function ejecutarComando(comando, datos, user, ctx) {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // FASE 2 — Comandos de consulta y operación
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // "Cómo va [obra]" → KPIs en texto: avance, presupuesto vs gastado,
+  // saldo cuotas, próxima cuota, top gastos del mes, tareas pendientes.
+  if (comando === 'como_va_obra') {
+    const obraQuery = (datos.obra || '').toLowerCase().trim();
+    if (!obraQuery) return '🤔 ¿De qué obra? Ej: *cómo va Baradero*';
+    const obra = ctx.obras.find(o =>
+      o.id?.toLowerCase() === obraQuery ||
+      o.nombre?.toLowerCase().includes(obraQuery) ||
+      obraQuery.includes(o.nombre?.toLowerCase())
+    );
+    if (!obra) return `❌ No encontré una obra con "${datos.obra}". Obras activas: ${ctx.obras.slice(0,5).map(o => o.nombre).join(', ')}`;
+
+    const det = ctx.detalles?.[obra.id] || {};
+    const rubros = (det.rubros || []).filter(r => r.tipo !== 'seccion');
+    // Avance ponderado por costo (mismo cálculo que el Gantt)
+    let totalCosto = 0, ejecutado = 0;
+    for (const r of rubros) {
+      for (const t of (r.tareas || []).filter(t => t.tipo !== 'seccion')) {
+        const c = ((t.costoMat || 0) + (t.costoSub || 0)) * (t.cantidad || 0);
+        totalCosto += c;
+        ejecutado  += c * ((t.avance || 0) / 100);
+      }
+    }
+    const avancePct = totalCosto > 0 ? Math.round((ejecutado / totalCosto) * 100) : 0;
+
+    // Movimientos de la obra
+    const movs = (ctx.movimientos || []).filter(m => m.obraId === obra.id);
+    const gastado = movs.filter(m => m.tipo === 'gasto').reduce((s, m) => s + (m.monto || 0), 0);
+    const cobrado = movs.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + (m.monto || 0), 0);
+    const presupuesto = (totalCosto || obra.presupuesto || 0);
+
+    // Cuotas
+    const cuotas = det.cuotas || [];
+    const cuotasPagadas = cuotas.filter(c => c.cobrado || c.pagado).length;
+    const proximaCuota = cuotas
+      .filter(c => !(c.cobrado || c.pagado) && c.fecha)
+      .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))[0];
+
+    // Top 3 gastos del mes en curso
+    const mesActual = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const gastosMes = movs
+      .filter(m => m.tipo === 'gasto' && (m.fecha || '').startsWith(mesActual))
+      .sort((a, b) => (b.monto || 0) - (a.monto || 0))
+      .slice(0, 3);
+
+    // Tareas pendientes vinculadas a la obra
+    const tareasData = (await loadSharedData('tareas')) || [];
+    const tareasPend = tareasData.filter(t =>
+      t.obraId === obra.id && t.estado !== 'completada' && t.estado !== 'cancelada'
+    );
+
+    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+    const dateF = iso => iso ? iso.split('-').reverse().join('/') : '—';
+
+    let r = `📊 *${obra.nombre}*`;
+    if (obra.cliente) r += ` · ${obra.cliente}`;
+    r += `\n\n`;
+    r += `🏗 Avance: *${avancePct}%*\n`;
+    r += `💸 Gastado: *${fmt(gastado)}*`;
+    if (presupuesto > 0) r += ` / ${fmt(presupuesto)} (${Math.round(gastado/presupuesto*100)}%)`;
+    r += `\n`;
+    r += `💰 Cobrado: *${fmt(cobrado)}*\n`;
+    if (cuotas.length) r += `🧾 Cuotas: ${cuotasPagadas}/${cuotas.length} pagadas\n`;
+    if (proximaCuota) r += `📅 Próx. cuota: ${dateF(proximaCuota.fecha)} · ${fmt(proximaCuota.monto || proximaCuota.montoARS || 0)}\n`;
+    if (gastosMes.length) {
+      r += `\n*Top gastos del mes:*\n`;
+      gastosMes.forEach(m => { r += `• ${m.descripcion || m.proveedor || '—'}: ${fmt(m.monto)}\n`; });
+    }
+    if (tareasPend.length) r += `\n☑ Tareas pendientes: *${tareasPend.length}*`;
+    return r;
+  }
+
+  // "Cuánto le debo a [proveedor]" → saldo + últimas certs/pagos.
+  if (comando === 'cc_proveedor') {
+    const query = (datos.proveedor || '').toLowerCase().trim();
+    if (!query) return '🤔 ¿De qué proveedor? Ej: *cuánto le debo a Pérez*';
+    const prov = ctx.proveedores.find(p =>
+      p.nombre?.toLowerCase().includes(query) || query.includes(p.nombre?.toLowerCase())
+    );
+    if (!prov) return `❌ No encontré "${datos.proveedor}". Proveedores: ${ctx.proveedores.slice(0,5).map(p => p.nombre).join(', ')}`;
+
+    // Movimientos del proveedor
+    const movs = (ctx.movimientos || []).filter(m =>
+      m.proveedor === prov.nombre || m.proveedorId === prov.id
+    );
+    const gastos = movs.filter(m => m.tipo === 'gasto');
+    const pagado = gastos.reduce((s, m) => s + (m.monto || 0), 0);
+
+    // Certificaciones contra contratos MO de todas las obras (sumadas)
+    let certTotal = 0;
+    Object.values(ctx.detalles || {}).forEach(d => {
+      (d.contratos || []).forEach(c => {
+        if (c.gremio?.toLowerCase().includes(prov.nombre?.toLowerCase())
+         || prov.nombre?.toLowerCase().includes(c.gremio?.toLowerCase())) {
+          (c.certificaciones || []).forEach(cert => { certTotal += cert.monto || 0; });
+        }
+      });
+    });
+
+    const saldo = certTotal - pagado;
+    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+
+    let r = `🏢 *${prov.nombre}*${prov.tipo ? ` · ${prov.tipo}` : ''}\n\n`;
+    if (saldo > 0) r += `💸 Saldo a favor del proveedor: *${fmt(saldo)}*\n`;
+    else if (saldo < 0) r += `💰 Está a favor nuestro: *${fmt(-saldo)}*\n`;
+    else r += `✓ Al día\n`;
+    if (certTotal > 0) r += `Certificado: ${fmt(certTotal)} · Pagado: ${fmt(pagado)}\n`;
+
+    // Últimos 3 movimientos
+    const recientes = movs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, 3);
+    if (recientes.length) {
+      r += `\n*Últimos movs:*\n`;
+      recientes.forEach(m => {
+        const d = (m.fecha || '').split('-').reverse().join('/');
+        r += `• ${d} ${m.tipo === 'gasto' ? '🔻' : '🔺'} ${fmt(m.monto)} ${m.obraNombre ? `· ${m.obraNombre}` : ''}\n`;
+      });
+    }
+    return r;
+  }
+
+  // "Teléfono/contacto de [proveedor]"
+  if (comando === 'contacto_proveedor') {
+    const query = (datos.proveedor || '').toLowerCase().trim();
+    if (!query) return '🤔 ¿De qué proveedor? Ej: *contacto Pérez*';
+    const prov = ctx.proveedores.find(p =>
+      p.nombre?.toLowerCase().includes(query) || query.includes(p.nombre?.toLowerCase())
+    );
+    if (!prov) return `❌ No encontré "${datos.proveedor}".`;
+    let r = `🏢 *${prov.nombre}*\n`;
+    if (prov.tipo)     r += `${prov.tipo}\n`;
+    if (prov.cuit)     r += `CUIT: ${prov.cuit}\n`;
+    if (prov.telefono) r += `📱 ${prov.telefono}  →  wa.me/${prov.telefono.replace(/\D/g, '')}\n`;
+    if (prov.email)    r += `✉ ${prov.email}\n`;
+    if (prov.direccion) r += `📍 ${prov.direccion}\n`;
+    return r;
+  }
+
   return '❓ Comando no reconocido. Escribí *ayuda* para ver los disponibles.';
 }
 
-// ── Flujo principal ───────────────────────────────────────────────────────────
+// ── Detectores de comandos en lenguaje natural ────────────────────────────────
+
+// "Como va Baradero" / "Cómo está Sismat" / "Estado de Pilar" → como_va_obra.
+// Devuelve la query del nombre de obra o null si no matchea.
+function pideEstadoObra(texto) {
+  const t = (texto || '').toLowerCase().trim().replace(/[¡!¿?.,]/g, '');
+  if (!t) return null;
+  const patrones = [
+    /^(como|cómo)\s+va\s+(.+)$/,
+    /^(como|cómo)\s+(esta|está)\s+(.+)$/,
+    /^(estado|status)\s+(de\s+)?(.+)$/,
+  ];
+  for (const re of patrones) {
+    const m = t.match(re);
+    if (m) {
+      const obra = (m[m.length - 1] || '').trim();
+      if (obra && obra.length > 1 && !/^(la\s+)?obra$/.test(obra)) return obra;
+    }
+  }
+  return null;
+}
+
+// "Cuanto le debo a Perez" / "saldo Juancito" / "que le debo a..." → cc_proveedor.
+function pideCCProveedor(texto) {
+  const t = (texto || '').toLowerCase().trim().replace(/[¡!¿?.,]/g, '');
+  if (!t) return null;
+  const patrones = [
+    /^(cuanto|cuánto)\s+(le\s+)?debo\s+(a\s+)?(.+)$/,
+    /^saldo\s+(de\s+)?(.+)$/,
+    /^que\s+le\s+debo\s+(a\s+)?(.+)$/,
+    /^cc\s+(.+)$/,
+  ];
+  for (const re of patrones) {
+    const m = t.match(re);
+    if (m) {
+      const prov = (m[m.length - 1] || '').trim();
+      if (prov && prov.length > 1) return prov;
+    }
+  }
+  return null;
+}
+
+// "aprobar 1" / "aprobar pendiente 2" → aprobar_pendiente con datos.numero=N.
+// Devuelve { accion, numero } o null.
+function pideAprobacion(texto) {
+  const t = (texto || '').toLowerCase().trim().replace(/[¡!¿?.,]/g, '');
+  if (!t) return null;
+  const m = t.match(/^(aprobar|aprobá|approve|ok)\s+(?:pendiente\s+)?(\d+)$/i)
+        || t.match(/^(rechazar|rechazá|reject|no)\s+(?:pendiente\s+)?(\d+)$/i);
+  if (m) {
+    const accion = /^(aprobar|aprobá|approve|ok)/i.test(m[1]) ? 'aprobar_pendiente' : 'rechazar_pendiente';
+    return { accion, numero: parseInt(m[2], 10) };
+  }
+  return null;
+}
+
+// "Telefono de Perez" / "contacto del electricista" / "wa de..." → contacto_proveedor.
+function pideContactoProveedor(texto) {
+  const t = (texto || '').toLowerCase().trim().replace(/[¡!¿?.,]/g, '');
+  if (!t) return null;
+  const patrones = [
+    /^(telefono|teléfono|tel|wa|whatsapp|contacto)\s+(de\s+|del\s+)?(.+)$/,
+  ];
+  for (const re of patrones) {
+    const m = t.match(re);
+    if (m) {
+      const prov = (m[m.length - 1] || '').trim();
+      if (prov && prov.length > 1) return prov;
+    }
+  }
+  return null;
+}
+
 // Detecta si el mensaje es un saludo simple (sin contenido extra).
 function esSaludo(texto) {
   const t = (texto || '').toLowerCase().trim().replace(/[!¡¿?.,]/g, '');
@@ -1869,6 +2199,36 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     const respuesta = await ejecutarComando('tareas', {}, { ...user, phone }, ctx);
     await sendWA(phone, respuesta);
     return;
+  }
+
+  // ── Atajos de consulta en lenguaje natural ─────────────────────────────────
+  // Estos shortcuts evitan pasar por Claude (más rápido, más barato, sin
+  // riesgo de que el LLM repregunte algo trivial).
+  if (!mediaId && conv.state === 'idle') {
+    const obraQuery = pideEstadoObra(messageText);
+    if (obraQuery) {
+      const respuesta = await ejecutarComando('como_va_obra', { obra: obraQuery }, { ...user, phone }, ctx);
+      await sendWA(phone, respuesta);
+      return;
+    }
+    const ccQuery = pideCCProveedor(messageText);
+    if (ccQuery) {
+      const respuesta = await ejecutarComando('cc_proveedor', { proveedor: ccQuery }, { ...user, phone }, ctx);
+      await sendWA(phone, respuesta);
+      return;
+    }
+    const contactoQuery = pideContactoProveedor(messageText);
+    if (contactoQuery) {
+      const respuesta = await ejecutarComando('contacto_proveedor', { proveedor: contactoQuery }, { ...user, phone }, ctx);
+      await sendWA(phone, respuesta);
+      return;
+    }
+    const aprob = pideAprobacion(messageText);
+    if (aprob) {
+      const respuesta = await ejecutarComando(aprob.accion, { numero: aprob.numero }, { ...user, phone }, ctx);
+      await sendWA(phone, respuesta);
+      return;
+    }
   }
 
   // ── Saludo solo (sin pedir tareas): respuesta cortés breve ─────────────────
