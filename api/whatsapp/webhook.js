@@ -512,16 +512,44 @@ async function handleClienteFlow(phone, cliente, text) {
   const dolarData = await loadSharedData('dolar');
   const tc = dolarData?.venta || dolarData?.manualVal || 1070;
 
-  // Calculos de pagos
+  // ── Cálculos de pagos (libro único) ────────────────────────────────────────
+  // Lo COBRADO se deriva de los MOVIMIENTOS de ingreso de la obra, igual que el
+  // portal y el admin (api/portal/data.js / helpers.cobradoObraUSD). TODO en USD
+  // para coincidir con el portal. Antes leía cuota.pagos[] y mostraba un número
+  // distinto al portal cuando el cobro venía del bot. Las cuotas marcadas
+  // pagadas a mano (estado 'pagado' sin pagos) se respetan.
   const cuotas = detalle.cuotas || [];
-  const cuotaMonto = c => cuotaMontoFn(c, moneda, tc);
-  const cuotaCobrado = c => cuotaCobradoFn(c, moneda, tc);
+  const movDataCli = await loadSharedData('movimientos');
+  const cajasCli   = movDataCli?.cajas || [];
+  const cobradoUSD = (movDataCli?.movimientos || [])
+    .filter(m => m.obraId === obra.id && m.tipo === 'ingreso')
+    .reduce((s, m) => {
+      if (m.montoDolar) return s + Math.round(m.montoDolar);
+      const caja = cajasCli.find(c => c.id === m.cajaId);
+      return s + (caja?.moneda === 'USD' ? Math.round(m.monto || 0) : Math.round((m.monto || 0) / (tc || 1)));
+    }, 0);
+  const cuotaMonto = c => Math.round((moneda === 'USD' || c._usd) ? (c.monto || 0) : (c.monto || 0) / tc); // USD
+  // Reparto del cobrado sobre las cuotas en orden (igual que repartirCobroEnCuotas).
+  let _restCli = Math.max(0, cobradoUSD);
+  const _repartoCli = {};
+  for (const c of cuotas) {
+    const m = cuotaMonto(c);
+    if (c.estado === 'pagado' && !((c.pagos || []).length)) { _repartoCli[c.id] = m; continue; }
+    const ap = Math.min(m, _restCli); _repartoCli[c.id] = ap; _restCli -= ap;
+  }
+  const cuotaCobrado = c => _repartoCli[c.id] || 0;
+  const estadoCuota = c => {
+    const cob = _repartoCli[c.id] || 0; const m = cuotaMonto(c);
+    if (cob <= 0) return 'pendiente';
+    if (cob >= m) return 'pagado';
+    return 'parcial';
+  };
   const totalCuotas = cuotas.reduce((s, c) => s + cuotaMonto(c), 0);
-  const totalCobrado = cuotas.reduce((s, c) => s + cuotaCobrado(c), 0);
+  const totalCobrado = cobradoUSD;
   const saldoPendiente = Math.max(0, totalCuotas - totalCobrado);
-  const pagadas = cuotas.filter(c => cuotaEstadoCalc(c, moneda, tc) === 'pagado').length;
+  const pagadas = cuotas.filter(c => estadoCuota(c) === 'pagado').length;
   const proximaCuota = cuotas
-    .filter(c => cuotaEstadoCalc(c, moneda, tc) !== 'pagado')
+    .filter(c => estadoCuota(c) !== 'pagado')
     .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))[0];
 
   const fmtFecha = (iso) => {
@@ -566,9 +594,9 @@ async function handleClienteFlow(phone, cliente, text) {
   if (/(saldo|cuanto\s+debo|cuanto\s+falta|deuda)/.test(t)) {
     await sendWA(phone,
       `💰 *Saldo de tu obra ${obra.nombre}*\n\n` +
-      `Total acordado: ${fmtMonto(totalCuotas, moneda)}\n` +
-      `Pagaste: ${fmtMonto(totalCobrado, moneda)}\n` +
-      `*Saldo pendiente: ${fmtMonto(saldoPendiente, moneda)}*\n\n` +
+      `Total acordado: ${fmtMonto(totalCuotas, 'USD')}\n` +
+      `Pagaste: ${fmtMonto(totalCobrado, 'USD')}\n` +
+      `*Saldo pendiente: ${fmtMonto(saldoPendiente, 'USD')}*\n\n` +
       `Detalle completo en el portal:\n${portalUrl}`
     );
     return;
@@ -586,8 +614,8 @@ async function handleClienteFlow(phone, cliente, text) {
       `📅 *Proxima cuota de ${obra.nombre}*\n\n` +
       `Cuota N°${proximaCuota.n || '—'}: ${proximaCuota.descripcion || ''}\n` +
       `Vence: *${fmtFecha(proximaCuota.fecha)}*\n` +
-      `Monto: ${fmtMonto(monto, moneda)}` +
-      (cobrado > 0 ? `\nYa pagaste: ${fmtMonto(cobrado, moneda)}\nFalta: *${fmtMonto(restante, moneda)}*` : '') +
+      `Monto: ${fmtMonto(monto, 'USD')}` +
+      (cobrado > 0 ? `\nYa pagaste: ${fmtMonto(cobrado, 'USD')}\nFalta: *${fmtMonto(restante, 'USD')}*` : '') +
       `\n\nDetalle: ${portalUrl}`
     );
     return;
@@ -597,7 +625,7 @@ async function handleClienteFlow(phone, cliente, text) {
     const pct = totalCuotas > 0 ? Math.round((totalCobrado / totalCuotas) * 100) : 0;
     await sendWA(phone,
       `✅ *Pagos de ${obra.nombre}*\n\n` +
-      `Pagaste: *${fmtMonto(totalCobrado, moneda)}* de ${fmtMonto(totalCuotas, moneda)} (${pct}%)\n` +
+      `Pagaste: *${fmtMonto(totalCobrado, 'USD')}* de ${fmtMonto(totalCuotas, 'USD')} (${pct}%)\n` +
       `Cuotas cobradas: ${pagadas} de ${cuotas.length}\n\n` +
       `Ver todas: ${portalUrl}`
     );
@@ -610,9 +638,9 @@ async function handleClienteFlow(phone, cliente, text) {
       return;
     }
     const lineas = cuotas.slice(0, 10).map(c => {
-      const estado = cuotaEstadoCalc(c, moneda, tc);
+      const estado = estadoCuota(c);
       const icon = estado === 'pagado' ? '✅' : estado === 'parcial' ? '🟡' : '⏳';
-      return `${icon} N°${c.n} ${c.descripcion || ''} — ${fmtMonto(cuotaMonto(c), moneda)} — ${fmtFecha(c.fecha)}`;
+      return `${icon} N°${c.n} ${c.descripcion || ''} — ${fmtMonto(cuotaMonto(c), 'USD')} — ${fmtFecha(c.fecha)}`;
     });
     await sendWA(phone,
       `📋 *Plan de pagos · ${obra.nombre}*\n\n${lineas.join('\n')}` +

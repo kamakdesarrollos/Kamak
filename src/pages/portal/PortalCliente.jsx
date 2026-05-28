@@ -685,7 +685,7 @@ export default function PortalCliente() {
                           )}
                           {isParcial && (
                             <span style={{ color: '#92400e', marginLeft: 6, fontFamily: T.fontMono }}>
-                              · Pendiente {fmt(cuotaEnUSD(c) - toUSD(c.pagos?.reduce((s, p) => s + (p.monto || 0), 0) || 0, c._usd || obraEsUSD))}
+                              · Pendiente {fmt(Math.max(0, cuotaEnUSD(c) - (repartoCuotas[c.id] || 0)))}
                             </span>
                           )}
                         </div>
