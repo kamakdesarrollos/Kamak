@@ -1068,7 +1068,7 @@ ORDEN DE PREGUNTAS (nunca más de una a la vez):
    - Si NO hay texto claro y rol es "Admin" → preguntá "¿Avance, gasto o factura?"
 2. Si llega FOTO + texto de gasto (con obra o concepto): procesá como gasto con comprobante=blanco automáticamente, monto leído de la foto, caja efectivo del usuario. NO repreguntes obra ni caja si están claras.
 3. Si llega FOTO + texto de avance ("avancé", "foto de avance", "progreso", "terminé", "colocamos", "terminado", "avance de obra"): procesá como avance_obra directamente.
-4. Si falta monto → preguntá el monto
+4. MONTO: si hay FOTO de ticket/factura/comprobante, LEÉ el monto total de la imagen (el TOTAL a pagar, no subtotales). NUNCA preguntes el monto cuando hay un comprobante adjunto — el monto SIEMPRE está en el ticket. Solo preguntá el monto si NO hay foto y el usuario no lo escribió.
 5. Si falta obra → proponé la última o pedí que la indique
 6. Si falta rubro → mostrá opciones relevantes al material
 7. Si falta comprobante (y NO hay foto en esta conversación) → preguntá "¿Tiene factura? (sí/no)"
