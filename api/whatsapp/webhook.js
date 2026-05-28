@@ -48,6 +48,13 @@ async function saveSharedData(key, value) {
 }
 
 // ── Helpers Meta API ──────────────────────────────────────────────────────────
+// Botones estándar de confirmación. El id 'confirmar'/'cancelar' se mapea a
+// "sí"/"no" cuando vuelve, reutilizando la lógica de confirmación por texto.
+const BOTONES_CONFIRMAR = [
+  { id: 'confirmar', title: 'Confirmar ✅' },
+  { id: 'cancelar',  title: 'Cancelar ❌' },
+];
+
 async function sendWA(to, body) {
   try {
     const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
@@ -61,6 +68,73 @@ async function sendWA(to, body) {
     }
   } catch (e) {
     console.error('sendWA exception:', e.message);
+  }
+}
+
+// Envía un mensaje con BOTONES de respuesta rápida (máx 3 botones).
+// botones: [{ id: 'confirmar', title: 'Confirmar ✅' }, ...]
+// Cuando el usuario toca un botón, Meta nos manda un mensaje interactivo
+// cuyo button_reply.id es el id que mandamos. Lo parseamos en el handler.
+// Fallback: si la API rechaza (algunos números no soportan interactive),
+// reintenta como texto plano con instrucción numérica.
+async function sendWAButtons(to, body, botones) {
+  const buttons = botones.slice(0, 3).map(b => ({
+    type: 'reply',
+    reply: { id: b.id, title: b.title.slice(0, 20) }, // título máx 20 chars
+  }));
+  try {
+    const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp', to, type: 'interactive',
+        interactive: { type: 'button', body: { text: body.slice(0, 1024) }, action: { buttons } },
+      }),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      console.error('sendWAButtons error:', r.status, t);
+      // Fallback texto plano
+      const txtFallback = `${body}\n\n${botones.map((b, i) => `${i + 1}. ${b.title}`).join('\n')}`;
+      await sendWA(to, txtFallback);
+    }
+  } catch (e) {
+    console.error('sendWAButtons exception:', e.message);
+    await sendWA(to, body);
+  }
+}
+
+// Envía un mensaje con LISTA desplegable (hasta 10 opciones). Útil para
+// elegir obra/caja/proveedor cuando hay varias coincidencias.
+// items: [{ id, title, description? }]
+async function sendWAList(to, body, buttonLabel, items) {
+  const rows = items.slice(0, 10).map(it => ({
+    id: it.id,
+    title: (it.title || '').slice(0, 24),
+    description: (it.description || '').slice(0, 72),
+  }));
+  try {
+    const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp', to, type: 'interactive',
+        interactive: {
+          type: 'list',
+          body: { text: body.slice(0, 1024) },
+          action: { button: (buttonLabel || 'Elegir').slice(0, 20), sections: [{ rows }] },
+        },
+      }),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      console.error('sendWAList error:', r.status, t);
+      const txtFallback = `${body}\n\n${items.map((it, i) => `${i + 1}. ${it.title}`).join('\n')}`;
+      await sendWA(to, txtFallback);
+    }
+  } catch (e) {
+    console.error('sendWAList exception:', e.message);
+    await sendWA(to, body);
   }
 }
 
@@ -1681,6 +1755,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
       `• _"contacto [proveedor]"_ — tel/wa/email\n` +
       (esAdmin ? `• _"aprobar N"_ / _"rechazar N"_ — sobre pendientes (escribí *pendientes* para verlos)\n` : '') +
       (esAdmin ? `• _"pasá $200k de Caja X a Caja Y"_ — traspaso entre cajas\n` : '') +
+      `• *deshacer* — revierte tu último movimiento cargado\n` +
 
       `\n_Escribí *ayuda* cuando quieras volver a ver este menú._`
     );
@@ -2057,6 +2132,35 @@ async function ejecutarComando(comando, datos, user, ctx) {
     return r;
   }
 
+  // "Deshacer" — revierte el último movimiento que el usuario cargó por WA.
+  // Útil cuando se equivocó (monto, obra, etc.) — borra el mov y restaura saldo.
+  if (comando === 'deshacer') {
+    const movData = await loadSharedData('movimientos');
+    const movs    = movData?.movimientos || [];
+    const cajas   = movData?.cajas || ctx.cajas;
+    // Último movimiento creado por WA por este usuario (los ids llevan timestamp).
+    const mio = movs
+      .filter(m => m.creadoPorWA && m.creadoPor === user.user_name)
+      .sort((a, b) => (b.id || '').localeCompare(a.id || ''))[0];
+    if (!mio) return '🤷 No encontré ningún movimiento reciente tuyo para deshacer.';
+
+    // Revertir el efecto en cajas según tipo.
+    const updatedCajas = cajas.map(c => {
+      if (mio.tipo === 'ingreso'  && c.id === mio.cajaId)        return { ...c, saldo: (c.saldo || 0) - (mio.monto || 0) };
+      if (mio.tipo === 'gasto'    && c.id === mio.cajaId)        return { ...c, saldo: (c.saldo || 0) + (mio.monto || 0) };
+      if (mio.tipo === 'traspaso') {
+        if (c.id === mio.cajaId)        return { ...c, saldo: (c.saldo || 0) + (mio.monto || 0) };
+        if (c.id === mio.cajaDestinoId) return { ...c, saldo: (c.saldo || 0) - (mio.montoDestino ?? mio.monto ?? 0) };
+      }
+      return c;
+    });
+    const sinMov = movs.filter(m => m.id !== mio.id);
+    await saveSharedData('movimientos', { movimientos: sinMov, cajas: updatedCajas });
+
+    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+    return `↩️ Deshecho: *${mio.tipo}* de ${fmt(mio.monto)}${mio.obraNombre && mio.obraNombre !== 'General' ? ` en ${mio.obraNombre}` : ''}.\n_${mio.descripcion || ''}_`;
+  }
+
   // "Teléfono/contacto de [proveedor]"
   if (comando === 'contacto_proveedor') {
     const query = (datos.proveedor || '').toLowerCase().trim();
@@ -2229,6 +2333,13 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       await sendWA(phone, respuesta);
       return;
     }
+    // "deshacer" / "deshacé" / "borrá lo último" → revierte el último mov.
+    const tDesh = (messageText || '').toLowerCase().trim().replace(/[¡!¿?.,]/g, '');
+    if (/^(deshacer|deshace|deshacé|borra lo ultimo|borrá lo último|undo|me equivoque|me equivoqué)$/.test(tDesh)) {
+      const respuesta = await ejecutarComando('deshacer', {}, { ...user, phone }, ctx);
+      await sendWA(phone, respuesta);
+      return;
+    }
   }
 
   // ── Saludo solo (sin pedir tareas): respuesta cortés breve ─────────────────
@@ -2372,7 +2483,7 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       `Esto *reemplaza* el avance anterior. ¿Confirmás? (sí/no)`;
     const newHist = [...updatedHistory, { rol: 'asistente', texto: confMsg, ts: Date.now() }];
     await saveConversation(phone, { state: 'confirmando', data: { accion: { tipo: 'avance_obra', datos: correccionDetectada }, pendingMediaUrl: mediaUrl }, history: newHist, slots: conv.slots || {} });
-    await sendWA(phone, confMsg);
+    await sendWAButtons(phone, confMsg, BOTONES_CONFIRMAR);
     return;
   }
 
@@ -2394,7 +2505,7 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       `\n¿Confirmás? (sí/no)`;
     const newHist = [...updatedHistory, { rol: 'asistente', texto: confMsg, ts: Date.now() }];
     await saveConversation(phone, { state: 'confirmando', data: { accion: { tipo: 'avance_obra', datos: avanceDetectado }, pendingMediaUrl: mediaUrl }, history: newHist, slots: conv.slots || {} });
-    await sendWA(phone, confMsg);
+    await sendWAButtons(phone, confMsg, BOTONES_CONFIRMAR);
     return;
   }
 
@@ -2434,7 +2545,7 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
 
   if (claudeRes.estado === 'confirmando') {
     await saveConversation(phone, { state: 'confirmando', data: { accion: claudeRes.accion, pendingMediaUrl: mediaUrl }, history: newHistory, slots: conv.slots || {} });
-    await sendWA(phone, claudeRes.mensaje);
+    await sendWAButtons(phone, claudeRes.mensaje, BOTONES_CONFIRMAR);
     return;
   }
 
@@ -2544,6 +2655,19 @@ export default async function handler(req, res) {
       mediaId  = message.document?.id;
       mimeType = message.document?.mime_type || 'application/pdf';
       text     = message.document?.filename || '';
+    } else if (messageType === 'interactive') {
+      // Respuesta a botón o lista. El id que mandamos vuelve acá. Lo
+      // tratamos como texto para que el resto del flujo lo procese igual:
+      // - botones de confirmación usan ids 'confirmar'/'cancelar' → mapeamos
+      //   a "sí"/"no" para reutilizar la lógica de confirmación existente.
+      // - listas de selección usan ids con formato "pick:<valor>".
+      const btn  = message.interactive?.button_reply;
+      const lst  = message.interactive?.list_reply;
+      const rawId = btn?.id || lst?.id || '';
+      if (rawId === 'confirmar') text = 'sí';
+      else if (rawId === 'cancelar') text = 'no';
+      else if (rawId.startsWith('pick:')) text = rawId.slice(5);
+      else text = btn?.title || lst?.title || rawId;
     } else {
       return res.status(200).json({ ok: true });
     }
