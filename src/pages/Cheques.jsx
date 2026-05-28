@@ -632,7 +632,7 @@ export default function Cheques() {
   }, [currentUser, isAdmin, navigate]);
 
   const { cheques, addCheque, updateCheque, removeCheque, depositarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque } = useCheques();
-  const { cajas, addMovimiento } = useMovimientos();
+  const { cajas, addMovimiento, removeMovimiento, traspasar } = useMovimientos();
   const { obras } = useObras();
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
 
@@ -676,18 +676,88 @@ export default function Cheques() {
   }
 
   // ── Acciones ──────────────────────────────────────────────────────────────
+  // Ajusta la caja cuando un cheque "sale" (anular/rechazar/endosar) o
+  // "reingresa" (reactivar). La dirección depende del tipo de cheque:
+  //  - tercero (recibido): entró como INGRESO → su salida es GASTO; reingreso = INGRESO.
+  //  - propio (emitido):   salió como GASTO  → su "salida" (anular) DEVUELVE = INGRESO; reingreso = GASTO.
+  // Solo aplica si el cheque estaba contado en una caja.
+  const ajustarCajaCheque = (cheque, modo, motivo, fecha) => {
+    if (!cheque.cajaId || !(cheque.monto > 0)) return;
+    const esTercero = cheque.tipo === 'tercero' || cheque.tipo === 'echeq_tercero';
+    const esEcheq = cheque.tipo === 'echeq_tercero' || cheque.tipo === 'echeq_propio';
+    const tipo = modo === 'salida'
+      ? (esTercero ? 'gasto' : 'ingreso')
+      : (esTercero ? 'ingreso' : 'gasto');
+    addMovimiento({
+      tipo,
+      descripcion: `${motivo}${cheque.numero ? ` #${cheque.numero}` : ''}`,
+      monto: cheque.monto,
+      fecha: fecha || todayStr(),
+      cajaId: cheque.cajaId,
+      cajaDestinoId: null,
+      obraId: cheque.obraId || null,
+      obraNombre: cheque.obraNombre || 'General',
+      proveedor: cheque.clienteNombre || cheque.titular || cheque.proveedorNombre || '',
+      categoria: 'cheque',
+      medioPago: esEcheq ? 'E-cheq' : 'Cheque',
+      referencia: cheque.numero || '',
+      fondoReparo: false,
+    });
+  };
+
   const onAccion = (action, cheque) => {
     if (action === 'eliminar') {
-      if (window.confirm(`¿Eliminar cheque #${cheque.numero || cheque.id}?`)) removeCheque(cheque.id);
+      if (window.confirm(`¿Eliminar cheque #${cheque.numero || cheque.id}?`)) {
+        // Borrar el cheque revierte también su movimiento (el ingreso que generó
+        // al recibirlo), para no dejar plata contada sin respaldo.
+        if (cheque.movimientoId) removeMovimiento(cheque.movimientoId);
+        removeCheque(cheque.id);
+      }
       return;
     }
-    if (action === 'reactivar') { reactivarCheque(cheque.id); return; }
-    if (action === 'anular')    { anularCheque(cheque.id); return; }
+    if (action === 'reactivar') {
+      // Vuelve a cartera: si estaba contado, repone la plata en la caja.
+      ajustarCajaCheque(cheque, 'reingreso', 'Cheque reactivado');
+      reactivarCheque(cheque.id);
+      return;
+    }
+    if (action === 'anular') {
+      // Anula: revierte el efecto en la caja (tercero sale, propio se devuelve).
+      ajustarCajaCheque(cheque, 'salida', 'Cheque anulado');
+      anularCheque(cheque.id);
+      return;
+    }
     setModal({ action, cheque });
   };
 
   const handleNuevo = (data) => {
-    addCheque(data);
+    // Modelo "al recibirlo": el cheque impacta la caja en el momento de
+    // registrarlo (igual que el cobro/pago con cheque desde Movimientos).
+    //  - tercero (recibido) → ingreso a la caja
+    //  - propio (emitido)   → gasto desde la caja
+    // Vinculamos el movimiento al cheque (movimientoId) para poder revertirlo
+    // si se borra el movimiento o se anula el cheque.
+    const esTercero = data.tipo === 'tercero' || data.tipo === 'echeq_tercero';
+    const esEcheq = data.tipo === 'echeq_tercero' || data.tipo === 'echeq_propio';
+    let movimientoId = null;
+    if (data.cajaId && (data.monto || 0) > 0) {
+      movimientoId = addMovimiento({
+        tipo: esTercero ? 'ingreso' : 'gasto',
+        descripcion: `${esTercero ? 'Cheque recibido' : 'Cheque emitido'}${data.numero ? ` #${data.numero}` : ''}${data.banco ? ` · ${data.banco}` : ''}`,
+        monto: data.monto,
+        fecha: data.fechaIngreso,
+        obraId: data.obraId || null,
+        obraNombre: data.obraNombre || 'General',
+        cajaId: data.cajaId,
+        cajaDestinoId: null,
+        proveedor: esTercero ? (data.clienteNombre || data.titular || '') : (data.proveedorNombre || ''),
+        categoria: 'cheque',
+        medioPago: esEcheq ? 'E-cheq' : 'Cheque',
+        referencia: data.numero || '',
+        fondoReparo: false,
+      });
+    }
+    addCheque({ ...data, movimientoId });
     closeModal();
   };
 
@@ -699,6 +769,36 @@ export default function Cheques() {
   const handleDepositar = ({ cajaId, fecha }) => {
     const c = modal.cheque;
     const caja = cajas.find(x => x.id === cajaId);
+    // Modelo "al recibirlo": el cheque ya entró a una caja al registrarlo.
+    // Depositar = TRASPASO de esa caja al banco (baja de una, sube de otra),
+    // NO un ingreso nuevo (sino duplicaríamos la plata).
+    // Caso legacy: si el cheque no tenía caja de origen (nunca se contó),
+    // entonces sí entra como ingreso al banco recién al depositarlo.
+    if (c.cajaId && c.cajaId !== cajaId) {
+      traspasar({
+        cajaOrigenId: c.cajaId,
+        cajaDestinoId: cajaId,
+        monto: c.monto,
+        fecha,
+        concepto: `Depósito cheque${c.numero ? ` #${c.numero}` : ''}${caja ? ` en ${caja.nombre}` : ''}`,
+      });
+    } else if (!c.cajaId) {
+      addMovimiento({
+        tipo: 'ingreso',
+        descripcion: `Depósito cheque${c.numero ? ` #${c.numero}` : ''}`,
+        monto: c.monto,
+        fecha,
+        obraId: c.obraId || null,
+        obraNombre: c.obraNombre || 'General',
+        cajaId,
+        cajaDestinoId: null,
+        proveedor: c.clienteNombre || c.titular || '',
+        categoria: 'cheque',
+        medioPago: (c.tipo === 'echeq_tercero' || c.tipo === 'echeq_propio') ? 'E-cheq' : 'Cheque',
+        referencia: c.numero || '',
+        fondoReparo: false,
+      });
+    }
     depositarCheque(c.id, { cajaDestinoId: cajaId, cajaDestinoNombre: caja?.nombre || '', fechaDeposito: fecha, movimientoId: c.movimientoId || null });
     closeModal();
   };
@@ -712,17 +812,17 @@ export default function Cheques() {
     const desc = concepto.trim() ||
       `Endoso ${esEcheq ? 'ECheq' : 'Cheque'}${c.numero ? ` #${c.numero}` : ''} a ${endosadoA}`;
 
-    // Bug previo: creaba un movimiento tipo 'gasto' que debitaba la caja
-    // donde supuestamente estaba el cheque. Pero el cheque NUNCA entro en
-    // efectivo — endosar es solo transferir el papel a un tercero.
-    // Ahora creamos un movimiento tipo 'endoso' que NO toca saldo de cajas
-    // (ver applyEfectoEnCajas en MovimientosContext).
+    // Modelo "al recibirlo": si el cheque de tercero ya estaba contado en una
+    // caja, endosarlo (dárselo a un tercero) hace que la plata SALGA de esa
+    // caja (gasto). Si no tenía caja (cheque legacy nunca contado), registramos
+    // un 'endoso' que no toca saldo (comportamiento viejo).
+    const esTercero = c.tipo === 'tercero' || c.tipo === 'echeq_tercero';
     addMovimiento({
-      tipo: 'endoso',
+      tipo: (c.cajaId && esTercero) ? 'gasto' : 'endoso',
       descripcion: desc,
       monto: c.monto,
       fecha,
-      cajaId: null,
+      cajaId: c.cajaId || null,
       obraId: obraId || null,
       obraNombre: obra?.nombre || 'General',
       proveedor: endosadoA,
@@ -737,16 +837,33 @@ export default function Cheques() {
   };
 
   const handleRechazar = ({ motivo, fecha }) => {
-    rechazarCheque(modal.cheque.id, { fechaRechazo: fecha, motivoRechazo: motivo });
+    const c = modal.cheque;
+    // Si estaba contado en una caja, al rebotar se revierte (tercero sale).
+    ajustarCajaCheque(c, 'salida', `Cheque rechazado${motivo ? ` · ${motivo}` : ''}`, fecha);
+    rechazarCheque(c.id, { fechaRechazo: fecha, motivoRechazo: motivo });
     closeModal();
   };
 
   const handleTraspasar = ({ traspasadoA, cajaDestinoId, fecha, nota }) => {
-    updateCheque(modal.cheque.id, {
-      cajaId: cajaDestinoId,
+    const c = modal.cheque;
+    // Mover el cheque a otra caja = traspaso de plata entre cajas (baja de la
+    // caja donde estaba, sube a la destino). Solo si el cheque ya estaba en una
+    // caja (fue contado al recibirlo).
+    if (c.cajaId && cajaDestinoId && c.cajaId !== cajaDestinoId) {
+      const cajaDest = cajas.find(x => x.id === cajaDestinoId);
+      traspasar({
+        cajaOrigenId: c.cajaId,
+        cajaDestinoId,
+        monto: c.monto,
+        fecha,
+        concepto: nota || `Traspaso cheque${c.numero ? ` #${c.numero}` : ''}${cajaDest ? ` a ${cajaDest.nombre}` : ''}`,
+      });
+    }
+    updateCheque(c.id, {
+      cajaId: cajaDestinoId || c.cajaId,
       traspasoA: traspasadoA,
       fechaTraspaso: fecha,
-      observacion: nota || modal.cheque.observacion,
+      observacion: nota || c.observacion,
     });
     closeModal();
   };

@@ -1035,6 +1035,7 @@ export default function Movimientos() {
   const { dolarVenta }     = useDolar();
   const { currentUser }    = useUsuarios();
   const { solicitudes, addSolicitud } = useSolicitudes();
+  const { cheques, removeCheque } = useCheques();
   const cv = currentUser?.cajasVisibles ?? '*';
   const cajas = cv === '*' ? allCajas : allCajas.filter(c => Array.isArray(cv) && cv.includes(c.id));
   const isAdmin = currentUser?.rol === 'Admin';
@@ -1049,6 +1050,15 @@ export default function Movimientos() {
       solicitadoPor: { id: currentUser?.id, nombre: currentUser?.nombre, email: currentUser?.email },
       motivo,
     });
+  };
+
+  // Borrar un movimiento revierte también el cheque vinculado (si lo hay), para
+  // que no quede un cheque colgado sin respaldo en caja. (Los asientos de CC de
+  // proveedor no se revierten acá porque no guardan el id del movimiento.)
+  const handleRemoveMov = (id) => {
+    const chq = cheques.find(c => c.movimientoId === id);
+    if (chq) removeCheque(chq.id);
+    removeMovimiento(id);
   };
 
   const [searchParams] = useSearchParams();
@@ -1167,7 +1177,7 @@ export default function Movimientos() {
           total={totalIngresos}
           mes={mes}
           addMovimiento={addMovimiento}
-          onRemove={removeMovimiento}
+          onRemove={handleRemoveMov}
           isAdmin={isAdmin}
           pendingSolIds={pendingSolIds}
           onSolicitar={handleSolicitar}
@@ -1183,7 +1193,7 @@ export default function Movimientos() {
           total={totalGastos}
           mes={mes}
           addMovimiento={addMovimiento}
-          onRemove={removeMovimiento}
+          onRemove={handleRemoveMov}
           isAdmin={isAdmin}
           pendingSolIds={pendingSolIds}
           onSolicitar={handleSolicitar}
@@ -1195,7 +1205,7 @@ export default function Movimientos() {
         cajas={cajas}
         dolarVenta={dolarVenta}
         onSave={traspasar}
-        onRemove={removeMovimiento}
+        onRemove={handleRemoveMov}
         mes={mes}
         isAdmin={isAdmin}
         pendingSolIds={pendingSolIds}
