@@ -36,7 +36,7 @@ export default function Conciliacion() {
   ];
 
   return (
-    <PageLayout breadcrumb={['Cajas', 'Banco Galicia ARS', 'Conciliación']} active="Cajas">
+    <PageLayout breadcrumb={[{ label: 'Cajas', to: '/cajas' }, 'Banco Galicia ARS', 'Conciliación']} active="Cajas">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
         <div>
           <div className="k-h" style={{ fontSize: 28 }}>Conciliación bancaria</div>

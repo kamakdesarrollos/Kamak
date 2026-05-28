@@ -6,6 +6,8 @@ import { Box, Btn, Chip, Divider } from '../components/ui';
 import { T } from '../theme';
 import { usePlantillas } from '../store/PlantillasContext';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
+import { buscarEnCatalogo } from '../lib/apuPriceResolver';
+import { getSismatCostsForTarea } from '../lib/sismatCostFallback';
 import { useObras } from '../store/ObrasContext';
 import { useClientes } from '../store/ClientesContext';
 import { useUsuarios } from '../store/UsuariosContext';
@@ -22,25 +24,60 @@ const TIPO_BG  = { Comercial: '#e8f7f7', Vivienda: '#e8f4ea', Industrial: '#e8ee
 const TIPO_COL = { Comercial: '#1a9b9c', Vivienda: '#3d7a4a', Industrial: '#4a7ab5', Refacción: '#d4923a', Otro: T.ink2 };
 
 // ── Calcs ─────────────────────────────────────────────────────────────────────
-const tareaVentaUnit = (t, rubro) => {
-  const cu = (t.costoMat || 0) + (t.costoSub || 0);
+
+// Resuelve los costos unitarios de una tarea de plantilla. Estrategia:
+// 1) Si la tarea trae costoMat/costoSub hardcoded (>0), los usa.
+// 2) Toma el MÁXIMO entre el catálogo APU y el SISMAT. Esto cubre el caso
+//    típico: el catálogo APU está cargado parcial (solo cemento $30) y el
+//    SISMAT tiene el costo real ($551 sumando todos los materiales). Tomar
+//    el max evita quedarte con valores absurdamente bajos cuando el catálogo
+//    no fue migrado por completo.
+export function resolverCostosTareaPlantilla(t, catalogIndex, sismatCostMap) {
+  const hardcoded = (t.costoMat || 0) + (t.costoSub || 0);
+  if (hardcoded > 0) {
+    return { costoMat: t.costoMat || 0, costoSub: t.costoSub || 0, encontrado: true, origen: 'plantilla' };
+  }
+
+  let apuMat = 0, apuSub = 0;
+  const apu = buscarEnCatalogo(t.nombre, catalogIndex?.tareas);
+  if (apu) {
+    const { mat, sub, mo, gen } = calcTarea(apu, catalogIndex);
+    apuMat = Math.round(mat + gen);
+    apuSub = Math.round(sub + mo);
+  }
+
+  const sismat = getSismatCostsForTarea(t.nombre, sismatCostMap) || { costoMat: 0, costoSub: 0 };
+
+  const costoMat = Math.max(apuMat, sismat.costoMat || 0);
+  const costoSub = Math.max(apuSub, sismat.costoSub || 0);
+  const origen = costoMat === apuMat && costoSub === apuSub
+    ? (apu ? 'catalogo' : 'sin-datos')
+    : (apu ? 'mixto' : 'sismat');
+
+  return { costoMat, costoSub, encontrado: costoMat + costoSub > 0, origen };
+}
+
+const tareaVentaUnit = (t, rubro, catalogIndex, sismatCostMap) => {
+  const { costoMat, costoSub } = resolverCostosTareaPlantilla(t, catalogIndex, sismatCostMap);
+  const cu = costoMat + costoSub;
   if (t.margenLinea != null) return cu * (1 + t.margenLinea / 100);
-  return (t.costoMat || 0) * (1 + rubro.margenMat / 100) + (t.costoSub || 0) * (1 + rubro.margenMO / 100);
+  return costoMat * (1 + rubro.margenMat / 100) + costoSub * (1 + rubro.margenMO / 100);
 };
 
-const calcRubros = (rubros) => (rubros || []).map(r => {
+const calcRubros = (rubros, catalogIndex, sismatCostMap) => (rubros || []).map(r => {
   let cMat = 0, cSub = 0, venta = 0;
   for (const t of (r.tareas || []).filter(t => t.tipo !== 'seccion')) {
-    cMat  += (t.costoMat || 0) * (t.cantidad || 1);
-    cSub  += (t.costoSub || 0) * (t.cantidad || 1);
-    venta += tareaVentaUnit(t, r) * (t.cantidad || 1);
+    const { costoMat, costoSub } = resolverCostosTareaPlantilla(t, catalogIndex, sismatCostMap);
+    cMat  += costoMat * (t.cantidad || 1);
+    cSub  += costoSub * (t.cantidad || 1);
+    venta += tareaVentaUnit(t, r, catalogIndex, sismatCostMap) * (t.cantidad || 1);
   }
   const costo  = cMat + cSub;
   const margen = venta > 0 ? Math.round((venta - costo) / venta * 100) : 0;
   return { ...r, cMat, cSub, costo, venta, margen };
 });
 
-const calcRef    = (plt) => calcRubros(plt.rubros).reduce((s, r) => s + r.venta, 0);
+const calcRef    = (plt, catalogIndex, sismatCostMap) => calcRubros(plt.rubros, catalogIndex, sismatCostMap).reduce((s, r) => s + r.venta, 0);
 const totalTareas = (plt) => (plt.rubros || []).reduce((s, r) => s + (r.tareas || []).filter(t => t.tipo !== 'seccion').length, 0);
 
 const fmtRef = (n) => {
@@ -134,7 +171,7 @@ function TotalsStrip({ rr, cols, setCols, children }) {
           <span style={{ fontFamily: T.fontMono, color: '#c0392b' }}>{fmtM(totalMat)}</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <span style={{ color: T.ink2 }}>Subcontratos:</span>
+          <span style={{ color: T.ink2 }}>Mano de Obra:</span>
           <span style={{ fontFamily: T.fontMono, color: '#c0392b' }}>{fmtM(totalSub)}</span>
         </div>
       </div>
@@ -284,10 +321,11 @@ function buildVisibleTareas(tareas, collapsedSections) {
 
 // ── PlantillaViewer ───────────────────────────────────────────────────────────
 function PlantillaViewer({ plt, onClose, onEdit, onUsar }) {
+  const { catalogIndex, sismatCostMap } = useCatalog();
   const [cols, setCols]         = useState({ costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
   const [abiertos, setAbiertos] = useState({});
   const [collapsedSections, setCollapsedSections] = useState(new Set());
-  const rr = calcRubros(plt.rubros);
+  const rr = calcRubros(plt.rubros, catalogIndex, sismatCostMap);
   const toggleRubro   = (id) => setAbiertos(p => ({ ...p, [id]: !p[id] }));
   const toggleSeccion = (id) => setCollapsedSections(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const isOpen = (id) => abiertos[id] !== false;
@@ -358,9 +396,10 @@ function PlantillaViewer({ plt, onClose, onEdit, onUsar }) {
                         </div>
                       );
                     }
-                    const costoUnit  = (t.costoMat || 0) + (t.costoSub || 0);
+                    const resolved   = resolverCostosTareaPlantilla(t, catalogIndex, sismatCostMap);
+                    const costoUnit  = resolved.costoMat + resolved.costoSub;
                     const costoTotal = costoUnit * (t.cantidad || 1);
-                    const ventaUnit  = tareaVentaUnit(t, rubro);
+                    const ventaUnit  = tareaVentaUnit(t, rubro, catalogIndex, sismatCostMap);
                     const ventaTotal = ventaUnit * (t.cantidad || 1);
                     const margenT    = ventaUnit > 0 ? Math.round((ventaUnit - costoUnit) / ventaUnit * 100) : 0;
                     return (
@@ -368,8 +407,8 @@ function PlantillaViewer({ plt, onClose, onEdit, onUsar }) {
                         <div className="k-cell" style={{ flex: 3 }}>{t.nombre || <span style={{ color: T.ink3, fontStyle: 'italic' }}>sin nombre</span>}</div>
                         <div className="k-cell" style={{ flex: 0.8, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12 }}>{t.cantidad || 1}</div>
                         <div className="k-cell" style={{ flex: 0.6 }}>{t.unidad}</div>
-                        <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#c0392b' }}>$ {fmtN(t.costoMat || 0)}</div>
-                        <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#c0392b' }}>$ {fmtN(t.costoSub || 0)}</div>
+                        <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#c0392b' }}>$ {fmtN(resolved.costoMat)}</div>
+                        <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#c0392b' }}>$ {fmtN(resolved.costoSub)}</div>
                         {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#c0392b' }}>$ {fmtN(costoUnit)}</div>}
                         {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#c0392b' }}>$ {fmtN(costoTotal)}</div>}
                         {cols.margenL   && <div className="k-cell" style={{ flex: 0.9, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: margenT > 0 ? T.ok : '#dc2626' }}>{margenT}%</div>}
@@ -400,9 +439,9 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
   const [newRubroForm, setNewRubroForm] = useState({ rubroId: '', margenMat: 15, margenMO: 35 });
   const [selectedTareasRubro, setSelectedTareasRubro] = useState(new Set());
 
-  const { catalog } = useCatalog();
+  const { catalog, catalogIndex, sismatCostMap } = useCatalog();
 
-  const rr = calcRubros(form.rubros || []);
+  const rr = calcRubros(form.rubros || [], catalogIndex, sismatCostMap);
   const isOpen = (id) => abiertos[id] !== false;
   const toggleRubro = (id) => setAbiertos(p => ({ ...p, [id]: !p[id] }));
 
@@ -419,7 +458,7 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
     const tareasIniciales = (catalog.tareas || [])
       .filter(t => selectedTareasRubro.has(t.id))
       .map(t => {
-        const { mat, sub, mo, gen } = calcTarea(t, catalog);
+        const { mat, sub, mo, gen } = calcTarea(t, catalogIndex);
         return { id: newId(), nombre: t.nombre, codigo: t.codigo || '', unidad: t.unidad || 'u', cantidad: 1, costoMat: Math.round(mat + gen), costoSub: Math.round(sub + mo), receta: { materiales: (t.materiales || []).map(m => ({ id: newId(), nombre: m.nombre, cantidad: m.cantidad || 0, unidad: m.unidad || '', precio: m.precio || 0, costoUnit: (m.cantidad || 0) * (m.precio || 0) })) } };
       });
     const r = { id: newId(), nombre: catalogRubro.nombre, margenMat: +newRubroForm.margenMat, margenMO: +newRubroForm.margenMO, tareas: tareasIniciales };
@@ -530,7 +569,7 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
                   <input type="number" min="0" max="100" value={rubro.margenMat}
                     onChange={e => updRubro(rubro.id, { margenMat: +e.target.value })}
                     style={{ width: 38, fontSize: 11, fontFamily: T.fontMono, background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 3, padding: '2px 4px', outline: 'none', textAlign: 'right' }} />
-                  <span style={{ fontSize: 10, color: T.ink2, flexShrink: 0 }}>Sub%</span>
+                  <span style={{ fontSize: 10, color: T.ink2, flexShrink: 0 }}>M.O%</span>
                   <input type="number" min="0" max="100" value={rubro.margenMO}
                     onChange={e => updRubro(rubro.id, { margenMO: +e.target.value })}
                     style={{ width: 38, fontSize: 11, fontFamily: T.fontMono, background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 3, padding: '2px 4px', outline: 'none', textAlign: 'right' }} />
@@ -574,9 +613,10 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
                           </div>
                         );
                       }
-                      const costoUnit  = (t.costoMat || 0) + (t.costoSub || 0);
+                      const resolved   = resolverCostosTareaPlantilla(t, catalogIndex, sismatCostMap);
+                      const costoUnit  = resolved.costoMat + resolved.costoSub;
                       const costoTotal = costoUnit * (t.cantidad || 1);
-                      const ventaUnit  = tareaVentaUnit(t, rubro);
+                      const ventaUnit  = tareaVentaUnit(t, rubro, catalogIndex, sismatCostMap);
                       const ventaTotal = ventaUnit * (t.cantidad || 1);
                       const margenT    = ventaUnit > 0 ? Math.round((ventaUnit - costoUnit) / ventaUnit * 100) : 0;
 
@@ -665,7 +705,7 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
                       : <div style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${T.faint2}`, borderRadius: 4, background: T.paper }}>
                           {tareasDispo.map(t => {
                             const checked = selectedTareasRubro.has(t.id);
-                            const { mat, sub, mo, gen } = calcTarea(t, catalog);
+                            const { mat, sub, mo, gen } = calcTarea(t, catalogIndex);
                             return (
                               <div key={t.id} onClick={() => toggleTareaRubro(t.id)}
                                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', background: checked ? T.accentSoft : 'transparent', borderBottom: `1px solid ${T.faint}` }}>
@@ -774,6 +814,7 @@ export default function Plantillas() {
   }, [currentUser, isAdmin, navigate]);
 
   const { addObra, patchDetalle } = useObras();
+  const { catalogIndex, sismatCostMap } = useCatalog();
   const { plantillas, add, update, remove, duplicate, incrementUso } = usePlantillas();
   const [tipoFilt, setTipoFilt] = useState('Todos');
   const [search,   setSearch]   = useState('');
@@ -896,7 +937,7 @@ export default function Plantillas() {
         {/* Filas */}
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 290px)' }}>
           {filtered.map((p, i) => {
-            const ref     = calcRef(p);
+            const ref     = calcRef(p, catalogIndex, sismatCostMap);
             const nTareas = totalTareas(p);
             return (
               <div key={p.id}

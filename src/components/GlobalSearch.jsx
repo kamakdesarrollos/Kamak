@@ -141,10 +141,12 @@ export default function GlobalSearch() {
       {/* Trigger — same visual as existing dummy search bar */}
       <div
         onClick={handleOpen}
-        style={{ width: 260, marginLeft: 'auto', background: '#171818', border: '1px solid #3a3a3e', borderRadius: 4, padding: '5px 10px', fontSize: 12, color: '#9a9892', fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 6, cursor: 'text', userSelect: 'none' }}
+        className="k-search-trigger"
+        style={{ width: 260, marginLeft: 'auto', background: '#171818', border: '1px solid #3a3a3e', borderRadius: 4, padding: '5px 10px', fontSize: 12, color: '#9a9892', fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 6, cursor: 'text', userSelect: 'none', transition: 'border-color 0.18s, box-shadow 0.18s' }}
       >
-        <span>⌕</span><span style={{ flex: 1 }}>buscar obra, proveedor, factura…</span>
-        <span style={{ fontSize: 9, background: '#2a2a2e', border: '1px solid #3a3a3e', borderRadius: 3, padding: '1px 5px', letterSpacing: 0 }}>Ctrl K</span>
+        <span style={{ flexShrink: 0 }}>⌕</span>
+        <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>buscar…</span>
+        <span style={{ fontSize: 9, background: '#2a2a2e', border: '1px solid #3a3a3e', borderRadius: 3, padding: '1px 5px', letterSpacing: 0, flexShrink: 0 }}>Ctrl K</span>
       </div>
 
       {/* Overlay + panel */}

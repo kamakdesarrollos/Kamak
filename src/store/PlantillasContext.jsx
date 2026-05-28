@@ -6,236 +6,478 @@ import { useAppLoading } from './AppLoadingContext';
 const newId = () => `plt-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
 
+// SEED de plantillas SISMAT. Solo guardamos `nombre + unidad + cantidad` por
+// tarea — los costos los resuelve Plantillas.jsx buscando la APU homónima en
+// el catálogo (via calcTarea + catalogIndex), así un cambio de precio en el
+// catálogo se refleja automáticamente en todas las plantillas.
+//
+// Márgenes default para plantillas SISMAT:
+// - Materiales: 20% (compra mayorista, margen acotado).
+// - Sub Contrato: 100% (× 2) — porque el sub-contrato Kamak vale la mitad
+//   de la MO SISMAT, así al duplicar lo cobrado el cliente paga la MO
+//   real del SISMAT y la empresa se queda con el 50% como margen.
+const tareasFromList = (arr) =>
+  arr.map((t, i) => ({ id: `t${i + 1}`, nombre: t[0], unidad: t[1], cantidad: t[2], costoMat: 0, costoSub: 0 }));
+
+const rubroFromList = (id, nombre, items) => ({
+  id, nombre, margenMat: 20, margenMO: 100, tareas: tareasFromList(items),
+});
+
 const SEED = [
   {
-    id: 'plt1', nombre: 'Estación de Servicio', descripcion: 'Shell · YPF · Axion — local 300–600 m²',
-    tipo: 'Comercial', updatedAt: '2026-03-01', usosCount: 5,
+    id: 'plt-sismat-duplex',
+    nombre: 'Sismat - Duplex',
+    descripcion: 'Vivienda dúplex · 200 m² (extraído de SISMAT)',
+    tipo: 'Vivienda', updatedAt: '2026-05-27', usosCount: 0,
     rubros: [
-      { id: 'r1', nombre: 'ELECTRICIDAD', margenMat: 20, margenMO: 40, tareas: [
-        { id: 't1', nombre: 'Bocas de luz', unidad: 'u', costoMat: 1000, costoSub: 3000, cantidad: 80 },
-        { id: 't2', nombre: 'Tomas 220V', unidad: 'u', costoMat: 800, costoSub: 3000, cantidad: 45 },
-        { id: 't3', nombre: 'Tablero principal', unidad: 'gl', costoMat: 120000, costoSub: 168000, cantidad: 1 },
-        { id: 't4', nombre: 'Cañería corrugada', unidad: 'm', costoMat: 400, costoSub: 600, cantidad: 120 },
-      ]},
-      { id: 'r2', nombre: 'ALBAÑILERÍA', margenMat: 15, margenMO: 35, tareas: [
-        { id: 't5', nombre: 'Mampostería', unidad: 'm²', costoMat: 4500, costoSub: 8000, cantidad: 320 },
-        { id: 't6', nombre: 'Revoque grueso', unidad: 'm²', costoMat: 2000, costoSub: 4500, cantidad: 280 },
-        { id: 't7', nombre: 'Contrapiso + carpeta', unidad: 'm²', costoMat: 5500, costoSub: 6000, cantidad: 200 },
-      ]},
-      { id: 'r3', nombre: 'PLOMERÍA', margenMat: 20, margenMO: 40, tareas: [
-        { id: 't8', nombre: 'Red agua fría', unidad: 'm', costoMat: 650, costoSub: 800, cantidad: 80 },
-        { id: 't9', nombre: 'Red agua caliente', unidad: 'm', costoMat: 900, costoSub: 800, cantidad: 60 },
-      ]},
-      { id: 'r4', nombre: 'PINTURA', margenMat: 15, margenMO: 30, tareas: [
-        { id: 't10', nombre: 'Pintura látex interior', unidad: 'm²', costoMat: 8000, costoSub: 800, cantidad: 400 },
-        { id: 't11', nombre: 'Pintura látex exterior', unidad: 'm²', costoMat: 9500, costoSub: 960, cantidad: 200 },
-      ]},
+      rubroFromList('r1', '1 - Trabajos Preliminares', [
+        ['Baño químico', 'U', 6],
+        ['Cartel de obra', 'M²', 2],
+        ['Cerco de obra', 'ML', 10],
+        ['Contenedor grande', 'U', 4],
+        ['Limpieza y nivelación de terreno.', 'M²', 160],
+        ['Pilar de luz tradicional', 'U', 2],
+        ['Replanteo', 'M²', 200],
+        ['Retiro de tierra y nivelación de sup. p/ejecutar contrapisos y/o plateas. Incluye compactacion', 'M²', 160],
+      ]),
+      rubroFromList('r3', '3 - Movimiento de suelos', [
+        ['Excavación de bases', 'M³', 13.3],
+        ['Excavación de vigas de fundición', 'M³', 6.3],
+        ['Relleno de suelos con tosca (para nivelar)', 'M³', 24],
+      ]),
+      rubroFromList('r4', '4 - Fundaciones', [
+        ['Base 3 de H°A° 0.80x0.80 (armado y llenado)', 'U', 26],
+        ['Viga de fundación 20x25 (armado y llenado)', 'ML', 20],
+        ['Viga de fundación 25x30 (armado y llenado)', 'ML', 68],
+      ]),
+      rubroFromList('r5', '5 - Mampostería de cimientos', [
+        ['Mampostería de 15', 'M²', 4],
+        ['Mampostería de 20', 'M²', 13.6],
+      ]),
+      rubroFromList('r6', '6 - Capas aisladoras', [
+        ['Horizontal (Espesor 2cm)', 'M²', 16.6],
+        ['Vertical azotado (Espesor 0.5cm)', 'M²', 35.2],
+      ]),
+      rubroFromList('r7', '7 - Mampostería de elevación con cemento tradicional', [
+        ['Ladrillos huecos 12x18x33', 'M²', 100.4],
+        ['Ladrillos huecos 18x18x33', 'M²', 306],
+      ]),
+      rubroFromList('r8', '8 - Estructuras de hormigón armado', [
+        ['Columna HºAº 20x20 (Hierro 12mm)', 'ML', 118],
+        ['Encadenado H°A° 15x15', 'ML', 46],
+        ['Encadenado H°A° 15x20', 'ML', 112],
+        ['Escalera de H°A° (ancho 0.90 mts)', 'U', 2],
+        ['Losa de viguetas con ladrillo de tergopol', 'M²', 86],
+        ['Viga H°A° por 3,00 mts. (12x30cm)', 'U', 4],
+      ]),
+      rubroFromList('r9', '9 - Revoques', [
+        ['Azotado hidrófugo bajo revoque', 'M²', 239],
+        ['Fino exterior', 'M²', 239],
+        ['Fino interior', 'M²', 442],
+        ['Grueso regleado exterior', 'M²', 239],
+        ['Grueso regleado interior', 'M²', 514],
+      ]),
+      rubroFromList('r10', '10 - Contrapisos', [
+        ['De cascotes s/ terreno natural. Esp: 10cm.', 'M²', 234],
+      ]),
+      rubroFromList('r12', '12 - Cubiertas', [
+        ['Techo de Chapa Ondulada o Trapezoidal sobre Estructura de Madera Vista. (c/aislante y machimbre)', 'M²', 162],
+      ]),
+      rubroFromList('r13', '13 - Instalaciones sanitarias', [
+        ['Balcón c/canilla de servicio (Desagües pluviales)', 'U', 2],
+        ['Baño completo (Desagües primarios y secundarios, agua caliente y fría)', 'U', 2],
+        ['Cocina-Lavadero c/Termo o Calefon (Desagües primarios y secundarios, agua caliente y fría)', 'U', 2],
+        ['Subida de agua al tanque de reserva c/2 canillas de servicio, colector c/3 bajadas indep.', 'U', 2],
+        ['Toilette (Desagües primarios y secundarios, agua caliente y fría)', 'U', 2],
+      ]),
+      rubroFromList('r14', '14 - Instalaciones de gas', [
+        ['Inst. en Fusión completa. Cocina, termo y 3 calefactores (sin planos)', 'GL', 2],
+        ['Inst. en Fusión, boca adicional.', 'U', 2],
+      ]),
+      rubroFromList('r15', '15 - Instalación eléctrica', [
+        ['Colocación de artefacto, (con armado)', 'U', 24],
+        ['Inst. eléctrica para 50 bocas completa (incluye tablero seccional)', 'GL', 2],
+      ]),
+      rubroFromList('r16', '16 - Carpetas', [
+        ['Hidrofuga s/contrapiso (Esp: 2cm)', 'M²', 206],
+      ]),
+      rubroFromList('r17', '17 - Pisos Cerámico, Porcellanato y Loseta', [
+        ['Cerámico 20x20', 'M²', 158],
+        ['Loseta de Vereda 40x40 (Calcáreos)', 'M²', 28],
+        ['Porcellanato 30x30', 'M²', 48],
+      ]),
+      rubroFromList('r20', '20 - Zócalos y Contramarcos', [
+        ['Contramarco de madera 1/2´ liso', 'ML', 110],
+        ['Zócalo Cerámico H:7cm', 'ML', 48],
+        ['Zócalo Madera 3/4´ liso', 'ML', 120],
+      ]),
+      rubroFromList('r21', '21 - Revestimientos Cerámico, Porcellanato, Venecita y Refractario', [
+        ['Cerámico 20x20', 'M²', 72],
+      ]),
+      rubroFromList('r24', '24 - Cielorrasos y Molduras', [
+        ['Moldura de tergopol 25x20mm. (lista p/pintar)', 'ML', 238],
+      ]),
+      rubroFromList('r25', '25 - Escaleras y Barandas', [
+        ['Baranda de Madera con tensores y 4 lineas de cable de acero inoxidable.', 'ML', 16],
+        ['Baranda Pasamanos de Madera', 'ML', 12],
+        ['Carpeta cementicia. (P/escalera de H°A°)', 'M²', 11.2],
+        ['Nariz de escalera de 2¨x 3´ en guayubira', 'ML', 27],
+        ['Revest., alzada y pedada de cerámica', 'M²', 11.2],
+      ]),
+      rubroFromList('r26', '26 - Construcción en Seco', [
+        ['Cielorraso con placas de yeso', 'M²', 190],
+      ]),
+      rubroFromList('r28', '28 - Pinturas', [
+        ['Barniz s/madera y/o abertura.', 'M²', 90.8],
+        ['Cielorraso de yeso y/o cal', 'M²', 196],
+        ['Impermeabilizacion de losa. (terraza)', 'M²', 6],
+        ['Paredes exteriores', 'M²', 239],
+        ['Paredes interiores', 'M²', 514],
+      ]),
+      rubroFromList('r29', '29 - Marmolería/Granitos', [
+        ['Mesada de Granito y/o Mármol', 'M²', 5.1],
+        ['Mesada de Granito y/o Mármol c/Pileta de Cocina Doble ( 0.60 x 1.20)', 'U', 2],
+        ['Zócalo de Granito Gris Mara (Alt. 5 cm)', 'ML', 9.2],
+      ]),
+      rubroFromList('r30', '30 - Amoblamientos para cocinas, placares y vestidores', [
+        ['Alacena de aglomerado enchapado, enlaminado plástico c/ estante y cajonera', 'ML', 9.6],
+        ['Bajo mesada aglomerado enchapado, enlaminado plástico c/ estante y cajonera', 'ML', 6],
+      ]),
+      rubroFromList('r31', '31 - Aberturas de madera', [
+        ['Portón Garage 2.40 x 2.00', 'U', 2],
+        ['Puerta de Entrada 0,80 x 2.00 (Exterior)', 'U', 2],
+        ['Puerta Placa, hoja 60/70. (Interior)', 'U', 10],
+      ]),
+      rubroFromList('r32', '32 - Aberturas de aluminio', [
+        ['Linea Herrero. Ventana 1.50 x 1.10 Corrediza c/Cortina de PVC c/Vidrio Simple 4mm.', 'U', 6],
+        ['Linea Herrero. Ventana 1.50 x 1.10 Corrediza c/Vidrio Simple 4mm.', 'U', 4],
+        ['Linea Herrero. Ventana Balcón 1.60 x 2.00 Corrediza c/Cortina de PVC c/Vidrio Simple 4mm.', 'U', 4],
+        ['Linea Herrero. Ventiluz 1.00 x 0.50 Corredizo c/Vidrio Simple 4mm.', 'U', 2],
+      ]),
+      rubroFromList('r34', '34 - Cristales', [
+        ['Vidrio de 4mm', 'M²', 28],
+      ]),
+      rubroFromList('r35', '35 - Colocación de artefactos sanitarios, accesorios y grifería', [
+        ['Baño Completo (inodoro c/mochila, bidet, lavatorio y bañera)', 'U', 2],
+        ['Lavadero y cocina', 'U', 2],
+        ['Toilette c/depósito a mochila', 'U', 2],
+      ]),
+      rubroFromList('r36', '36 - Colocación de artefactos a gas', [
+        ['Colocación Calefactor 3000 cal., (tiro natural)', 'U', 4],
+        ['Colocación Calefactor 5000 cal., (tiro natural)', 'U', 4],
+        ['Colocación Cocina, (sin ventilación)', 'U', 2],
+        ['Colocación Termotanque 80lts., (con ventilación)', 'U', 2],
+      ]),
+      rubroFromList('r41', '41 - Limpieza y Ayuda de Gremios', [
+        ['Ayuda de gremios', 'M²', 200],
+        ['Limpieza final', 'M²', 200],
+        ['Limpieza periódica', 'U', 1],
+      ]),
     ],
   },
   {
-    id: 'plt2', nombre: 'Panadería completa', descripcion: 'Local 80–150 m²',
-    tipo: 'Comercial', updatedAt: '2026-02-15', usosCount: 3,
+    id: 'plt-sismat-dos-plantas',
+    nombre: 'Sismat - En Dos Plantas',
+    descripcion: 'Vivienda en dos plantas · 120 m² (extraído de SISMAT)',
+    tipo: 'Vivienda', updatedAt: '2026-05-27', usosCount: 0,
     rubros: [
-      { id: 'r1', nombre: 'ELECTRICIDAD', margenMat: 20, margenMO: 40, tareas: [
-        { id: 't1', nombre: 'Bocas de luz', unidad: 'u', costoMat: 1000, costoSub: 3000, cantidad: 30 },
-        { id: 't2', nombre: 'Tomas 220V', unidad: 'u', costoMat: 800, costoSub: 3000, cantidad: 20 },
-        { id: 't3', nombre: 'Tomas 380V industrial', unidad: 'u', costoMat: 5400, costoSub: 8500, cantidad: 5 },
-      ]},
-      { id: 'r2', nombre: 'ALBAÑILERÍA', margenMat: 15, margenMO: 35, tareas: [
-        { id: 't4', nombre: 'Mampostería', unidad: 'm²', costoMat: 4500, costoSub: 8000, cantidad: 120 },
-        { id: 't5', nombre: 'Revestimiento porcellanato', unidad: 'm²', costoMat: 12000, costoSub: 5000, cantidad: 80 },
-      ]},
-      { id: 'r3', nombre: 'PLOMERÍA', margenMat: 20, margenMO: 40, tareas: [
-        { id: 't6', nombre: 'Instalación sanitaria', unidad: 'gl', costoMat: 120000, costoSub: 90000, cantidad: 1 },
-      ]},
+      rubroFromList('r1', '1 - Trabajos Preliminares', [
+        ['Baño químico', 'U', 6],
+        ['Cartel de obra', 'M²', 2],
+        ['Cerco de obra', 'ML', 10],
+        ['Contenedor grande', 'U', 3],
+        ['Limpieza y nivelación de terreno.', 'M²', 80],
+        ['Pilar de luz tradicional', 'U', 1],
+        ['Replanteo', 'M²', 120],
+        ['Retiro de tierra y nivelación de sup. p/ejecutar contrapisos y/o plateas. Incluye compactacion', 'M²', 72],
+      ]),
+      rubroFromList('r3', '3 - Movimiento de suelos', [
+        ['Excavación de bases', 'M³', 7.2],
+        ['Excavación de vigas de fundición', 'M³', 3.2],
+        ['Relleno de suelos con tosca (para nivelar)', 'M³', 12],
+      ]),
+      rubroFromList('r4', '4 - Fundaciones', [
+        ['Base 3 de H°A° 0.80x0.80 (armado y llenado)', 'U', 14],
+        ['Viga de fundación 20x25 (armado y llenado)', 'ML', 12],
+        ['Viga de fundación 25x30 (armado y llenado)', 'ML', 32],
+      ]),
+      rubroFromList('r5', '5 - Mampostería de cimientos', [
+        ['Mampostería de 15', 'M²', 2.4],
+        ['Mampostería de 20', 'M²', 6.4],
+      ]),
+      rubroFromList('r6', '6 - Capas aisladoras', [
+        ['Horizontal (Espesor 2cm)', 'M²', 8.2],
+        ['Vertical azotado (Espesor 0.5cm)', 'M²', 17.6],
+      ]),
+      rubroFromList('r7', '7 - Mampostería de elevación con cemento tradicional', [
+        ['Ladrillos huecos 12x18x33', 'M²', 90],
+        ['Ladrillos huecos 18x18x33', 'M²', 190],
+      ]),
+      rubroFromList('r8', '8 - Estructuras de hormigón armado', [
+        ['Columna HºAº 20x20 (Hierro 12mm)', 'ML', 67.2],
+        ['Encadenado H°A° 15x15', 'ML', 32],
+        ['Encadenado H°A° 15x20', 'ML', 64],
+        ['Escalera de H°A° (ancho 0.90 mts)', 'U', 1],
+        ['Losa de viguetas con ladrillo de tergopol', 'M²', 65],
+        ['Viga H°A° por 4,00 mts. (12x40cm)', 'U', 1],
+      ]),
+      rubroFromList('r9', '9 - Revoques', [
+        ['Azotado hidrófugo bajo revoque', 'M²', 190],
+        ['Fino exterior', 'M²', 190],
+        ['Fino interior', 'M²', 307],
+        ['Grueso regleado exterior', 'M²', 190],
+        ['Grueso regleado interior', 'M²', 370],
+      ]),
+      rubroFromList('r10', '10 - Contrapisos', [
+        ['De cascotes s/ terreno natural. Esp: 10cm.', 'M²', 138],
+      ]),
+      rubroFromList('r12', '12 - Cubiertas', [
+        ['Techo de Chapa Ondulada o Trapezoidal sobre Estructura de Madera Vista. (c/aislante y machimbre)', 'M²', 91],
+      ]),
+      rubroFromList('r13', '13 - Instalaciones sanitarias', [
+        ['Balcón c/canilla de servicio (Desagües pluviales)', 'U', 3],
+        ['Baño completo (Desagües primarios y secundarios, agua caliente y fría)', 'U', 2],
+        ['Cocina-Lavadero c/Termo o Calefon (Desagües primarios y secundarios, agua caliente y fría)', 'U', 1],
+        ['Subida de agua al tanque de reserva c/2 canillas de servicio, colector c/3 bajadas indep.', 'U', 1],
+        ['Toilette (Desagües primarios y secundarios, agua caliente y fría)', 'U', 1],
+      ]),
+      rubroFromList('r14', '14 - Instalaciones de gas', [
+        ['Inst. en Fusión completa. Cocina, termo y 3 calefactores (sin planos)', 'GL', 1],
+        ['Inst. en Fusión, boca adicional.', 'U', 2],
+      ]),
+      rubroFromList('r15', '15 - Instalación eléctrica', [
+        ['Colocación de artefacto, (con armado)', 'U', 12],
+        ['Inst. eléctrica para 50 bocas completa (incluye tablero seccional)', 'GL', 1],
+      ]),
+      rubroFromList('r16', '16 - Carpetas', [
+        ['Hidrofuga s/contrapiso (Esp: 2cm)', 'M²', 126],
+      ]),
+      rubroFromList('r17', '17 - Pisos Cerámico, Porcellanato y Loseta', [
+        ['Cerámico 20x20', 'M²', 68],
+        ['Loseta de Vereda 40x40 (Calcáreos)', 'M²', 16],
+        ['Porcellanato 30x30', 'M²', 54],
+      ]),
+      rubroFromList('r20', '20 - Zócalos y Contramarcos', [
+        ['Contramarco de madera 1/2´ liso', 'ML', 80],
+        ['Zócalo Cerámico H:7cm', 'ML', 24],
+        ['Zócalo Madera 3/4´ liso', 'ML', 100],
+      ]),
+      rubroFromList('r21', '21 - Revestimientos Cerámico, Porcellanato, Venecita y Refractario', [
+        ['Cerámico 20x20', 'M²', 63],
+      ]),
+      rubroFromList('r24', '24 - Cielorrasos y Molduras', [
+        ['Moldura de tergopol 25x20mm. (lista p/pintar)', 'ML', 134],
+      ]),
+      rubroFromList('r25', '25 - Escaleras y Barandas', [
+        ['Baranda de Madera con tensores y 4 lineas de cable de acero inoxidable.', 'ML', 15],
+        ['Baranda Pasamanos de Madera', 'ML', 6],
+        ['Carpeta cementicia. (P/escalera de H°A°)', 'M²', 5.6],
+        ['Nariz de escalera de 2¨x 3´ en guayubira', 'ML', 13.5],
+        ['Revest., alzada y pedada de cerámica', 'M²', 5.6],
+      ]),
+      rubroFromList('r26', '26 - Construcción en Seco', [
+        ['Cielorraso con placas de yeso', 'M²', 125],
+      ]),
+      rubroFromList('r28', '28 - Pinturas', [
+        ['Barniz s/madera y/o abertura.', 'M²', 48],
+        ['Cielorraso de yeso y/o cal', 'M²', 125],
+        ['Impermeabilizacion de losa. (terraza)', 'M²', 9],
+        ['Paredes exteriores', 'M²', 190],
+        ['Paredes interiores', 'M²', 307],
+      ]),
+      rubroFromList('r29', '29 - Marmolería/Granitos', [
+        ['Mesada de Granito y/o Mármol', 'M²', 2.1],
+        ['Mesada de Granito y/o Mármol c/Pileta de Cocina Doble ( 0.60 x 1.20)', 'U', 1],
+        ['Zócalo de Granito Gris Mara (Alt. 5 cm)', 'ML', 5.9],
+      ]),
+      rubroFromList('r30', '30 - Amoblamientos para cocinas, placares y vestidores', [
+        ['Alacena de aglomerado enchapado, enlaminado plástico c/ estante y cajonera', 'ML', 5.6],
+        ['Bajo mesada aglomerado enchapado, enlaminado plástico c/ estante y cajonera', 'ML', 3.7],
+      ]),
+      rubroFromList('r31', '31 - Aberturas de madera', [
+        ['Puerta de Entrada 0,80 x 2.00 (Exterior)', 'U', 1],
+        ['Puerta Placa, hoja 60/70. (Interior)', 'U', 8],
+      ]),
+      rubroFromList('r32', '32 - Aberturas de aluminio', [
+        ['Linea Herrero. Ventana 1.50 x 1.10 Corrediza c/Cortina de PVC c/Vidrio Simple 4mm.', 'U', 2],
+        ['Linea Herrero. Ventana 1.50 x 1.10 Corrediza c/Vidrio Simple 4mm.', 'U', 1],
+        ['Linea Herrero. Ventana Balcón 1.60 x 2.00 Corrediza c/Cortina de PVC c/Vidrio Simple 4mm.', 'U', 4],
+        ['Linea Herrero. Ventiluz 1.00 x 0.50 Corredizo c/Vidrio Simple 4mm.', 'U', 3],
+      ]),
+      rubroFromList('r34', '34 - Cristales', [
+        ['Vidrio de 4mm', 'M²', 17],
+      ]),
+      rubroFromList('r35', '35 - Colocación de artefactos sanitarios, accesorios y grifería', [
+        ['Baño Completo (inodoro c/mochila, bidet, lavatorio y bañera)', 'U', 2],
+        ['Lavadero y cocina', 'U', 1],
+        ['Toilette c/depósito a mochila', 'U', 1],
+      ]),
+      rubroFromList('r36', '36 - Colocación de artefactos a gas', [
+        ['Colocación Calefactor 3000 cal., (tiro natural)', 'U', 3],
+        ['Colocación Calefactor 5000 cal., (tiro natural)', 'U', 2],
+        ['Colocación Cocina, (sin ventilación)', 'U', 1],
+        ['Colocación Termotanque 80lts., (con ventilación)', 'U', 1],
+      ]),
+      rubroFromList('r41', '41 - Limpieza y Ayuda de Gremios', [
+        ['Ayuda de gremios', 'M²', 120],
+        ['Limpieza final', 'M²', 120],
+        ['Limpieza periódica', 'U', 1],
+      ]),
     ],
   },
   {
-    id: 'plt3', nombre: 'Vivienda unifamiliar', descripcion: '120–200 m² · 1 planta',
-    tipo: 'Vivienda', updatedAt: '2026-01-10', usosCount: 12,
+    id: 'plt-sismat-vivienda',
+    nombre: 'Sismat - Vivienda Unifamiliar',
+    descripcion: 'Vivienda unifamiliar 1 planta · 80–100 m² (extraído de SISMAT)',
+    tipo: 'Vivienda', updatedAt: '2026-05-27', usosCount: 0,
     rubros: [
-      { id: 'r1', nombre: 'ESTRUCTURA', margenMat: 15, margenMO: 30, tareas: [
-        { id: 't1', nombre: 'Losa alivianada', unidad: 'm²', costoMat: 28000, costoSub: 15000, cantidad: 150 },
-        { id: 't2', nombre: 'Columnas y vigas', unidad: 'm', costoMat: 18000, costoSub: 12000, cantidad: 40 },
-      ]},
-      { id: 'r2', nombre: 'ALBAÑILERÍA', margenMat: 15, margenMO: 35, tareas: [
-        { id: 't3', nombre: 'Mampostería', unidad: 'm²', costoMat: 4500, costoSub: 8000, cantidad: 280 },
-        { id: 't4', nombre: 'Revoque fino', unidad: 'm²', costoMat: 1500, costoSub: 3500, cantidad: 250 },
-        { id: 't5', nombre: 'Contrapiso', unidad: 'm²', costoMat: 5500, costoSub: 6000, cantidad: 150 },
-      ]},
-      { id: 'r3', nombre: 'ELECTRICIDAD', margenMat: 20, margenMO: 40, tareas: [
-        { id: 't6', nombre: 'Bocas de luz', unidad: 'u', costoMat: 1000, costoSub: 3000, cantidad: 45 },
-        { id: 't7', nombre: 'Tomas 220V', unidad: 'u', costoMat: 800, costoSub: 3000, cantidad: 25 },
-        { id: 't8', nombre: 'Tablero principal', unidad: 'gl', costoMat: 80000, costoSub: 120000, cantidad: 1 },
-      ]},
-      { id: 'r4', nombre: 'PLOMERÍA', margenMat: 20, margenMO: 40, tareas: [
-        { id: 't9', nombre: 'Red agua fría', unidad: 'm', costoMat: 650, costoSub: 800, cantidad: 60 },
-        { id: 't10', nombre: 'Instalación sanitaria', unidad: 'gl', costoMat: 90000, costoSub: 70000, cantidad: 1 },
-      ]},
-      { id: 'r5', nombre: 'PINTURA', margenMat: 15, margenMO: 30, tareas: [
-        { id: 't11', nombre: 'Pintura látex interior', unidad: 'm²', costoMat: 8000, costoSub: 800, cantidad: 300 },
-      ]},
-    ],
-  },
-  {
-    id: 'plt4', nombre: 'Local comercial', descripcion: 'Showroom · oficina 60–120 m²',
-    tipo: 'Comercial', updatedAt: '2026-02-01', usosCount: 4,
-    rubros: [
-      { id: 'r1', nombre: 'ELECTRICIDAD', margenMat: 20, margenMO: 40, tareas: [
-        { id: 't1', nombre: 'Bocas de luz', unidad: 'u', costoMat: 1000, costoSub: 3000, cantidad: 25 },
-        { id: 't2', nombre: 'Tomas 220V', unidad: 'u', costoMat: 800, costoSub: 3000, cantidad: 15 },
-      ]},
-      { id: 'r2', nombre: 'ALBAÑILERÍA', margenMat: 15, margenMO: 35, tareas: [
-        { id: 't3', nombre: 'Tabiques drywall', unidad: 'm²', costoMat: 3500, costoSub: 4000, cantidad: 80 },
-        { id: 't4', nombre: 'Cielorraso drywall', unidad: 'm²', costoMat: 4000, costoSub: 4500, cantidad: 60 },
-      ]},
-    ],
-  },
-  {
-    id: 'plt5', nombre: 'Refacción de baño', descripcion: 'Pequeña escala',
-    tipo: 'Refacción', updatedAt: '2026-04-01', usosCount: 8,
-    rubros: [
-      { id: 'r1', nombre: 'PLOMERÍA', margenMat: 20, margenMO: 40, tareas: [
-        { id: 't1', nombre: 'Instalación sanitaria', unidad: 'gl', costoMat: 80000, costoSub: 60000, cantidad: 1 },
-      ]},
-      { id: 'r2', nombre: 'REVESTIMIENTOS', margenMat: 15, margenMO: 35, tareas: [
-        { id: 't2', nombre: 'Porcellanato piso', unidad: 'm²', costoMat: 14000, costoSub: 5000, cantidad: 8 },
-        { id: 't3', nombre: 'Revestimiento pared', unidad: 'm²', costoMat: 12000, costoSub: 5000, cantidad: 16 },
-      ]},
-      { id: 'r3', nombre: 'ELECTRICIDAD', margenMat: 20, margenMO: 40, tareas: [
-        { id: 't4', nombre: 'Circuito exclusivo', unidad: 'gl', costoMat: 8000, costoSub: 6000, cantidad: 1 },
-      ]},
-    ],
-  },
-  {
-    id: 'plt6', nombre: 'Galpón industrial', descripcion: 'Estructura + cerramientos',
-    tipo: 'Industrial', updatedAt: '2026-01-20', usosCount: 2,
-    rubros: [
-      { id: 'r1', nombre: 'ESTRUCTURA', margenMat: 12, margenMO: 25, tareas: [
-        { id: 't1', nombre: 'Fundación', unidad: 'gl', costoMat: 280000, costoSub: 180000, cantidad: 1 },
-        { id: 't2', nombre: 'Estructura metálica', unidad: 'tn', costoMat: 380000, costoSub: 120000, cantidad: 8 },
-      ]},
-      { id: 'r2', nombre: 'ELECTRICIDAD', margenMat: 20, margenMO: 40, tareas: [
-        { id: 't3', nombre: 'Iluminación industrial', unidad: 'u', costoMat: 8500, costoSub: 4500, cantidad: 20 },
-        { id: 't4', nombre: 'Tablero general', unidad: 'gl', costoMat: 180000, costoSub: 220000, cantidad: 1 },
-      ]},
-    ],
-  },
-  {
-    id: 'plt-fan', nombre: 'Fan de pan - Panadería', descripcion: 'Panadería tipo Acasuso · 129–200 m²',
-    tipo: 'Comercial', updatedAt: '2026-05-17', usosCount: 0,
-    rubros: [
-      { id: 'r1', nombre: 'ALBAÑILERÍA', margenMat: 10, margenMO: 150, tareas: [
-        { id: 't1', nombre: 'Demolición de carpeta completa y retiro de escombro', unidad: 'm²', costoMat: 0, costoSub: 6500, cantidad: 129, margenLinea: 200 },
-        { id: 't2', nombre: 'Demolición de muros y retiro de escombro', unidad: 'm²', costoMat: 0, costoSub: 15000, cantidad: 4, margenLinea: 200 },
-        { id: 't3', nombre: 'Demolición y retiro de carpinterías', unidad: 'gl', costoMat: 0, costoSub: 350000, cantidad: 1, margenLinea: 95 },
-        { id: 't4', nombre: 'Mochetas', unidad: 'ml', costoMat: 0, costoSub: 6000, cantidad: 55, margenLinea: 100 },
-        { id: 't5', nombre: 'Realización de carpeta niveladora', unidad: 'm²', costoMat: 0, costoSub: 8500, cantidad: 129, margenLinea: 150 },
-        { id: 't6', nombre: 'Realización de contrapisos en canaleteados', unidad: 'm²', costoMat: 0, costoSub: 8500, cantidad: 20, margenLinea: 150 },
-        { id: 't7', nombre: 'Colocación revestimiento 33×45', unidad: 'm²', costoMat: 0, costoSub: 13500, cantidad: 35, margenLinea: 200 },
-        { id: 't8', nombre: 'Colocación revestimiento 33×45 en baños', unidad: 'm²', costoMat: 0, costoSub: 13500, cantidad: 27, margenLinea: 200 },
-        { id: 't9', nombre: 'Colocación revestimientos Subways 10×20 Eliane', unidad: 'm²', costoMat: 0, costoSub: 17500, cantidad: 13, margenLinea: 200 },
-        { id: 't10', nombre: 'Colocar porcelanatos 60×60 Manhattan White', unidad: 'm²', costoMat: 0, costoSub: 13500, cantidad: 57, margenLinea: 200 },
-        { id: 't11', nombre: 'Colocar porcelanatos 60×60 Manhattan Dark', unidad: 'm²', costoMat: 0, costoSub: 13500, cantidad: 72, margenLinea: 200 },
-        { id: 't12', nombre: 'Colocación de zócalos', unidad: 'ml', costoMat: 0, costoSub: 11000, cantidad: 68, margenLinea: 103 },
-        { id: 't13', nombre: 'Colocación de accesorios (sin materiales)', unidad: 'gl', costoMat: 0, costoSub: 650000, cantidad: 1, margenLinea: 75 },
-        { id: 't14', nombre: 'Desmontar cieloraso existente', unidad: 'm²', costoMat: 0, costoSub: 4500, cantidad: 129, margenLinea: 100 },
-      ]},
-      { id: 'r2', nombre: 'DURLOCK', margenMat: 15, margenMO: 140, tareas: [
-        { id: 't1', nombre: 'Cieloraso Durlock junta tomada', unidad: 'm²', costoMat: 0, costoSub: 8500, cantidad: 120, margenLinea: 135 },
-        { id: 't2', nombre: 'Tabiques en Drywall', unidad: 'm²', costoMat: 0, costoSub: 12000, cantidad: 77, margenLinea: 145 },
-        { id: 't3', nombre: 'Planchado completo de paredes', unidad: 'm²', costoMat: 0, costoSub: 3000, cantidad: 150, margenLinea: 150 },
-        { id: 't4', nombre: 'Estructura con perfil Omega + Emplacado', unidad: 'm²', costoMat: 0, costoSub: 4500, cantidad: 110, margenLinea: 130 },
-        { id: 't5', nombre: 'Puertas y ventanas interiores en tabiques', unidad: 'u', costoMat: 0, costoSub: 25000, cantidad: 4, margenLinea: 166 },
-      ]},
-      { id: 'r3', nombre: 'ELECTRICIDAD', margenMat: 10, margenMO: 100, tareas: [
-        { id: 't1', nombre: 'Dicroicas', unidad: 'u', costoMat: 0, costoSub: 11220, cantidad: 0, margenLinea: 100 },
-        { id: 't2', nombre: 'Glitter', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 4, margenLinea: 100 },
-        { id: 't3', nombre: 'AR111', unidad: 'u', costoMat: 0, costoSub: 11220, cantidad: 52, margenLinea: 100 },
-        { id: 't4', nombre: 'Marea / Pila', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 17, margenLinea: 100 },
-        { id: 't5', nombre: 'Salida de emergencia', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 1, margenLinea: 100 },
-        { id: 't6', nombre: 'Aplique de baño (P12W)', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 2, margenLinea: 100 },
-        { id: 't7', nombre: 'Baños P130 18W (22cm)', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 3, margenLinea: 100 },
-        { id: 't8', nombre: 'Apliques exterior saliente circular', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 2, margenLinea: 100 },
-        { id: 't9', nombre: 'Exterior: cartel vainilla', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 2, margenLinea: 100 },
-        { id: 't10', nombre: 'Reflectores LED', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 4, margenLinea: 100 },
-        { id: 't11', nombre: 'Recambio y refacción luminarias en sótano', unidad: 'u', costoMat: 0, costoSub: 10000, cantidad: 8, margenLinea: 100 },
-        { id: 't12', nombre: 'Pisoductos sector Atención', unidad: 'u', costoMat: 0, costoSub: 100000, cantidad: 1, margenLinea: 70 },
-        { id: 't13', nombre: 'Generales (periscopio, freezers, AA, servicios)', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 39, margenLinea: 100 },
-        { id: 't14', nombre: 'Acometida Horno Trifásico', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 1, margenLinea: 100 },
-        { id: 't15', nombre: 'Acometida Cámara Monofásica', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 1, margenLinea: 100 },
-        { id: 't16', nombre: 'Cámaras exterior (solo cableado)', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 6, margenLinea: 100 },
-        { id: 't17', nombre: 'Parlantes', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 4, margenLinea: 100 },
-        { id: 't18', nombre: 'Conexión datos pantallas Menu Board', unidad: 'u', costoMat: 0, costoSub: 33000, cantidad: 3, margenLinea: 100 },
-        { id: 't19', nombre: 'Tablero / rack de conectividad', unidad: 'u', costoMat: 0, costoSub: 978639, cantidad: 1, margenLinea: 100 },
-      ]},
-      { id: 'r4', nombre: 'PINTURA', margenMat: 15, margenMO: 200, tareas: [
-        { id: 't1', nombre: 'Cieloraso ultralavable (Cabras Blancas)', unidad: 'm²', costoMat: 0, costoSub: 4500, cantidad: 60, margenLinea: 200 },
-        { id: 't2', nombre: 'Cieloraso antihongos (Blanco)', unidad: 'm²', costoMat: 0, costoSub: 4500, cantidad: 65, margenLinea: 200 },
-        { id: 't3', nombre: 'Cieloraso satinado (Dije de plata)', unidad: 'm²', costoMat: 0, costoSub: 4500, cantidad: 70, margenLinea: 200 },
-        { id: 't4', nombre: 'Paredes interiores ultralavable (Cabras Blancas)', unidad: 'm²', costoMat: 0, costoSub: 3500, cantidad: 70, margenLinea: 200 },
-        { id: 't5', nombre: 'Paredes interiores satinado sótano y PB (Dije de plata)', unidad: 'm²', costoMat: 0, costoSub: 3500, cantidad: 300, margenLinea: 200 },
-        { id: 't6', nombre: 'Paredes exteriores texturado (Dije de plata)', unidad: 'm²', costoMat: 0, costoSub: 3500, cantidad: 55, margenLinea: 200 },
-        { id: 't7', nombre: 'Puertas con marcos en sintético (Dije de plata)', unidad: 'u', costoMat: 0, costoSub: 10000, cantidad: 4, margenLinea: 100 },
-      ]},
-      { id: 'r5', nombre: 'PLOMERÍA', margenMat: 0, margenMO: 150, tareas: [
-        { id: 't1', nombre: 'Adaptación sanitaria (fermentadora, heladera, cámara)', unidad: 'gl', costoMat: 0, costoSub: 650000, cantidad: 1, margenLinea: 150 },
-        { id: 't2', nombre: 'Instalación termo + adaptación canilla y agua hasta horno', unidad: 'gl', costoMat: 0, costoSub: 450000, cantidad: 1, margenLinea: 150 },
-      ]},
-      { id: 'r6', nombre: 'HERRERÍA', margenMat: 0, margenMO: 50, tareas: [
-        { id: 't1', nombre: 'Estructura de hierro con vidrio repartido', unidad: 'gl', costoMat: 0, costoSub: 1300000, cantidad: 1, margenLinea: 50 },
-      ]},
-      { id: 'r7', nombre: 'CARPINTERÍA DE ALUMINIO', margenMat: 0, margenMO: 28, tareas: [
-        { id: 't1', nombre: 'Carpinterías según plano', unidad: 'gl', costoMat: 0, costoSub: 12302069, cantidad: 1, margenLinea: 28 },
-      ]},
-      { id: 'r8', nombre: 'MOBILIARIO', margenMat: 0, margenMO: 35, tareas: [
-        { id: 't1', nombre: 'Facturero doble horizontal 138,5×46,5×217cm', unidad: 'u', costoMat: 0, costoSub: 420500, cantidad: 2, margenLinea: 35 },
-        { id: 't2', nombre: 'Panero simple horizontal 72,5×46,5×217cm', unidad: 'u', costoMat: 0, costoSub: 376650, cantidad: 0, margenLinea: 35 },
-        { id: 't3', nombre: 'Panero doble horizontal 138,5×46,5×217cm', unidad: 'u', costoMat: 0, costoSub: 436000, cantidad: 2, margenLinea: 35 },
-        { id: 't4', nombre: 'Isla triple 136,5×90×131cm', unidad: 'u', costoMat: 0, costoSub: 446500, cantidad: 2, margenLinea: 35 },
-        { id: 't5', nombre: 'Mueble sano y rico 91,5×46,5×217cm', unidad: 'u', costoMat: 0, costoSub: 597000, cantidad: 1, margenLinea: 35 },
-        { id: 't6', nombre: 'Mueble especiales simple horizontal 72,5×46,5×217', unidad: 'u', costoMat: 0, costoSub: 343000, cantidad: 1, margenLinea: 35 },
-        { id: 't7', nombre: 'Box refrigerados freezer 124×62×217cm', unidad: 'u', costoMat: 0, costoSub: 447000, cantidad: 1, margenLinea: 35 },
-        { id: 't8', nombre: 'Box refrigerados 2 heladeras 124×62×217cm', unidad: 'u', costoMat: 0, costoSub: 453000, cantidad: 1, margenLinea: 35 },
-        { id: 't9', nombre: 'Mueble de café con espacio cafetera interior', unidad: 'u', costoMat: 0, costoSub: 487000, cantidad: 1, margenLinea: 35 },
-        { id: 't10', nombre: 'Mostrador 150×80×102cm', unidad: 'u', costoMat: 0, costoSub: 782000, cantidad: 1, margenLinea: 35 },
-        { id: 't11', nombre: 'Anexo mostrador 130×80×84cm', unidad: 'u', costoMat: 0, costoSub: 623000, cantidad: 1, margenLinea: 35 },
-        { id: 't12', nombre: 'Mueble de apoyo 130×35×86cm', unidad: 'u', costoMat: 0, costoSub: 329000, cantidad: 1, margenLinea: 35 },
-        { id: 't13', nombre: 'Mueble de apoyo especial 132×35×86cm', unidad: 'u', costoMat: 0, costoSub: 417000, cantidad: 1, margenLinea: 35 },
-        { id: 't14', nombre: 'Estantería tipo escalera 240×32×200cm', unidad: 'u', costoMat: 0, costoSub: 108000, cantidad: 1, margenLinea: 35 },
-        { id: 't15', nombre: 'Estantería tipo escalera 150×32×200cm', unidad: 'u', costoMat: 0, costoSub: 108000, cantidad: 1, margenLinea: 35 },
-        { id: 't16', nombre: 'Estantería tipo escalera 170×32×130cm', unidad: 'u', costoMat: 0, costoSub: 108000, cantidad: 1, margenLinea: 35 },
-        { id: 't17', nombre: 'Estantería tipo escalera 180×47×150cm', unidad: 'u', costoMat: 0, costoSub: 108000, cantidad: 1, margenLinea: 35 },
-        { id: 't18', nombre: 'Estantería reforzada 120×30×200', unidad: 'u', costoMat: 0, costoSub: 87000, cantidad: 1, margenLinea: 35 },
-        { id: 't19', nombre: 'Estante de acero turboblender', unidad: 'u', costoMat: 0, costoSub: 28000, cantidad: 2, margenLinea: 35 },
-        { id: 't20', nombre: 'Mueble de limpieza y personal 120×30×185cm', unidad: 'u', costoMat: 0, costoSub: 183000, cantidad: 1, margenLinea: 35 },
-        { id: 't21', nombre: 'Escritorio 120×60×72', unidad: 'u', costoMat: 0, costoSub: 73000, cantidad: 1, margenLinea: 35 },
-        { id: 't22', nombre: 'Mueble de oficina 170×30×86cm', unidad: 'u', costoMat: 0, costoSub: 393000, cantidad: 1, margenLinea: 35 },
-        { id: 't23', nombre: 'Mesa de comedor 100×60×72cm', unidad: 'u', costoMat: 0, costoSub: 73000, cantidad: 1, margenLinea: 35 },
-        { id: 't24', nombre: 'Banco de vestidor 100×40×45cm', unidad: 'u', costoMat: 0, costoSub: 42000, cantidad: 1, margenLinea: 35 },
-        { id: 't25', nombre: 'Instalación de mobiliario', unidad: 'gl', costoMat: 0, costoSub: 400000, cantidad: 1, margenLinea: 50 },
-      ]},
-      { id: 'r9', nombre: 'ACERO INOX', margenMat: 0, margenMO: 35, tareas: [
-        { id: 't1', nombre: 'Mensulas + estante de chapa 130×30×34', unidad: 'u', costoMat: 0, costoSub: 229500, cantidad: 1, margenLinea: 35 },
-        { id: 't2', nombre: 'Autoservicio alto 72,5×41×217', unidad: 'u', costoMat: 0, costoSub: 700000, cantidad: 1, margenLinea: 35 },
-        { id: 't3', nombre: 'Autoservicio bajo 65×41×105', unidad: 'u', costoMat: 0, costoSub: 557550, cantidad: 1, margenLinea: 35 },
-      ]},
-      { id: 'r10', nombre: 'LOGÍSTICA', margenMat: 0, margenMO: 25, tareas: [
-        { id: 't1', nombre: 'Flete general (x km)', unidad: 'km', costoMat: 0, costoSub: 2200, cantidad: 1020, margenLinea: 25 },
-        { id: 't2', nombre: 'Traslado de personas (km x vehiculos x 2)', unidad: 'km', costoMat: 0, costoSub: 3300, cantidad: 1020, margenLinea: 20 },
-        { id: 't3', nombre: 'Limpieza de obra periodica + final', unidad: 'm²', costoMat: 0, costoSub: 3500, cantidad: 194, margenLinea: 25 },
-      ]},
-      { id: 'r11', nombre: 'DIRECCIÓN DE OBRA', margenMat: 0, margenMO: 10, tareas: [
-        { id: 't1', nombre: 'Dirección (Arquitecto full time + asistencia online)', unidad: 'm²', costoMat: 0, costoSub: 30000, cantidad: 194, margenLinea: 10 },
-      ]},
+      rubroFromList('r1', '1 - Trabajos Preliminares', [
+        ['Baño químico', 'U', 5],
+        ['Cartel de obra', 'M²', 1],
+        ['Cerco de obra', 'ML', 10],
+        ['Contenedor grande', 'U', 1],
+        ['Pilar de luz tradicional', 'U', 1],
+        ['Replanteo', 'M²', 80],
+        ['Retiro de tierra y nivelación de sup. p/ejecutar contrapisos y/o plateas. Incluye compactacion', 'M²', 100],
+      ]),
+      rubroFromList('r3', '3 - Movimiento de suelos', [
+        ['Excavación de bases', 'M³', 4.5],
+        ['Excavación de vigas de fundición', 'M³', 4],
+        ['Relleno de suelos con tosca (para nivelar)', 'M³', 16],
+      ]),
+      rubroFromList('r4', '4 - Fundaciones', [
+        ['Base 1 de H°A° 0.60x0.60 (armado y llenado)', 'U', 15],
+        ['Viga de fundación 20x25 (armado y llenado)', 'ML', 24.5],
+        ['Viga de fundación 25x30 (armado y llenado)', 'ML', 36.5],
+      ]),
+      rubroFromList('r5', '5 - Mampostería de cimientos', [
+        ['Mampostería de 15', 'M²', 4.9],
+        ['Mampostería de 20', 'M²', 7.3],
+      ]),
+      rubroFromList('r6', '6 - Capas aisladoras', [
+        ['Horizontal (Espesor 2cm)', 'M²', 11],
+        ['Vertical azotado (Espesor 0.5cm)', 'M²', 24.4],
+      ]),
+      rubroFromList('r7', '7 - Mampostería de elevación con cemento tradicional', [
+        ['Ladrillos huecos 12x18x33', 'M²', 63.7],
+        ['Ladrillos huecos 18x18x33', 'M²', 108.7],
+      ]),
+      rubroFromList('r8', '8 - Estructuras de hormigón armado', [
+        ['Columna HºAº 20x20 (Hierro 10mm)', 'ML', 36],
+        ['Encadenado H°A° 15x15', 'ML', 24.5],
+        ['Encadenado H°A° 15x20', 'ML', 36.5],
+      ]),
+      rubroFromList('r9', '9 - Revoques', [
+        ['Azotado hidrófugo bajo revoque', 'M²', 108.7],
+        ['Fino exterior', 'M²', 108.7],
+        ['Fino interior', 'M²', 206.1],
+        ['Grueso regleado exterior', 'M²', 108.7],
+        ['Grueso regleado interior', 'M²', 236.1],
+      ]),
+      rubroFromList('r10', '10 - Contrapisos', [
+        ['De cascotes s/ terreno natural. Esp: 10cm.', 'M²', 94.4],
+      ]),
+      rubroFromList('r12', '12 - Cubiertas', [
+        ['Techo de Chapa Ondulada o Trapezoidal sobre Estructura de Madera Vista. (c/aislante y machimbre)', 'M²', 100.8],
+      ]),
+      rubroFromList('r13', '13 - Instalaciones sanitarias', [
+        ['Baño completo (Desagües primarios y secundarios, agua caliente y fría)', 'U', 1],
+        ['Cocina-Lavadero c/Termo o Calefon (Desagües primarios y secundarios, agua caliente y fría)', 'U', 1],
+        ['Subida de agua al tanque de reserva c/2 canillas de servicio, colector c/3 bajadas indep.', 'U', 1],
+        ['Toilette (Desagües primarios y secundarios, agua caliente y fría)', 'U', 1],
+      ]),
+      rubroFromList('r14', '14 - Instalaciones de gas', [
+        ['Inst. en Fusión completa. Cocina, termo y 3 calefactores (sin planos)', 'GL', 1],
+      ]),
+      rubroFromList('r15', '15 - Instalación eléctrica', [
+        ['Colocación de artefacto, (con armado)', 'U', 10],
+        ['Inst. eléctrica para 30 bocas completa (incluye tablero seccional)', 'GL', 1],
+      ]),
+      rubroFromList('r16', '16 - Carpetas', [
+        ['Hidrofuga s/contrapiso (Esp: 2cm)', 'M²', 72],
+      ]),
+      rubroFromList('r17', '17 - Pisos Cerámico, Porcellanato y Loseta', [
+        ['Cerámico 20x20', 'M²', 28],
+        ['Loseta de Vereda 40x40 (Calcáreos)', 'M²', 22.4],
+        ['Porcellanato 30x30', 'M²', 44],
+      ]),
+      rubroFromList('r20', '20 - Zócalos y Contramarcos', [
+        ['Contramarco de madera 1/2´ liso', 'ML', 50],
+        ['Zócalo Cerámico H:7cm', 'ML', 15],
+        ['Zócalo Madera 3/4´ liso', 'ML', 60],
+      ]),
+      rubroFromList('r21', '21 - Revestimientos Cerámico, Porcellanato, Venecita y Refractario', [
+        ['Cerámico 20x20', 'M²', 30],
+      ]),
+      rubroFromList('r24', '24 - Cielorrasos y Molduras', [
+        ['Moldura de tergopol 25x20mm. (lista p/pintar)', 'ML', 84],
+      ]),
+      rubroFromList('r26', '26 - Construcción en Seco', [
+        ['Cielorraso con placas de yeso', 'M²', 80],
+      ]),
+      rubroFromList('r28', '28 - Pinturas', [
+        ['Barniz s/madera y/o abertura.', 'M²', 28],
+        ['Cielorraso de yeso y/o cal', 'M²', 80],
+        ['Paredes exteriores', 'M²', 108.7],
+        ['Paredes interiores', 'M²', 206.1],
+      ]),
+      rubroFromList('r29', '29 - Marmolería/Granitos', [
+        ['Mesada de Granito y/o Mármol', 'M²', 1.8],
+        ['Mesada de Granito y/o Mármol c/Pileta de Cocina Doble ( 0.60 x 1.20)', 'U', 1],
+        ['Zócalo de Granito Gris Mara (Alt. 5 cm)', 'ML', 4.2],
+      ]),
+      rubroFromList('r30', '30 - Amoblamientos para cocinas, placares y vestidores', [
+        ['Alacena de aglomerado enchapado, enlaminado plástico c/ estante y cajonera', 'ML', 4.8],
+        ['Bajo mesada aglomerado enchapado, enlaminado plástico c/ estante y cajonera', 'ML', 4.2],
+      ]),
+      rubroFromList('r31', '31 - Aberturas de madera', [
+        ['Puerta de Entrada 0,80 x 2.00 (Exterior)', 'U', 1],
+        ['Puerta Placa, hoja 60/70. (Interior)', 'U', 5],
+      ]),
+      rubroFromList('r32', '32 - Aberturas de aluminio', [
+        ['Linea Herrero. Puerta de Entrada 0,80 x 2.00 (Exterior)', 'U', 1],
+        ['Linea Herrero. Ventana 1.50 x 1.10 Corrediza c/Cortina de PVC c/Vidrio Simple 4mm.', 'U', 4],
+        ['Linea Herrero. Ventana 1.50 x 1.10 Corrediza c/Vidrio Simple 4mm.', 'U', 1],
+        ['Linea Herrero. Ventiluz 1.00 x 0.50 Corredizo c/Vidrio Simple 4mm.', 'U', 1],
+      ]),
+      rubroFromList('r34', '34 - Cristales', [
+        ['Vidrio de 4mm', 'M²', 8.5],
+      ]),
+      rubroFromList('r35', '35 - Colocación de artefactos sanitarios, accesorios y grifería', [
+        ['Baño Completo (inodoro c/mochila, bidet, lavatorio y bañera)', 'U', 1],
+        ['Lavadero y cocina', 'U', 1],
+        ['Toilette c/depósito a mochila', 'U', 1],
+      ]),
+      rubroFromList('r36', '36 - Colocación de artefactos a gas', [
+        ['Colocación Calefactor 3000 cal., (tiro natural)', 'U', 2],
+        ['Colocación Calefactor 5000 cal., (tiro natural)', 'U', 1],
+        ['Colocación Cocina, (sin ventilación)', 'U', 1],
+        ['Colocación Termotanque 80lts., (con ventilación)', 'U', 1],
+      ]),
+      rubroFromList('r41', '41 - Limpieza y Ayuda de Gremios', [
+        ['Ayuda de gremios', 'M²', 80],
+        ['Limpieza final', 'M²', 80],
+        ['Limpieza periódica', 'U', 1],
+      ]),
     ],
   },
 ];
 
+// Versión del SEED: al bumpearla, forzamos reemplazar las plantillas en LS y
+// Supabase con SEED actual (eliminando las viejas plt1..plt6, plt-fan).
+// v4: margen MO/Sub default 100% (× 2) en lugar de 35%, porque al cobrar el
+// sub al doble cubrimos la MO SISMAT completa.
+const PLANTILLAS_SEED_VERSION = '4';
+
 const PlantillasContext = createContext(null);
 
+// IMPORTANTE: no bumpear la versión acá — el useEffect tiene que poder leer
+// la versión vieja para saber que hay que sobreescribir también Supabase.
+// Solo devolvemos SEED sincronicamente para el render inicial.
 function load() {
   try {
+    const ver = localStorage.getItem('kamak_plantillas_seed_v');
+    if (ver !== PLANTILLAS_SEED_VERSION) return SEED;
     const s = localStorage.getItem('kamak_plantillas_v1');
     if (s) {
       const saved = JSON.parse(s);
@@ -255,9 +497,20 @@ export function PlantillasProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false;
+    const seedVerLS = localStorage.getItem('kamak_plantillas_seed_v');
+    const needsReseed = seedVerLS !== PLANTILLAS_SEED_VERSION;
     loadSharedData('plantillas').then(data => {
       if (cancelled) return;
-      if (data) {
+      if (needsReseed) {
+        // Versión bumpeada: ignoramos el remote viejo y forzamos SEED nuevo,
+        // sobreescribiéndolo en Supabase para que se propague a otros tabs.
+        localStorage.setItem('kamak_plantillas_seed_v', PLANTILLAS_SEED_VERSION);
+        localStorage.setItem('kamak_plantillas_v1', JSON.stringify(SEED));
+        fromRemote.current = true;
+        setPlantillas(SEED);
+        saveSharedData('plantillas', SEED);
+        setTimeout(() => { fromRemote.current = false; }, 0);
+      } else if (data) {
         fromRemote.current = true;
         setPlantillas(data); localStorage.setItem('kamak_plantillas_v1', JSON.stringify(data));
         setTimeout(() => { fromRemote.current = false; }, 0);

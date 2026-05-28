@@ -1,0 +1,2810 @@
+[
+  {
+    "nombre": "Cartel de obra",
+    "unidad": "MÂ²",
+    "precio": 527065,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "Cerco de obra",
+    "unidad": "ML",
+    "precio": 53961,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "Defensa de protecciÃ³n para trabajo en obra",
+    "unidad": "ML",
+    "precio": 125492,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "Empalizada 10ml x 2,00m altura  Con Chapa y Perfiles + PortÃ³n corredizo manual. (Incluye Materiales)",
+    "unidad": "U",
+    "precio": 836098,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "Limpieza de terreno  Desmalezar + corte de pasto",
+    "unidad": "MÂ²",
+    "precio": 11294,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "Limpieza y nivelaciÃ³n de terreno.",
+    "unidad": "MÂ²",
+    "precio": 26604,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "Obrador, depÃ³sito y sanitario",
+    "unidad": "MÂ²",
+    "precio": 238434,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "Obrador, Replanteo y NivelaciÃ³n  Vivienda h/80mÂ², incluye estacas, tirar escuadras y fijar niveles",
+    "unidad": "GL",
+    "precio": 953737,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "Pilar de luz tradicional",
+    "unidad": "U",
+    "precio": 376475,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "Replanteo",
+    "unidad": "MÂ²",
+    "precio": 3514,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "Retiro de tierra y nivelaciÃ³n de sup. p/ejecutar contrapisos y/o plateas. Incluye compactacion",
+    "unidad": "MÂ²",
+    "precio": 20079,
+    "categoria": "Trabajos Preliminares"
+  },
+  {
+    "nombre": "De contrapisos",
+    "unidad": "MÂ²",
+    "precio": 57579,
+    "categoria": "Demoliciones"
+  },
+  {
+    "nombre": "De estructura de hormigÃ³n",
+    "unidad": "MÂ³",
+    "precio": 463827,
+    "categoria": "Demoliciones"
+  },
+  {
+    "nombre": "De mamposterÃ­as",
+    "unidad": "MÂ³",
+    "precio": 268208,
+    "categoria": "Demoliciones"
+  },
+  {
+    "nombre": "De pisos",
+    "unidad": "MÂ²",
+    "precio": 33218,
+    "categoria": "Demoliciones"
+  },
+  {
+    "nombre": "De techos (Chapas y Tejas)",
+    "unidad": "MÂ²",
+    "precio": 24606,
+    "categoria": "Demoliciones"
+  },
+  {
+    "nombre": "DemoliciÃ³n obra completa",
+    "unidad": "MÂ²",
+    "precio": 1476373,
+    "categoria": "Demoliciones"
+  },
+  {
+    "nombre": "Picado de revestimiento",
+    "unidad": "MÂ²",
+    "precio": 31742,
+    "categoria": "Demoliciones"
+  },
+  {
+    "nombre": "Picado de revoques",
+    "unidad": "MÂ²",
+    "precio": 41831,
+    "categoria": "Demoliciones"
+  },
+  {
+    "nombre": "Retiro de membrana existente",
+    "unidad": "MÂ²",
+    "precio": 12549,
+    "categoria": "Demoliciones"
+  },
+  {
+    "nombre": "Carga y retiro de tierra con camiÃ³n",
+    "unidad": "MÂ³",
+    "precio": 41412,
+    "categoria": "Movimiento de suelos"
+  },
+  {
+    "nombre": "ConstrucciÃ³n aro perimetral de mamposterÃ­a y losa para pozo ciego.  Losa de cierre y colocaciÃ³n caÃ±o de ventilaciÃ³n.",
+    "unidad": "U",
+    "precio": 301180,
+    "categoria": "Movimiento de suelos"
+  },
+  {
+    "nombre": "Destape del terreno (hasta 20/30cm de prof. con pala frontal)",
+    "unidad": "MÂ³",
+    "precio": 96629,
+    "categoria": "Movimiento de suelos"
+  },
+  {
+    "nombre": "ExcavaciÃ³n de bases",
+    "unidad": "MÂ³",
+    "precio": 52707,
+    "categoria": "Movimiento de suelos"
+  },
+  {
+    "nombre": "ExcavaciÃ³n de pozos para pilotÃ­n (diam. 20cm - prof. 1.50m)",
+    "unidad": "U",
+    "precio": 16314,
+    "categoria": "Movimiento de suelos"
+  },
+  {
+    "nombre": "ExcavaciÃ³n de sÃ³tano a mÃ¡quina",
+    "unidad": "MÂ³",
+    "precio": 60236,
+    "categoria": "Movimiento de suelos"
+  },
+  {
+    "nombre": "ExcavaciÃ³n de vigas de fundiciÃ³n",
+    "unidad": "MÂ³",
+    "precio": 52707,
+    "categoria": "Movimiento de suelos"
+  },
+  {
+    "nombre": "ExcavaciÃ³n p/pozo ciego (diÃ¡metro 1,60ml)",
+    "unidad": "MÂ³",
+    "precio": 71530,
+    "categoria": "Movimiento de suelos"
+  },
+  {
+    "nombre": "Relleno de suelos con tierra fÃ©rtil (para JardÃ­n)",
+    "unidad": "MÂ³",
+    "precio": 30118,
+    "categoria": "Movimiento de suelos"
+  },
+  {
+    "nombre": "Relleno de suelos con tosca (para nivelar)",
+    "unidad": "MÂ³",
+    "precio": 22588,
+    "categoria": "Movimiento de suelos"
+  },
+  {
+    "nombre": "Base 1 de HÂ°AÂ° 0.60x0.60 (armado y llenado)",
+    "unidad": "U",
+    "precio": 62746,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Base 2 de HÂ°AÂ° 0.60x1.00 (armado y llenado)",
+    "unidad": "U",
+    "precio": 82825,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Base 3 de HÂ°AÂ° 0.80x0.80 (armado y llenado)",
+    "unidad": "U",
+    "precio": 95374,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Base 4 de HÂ°AÂ° 1.00x1.00 (armado y llenado)",
+    "unidad": "U",
+    "precio": 115452,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Cimiento corrido de HormigÃ³n de cascotes (con cal y cemento)",
+    "unidad": "MÂ³",
+    "precio": 112943,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Cimiento corrido de HormigÃ³n de cascotes (con cemento de albaÃ±ilerÃ­a)",
+    "unidad": "MÂ³",
+    "precio": 112943,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "PilotÃ­n (diam. 20cm)",
+    "unidad": "ML",
+    "precio": 37648,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Platea de HÂ°AÂ° (espesor 15cm.)",
+    "unidad": "MÂ²",
+    "precio": 36393,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Platea de HÂ°AÂ° (espesor 20cm.)",
+    "unidad": "MÂ²",
+    "precio": 41412,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Platea de HÂ°AÂ° (espesor 25cm.)",
+    "unidad": "MÂ²",
+    "precio": 45177,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Viga de fundaciÃ³n 20x25 (armado y llenado)  con 4 hierros del 10. (estribos del 6)",
+    "unidad": "ML",
+    "precio": 30118,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Viga de fundaciÃ³n 20x30 (armado y llenado)  Con 4 hierros del 10. (estribos del 6)",
+    "unidad": "ML",
+    "precio": 37648,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Viga de fundaciÃ³n 25x25 (armado y llenado)  con 4 hierros del 10. (estribos del 6)",
+    "unidad": "ML",
+    "precio": 37648,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Viga de fundaciÃ³n 25x30 (armado y llenado)   con 4 hierros del 10. (estribos del 6)",
+    "unidad": "ML",
+    "precio": 41412,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Viga de fundaciÃ³n 30x30 (armado y llenado)  con 4 hierros del 10. (estribos del 6)",
+    "unidad": "ML",
+    "precio": 43293,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "Zapata de HormigÃ³n Pobre (0.40x0.80)",
+    "unidad": "ML",
+    "precio": 37648,
+    "categoria": "Fundaciones"
+  },
+  {
+    "nombre": "MamposterÃ­a de 15  ladrillo comÃºn",
+    "unidad": "MÂ²",
+    "precio": 19769,
+    "categoria": "MamposterÃ­a de cimientos"
+  },
+  {
+    "nombre": "MamposterÃ­a de 15 (con cemento de albaÃ±ilerÃ­a)",
+    "unidad": "MÂ²",
+    "precio": 19769,
+    "categoria": "MamposterÃ­a de cimientos"
+  },
+  {
+    "nombre": "MamposterÃ­a de 20  ladrillo comÃºn",
+    "unidad": "MÂ²",
+    "precio": 24331,
+    "categoria": "MamposterÃ­a de cimientos"
+  },
+  {
+    "nombre": "MamposterÃ­a de 20 (con cemento de albaÃ±ilerÃ­a)",
+    "unidad": "MÂ²",
+    "precio": 24331,
+    "categoria": "MamposterÃ­a de cimientos"
+  },
+  {
+    "nombre": "MamposterÃ­a de 30  ladrillo comÃºn",
+    "unidad": "MÂ²",
+    "precio": 32694,
+    "categoria": "MamposterÃ­a de cimientos"
+  },
+  {
+    "nombre": "MamposterÃ­a de 30 (con cemento de albaÃ±ilerÃ­a)",
+    "unidad": "MÂ²",
+    "precio": 32694,
+    "categoria": "MamposterÃ­a de cimientos"
+  },
+  {
+    "nombre": "Horizontal (Espesor 2cm)  incluye hidrofugo y pintura asfÃ¡ltica",
+    "unidad": "MÂ²",
+    "precio": 14468,
+    "categoria": "Capas aisladoras"
+  },
+  {
+    "nombre": "Vertical azotado (Espesor 0.5cm)  incluye hidrofugo y pintura asfÃ¡ltica",
+    "unidad": "MÂ²",
+    "precio": 12918,
+    "categoria": "Capas aisladoras"
+  },
+  {
+    "nombre": "Bloque HormigÃ³n Liso 09x19x39",
+    "unidad": "MÂ²",
+    "precio": 16727,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Bloque HormigÃ³n Liso 19x19x39",
+    "unidad": "MÂ²",
+    "precio": 22810,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Bloque HormigÃ³n SÃ­mil Piedra 12,5x19x39",
+    "unidad": "MÂ²",
+    "precio": 20022,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Bloque HormigÃ³n SÃ­mil Piedra 19x19x39",
+    "unidad": "MÂ²",
+    "precio": 24838,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillo comÃºn de 15",
+    "unidad": "MÂ²",
+    "precio": 19769,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillo comÃºn de 20",
+    "unidad": "MÂ²",
+    "precio": 24331,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillo comÃºn de 30",
+    "unidad": "MÂ²",
+    "precio": 32694,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillo comÃºn visto de 15cm  con junta tomada",
+    "unidad": "MÂ²",
+    "precio": 29146,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillo portante 12x19x33",
+    "unidad": "MÂ²",
+    "precio": 21796,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillo portante 18x19x33",
+    "unidad": "MÂ²",
+    "precio": 23824,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillos huecos 08x18x33",
+    "unidad": "MÂ²",
+    "precio": 14953,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillos huecos 12x18x33",
+    "unidad": "MÂ²",
+    "precio": 18248,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillos huecos 18x18x33",
+    "unidad": "MÂ²",
+    "precio": 21543,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillos huecos para encadenados 12x18x33  Incluye HormigÃ³n Armado c/ 4 barras del 8 y estribos del 4,2",
+    "unidad": "ML",
+    "precio": 16474,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Ladrillos huecos para encadenados 18x18x33  Incluye HormigÃ³n Armado c/ 4 barras del 8 y estribos del 4,2",
+    "unidad": "ML",
+    "precio": 17741,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Tomado de juntas",
+    "unidad": "MÂ²",
+    "precio": 12419,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento tradicional"
+  },
+  {
+    "nombre": "Bloque HormigÃ³n Liso 09x19x39  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 16727,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Bloque HormigÃ³n Liso 19x19x39  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 22810,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Bloque HormigÃ³n SÃ­mil Piedra 12,5x19x39  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 20022,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Bloque HormigÃ³n SÃ­mil Piedra 19x19x39  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 24838,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Ladrillo comÃºn de 15  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 19769,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Ladrillo comÃºn de 20  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 24331,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Ladrillo comÃºn de 30  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 32694,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Ladrillo comÃºn visto de 15cm  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 29146,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Ladrillo portante 12x19x39  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 21796,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Ladrillo portante 18x19x39  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 23824,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Ladrillos huecos 08x18x33  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 14953,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Ladrillos huecos 12x18x33  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 18248,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Ladrillos huecos 18x18x33  Con cemento de albaÃ±ilerÃ­a",
+    "unidad": "MÂ²",
+    "precio": 21543,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con cemento de albaÃ±ilerÃ­a"
+  },
+  {
+    "nombre": "Ladrillo RETAK Â¨UÂ¨ Refuerzo Vertical y/o Horizontal 50x25x15cm.  Incluye armadura y hormigÃ³n",
+    "unidad": "ML",
+    "precio": 12165,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Retak"
+  },
+  {
+    "nombre": "Ladrillo RETAK Â¨UÂ¨ Refuerzo Vertical y/o Horizontal 50x25x17,5cm.  Incluye armadura y hormigÃ³n",
+    "unidad": "ML",
+    "precio": 12165,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Retak"
+  },
+  {
+    "nombre": "Ladrillo RETAK Â¨UÂ¨ Refuerzo Vertical y/o Horizontal 50x25x20cm.  Incluye armadura y hormigÃ³n",
+    "unidad": "ML",
+    "precio": 12165,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Retak"
+  },
+  {
+    "nombre": "Ladrillo RETAK 50x25x07,5cm. (No portante)",
+    "unidad": "MÂ²",
+    "precio": 13433,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Retak"
+  },
+  {
+    "nombre": "Ladrillo RETAK 50x25x10cm. (No portante)",
+    "unidad": "MÂ²",
+    "precio": 14700,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Retak"
+  },
+  {
+    "nombre": "Ladrillo RETAK 50x25x12,5cm. (No portante)",
+    "unidad": "MÂ²",
+    "precio": 16727,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Retak"
+  },
+  {
+    "nombre": "Ladrillo RETAK 50x25x15cm. (Portante)",
+    "unidad": "MÂ²",
+    "precio": 17995,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Retak"
+  },
+  {
+    "nombre": "Ladrillo RETAK 50x25x17,5cm. (Portante)",
+    "unidad": "MÂ²",
+    "precio": 20022,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Retak"
+  },
+  {
+    "nombre": "Ladrillo RETAK 50x25x20cm. (Portante)",
+    "unidad": "MÂ²",
+    "precio": 21543,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Retak"
+  },
+  {
+    "nombre": "Ladrillo RETAK 50x25x25cm. (Portante)",
+    "unidad": "MÂ²",
+    "precio": 23317,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Retak"
+  },
+  {
+    "nombre": "Ladrillos Huecos 08x18x33",
+    "unidad": "MÂ²",
+    "precio": 14954,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Rapibrick"
+  },
+  {
+    "nombre": "Ladrillos Huecos 12x18x33",
+    "unidad": "MÂ²",
+    "precio": 18248,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Rapibrick"
+  },
+  {
+    "nombre": "Ladrillos Huecos 18x18x33",
+    "unidad": "MÂ²",
+    "precio": 21543,
+    "categoria": "MamposterÃ­a de elevaciÃ³n con Rapibrick"
+  },
+  {
+    "nombre": "Base, Columna y Plataforma de HÂ°AÂ° para Tanque de Agua Elevado  estructura para T.A. hasta 1.100lts. (altura 4,00mts.)",
+    "unidad": "U",
+    "precio": 511496,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Columna HÂ°AÂ° 15x20 (Hierro 10mm)  con hierro del 10mm y estribos del 6 c/20cm.",
+    "unidad": "ML",
+    "precio": 23031,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Columna HÂ°AÂ° 15x20 (Hierro 8mm)  con hierro del 8 y estribos del 6 c/20cm.",
+    "unidad": "ML",
+    "precio": 23031,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Columna HÂ°AÂ° 15x25 (Hierro 10mm)  con hierros del 10mm y estribos del 6 c/20cm.",
+    "unidad": "ML",
+    "precio": 23756,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Columna HÂ°AÂ° 20x20 (Hierro 8mm)  con hierro del 8 y estribos del 6 c/20cm.",
+    "unidad": "ML",
+    "precio": 24311,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Columna HÂºAÂº 20x20 (Hierro 10mm)  con hierro del 10 y estribos del 6 c/20cm.",
+    "unidad": "ML",
+    "precio": 24311,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Columna HÂºAÂº 20x20 (Hierro 12mm)  con hierro del 12 y estribos del 6 c/20cm.",
+    "unidad": "ML",
+    "precio": 24311,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Columna HÂºAÂº 30x30 (Hierro 12mm)  con hierro del 12mm y estribos del 6mm c/20cm",
+    "unidad": "ML",
+    "precio": 27848,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Dintel de 1 a 2mts de Luz  con 3 hierros del 8mm (Sumar apoyo 20cm. mÃ­nimo)",
+    "unidad": "ML",
+    "precio": 15453,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Dintel Hasta 1mt de Luz  con 2 hierros del 8mm (sumar apoyo 20cm. mÃ­nimo)",
+    "unidad": "ML",
+    "precio": 15453,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Encadenado HÂ°AÂ° 15x15  hierro del 8 y estribos del 6 c/20cm.",
+    "unidad": "ML",
+    "precio": 19961,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Encadenado HÂ°AÂ° 15x20  hierro del 8 y estribos del 6 c/20cm.",
+    "unidad": "ML",
+    "precio": 21496,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Encadenado HÂ°AÂ° 15x30  hierro del 8mm y estribos del 6 c/20cm.",
+    "unidad": "ML",
+    "precio": 22165,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Encadenado HÂ°AÂ° 20x15  hierro del 10mm y estribos del 6mm c/20cm",
+    "unidad": "ML",
+    "precio": 21496,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Encadenado HÂ°AÂ° 20x20  hierro del 10mm y estribos del 6mm c/20cm",
+    "unidad": "ML",
+    "precio": 21824,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Encadenado HÂ°AÂ° 20x30  hierro del 10mm y estribos del 6mm c/20cm",
+    "unidad": "ML",
+    "precio": 22733,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Escalera de HÂ°AÂ° (ancho 0.90 mts)  contiene 15 escalones.",
+    "unidad": "U",
+    "precio": 1253933,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Losa de viguetas con ladrillo de tergopol   Definir los largos de las viguetas segÃºn la distancia entre apoyo  mas 18cm. para apoyarlas. (9cm en cada punta)",
+    "unidad": "MÂ²",
+    "precio": 56299,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Losa HÂ°AÂ°, espesor 10cm.  con madera, encofrado, armado de hierros y llenado.",
+    "unidad": "MÂ²",
+    "precio": 76771,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Viga HÂ°AÂ° por 3,00 mts. (12x30cm)",
+    "unidad": "U",
+    "precio": 255905,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Viga HÂ°AÂ° por 4,00 mts. (12x40cm)",
+    "unidad": "U",
+    "precio": 332676,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "Viga HÂ°AÂ° por 5,00 mts. (12x50cm)",
+    "unidad": "U",
+    "precio": 383857,
+    "categoria": "Estructuras de hormigÃ³n armado"
+  },
+  {
+    "nombre": "2 en 1: grueso y fino interior",
+    "unidad": "MÂ²",
+    "precio": 20276,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "3 en 1: grueso con hidrofugo y fino exterior",
+    "unidad": "MÂ²",
+    "precio": 22810,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "Alisado de muros (interior) con masilla   Son 3 manos de 1mm de espesor (Total 3mm)",
+    "unidad": "MÂ²",
+    "precio": 10645,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "Azotado hidrÃ³fugo bajo revoque",
+    "unidad": "MÂ²",
+    "precio": 11658,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "Enlucido de yeso",
+    "unidad": "MÂ²",
+    "precio": 15207,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "Fino exterior",
+    "unidad": "MÂ²",
+    "precio": 13686,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "Fino interior",
+    "unidad": "MÂ²",
+    "precio": 12419,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "Fino interior/exterior in situ",
+    "unidad": "MÂ²",
+    "precio": 14700,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "Grueso bolseado exterior/interior",
+    "unidad": "MÂ²",
+    "precio": 18232,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "Grueso fratasado exterior/interior",
+    "unidad": "MÂ²",
+    "precio": 24645,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "Grueso regleado exterior",
+    "unidad": "MÂ²",
+    "precio": 21543,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "Grueso regleado interior",
+    "unidad": "MÂ²",
+    "precio": 21543,
+    "categoria": "Revoques"
+  },
+  {
+    "nombre": "De cascotes s/ terreno natural. Esp: 10cm.",
+    "unidad": "MÂ²",
+    "precio": 18086,
+    "categoria": "Contrapisos"
+  },
+  {
+    "nombre": "De cascotes s/ terreno natural. Esp: 10cm. (con cemento de albaÃ±ilerÃ­a)",
+    "unidad": "MÂ²",
+    "precio": 18086,
+    "categoria": "Contrapisos"
+  },
+  {
+    "nombre": "De hormigÃ³n s/ losa. (esp: 7cm.)",
+    "unidad": "MÂ²",
+    "precio": 15502,
+    "categoria": "Contrapisos"
+  },
+  {
+    "nombre": "De hormigÃ³n s/ terreno natural. (esp: 10cm.)",
+    "unidad": "MÂ²",
+    "precio": 18086,
+    "categoria": "Contrapisos"
+  },
+  {
+    "nombre": "Entrepiso de 1Â´ s/tirantes de 2x6  Tirante de 2x6 Pino Cepillado. Definir el largo.",
+    "unidad": "MÂ²",
+    "precio": 77510,
+    "categoria": "Entrepisos"
+  },
+  {
+    "nombre": "Entrepiso de fenolico s/perfil galvanizado  Definir largo de los perfiles segÃºn apoyos.",
+    "unidad": "MÂ²",
+    "precio": 68467,
+    "categoria": "Entrepisos"
+  },
+  {
+    "nombre": "ColocaciÃ³n Cumbrera de Chapa Color",
+    "unidad": "ML",
+    "precio": 27043,
+    "categoria": "Cubiertas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Cumbrera de Chapa Galvanizada",
+    "unidad": "ML",
+    "precio": 27043,
+    "categoria": "Cubiertas"
+  },
+  {
+    "nombre": "ColocaciÃ³n de membrana asfÃ¡ltica con imprimaciÃ³n de superficie",
+    "unidad": "MÂ²",
+    "precio": 17130,
+    "categoria": "Cubiertas"
+  },
+  {
+    "nombre": "Forrado de Alero a Nivel c/Machimbre de Madera de 1/2",
+    "unidad": "MÂ²",
+    "precio": 48677,
+    "categoria": "Cubiertas"
+  },
+  {
+    "nombre": "Techo de Chapa Color Ondulada o Trapezoidal sobre Estructura de Madera Vista. (c/aislante y machimbre)  Madera machimbrada a la vista",
+    "unidad": "MÂ²",
+    "precio": 71154,
+    "categoria": "Cubiertas"
+  },
+  {
+    "nombre": "Techo de Chapa Ondulada o Trapezoidal sobre Estructura de Madera Vista. (c/aislante y machimbre)  Madera machimbrada a la vista",
+    "unidad": "MÂ²",
+    "precio": 71154,
+    "categoria": "Cubiertas"
+  },
+  {
+    "nombre": "Techo de Chapa Ondulada o Trapezoidal Sobre Estructura MetÃ¡lica Oculta. (incluye aislante)  Con perfiles C separados cada 1 metro colocados en una sola direcciÃ³n",
+    "unidad": "MÂ²",
+    "precio": 63248,
+    "categoria": "Cubiertas"
+  },
+  {
+    "nombre": "Techo de Teja colonial sobre estructura de madera. (c/aislante sobre madera en bruto)  estructura de madera en bruto.",
+    "unidad": "MÂ²",
+    "precio": 84330,
+    "categoria": "Cubiertas"
+  },
+  {
+    "nombre": "Techo de Teja francesa sobre estructura de madera. (c/aislante sobre madera en bruto)  estructura de madera en bruto.",
+    "unidad": "MÂ²",
+    "precio": 79060,
+    "categoria": "Cubiertas"
+  },
+  {
+    "nombre": "*Biodigestor 1100 L Autolimpiable + CÃ¡mara de Registro de Lodos + Encimas PC3. Incluido Drenajes  Capacidad en domicilios (Aguas Negras y Jabonosas): 5 personas",
+    "unidad": "U",
+    "precio": 1095623,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "BalcÃ³n c/canilla de servicio (DesagÃ¼es pluviales)",
+    "unidad": "U",
+    "precio": 258365,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "BaÃ±o (Agua caliente y frÃ­a)  inodoro c/mochila, bidet, lavatorio y baÃ±era",
+    "unidad": "U",
+    "precio": 568404,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "BaÃ±o (DesagÃ¼es primarios y secundarios)  inodoro c/mochila, bidet, lavatorio y baÃ±era",
+    "unidad": "U",
+    "precio": 465058,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "BaÃ±o completo (DesagÃ¼es primarios y secundarios, agua caliente y frÃ­a)  Inodoro c/mochila, bidet, lavatorio y baÃ±era",
+    "unidad": "U",
+    "precio": 968870,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Cocina-Lavadero c/Termo o Calefon (Agua caliente y frÃ­a)  pileta de cocina, pileta de lavadero y desagÃ¼e de lavarropas",
+    "unidad": "U",
+    "precio": 465058,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Cocina-Lavadero c/Termo o Calefon (DesagÃ¼es primarios y secundarios, agua caliente y frÃ­a)  pileta de cocina, pileta de lavadero y desague de lavarropas",
+    "unidad": "U",
+    "precio": 645913,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Cocina-Lavadero c/Termo o Calefon (DesagÃ¼es primarios y secundarios)  pileta de cocina, pileta de lavadero y desagÃ¼e de lavarropas",
+    "unidad": "U",
+    "precio": 310038,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "ConexiÃ³n de Agua y Cloacas a la Red Domiciliaria  se calcula un desarrollo de 20mts. lineales en agua y 10mts. lineales en cloaca para la conexiÃ³n a la Red.",
+    "unidad": "U",
+    "precio": 432684,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "ConexiÃ³n DesagÃ¼es Primarios hasta Red Cloacal (Hasta 6mts)",
+    "unidad": "U",
+    "precio": 251532,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "ConstrucciÃ³n de CÃ¡mara de InspecciÃ³n 60x60 con modulo pre-moldeado y cojinetes de material",
+    "unidad": "U",
+    "precio": 223731,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Inst. de Agua, con caÃ±erÃ­a fusiÃ³n por metro aÃ©reo y engrampado  No incluye materiales",
+    "unidad": "ML",
+    "precio": 37730,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Inst. de Agua, con caÃ±erÃ­a fusiÃ³n por metro canalizado  No incluye materiales",
+    "unidad": "ML",
+    "precio": 57190,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Inst. de Agua, con caÃ±erÃ­a fusiÃ³n por metro zanjeado  No incluye materiales",
+    "unidad": "ML",
+    "precio": 57190,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Inst. de CÃ¡mara de InspecciÃ³n plÃ¡stica sobre mortero de asiento",
+    "unidad": "U",
+    "precio": 145624,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Inst. de CÃ¡mara SÃ©ptica PlÃ¡stica",
+    "unidad": "U",
+    "precio": 152243,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Inst. de CÃ¡mara SÃ©ptica Premoldeada Cemento Modular",
+    "unidad": "U",
+    "precio": 211816,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Inst. de Pluvial hasta cordÃ³n cuneta por metro lineal (por tierra)",
+    "unidad": "ML",
+    "precio": 56264,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Prueba HidrÃ¡ulica Agua hasta 15 bares",
+    "unidad": "U",
+    "precio": 90022,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Prueba HidrÃ¡ulica en DesagÃ¼es (con TapÃ³n NeumÃ¡tico)",
+    "unidad": "U",
+    "precio": 146083,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Subida de agua al tanque de reserva c/2 canillas de servicio, colector c/3 bajadas indep.",
+    "unidad": "U",
+    "precio": 620077,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Toilette (Agua frÃ­a y caliente)  inodoro c/mochila y lavatorio",
+    "unidad": "U",
+    "precio": 310038,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Toilette (DesagÃ¼es primarios y secundarios, agua caliente y frÃ­a)  Inodoro c/mochila y lavatorio",
+    "unidad": "U",
+    "precio": 465058,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Toilette (DesagÃ¼es primarios y secundarios)  inodoro c/mochila y lavatorio",
+    "unidad": "U",
+    "precio": 258365,
+    "categoria": "Instalaciones sanitarias"
+  },
+  {
+    "nombre": "Armado de Planta Reguladora  No incluye materiales",
+    "unidad": "U",
+    "precio": 370183,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en Epoxi completa. Cocina, termo y 3 calefactores (sin planos)",
+    "unidad": "GL",
+    "precio": 1505901,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en Epoxi por metro aÃ©reo y engrampado  No incluye materiales",
+    "unidad": "ML",
+    "precio": 37018,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en Epoxi por metro canalizado  No incluye materiales",
+    "unidad": "ML",
+    "precio": 55463,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en Epoxi por metro zanjeado  No incluye materiales",
+    "unidad": "ML",
+    "precio": 45461,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en Epoxi, boca adicional.",
+    "unidad": "U",
+    "precio": 294848,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en FusiÃ³n completa. Caldera, Horno y Anafe (sin planos)",
+    "unidad": "GL",
+    "precio": 1254917,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en FusiÃ³n completa. Cocina, termo y 3 calefactores (sin planos)",
+    "unidad": "GL",
+    "precio": 1505901,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en FusiÃ³n por metro aÃ©reo y engrampado  No incluye materiales",
+    "unidad": "ML",
+    "precio": 37018,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en FusiÃ³n por metro canalizado  No incluye materiales",
+    "unidad": "ML",
+    "precio": 55463,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en FusiÃ³n por metro zanjeado  No incluye materiales",
+    "unidad": "ML",
+    "precio": 45461,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "Inst. en FusiÃ³n, boca adicional.",
+    "unidad": "U",
+    "precio": 294848,
+    "categoria": "Instalaciones de gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n de artefacto, (con armado)   No incluye el dicho artefacto. (solo mano de obra)",
+    "unidad": "U",
+    "precio": 25837,
+    "categoria": "InstalaciÃ³n elÃ©ctrica"
+  },
+  {
+    "nombre": "ColocaciÃ³n de PlafÃ³n Led 12W  Incluye material",
+    "unidad": "U",
+    "precio": 22716,
+    "categoria": "InstalaciÃ³n elÃ©ctrica"
+  },
+  {
+    "nombre": "ColocaciÃ³n de PlafÃ³n Led 18w  Incluye material",
+    "unidad": "U",
+    "precio": 22716,
+    "categoria": "InstalaciÃ³n elÃ©ctrica"
+  },
+  {
+    "nombre": "ColocaciÃ³n de PlafÃ³n Led 24w  Incluye material",
+    "unidad": "U",
+    "precio": 22716,
+    "categoria": "InstalaciÃ³n elÃ©ctrica"
+  },
+  {
+    "nombre": "Inst. elÃ©ctrica para 30 bocas completa (incluye tablero seccional)",
+    "unidad": "GL",
+    "precio": 1679375,
+    "categoria": "InstalaciÃ³n elÃ©ctrica"
+  },
+  {
+    "nombre": "Inst. elÃ©ctrica para 50 bocas completa (incluye tablero seccional)",
+    "unidad": "GL",
+    "precio": 2325288,
+    "categoria": "InstalaciÃ³n elÃ©ctrica"
+  },
+  {
+    "nombre": "Inst. elÃ©ctrica, boca adicional iluminaciÃ³n",
+    "unidad": "U",
+    "precio": 46506,
+    "categoria": "InstalaciÃ³n elÃ©ctrica"
+  },
+  {
+    "nombre": "Inst. elÃ©ctrica, boca adicional tomacorriente",
+    "unidad": "U",
+    "precio": 46506,
+    "categoria": "InstalaciÃ³n elÃ©ctrica"
+  },
+  {
+    "nombre": "Alisado de cemento para piso (Esp:2cm)",
+    "unidad": "MÂ²",
+    "precio": 16794,
+    "categoria": "Carpetas"
+  },
+  {
+    "nombre": "Con Cal s/contrapiso (Esp: 2cm)",
+    "unidad": "MÂ²",
+    "precio": 15244,
+    "categoria": "Carpetas"
+  },
+  {
+    "nombre": "Hidrofuga s/contrapiso (Esp: 2cm)",
+    "unidad": "MÂ²",
+    "precio": 15244,
+    "categoria": "Carpetas"
+  },
+  {
+    "nombre": "CerÃ¡mico 20x20",
+    "unidad": "MÂ²",
+    "precio": 21543,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "CerÃ¡mico 40x40",
+    "unidad": "MÂ²",
+    "precio": 26612,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "CerÃ¡mico 60x60",
+    "unidad": "MÂ²",
+    "precio": 34215,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "CerÃ¡mico SÃ­mil Madera 22x90",
+    "unidad": "MÂ²",
+    "precio": 34215,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "Loseta de Vereda 40x40 (CalcÃ¡reos)",
+    "unidad": "MÂ²",
+    "precio": 31681,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "Loseta de Vereda 40x40 (GranÃ­ticos)",
+    "unidad": "MÂ²",
+    "precio": 31681,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "Loseta de Vereda 40x40 (Piedra Lavada)",
+    "unidad": "MÂ²",
+    "precio": 31681,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "Porcellanato 30x30",
+    "unidad": "MÂ²",
+    "precio": 25344,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "Porcellanato 40x40",
+    "unidad": "MÂ²",
+    "precio": 30413,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "Porcellanato 60x60",
+    "unidad": "MÂ²",
+    "precio": 38017,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "Porcellanato 80x80",
+    "unidad": "MÂ²",
+    "precio": 38017,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "Porcellanato SÃ­mil Madera 20x120",
+    "unidad": "MÂ²",
+    "precio": 38017,
+    "categoria": "Pisos CerÃ¡mico, Porcellanato y Loseta"
+  },
+  {
+    "nombre": "Alfombra",
+    "unidad": "MÂ²",
+    "precio": 30413,
+    "categoria": "Pisos Alfombra y Flotantes"
+  },
+  {
+    "nombre": "Piso flotante, c/manta",
+    "unidad": "MÂ²",
+    "precio": 25344,
+    "categoria": "Pisos Alfombra y Flotantes"
+  },
+  {
+    "nombre": "atÃ©rmico Borde Curvo",
+    "unidad": "ML",
+    "precio": 15059,
+    "categoria": "Pisos Alisado de Cemento, Microcemento, AtÃ©rmicos y Deck"
+  },
+  {
+    "nombre": "AtÃ©rmico Borde Recto",
+    "unidad": "MÂ²",
+    "precio": 30118,
+    "categoria": "Pisos Alisado de Cemento, Microcemento, AtÃ©rmicos y Deck"
+  },
+  {
+    "nombre": "Cemento alisado",
+    "unidad": "MÂ²",
+    "precio": 25098,
+    "categoria": "Pisos Alisado de Cemento, Microcemento, AtÃ©rmicos y Deck"
+  },
+  {
+    "nombre": "Deck de madera  Tablas de Guayubira de 1x4 sobre estructura de madera de 2x2",
+    "unidad": "MÂ²",
+    "precio": 37648,
+    "categoria": "Pisos Alisado de Cemento, Microcemento, AtÃ©rmicos y Deck"
+  },
+  {
+    "nombre": "Microcemento (esp.:2mm)  Resistencia al desgaste. Sin necesidad de retirar piso o terminaciones existente. Color a elecciÃ³n.",
+    "unidad": "MÂ²",
+    "precio": 31373,
+    "categoria": "Pisos Alisado de Cemento, Microcemento, AtÃ©rmicos y Deck"
+  },
+  {
+    "nombre": "Contramarco de madera 1/2Â´ liso",
+    "unidad": "ML",
+    "precio": 12549,
+    "categoria": "ZÃ³calos y Contramarcos"
+  },
+  {
+    "nombre": "ZÃ³calo CalcÃ¡reo H:10cm",
+    "unidad": "ML",
+    "precio": 12549,
+    "categoria": "ZÃ³calos y Contramarcos"
+  },
+  {
+    "nombre": "ZÃ³calo Cemento alisado H:10cm",
+    "unidad": "ML",
+    "precio": 8784,
+    "categoria": "ZÃ³calos y Contramarcos"
+  },
+  {
+    "nombre": "ZÃ³calo CerÃ¡mico H:7cm",
+    "unidad": "ML",
+    "precio": 10039,
+    "categoria": "ZÃ³calos y Contramarcos"
+  },
+  {
+    "nombre": "ZÃ³calo GranÃ­tico H:10cm",
+    "unidad": "ML",
+    "precio": 12549,
+    "categoria": "ZÃ³calos y Contramarcos"
+  },
+  {
+    "nombre": "ZÃ³calo Madera 3/4Â´ liso",
+    "unidad": "ML",
+    "precio": 9035,
+    "categoria": "ZÃ³calos y Contramarcos"
+  },
+  {
+    "nombre": "ZÃ³calo Porcellanato H:7cm",
+    "unidad": "ML",
+    "precio": 12549,
+    "categoria": "ZÃ³calos y Contramarcos"
+  },
+  {
+    "nombre": "CerÃ¡mico 20x20",
+    "unidad": "MÂ²",
+    "precio": 31326,
+    "categoria": "Revestimientos CerÃ¡mico, Porcellanato, Venecita y Refractario"
+  },
+  {
+    "nombre": "CerÃ¡mico 40x40",
+    "unidad": "MÂ²",
+    "precio": 36547,
+    "categoria": "Revestimientos CerÃ¡mico, Porcellanato, Venecita y Refractario"
+  },
+  {
+    "nombre": "CerÃ¡mico 60x60",
+    "unidad": "MÂ²",
+    "precio": 44378,
+    "categoria": "Revestimientos CerÃ¡mico, Porcellanato, Venecita y Refractario"
+  },
+  {
+    "nombre": "Porcellanato 30x30",
+    "unidad": "MÂ²",
+    "precio": 39157,
+    "categoria": "Revestimientos CerÃ¡mico, Porcellanato, Venecita y Refractario"
+  },
+  {
+    "nombre": "Porcellanato 40x40",
+    "unidad": "MÂ²",
+    "precio": 44378,
+    "categoria": "Revestimientos CerÃ¡mico, Porcellanato, Venecita y Refractario"
+  },
+  {
+    "nombre": "Porcellanato 60x60",
+    "unidad": "MÂ²",
+    "precio": 52209,
+    "categoria": "Revestimientos CerÃ¡mico, Porcellanato, Venecita y Refractario"
+  },
+  {
+    "nombre": "Refractario Esquinero corto 15 x 6 x 2.5cm.",
+    "unidad": "ML",
+    "precio": 13052,
+    "categoria": "Revestimientos CerÃ¡mico, Porcellanato, Venecita y Refractario"
+  },
+  {
+    "nombre": "Refractario Tejuela 11,5 x 23 x 2 cm.",
+    "unidad": "MÂ²",
+    "precio": 26105,
+    "categoria": "Revestimientos CerÃ¡mico, Porcellanato, Venecita y Refractario"
+  },
+  {
+    "nombre": "Venecitas (comÃºn)",
+    "unidad": "MÂ²",
+    "precio": 52209,
+    "categoria": "Revestimientos CerÃ¡mico, Porcellanato, Venecita y Refractario"
+  },
+  {
+    "nombre": "Venecitas (vidrio)",
+    "unidad": "MÂ²",
+    "precio": 52209,
+    "categoria": "Revestimientos CerÃ¡mico, Porcellanato, Venecita y Refractario"
+  },
+  {
+    "nombre": "Laja Irregular La Rioja",
+    "unidad": "MÂ²",
+    "precio": 39530,
+    "categoria": "Revestimientos Piedra y Laja"
+  },
+  {
+    "nombre": "Laja Irregular NeuquÃ©n Zapala",
+    "unidad": "MÂ²",
+    "precio": 39530,
+    "categoria": "Revestimientos Piedra y Laja"
+  },
+  {
+    "nombre": "Laja Irregular San Juan",
+    "unidad": "MÂ²",
+    "precio": 39530,
+    "categoria": "Revestimientos Piedra y Laja"
+  },
+  {
+    "nombre": "Murete Rustico Piedra Bariloche",
+    "unidad": "MÂ²",
+    "precio": 63248,
+    "categoria": "Revestimientos Piedra y Laja"
+  },
+  {
+    "nombre": "Murete Rustico Piedra NeuquÃ©n Zapala",
+    "unidad": "MÂ²",
+    "precio": 63248,
+    "categoria": "Revestimientos Piedra y Laja"
+  },
+  {
+    "nombre": "Murete Rustico Piedra San Juan",
+    "unidad": "MÂ²",
+    "precio": 63248,
+    "categoria": "Revestimientos Piedra y Laja"
+  },
+  {
+    "nombre": "Murete Rustico Piedra San Luis",
+    "unidad": "MÂ²",
+    "precio": 63248,
+    "categoria": "Revestimientos Piedra y Laja"
+  },
+  {
+    "nombre": "PlÃ¡stico Tipo Super Iggam",
+    "unidad": "MÂ²",
+    "precio": 37278,
+    "categoria": "Revestimientos Texturado"
+  },
+  {
+    "nombre": "Texturado 1 Travertino/Rulato (Fino)  Revest. Decorativo AcrÃ­lico. Se aplica con llana plÃ¡stica.",
+    "unidad": "MÂ²",
+    "precio": 16154,
+    "categoria": "Revestimientos Texturado"
+  },
+  {
+    "nombre": "Texturado 2 Travertino/Rulato (Medio)   Revest. Decorativo AcrÃ­lico. Se aplica con llana plÃ¡stica.",
+    "unidad": "MÂ²",
+    "precio": 18639,
+    "categoria": "Revestimientos Texturado"
+  },
+  {
+    "nombre": "Texturado 3 Travertino/Rulato (Grueso)  Revest. Decorativo AcrÃ­lico. Se aplica con llana plÃ¡stica.",
+    "unidad": "MÂ²",
+    "precio": 21124,
+    "categoria": "Revestimientos Texturado"
+  },
+  {
+    "nombre": "Texturado 4 Travertino/Rulato (Extra-Grueso)  Revest. Decorativo AcrÃ­lico. Se aplica con llana plÃ¡stica.",
+    "unidad": "MÂ²",
+    "precio": 22367,
+    "categoria": "Revestimientos Texturado"
+  },
+  {
+    "nombre": "Texturado PÃ©treo  Revest. AcrÃ­lico impermeable, imitaciÃ³n granito. Realizado con llana plÃ¡stica.",
+    "unidad": "MÂ²",
+    "precio": 29823,
+    "categoria": "Revestimientos Texturado"
+  },
+  {
+    "nombre": "Moldura de tergopol 25x20mm. (lista p/pintar)",
+    "unidad": "ML",
+    "precio": 11294,
+    "categoria": "Cielorrasos y Molduras"
+  },
+  {
+    "nombre": "Moldura de yeso. (simple)",
+    "unidad": "ML",
+    "precio": 17569,
+    "categoria": "Cielorrasos y Molduras"
+  },
+  {
+    "nombre": "Revestimiento en machimbre de 1/2Â´",
+    "unidad": "MÂ²",
+    "precio": 50197,
+    "categoria": "Cielorrasos y Molduras"
+  },
+  {
+    "nombre": "Revoque Grueso y fino. (Aplicado)  bajo losa",
+    "unidad": "MÂ²",
+    "precio": 30118,
+    "categoria": "Cielorrasos y Molduras"
+  },
+  {
+    "nombre": "Revoque grueso y fino. (Armado)   ColocaciÃ³n de tirantillo, metal desplegado, revoque grueso y fino",
+    "unidad": "MÂ²",
+    "precio": 75295,
+    "categoria": "Cielorrasos y Molduras"
+  },
+  {
+    "nombre": "Yeso. (Aplicado)  bajo losa",
+    "unidad": "MÂ²",
+    "precio": 26604,
+    "categoria": "Cielorrasos y Molduras"
+  },
+  {
+    "nombre": "Yeso. (Armado)  ColocaciÃ³n de tirantillo, metal desplegado y yeso",
+    "unidad": "MÂ²",
+    "precio": 64252,
+    "categoria": "Cielorrasos y Molduras"
+  },
+  {
+    "nombre": "Baranda de Madera con tensores y 4 lineas de cable de acero inoxidable.",
+    "unidad": "ML",
+    "precio": 38755,
+    "categoria": "Escaleras y Barandas"
+  },
+  {
+    "nombre": "Baranda Pasamanos de Acero Inoxidable",
+    "unidad": "ML",
+    "precio": 24545,
+    "categoria": "Escaleras y Barandas"
+  },
+  {
+    "nombre": "Baranda Pasamanos de Madera",
+    "unidad": "ML",
+    "precio": 19377,
+    "categoria": "Escaleras y Barandas"
+  },
+  {
+    "nombre": "Carpeta cementicia. (P/escalera de HÂ°AÂ°)",
+    "unidad": "MÂ²",
+    "precio": 20669,
+    "categoria": "Escaleras y Barandas"
+  },
+  {
+    "nombre": "Escalera de estructura de hierro con escalones de madera. (indicar cantidad de escalones)  Costo por escalÃ³n",
+    "unidad": "U",
+    "precio": 108658,
+    "categoria": "Escaleras y Barandas"
+  },
+  {
+    "nombre": "Nariz de escalera de 2Â¨x 3Â´ en guayubira",
+    "unidad": "ML",
+    "precio": 19377,
+    "categoria": "Escaleras y Barandas"
+  },
+  {
+    "nombre": "Revest., alzada y pedada de cerÃ¡mica",
+    "unidad": "MÂ²",
+    "precio": 62008,
+    "categoria": "Escaleras y Barandas"
+  },
+  {
+    "nombre": "Revest., alzada y pedada de porcellanato",
+    "unidad": "MÂ²",
+    "precio": 77510,
+    "categoria": "Escaleras y Barandas"
+  },
+  {
+    "nombre": "Cielorraso con placas de yeso",
+    "unidad": "MÂ²",
+    "precio": 25079,
+    "categoria": "ConstrucciÃ³n en Seco"
+  },
+  {
+    "nombre": "Cielorraso Desmontable Deco Clasic Durlock 0,60 x 0,60",
+    "unidad": "MÂ²",
+    "precio": 18425,
+    "categoria": "ConstrucciÃ³n en Seco"
+  },
+  {
+    "nombre": "Cielorraso Desmontable Deco Clasic Durlock 0,60 x 1,20",
+    "unidad": "MÂ²",
+    "precio": 20216,
+    "categoria": "ConstrucciÃ³n en Seco"
+  },
+  {
+    "nombre": "Revestimiento sobre perfil Omega  cada 48 cm. Junta tomada con masilla y cinta.",
+    "unidad": "MÂ²",
+    "precio": 20472,
+    "categoria": "ConstrucciÃ³n en Seco"
+  },
+  {
+    "nombre": "Revoque Seco Durlock",
+    "unidad": "MÂ²",
+    "precio": 15354,
+    "categoria": "ConstrucciÃ³n en Seco"
+  },
+  {
+    "nombre": "Tabique espesor 9.5cm",
+    "unidad": "MÂ²",
+    "precio": 28149,
+    "categoria": "ConstrucciÃ³n en Seco"
+  },
+  {
+    "nombre": "Tabique espesor 9.5cm c/aislaciÃ³n acÃºstica",
+    "unidad": "MÂ²",
+    "precio": 29429,
+    "categoria": "ConstrucciÃ³n en Seco"
+  },
+  {
+    "nombre": "Tabique espesor 9.5cm mixto",
+    "unidad": "MÂ²",
+    "precio": 30709,
+    "categoria": "ConstrucciÃ³n en Seco"
+  },
+  {
+    "nombre": "Tabique Externo Portante Sistema EIFS c/ Aislacion TÃ©rmico-AcÃºstica (Panel de 2,40 x 2,40)",
+    "unidad": "U",
+    "precio": 211860,
+    "categoria": "Steel Framing"
+  },
+  {
+    "nombre": "Tabique Externo Portante Sistema Siding c/ Aislacion TÃ©rmico-AcÃºstica (Panel de 2,40 x 2,40)",
+    "unidad": "U",
+    "precio": 196358,
+    "categoria": "Steel Framing"
+  },
+  {
+    "nombre": "Tabique Interno NO Portante c/ Aislacion AcÃºstica (Panel de 2,40 x 2,40)",
+    "unidad": "U",
+    "precio": 152436,
+    "categoria": "Steel Framing"
+  },
+  {
+    "nombre": "Tabique Interno Portante c/ Aislacion AcÃºstica (Panel de 2,40 x 2,40)",
+    "unidad": "U",
+    "precio": 167938,
+    "categoria": "Steel Framing"
+  },
+  {
+    "nombre": "Barniz s/madera y/o abertura.  3 manos.",
+    "unidad": "MÂ²",
+    "precio": 17920,
+    "categoria": "Pinturas"
+  },
+  {
+    "nombre": "Cielorraso de yeso y/o cal  enduido parcial, imprimaciÃ³n y 3 manos.",
+    "unidad": "MÂ²",
+    "precio": 12288,
+    "categoria": "Pinturas"
+  },
+  {
+    "nombre": "Esmalte sintÃ©tico s/ abertura.  3 manos.",
+    "unidad": "MÂ²",
+    "precio": 20480,
+    "categoria": "Pinturas"
+  },
+  {
+    "nombre": "Impermeabilizacion de losa. (terraza)  3 manos de membrana liquida. Incluye velo.",
+    "unidad": "MÂ²",
+    "precio": 17152,
+    "categoria": "Pinturas"
+  },
+  {
+    "nombre": "Impregnante s/madera y/o abertura.  3 manos",
+    "unidad": "MÂ²",
+    "precio": 17921,
+    "categoria": "Pinturas"
+  },
+  {
+    "nombre": "MamposterÃ­a de Ladrillo comÃºn  3 manos.",
+    "unidad": "MÂ²",
+    "precio": 13824,
+    "categoria": "Pinturas"
+  },
+  {
+    "nombre": "Paredes exteriores  imprimaciÃ³n y 3 manos.",
+    "unidad": "MÂ²",
+    "precio": 13824,
+    "categoria": "Pinturas"
+  },
+  {
+    "nombre": "Paredes interiores  enduido parcial, imprimaciÃ³n y 3 manos.",
+    "unidad": "MÂ²",
+    "precio": 12800,
+    "categoria": "Pinturas"
+  },
+  {
+    "nombre": "Mesada de Granito Gris Mara (Ancho: 0,60)",
+    "unidad": "ML",
+    "precio": 65083,
+    "categoria": "MarmolerÃ­a/Granitos"
+  },
+  {
+    "nombre": "Mesada de Granito y/o MÃ¡rmol",
+    "unidad": "MÂ²",
+    "precio": 65083,
+    "categoria": "MarmolerÃ­a/Granitos"
+  },
+  {
+    "nombre": "Mesada de Granito y/o MÃ¡rmol c/Pileta de Cocina Doble ( 0.60 x 1.20)  Sector pileta (0,72 m2) resto completar con mesada de granito sola",
+    "unidad": "U",
+    "precio": 42446,
+    "categoria": "MarmolerÃ­a/Granitos"
+  },
+  {
+    "nombre": "Mesada de Granito y/o MÃ¡rmol c/Pileta de Cocina Simple (0.60 x 1.20)  Sector pileta (0,72 m2) resto completar con mesada de granito sola",
+    "unidad": "U",
+    "precio": 42446,
+    "categoria": "MarmolerÃ­a/Granitos"
+  },
+  {
+    "nombre": "Perforado de Granito y Pegado de Bacha Doble",
+    "unidad": "U",
+    "precio": 71084,
+    "categoria": "MarmolerÃ­a/Granitos"
+  },
+  {
+    "nombre": "Perforado de Granito y Pegado de Bacha Simple",
+    "unidad": "U",
+    "precio": 59237,
+    "categoria": "MarmolerÃ­a/Granitos"
+  },
+  {
+    "nombre": "ZÃ³calo de Granito Gris Mara (Alt. 5 cm)",
+    "unidad": "ML",
+    "precio": 13624,
+    "categoria": "MarmolerÃ­a/Granitos"
+  },
+  {
+    "nombre": "Alacena de aglomerado enchapado, enlaminado plÃ¡stico c/ estante y cajonera",
+    "unidad": "ML",
+    "precio": 65083,
+    "categoria": "Amoblamientos para cocinas, placares y vestidores"
+  },
+  {
+    "nombre": "Bajo mesada aglomerado enchapado, enlaminado plÃ¡stico c/ estante y cajonera",
+    "unidad": "ML",
+    "precio": 84891,
+    "categoria": "Amoblamientos para cocinas, placares y vestidores"
+  },
+  {
+    "nombre": "Placard 1.50x2.30x0.60 melamina 18mm, color blanco.  Medidas: ancho x Alto x profundidad. Tapacantos de PVC. Cajones con guÃ­as telescÃ³picas. Barral de hierro cromado. Puertas corredizas con perfiles de aluminio anodizado. El costo incluye: materiales, armado e instalaciÃ³n.",
+    "unidad": "U",
+    "precio": 102000,
+    "categoria": "Amoblamientos para cocinas, placares y vestidores"
+  },
+  {
+    "nombre": "Placard 2.00x2.30x0.60 melamina 18mm, color blanco.  Medidas: ancho x Alto x profundidad. Tapacantos de PVC. Cajones con guÃ­as telescÃ³picas. Barral de hierro cromado. Puertas corredizas con perfiles de aluminio anodizado. El costo incluye: materiales, armado e instalaciÃ³n.",
+    "unidad": "U",
+    "precio": 102000,
+    "categoria": "Amoblamientos para cocinas, placares y vestidores"
+  },
+  {
+    "nombre": "Placard 2.40x2.30x0.60 melamina 18mm, color blanco.  Medidas: ancho x Alto x profundidad. Tapacantos de PVC. Cajones con guÃ­as telescÃ³picas. Barral de hierro cromado. Puertas corredizas con perfiles de aluminio anodizado. El costo incluye: materiales, armado e instalaciÃ³n.",
+    "unidad": "U",
+    "precio": 102000,
+    "categoria": "Amoblamientos para cocinas, placares y vestidores"
+  },
+  {
+    "nombre": "Vestidor 1.50x2.30x0.45 melamina 18mm, color blanco.  Medidas: ancho x Alto x profundidad. Tapacantos de PVC. Cajones con guÃ­as telescÃ³picas. Barral de hierro cromado. Puertas corredizas con perfiles de aluminio anodizado. El costo incluye: materiales, armado e instalaciÃ³n.",
+    "unidad": "U",
+    "precio": 102000,
+    "categoria": "Amoblamientos para cocinas, placares y vestidores"
+  },
+  {
+    "nombre": "Vestidor 2.00x2.30x0.45 melamina 18mm, color blanco.  Medidas: ancho x Alto x profundidad. Tapacantos de PVC. Cajones con guÃ­as telescÃ³picas. Barral de hierro cromado. Puertas corredizas con perfiles de aluminio anodizado. El costo incluye: materiales, armado e instalaciÃ³n.",
+    "unidad": "U",
+    "precio": 102000,
+    "categoria": "Amoblamientos para cocinas, placares y vestidores"
+  },
+  {
+    "nombre": "Vestidor 2.40x2.30x0.45 melamina 18mm, color blanco.  Medidas: ancho x Alto x profundidad. Tapacantos de PVC. Cajones con guÃ­as telescÃ³picas. Barral de hierro cromado. Puertas corredizas con perfiles de aluminio anodizado. El costo incluye: materiales, armado e instalaciÃ³n.",
+    "unidad": "U",
+    "precio": 102000,
+    "categoria": "Amoblamientos para cocinas, placares y vestidores"
+  },
+  {
+    "nombre": "PortÃ³n Garage 2.40 x 2.00",
+    "unidad": "U",
+    "precio": 310038,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Puerta de Entrada 0,80 x 2.00 (Exterior)",
+    "unidad": "U",
+    "precio": 103346,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Puerta de Entrada Estilo Colonial 0.90 x 2.00 (Exterior)",
+    "unidad": "U",
+    "precio": 105348,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Puerta de Entrada Estilo Colonial 1.60 x 2.00 (Exterior)",
+    "unidad": "U",
+    "precio": 175581,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Puerta Placa Corrediza de Embutir, hoja 60/70. (Interior)",
+    "unidad": "U",
+    "precio": 86537,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Puerta Placa, hoja 60/70. (Interior)",
+    "unidad": "U",
+    "precio": 62008,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Ventana 1.50 x 1.10 Corrediza/De abrir",
+    "unidad": "U",
+    "precio": 72342,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Ventana 1.50 x 1.10 Corrediza/De abrir c/cortina de PVC",
+    "unidad": "U",
+    "precio": 77510,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Ventana balcÃ³n 1.60 x 2.00 Corrediza",
+    "unidad": "U",
+    "precio": 98179,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Ventana balcÃ³n 1.60 x 2.00 Corrediza c/cortina de PVC",
+    "unidad": "U",
+    "precio": 108513,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Ventiluz 1.00 x 0.50 corredizo",
+    "unidad": "U",
+    "precio": 54257,
+    "categoria": "Aberturas de madera"
+  },
+  {
+    "nombre": "Linea Herrero. Puerta de Entrada 0,80 x 2.00 (Exterior)",
+    "unidad": "U",
+    "precio": 103346,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Herrero. Ventana 1.50 x 1.10 Corrediza c/Cortina de PVC c/Vidrio Simple 4mm.",
+    "unidad": "U",
+    "precio": 77510,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Herrero. Ventana 1.50 x 1.10 Corrediza c/Vidrio Simple 4mm.",
+    "unidad": "U",
+    "precio": 72342,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Herrero. Ventana BalcÃ³n 1.60 x 2.00 Corrediza c/Cortina de PVC c/Vidrio Simple 4mm.",
+    "unidad": "U",
+    "precio": 108513,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Herrero. Ventana BalcÃ³n 1.60 x 2.00 Corrediza c/Vidrio Simple 4mm.",
+    "unidad": "U",
+    "precio": 98179,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Herrero. Ventiluz 1.00 x 0.50 Corredizo c/Vidrio Simple 4mm.",
+    "unidad": "U",
+    "precio": 54257,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. PortÃ³n Garaje 2.40 x 2.00",
+    "unidad": "U",
+    "precio": 310038,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Puerta de Entrada 0,80 x 2.00 (Exterior)",
+    "unidad": "U",
+    "precio": 103347,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Puerta de Entrada Modelo Vidriado 0,80 x 2.00 (Exterior) c/DVH",
+    "unidad": "U",
+    "precio": 103347,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana 0.60 x 1.10 Oscilobatiente c/DVH",
+    "unidad": "U",
+    "precio": 54256,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana 0.60 x 1.10 PaÃ±o Fijo c/DVH",
+    "unidad": "U",
+    "precio": 54256,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana 0.60 x 1.50 PaÃ±o Fijo c/DVH",
+    "unidad": "U",
+    "precio": 54256,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana 1.50 x 1.10 Corrediza c/cortina de PVC c/DVH",
+    "unidad": "U",
+    "precio": 77510,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana 1.50 x 1.10 Corrediza c/DVH",
+    "unidad": "U",
+    "precio": 72343,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana 2.00 x 0.60 Corrediza c/DVH",
+    "unidad": "U",
+    "precio": 72343,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana 2.00 x 1.50 PaÃ±o Fijo c/DVH",
+    "unidad": "U",
+    "precio": 98179,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana 3.00 x 1.50 PaÃ±o Fijo c/DVH",
+    "unidad": "U",
+    "precio": 122400,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana BalcÃ³n 1.60 x 2.00 Corrediza c/Cortina de PVC c/DVH",
+    "unidad": "U",
+    "precio": 108514,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana BalcÃ³n 1.60 x 2.00 Corrediza c/DVH",
+    "unidad": "U",
+    "precio": 98179,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana BalcÃ³n 2.00 x 2.00 Corrediza c/Cortina de PVC c/DVH",
+    "unidad": "U",
+    "precio": 108514,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventana BalcÃ³n 2.00 x 2.00 Corrediza c/DVH",
+    "unidad": "U",
+    "precio": 98179,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "Linea Modena. Ventiluz 1.00 x 0.50 Corredizo c/DVH.",
+    "unidad": "U",
+    "precio": 54256,
+    "categoria": "Aberturas de aluminio"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Puerta de Entrada Seguridad 0.80 x 2.00",
+    "unidad": "U",
+    "precio": 103347,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Puerta Vidriada 0.80 x 2.00 c/DVH",
+    "unidad": "U",
+    "precio": 103347,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Ventana BalcÃ³n Corrediza 1.50 x 2.00 c/DVH",
+    "unidad": "U",
+    "precio": 98179,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Ventana BalcÃ³n Corrediza 2.00 x 2.00 c/DVH",
+    "unidad": "U",
+    "precio": 98179,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Ventana Corrediza 0.60 x 2.00 c/DVH",
+    "unidad": "U",
+    "precio": 72343,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Ventana Corrediza 1.50 x 1.10 c/DVH",
+    "unidad": "U",
+    "precio": 72343,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Ventana Oscilobatiente 0.60 x 1.10 c/DVH",
+    "unidad": "U",
+    "precio": 54256,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Ventana Oscilobatiente 0.60 x 1.50 c/DVH",
+    "unidad": "U",
+    "precio": 54256,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Ventana PaÃ±o Fijo 0.60 x 1.10 c/DVH",
+    "unidad": "U",
+    "precio": 54256,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Ventana PaÃ±o Fijo 0.60 x 1.50 c/DVH",
+    "unidad": "U",
+    "precio": 54256,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Ventana PaÃ±o Fijo 2.00 x 1.50 c/DVH",
+    "unidad": "U",
+    "precio": 98179,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "PVC EstÃ¡ndar. Ventiluz Corrediza 1.20 x 0.60 c/DVH",
+    "unidad": "U",
+    "precio": 54256,
+    "categoria": "Aberturas de PVC"
+  },
+  {
+    "nombre": "Vidrio de 4mm",
+    "unidad": "MÂ²",
+    "precio": 20915,
+    "categoria": "Cristales"
+  },
+  {
+    "nombre": "Vidrio de 6mm",
+    "unidad": "MÂ²",
+    "precio": 24606,
+    "categoria": "Cristales"
+  },
+  {
+    "nombre": "Vidrio Laminado 3+3",
+    "unidad": "MÂ²",
+    "precio": 49212,
+    "categoria": "Cristales"
+  },
+  {
+    "nombre": "BaÃ±o Completo (inodoro c/mochila, bidet, lavatorio y baÃ±era)",
+    "unidad": "U",
+    "precio": 406925,
+    "categoria": "ColocaciÃ³n de artefactos sanitarios, accesorios y griferÃ­a"
+  },
+  {
+    "nombre": "BaÃ±o Completo c/Ducha (inodoro c/mochila, bidet, lavatorio y receptÃ¡culo ducha)",
+    "unidad": "GL",
+    "precio": 406926,
+    "categoria": "ColocaciÃ³n de artefactos sanitarios, accesorios y griferÃ­a"
+  },
+  {
+    "nombre": "Lavadero y cocina",
+    "unidad": "U",
+    "precio": 176334,
+    "categoria": "ColocaciÃ³n de artefactos sanitarios, accesorios y griferÃ­a"
+  },
+  {
+    "nombre": "Toilette c/depÃ³sito a mochila",
+    "unidad": "U",
+    "precio": 189899,
+    "categoria": "ColocaciÃ³n de artefactos sanitarios, accesorios y griferÃ­a"
+  },
+  {
+    "nombre": "ColocaciÃ³n Anafe, (sin ventilaciÃ³n)",
+    "unidad": "U",
+    "precio": 54553,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Caldera Dual, (con ventilaciÃ³n)  Incluye puesta en funcionamiento y ventilaciÃ³n.",
+    "unidad": "U",
+    "precio": 259778,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Calefactor 3000 cal., (tiro natural)",
+    "unidad": "U",
+    "precio": 110406,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Calefactor 5000 cal., (tiro natural)",
+    "unidad": "U",
+    "precio": 110406,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Calefactor sin salida",
+    "unidad": "U",
+    "precio": 92221,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Calefactor TBU (hasta 6mts)",
+    "unidad": "U",
+    "precio": 184442,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Calefon 14 lts, (con ventilaciÃ³n)",
+    "unidad": "U",
+    "precio": 184442,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Calefon 15 lts, (con ventilaciÃ³n)",
+    "unidad": "U",
+    "precio": 184442,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Cocina Industrial, (Sin VentilaciÃ³n)",
+    "unidad": "U",
+    "precio": 142878,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Cocina, (sin ventilaciÃ³n)",
+    "unidad": "U",
+    "precio": 142878,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Horno, (sin ventilaciÃ³n)",
+    "unidad": "U",
+    "precio": 129369,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n LeÃ±o",
+    "unidad": "U",
+    "precio": 73777,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Medidor con Regulador",
+    "unidad": "U",
+    "precio": 73777,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Pantalla IR",
+    "unidad": "U",
+    "precio": 73777,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Par de rejas de ventilaciÃ³n",
+    "unidad": "U",
+    "precio": 55463,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "ColocaciÃ³n Termotanque 80lts., (con ventilaciÃ³n)",
+    "unidad": "U",
+    "precio": 129369,
+    "categoria": "ColocaciÃ³n de artefactos a gas"
+  },
+  {
+    "nombre": "CalefacciÃ³n por Piso Radiante para vivienda de 80m2 (una planta)   SeparaciÃ³n del tubo 25 cm. (no incluye albanileria)",
+    "unidad": "U",
+    "precio": 1505901,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "CalefacciÃ³n por Radiadores para vivienda de 120m2 (dos plantas)  InstalaciÃ³n completa. Incluye colocacion de 8 radiadores y 2 toalleros.",
+    "unidad": "U",
+    "precio": 3264000,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "CalefacciÃ³n por Radiadores para vivienda de 80 m2 (una planta)   InstalaciÃ³n completa. Incluye colocaciÃ³n de 5 radiadores y 1 toallero.",
+    "unidad": "U",
+    "precio": 1882376,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Radiador (12 elementos.)",
+    "unidad": "U",
+    "precio": 102338,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Radiador (2 elementos.)",
+    "unidad": "U",
+    "precio": 102338,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Radiador (3 elementos.)",
+    "unidad": "U",
+    "precio": 102338,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Radiador (6 elementos.)",
+    "unidad": "U",
+    "precio": 102338,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Radiador (9 elementos.)",
+    "unidad": "U",
+    "precio": 102338,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Radiador-Toallero",
+    "unidad": "U",
+    "precio": 102338,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "ColocaciÃ³n de split friÃ³/calor 2350 frigorÃ­as  Incluye mÃ©nsula para unidad exterior del equipo",
+    "unidad": "U",
+    "precio": 250984,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "ColocaciÃ³n de split friÃ³/calor 4500 frigorÃ­as  Incluye mensula para unidad exterior del equipo",
+    "unidad": "U",
+    "precio": 301180,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "Desarrollo de CaÃ±erÃ­a Sistema Bi-Tubo por Par de Boca Sistema Pex (Radiadores)  No incluye materiales",
+    "unidad": "U",
+    "precio": 141909,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "Desarrollo de CaÃ±erÃ­a Sistema Bi-Tubo por Par de Boca Sistema PPN Aluminio (Radiadores)  No incluye materiales",
+    "unidad": "U",
+    "precio": 108797,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "Desarrollo por M2 Piso Radiante sobre Malla Sima  No incluye materiales",
+    "unidad": "MÂ²",
+    "precio": 36069,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "Desarrollo por M2 Piso Radiante sobre Placas de EPS  No incluye materiales",
+    "unidad": "MÂ²",
+    "precio": 42573,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "Prueba HidrÃ¡ulica hasta 20 bares",
+    "unidad": "U",
+    "precio": 141909,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "Puesta en Funcionamiento de Sistema de CalefacciÃ³n (Purga y Arranque de Caldera hasta 10 Radiadores)",
+    "unidad": "GL",
+    "precio": 193306,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "Puesta en Funcionamiento de Sistema de CalefacciÃ³n (Purga y Arranque de Caldera para Piso Radiante hasta 80m2)",
+    "unidad": "GL",
+    "precio": 193306,
+    "categoria": "CalefacciÃ³n. (Piso Radiante, Radiadores y Split)"
+  },
+  {
+    "nombre": "Cerco de alambre romboidal con poste de madera. Altura 1,50 mts.",
+    "unidad": "ML",
+    "precio": 41412,
+    "categoria": "HerrerÃ­a, Cercos y Rejas"
+  },
+  {
+    "nombre": "Cerco OlÃ­mpico de Alambre Romboidal con poste de cemento y 3 hilos de alambre de pua",
+    "unidad": "ML",
+    "precio": 50197,
+    "categoria": "HerrerÃ­a, Cercos y Rejas"
+  },
+  {
+    "nombre": "PortÃ³n Doble Hoja de CaÃ±o Estructural y Alambre tejido. 3,00 x 1,80 mts.",
+    "unidad": "U",
+    "precio": 125492,
+    "categoria": "HerrerÃ­a, Cercos y Rejas"
+  },
+  {
+    "nombre": "Puerta de CaÃ±o Estructural y Alambre tejido. 0,90 x 1,80 mts.",
+    "unidad": "U",
+    "precio": 95374,
+    "categoria": "HerrerÃ­a, Cercos y Rejas"
+  },
+  {
+    "nombre": "Puerta Tranquera de Madera Doble Hoja. 3,00 x 1,00 mts  Tablas de 1 x 4 madera dura Guayubira. Pintada con Cetol color cedro. Incluye herrajes",
+    "unidad": "U",
+    "precio": 163139,
+    "categoria": "HerrerÃ­a, Cercos y Rejas"
+  },
+  {
+    "nombre": "Puerta Tranquera de Madera. 1,00 x 1,00 mts  Tablas de 1 x 4 en madera dura Guayubira. Pintada con Cetol color cedro. Incluye herrajes",
+    "unidad": "U",
+    "precio": 100393,
+    "categoria": "HerrerÃ­a, Cercos y Rejas"
+  },
+  {
+    "nombre": "Inst. Kit Solar Completo con Panel 1x160 Energia Usb K4  1 Panel 160w + 1 Regulador de carga 10 A + 1 baterÃ­a 110 Ah + 1 inversor de 12V a 220V (1000W) + Cables y Bornes + Soporte de Panel",
+    "unidad": "U",
+    "precio": 295275,
+    "categoria": "EnergÃ­as Renovables"
+  },
+  {
+    "nombre": "Inst. Kit Solar Completo con Panel 2x270 EnergÃ­a Casas 1s  2 Paneles 270w + 2 baterÃ­a 110 Ah + 1 inversor/Cargador de 24V a 220V (3000W/50A PWM inteligente) + Cables y Bornes + Soportes de Paneles",
+    "unidad": "U",
+    "precio": 369093,
+    "categoria": "EnergÃ­as Renovables"
+  },
+  {
+    "nombre": "Inst. Kit Solar Completo con Panel 2x270 EnergÃ­a Casas 3s  4 Paneles 270w + 2 baterÃ­as solares 220 Ah + 1 inversor/Cargador de 24V a 220V (3000W/50A PWM inteligente) + Cables y Bornes + Soportes de Paneles",
+    "unidad": "U",
+    "precio": 442912,
+    "categoria": "EnergÃ­as Renovables"
+  },
+  {
+    "nombre": "Inst. Termotanque Ac. Inox. solar 150 lts. + Kit ElÃ©ct. + Barra Mg.  Cap. 3 personas",
+    "unidad": "U",
+    "precio": 369093,
+    "categoria": "EnergÃ­as Renovables"
+  },
+  {
+    "nombre": "Inst. Termotanque Ac. Inox. solar 200 lts. + Kit ElÃ©ct. + Barra Mg.  Cap. 4/5 personas",
+    "unidad": "U",
+    "precio": 369093,
+    "categoria": "EnergÃ­as Renovables"
+  },
+  {
+    "nombre": "Inst. Termotanque Ac. Inox. solar 300 lts. + Kit ElÃ©ct. + Barra Mg.  Cap. 6/7 personas",
+    "unidad": "U",
+    "precio": 369093,
+    "categoria": "EnergÃ­as Renovables"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Climatizador de Piscina",
+    "unidad": "U",
+    "precio": 567711,
+    "categoria": "Parrillas, Fogones y Piscinas"
+  },
+  {
+    "nombre": "FogÃ³n (sin tiraje) Medidas: 0.80 x 1,50mts.   FogÃ³n con ladrillos comunes. Revestimiento de Ladrillos Refractarios y emparrillado de hierros negro redondo.",
+    "unidad": "U",
+    "precio": 439221,
+    "categoria": "Parrillas, Fogones y Piscinas"
+  },
+  {
+    "nombre": "Parrilla de Material Tradicional con PulmÃ³n. Medidas: 1,00 x 1,50mts  Parrilla de ladrillos comunes c/pulmÃ³n. Revestimiento interno con ladrillos refractarios. Hierros en Angulo enlozados.",
+    "unidad": "U",
+    "precio": 826769,
+    "categoria": "Parrillas, Fogones y Piscinas"
+  },
+  {
+    "nombre": "Parrilla Premoldeada 1,45 mts  Instalada en Situ (No incluye Flete)",
+    "unidad": "U",
+    "precio": 100762,
+    "categoria": "Parrillas, Fogones y Piscinas"
+  },
+  {
+    "nombre": "Piscina de 3,00 x 6,00 mts. (Piso de HormigÃ³n y paredes de ladrillo comÃºn de 30cm.)  Piscina con Gabinete. (Incluye Bombas, Filtros, Dosificador) Primera Marca.",
+    "unidad": "U",
+    "precio": 7234230,
+    "categoria": "Parrillas, Fogones y Piscinas"
+  },
+  {
+    "nombre": "Ayuda de gremios",
+    "unidad": "MÂ²",
+    "precio": 22995,
+    "categoria": "Limpieza y Ayuda de Gremios"
+  },
+  {
+    "nombre": "Limpieza final",
+    "unidad": "MÂ²",
+    "precio": 3746,
+    "categoria": "Limpieza y Ayuda de Gremios"
+  },
+  {
+    "nombre": "Limpieza periÃ³dica  costo mensual",
+    "unidad": "U",
+    "precio": 873275,
+    "categoria": "Limpieza y Ayuda de Gremios"
+  },
+  {
+    "nombre": "Cambio de Diafragma de calentador de agua  No incluye materiales",
+    "unidad": "U",
+    "precio": 54375,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Cambio de Termocupla de calefactor sin salida  No incluye materiales",
+    "unidad": "U",
+    "precio": 54375,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Cambio de Termocupla de calefactor TB  No incluye materiales",
+    "unidad": "U",
+    "precio": 72330,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Cambio de Termocupla de calentador de agua  No incluye materiales",
+    "unidad": "U",
+    "precio": 54375,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Cambio de Termocupla de cocina  No incluye materiales",
+    "unidad": "U",
+    "precio": 54375,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "ConversiÃ³n de Artefacto de GLP a GN  No incluye materiales",
+    "unidad": "U",
+    "precio": 54375,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "DetecciÃ³n de fuga de gas",
+    "unidad": "U",
+    "precio": 108750,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Informe de Conformidad de Inmobiliarias",
+    "unidad": "U",
+    "precio": 127342,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Limpieza Calefactor sin salida",
+    "unidad": "U",
+    "precio": 54375,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Limpieza Calefactor TBH",
+    "unidad": "U",
+    "precio": 72458,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Limpieza Calefactor TBU",
+    "unidad": "U",
+    "precio": 90413,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Limpieza Calefon",
+    "unidad": "U",
+    "precio": 108750,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Limpieza Termotanque",
+    "unidad": "U",
+    "precio": 72330,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Plano completo en Autocad",
+    "unidad": "U",
+    "precio": 109514,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Prueba ManomÃ©trica hasta 3 artefactos",
+    "unidad": "U",
+    "precio": 108750,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Prueba ManomÃ©trica hasta 6 artefactos",
+    "unidad": "U",
+    "precio": 162998,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Tramites completos de Inst. de gas (planos, fact, parcial, final) 10 bocas.",
+    "unidad": "U",
+    "precio": 651991,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Tramites completos de Inst. de gas (planos, fact, parcial, final) 3 bocas.",
+    "unidad": "U",
+    "precio": 471420,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Tramites Factibilidad",
+    "unidad": "U",
+    "precio": 145043,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Tramites para InspecciÃ³n final",
+    "unidad": "U",
+    "precio": 180826,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "Tramites para InspecciÃ³n parcial",
+    "unidad": "U",
+    "precio": 180826,
+    "categoria": "Tramites, Mantenimiento y/o Refacciones de Gas"
+  },
+  {
+    "nombre": "AnulaciÃ³n de Deposito de Embutir por Mochila de Inodoro  No incluye materiales",
+    "unidad": "U",
+    "precio": 72016,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Cambio de Ãnodo de Termotanque  No incluye materiales",
+    "unidad": "U",
+    "precio": 70259,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "cambio de Cuadro de Ducha (Sin AlbaÃ±ilerÃ­a)  No incluye materiales",
+    "unidad": "U",
+    "precio": 128808,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Cambio de Cuerito de GriferÃ­a",
+    "unidad": "U",
+    "precio": 17565,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Cambio de Flexible en Artefacto  No incluye materiales",
+    "unidad": "U",
+    "precio": 38057,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Cambio de Monocomando de Cocina  No incluye materiales",
+    "unidad": "U",
+    "precio": 53280,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Cambio de Termotanque (Con ModificaciÃ³n en la VentilaciÃ³n)  No incluye materiales",
+    "unidad": "U",
+    "precio": 122953,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Cambio de Termotanque (Sin Modificar VentilaciÃ³n)  No incluye materiales",
+    "unidad": "U",
+    "precio": 87824,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Cambio de VÃ¡lvula de Cierre de Tanque de Reserva (Flotante)  No incluye materiales",
+    "unidad": "U",
+    "precio": 58549,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Tanque de Reserva en Planta Alta  No incluye materiales",
+    "unidad": "U",
+    "precio": 421554,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Tanque de Reserva en Planta Baja  No incluye materiales",
+    "unidad": "U",
+    "precio": 215461,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "DesobstrucciÃ³n DesagÃ¼es Horizontales",
+    "unidad": "ML",
+    "precio": 76114,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "DesobstrucciÃ³n DesagÃ¼es Verticales",
+    "unidad": "ML",
+    "precio": 70259,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "InstalaciÃ³n Bomba Presurizadora Bajo Tanque con By-Pass (Hasta 3 Bajadas)  No incluye materiales",
+    "unidad": "U",
+    "precio": 175648,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "InstalaciÃ³n Bomba Presurizadora Pre-Calentador de Agua  No incluye materiales",
+    "unidad": "U",
+    "precio": 89580,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "InstalaciÃ³n Cisterna con Bomba Elevadora (Con AutomatizaciÃ³n)  No incluye materiales",
+    "unidad": "U",
+    "precio": 573782,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "InstalaciÃ³n Cisterna con Bomba Elevadora (Sin AutomatizaciÃ³n)  No incluye materiales",
+    "unidad": "U",
+    "precio": 357150,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Limpieza de SifÃ³n de Bacha Bajo Mesada",
+    "unidad": "U",
+    "precio": 19321,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Limpieza de Tanque de Reserva de Edificio",
+    "unidad": "U",
+    "precio": 292746,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Limpieza de Tanque de Reserva hasta 1.000 lts en Planta Alta",
+    "unidad": "U",
+    "precio": 175648,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Limpieza de Tanque de Reserva hasta 1.000 lts en Planta Baja",
+    "unidad": "U",
+    "precio": 105389,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Recambio de Tanque de Fibrocemento por PlÃ¡stico en Planta Alta  No incluye materiales",
+    "unidad": "U",
+    "precio": 386425,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "Recambio de Tanque de Fibrocemento por PlÃ¡stico en Planta Baja  No incluye materiales",
+    "unidad": "U",
+    "precio": 292746,
+    "categoria": "Mantenimiento y/o Refacciones en Instalaciones Sanitarias"
+  },
+  {
+    "nombre": "AutomatizaciÃ³n por Termostato  No incluye materiales",
+    "unidad": "U",
+    "precio": 123854,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Balance TÃ©rmico para Piso Radiante",
+    "unidad": "U",
+    "precio": 178575,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Calculo y Balance TÃ©rmico para Radiadores (Hasta 80m2)",
+    "unidad": "U",
+    "precio": 158083,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Bomba Circuladora  No incluye materiales",
+    "unidad": "U",
+    "precio": 157632,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Caldera  No incluye materiales",
+    "unidad": "U",
+    "precio": 360303,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Flujostato  No incluye materiales",
+    "unidad": "U",
+    "precio": 129484,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Forzador  No incluye materiales",
+    "unidad": "U",
+    "precio": 247708,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Placa ElectrÃ³nica  No incluye materiales",
+    "unidad": "U",
+    "precio": 163262,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Presostato de Agua  No incluye materiales",
+    "unidad": "U",
+    "precio": 129484,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Presostato de Humo  No incluye materiales",
+    "unidad": "U",
+    "precio": 101335,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Serpentina  No incluye materiales",
+    "unidad": "U",
+    "precio": 180151,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Sonda NTC  No incluye materiales",
+    "unidad": "U",
+    "precio": 129484,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Trampa de Condensado  No incluye materiales",
+    "unidad": "U",
+    "precio": 101335,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de VÃ¡lvula de Gas  No incluye materiales",
+    "unidad": "U",
+    "precio": 157632,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Cambio de Vaso de Expansion Desmontando Caldera  No incluye materiales",
+    "unidad": "U",
+    "precio": 202670,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "DetecciÃ³n de Perdida en Sistema de CalefacciÃ³n (Sin ReparaciÃ³n)",
+    "unidad": "U",
+    "precio": 68683,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Limpieza Radiador de Aluminio (hasta 12 velas)",
+    "unidad": "U",
+    "precio": 75438,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "Limpieza Radiador de FundiciÃ³n (hasta 12 velas)",
+    "unidad": "U",
+    "precio": 84446,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "ReparaciÃ³n Caldera-Diagnostico de Falla (Sin Repuestos)",
+    "unidad": "U",
+    "precio": 168892,
+    "categoria": "Calculo, Mantenimiento y/o Refacciones en CalefacciÃ³n"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Babeta Perimetral Color Amurada/Atornillada",
+    "unidad": "ML",
+    "precio": 12610,
+    "categoria": "Zingueria"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Babeta Perimetral Galvanizada Amurada/Atornillada",
+    "unidad": "ML",
+    "precio": 12610,
+    "categoria": "Zingueria"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Bajada de DesagÃ¼es en Chapa Galvanizada Vista Engrampada",
+    "unidad": "ML",
+    "precio": 7881,
+    "categoria": "Zingueria"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Canaleta Exterior Galvanizada Vista",
+    "unidad": "ML",
+    "precio": 8406,
+    "categoria": "Zingueria"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Canaleta Interna Contramuro Galvanizada",
+    "unidad": "ML",
+    "precio": 18914,
+    "categoria": "Zingueria"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Canaleta Interna Conversa Galvanizada",
+    "unidad": "ML",
+    "precio": 18915,
+    "categoria": "Zingueria"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Cenefa Decorativa Galvanizada",
+    "unidad": "ML",
+    "precio": 7356,
+    "categoria": "Zingueria"
+  },
+  {
+    "nombre": "ColocaciÃ³n de Recibidor/Embudo de Chapa Galvanizada",
+    "unidad": "U",
+    "precio": 21016,
+    "categoria": "Zingueria"
+  }
+]

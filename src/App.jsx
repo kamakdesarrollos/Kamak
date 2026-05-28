@@ -45,6 +45,7 @@ const Autorizaciones     = lazy(() => import('./pages/Autorizaciones'));
 const Tareas             = lazy(() => import('./pages/Tareas'));
 const Usuarios           = lazy(() => import('./pages/Usuarios'));
 const Configuracion      = lazy(() => import('./pages/Configuracion'));
+const Perfil             = lazy(() => import('./pages/Perfil'));
 const Cheques            = lazy(() => import('./pages/Cheques'));
 // WhatsappBuzon eliminado — /whatsapp ahora redirige a /autorizaciones?origen=whatsapp.
 const MobileComprador    = lazy(() => import('./pages/mobile/MobileComprador'));
@@ -234,6 +235,7 @@ function AppShell() {
                   <Route path="/tareas" element={<Tareas />} />
                   <Route path="/usuarios" element={<Usuarios />} />
                   <Route path="/configuracion" element={<Configuracion />} />
+                  <Route path="/perfil" element={<Perfil />} />
                   <Route path="/mobile/comprador" element={<MobileComprador />} />
                   <Route path="/mobile/director" element={<MobileDirector />} />
                   <Route path="*" element={<Navigate to="/" replace />} />

@@ -502,7 +502,7 @@ export default function Obras() {
   };
 
   return (
-    <PageLayout breadcrumb={['Inicio', 'Obras']} active="Obras">
+    <PageLayout breadcrumb={[{ label: 'Inicio', to: '/' }, 'Obras']} active="Obras">
       <PageHero
         label="GESTIÓN DE OBRAS"
         title="Obras"

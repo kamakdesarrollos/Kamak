@@ -29,7 +29,9 @@ const ZOOM_PRESETS = [
   { label: 'Total',      val: 10   },
 ];
 
-const TABS_DEF = ['Resumen','Presupuesto','Adicionales','Gantt','Movimientos','Cuenta cliente','Contratos MO','Documentos','Fotos','Portal cliente'];
+// Debe mantenerse SINCRONIZADO con TABS_DEF de ObraPresupuesto.jsx para que
+// la barra de pestañas se vea igual entre Gantt y el resto de los tabs.
+const TABS_DEF = ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Archivos', 'Portal cliente'];
 
 const RUBRO_COLORS = {
   ELECTRICIDAD: '#1a9b9c', ALBAÑILERÍA: '#d4923a', ESTRUCTURA: '#3d7a4a',
@@ -422,7 +424,11 @@ export default function ObraGantt() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <PageLayout breadcrumb={['Obras', obra.nombre, 'Gantt']} active="Obras">
+    <PageLayout breadcrumb={[
+      { label: 'Obras', to: '/obras' },
+      { label: obra.nombre, to: `/obras/${obra.id}/presupuesto` },
+      'Gantt',
+    ]} active="Obras">
 
       {/* ── Tab bar (same as ObraPresupuesto) ── */}
       <div className="k-tabs" style={{ marginBottom: 8 }}>

@@ -313,21 +313,46 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
   }, [showNotif]);
 
   return (
-    <div className="k-stripes-bg" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', backgroundColor: T.dark, color: '#fff', position: 'relative', overflow: 'visible', flexShrink: 0, zIndex: 100 }}>
+    <div className="k-stripes-bg k-topbar" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', backgroundColor: T.dark, color: '#fff', position: 'relative', overflow: 'visible', flexShrink: 0, zIndex: 100 }}>
       {/* Las rayas vienen del background fixed (clase k-stripes-bg) — asi
           se alinean con las del PageHero y parecen "continuar" detras del
-          area clara intermedia. */}
+          area clara intermedia.
+          La clase k-topbar agrega la sombra inferior + barra accent
+          decorativa a la izquierda (ver index.css). */}
 
-      <Link to="/" style={{ display: 'block', lineHeight: 0 }}><Logo h={26} dark /></Link>
+      <Link to="/" className="k-topbar-logo" style={{ display: 'block', lineHeight: 0 }}><Logo h={26} dark /></Link>
 
       {breadcrumb.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#9a9892', marginLeft: 8, paddingLeft: 14, borderLeft: `1px solid #3a3a3e`, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1, textTransform: 'uppercase' }}>
-          {breadcrumb.map((b, i) => (
-            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ color: i === breadcrumb.length - 1 ? T.accent : '#9a9892', fontWeight: 700 }}>{b}</span>
-              {i < breadcrumb.length - 1 && <span style={{ color: '#5a5a58' }}>›</span>}
-            </span>
-          ))}
+          {breadcrumb.map((b, i) => {
+            // Acepta string u objeto { label, to }. Si tiene `to`, es clickeable
+            // (navegación directa con navigate(), no Link, para que los hover
+            // handlers no interfieran con el click).
+            const isObj = typeof b === 'object' && b !== null;
+            const label = isObj ? b.label : b;
+            const to = isObj ? b.to : null;
+            const isLast = i === breadcrumb.length - 1;
+            const baseColor = isLast ? T.accent : '#9a9892';
+            const clickable = !!to && !isLast;
+            return (
+              <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span
+                  onClick={clickable ? () => navigate(to) : undefined}
+                  onMouseEnter={e => { if (clickable) { e.currentTarget.style.color = '#fff'; e.currentTarget.style.textShadow = `0 0 8px ${T.accent}66`; } }}
+                  onMouseLeave={e => { if (clickable) { e.currentTarget.style.color = baseColor; e.currentTarget.style.textShadow = 'none'; } }}
+                  style={{
+                    color: baseColor,
+                    fontWeight: 700,
+                    cursor: clickable ? 'pointer' : 'default',
+                    transition: 'color 0.15s, text-shadow 0.15s',
+                    userSelect: 'none',
+                  }}>
+                  {label}
+                </span>
+                {!isLast && <span style={{ color: '#5a5a58' }}>›</span>}
+              </span>
+            );
+          })}
         </div>
       )}
 
@@ -394,8 +419,14 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
             )}
           </div>
 
-          {/* Avatar + nombre */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderLeft: '1px solid #3a3a3e', paddingLeft: 10 }}>
+          {/* Avatar + nombre — click va a /perfil */}
+          <div
+            onClick={() => navigate('/perfil')}
+            title="Mi perfil"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, borderLeft: '1px solid #3a3a3e', paddingLeft: 10, cursor: 'pointer', borderRadius: 4, padding: '4px 4px 4px 10px', transition: 'background 0.15s' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
             <div style={{ width: 28, height: 28, borderRadius: '50%', background: T.accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: `'Montserrat', sans-serif`, fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
               {displayName[0].toUpperCase()}
             </div>

@@ -48,12 +48,13 @@ export default function Sidebar({ active }) {
     ? solicitudes.filter(s => s.estado === 'pendiente').length
     : 0) + waPendientes;
 
-  // Badge "Tareas": tareas asignadas al usuario logueado que no estan
-  // completadas ni canceladas. No distingue "no vistas" — el badge solo
-  // muestra carga de trabajo pendiente.
+  // Badge "Tareas": tareas NUEVAS asignadas al usuario que aún no abrió
+  // (no figura en vistaPor). El badge llama la atención solo cuando otra
+  // persona te asignó algo nuevo — no por la carga de trabajo total.
   const tareasPendientes = currentUser
     ? tareas.filter(t =>
         (t.asignadoA || []).includes(currentUser.id) &&
+        !(t.vistaPor || []).includes(currentUser.id) &&
         t.estado !== 'completada' &&
         t.estado !== 'cancelada'
       ).length

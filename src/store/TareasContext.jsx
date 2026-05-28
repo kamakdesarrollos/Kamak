@@ -48,6 +48,13 @@ export function TareasProvider({ children }) {
       estado: 'pendiente',
       prioridad: data.prioridad || 'media',
       fechaLimite: data.fechaLimite || null,
+      // origen: 'manual' (creada a mano), 'auto-rubro' (auto al aprobar
+      // presupuesto, viene de rubro.tareasEstandar) o 'auto-tipo' (viene
+      // de tipoObra.tareasBase). Sirve para mostrar chip "AUTO" + filtrar.
+      origen: data.origen || 'manual',
+      // origenRef: id del rubro o tipoObra que la generó (para evitar
+      // duplicados al re-sincronizar y para mostrar la fuente al hover).
+      origenRef: data.origenRef || null,
       checklist: (data.checklist || []).map(it => ({
         id: newId('item'),
         texto: it.texto,

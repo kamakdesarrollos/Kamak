@@ -14,6 +14,8 @@ import ContratoMOModal from '../modales/ContratoMOModal';
 import { useGastosFijos } from '../../store/GastosFijosContext';
 import { useCatalog, calcTarea } from '../../store/CatalogContext';
 import { useUsuarios } from '../../store/UsuariosContext';
+import { useTareas } from '../../store/TareasContext';
+import { generarTareasObra } from '../../lib/generarTareasObra';
 import { supabase } from '../../lib/supabase';
 import { loadSharedData, saveSharedData } from '../../lib/dbHelpers';
 import { onRemoteChange } from '../../lib/syncBus';
@@ -383,7 +385,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const [savePlantillaForm, setSavePlantillaForm] = useState({ nombre: '', tipo: 'Comercial', descripcion: '' });
   const { obras: todasObras, detalles } = useObras();
   const { totalMensual: gfMensual } = useGastosFijos();
-  const { catalog } = useCatalog();
+  const { catalog, catalogIndex } = useCatalog();
   const { dolarVenta } = useDolar();
   const tc = dolarVenta || 1070;
   const [viewUSD, setViewUSD] = useState(true);
@@ -407,7 +409,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
     (catalog.tareas || []).forEach(t => {
       if (seen.has(t.nombre)) return;
       seen.add(t.nombre);
-      const { mat, mo } = calcTarea(t, catalog);
+      const { mat, mo } = calcTarea(t, catalogIndex);
       list.push({ nombre: t.nombre, unidad: t.unidad || 'u', costoMat: Math.round(mat), costoSub: Math.round(mo), codigo: t.codigo || '', fuente: 'Catálogo' });
     });
     // From all obras
@@ -521,7 +523,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
     const tareasIniciales = (catalog.tareas || [])
       .filter(t => selectedTareas.has(t.id))
       .map(t => {
-        const { mat, sub, mo, gen } = calcTarea(t, catalog);
+        const { mat, sub, mo, gen } = calcTarea(t, catalogIndex);
         return { id: newId(), nombre: t.nombre, codigo: t.codigo || '', unidad: t.unidad || 'u', cantidad: 1, costoMat: Math.round(mat + gen), costoSub: Math.round(sub + mo), receta: { materiales: (t.materiales || []).map(m => ({ id: newId(), nombre: m.nombre, cantidad: m.cantidad || 0, unidad: m.unidad || '', precio: m.precio || 0, costoUnit: (m.cantidad || 0) * (m.precio || 0) })) }, avance: 0 };
       });
     patch(d => ({ ...d, rubros: [...d.rubros, { id: newId(), nombre: catalogRubro.nombre, proveedor: newRubro.proveedor, margenMat: +newRubro.margenMat, margenMO: +newRubro.margenMO, orden: d.rubros.length, abierto: true, tareas: tareasIniciales }] }));
@@ -712,7 +714,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                 <span style={{ fontSize: 12 }}>{isRubroAbierto(rubro.id) ? '▾' : '▸'}</span>
                 <div className="k-h" style={{ fontSize: 16 }}>{rubro.nombre}</div>
                 <Chip style={{ fontSize: 10 }}>mat {rubro.margenMat}%</Chip>
-                <Chip style={{ fontSize: 10 }}>Sub {rubro.margenMO}%</Chip>
+                <Chip style={{ fontSize: 10 }}>M.O {rubro.margenMO}%</Chip>
                 {rubro.proveedor && (() => {
                   const prov = provListPresu.find(p => p.nombre === rubro.proveedor);
                   return prov
@@ -933,7 +935,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                         <FInput label="Cantidad" value={newTask.cantidad} onChange={v => setNewTask(p => ({ ...p, cantidad: v }))} type="number" />
                         <FInput label="Unidad" value={newTask.unidad} onChange={v => setNewTask(p => ({ ...p, unidad: v }))} />
                         <FInput label="$ Materiales" value={newTask.costoMat} onChange={v => setNewTask(p => ({ ...p, costoMat: v }))} type="number" />
-                        <FInput label="$ Subcontrato" value={newTask.costoSub} onChange={v => setNewTask(p => ({ ...p, costoSub: v }))} type="number" />
+                        <FInput label="$ M.O" value={newTask.costoSub} onChange={v => setNewTask(p => ({ ...p, costoSub: v }))} type="number" />
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginBottom: 8 }}>
                         <FInput label="Código (opcional)" value={newTask.codigo} onChange={v => setNewTask(p => ({ ...p, codigo: v }))} placeholder="ELE-BOC-001" />
@@ -996,7 +998,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                       : <div style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${T.faint2}`, borderRadius: 4, background: T.paper }}>
                           {tareasDispo.map(t => {
                             const checked = selectedTareas.has(t.id);
-                            const { mat, sub, mo, gen } = calcTarea(t, catalog);
+                            const { mat, sub, mo, gen } = calcTarea(t, catalogIndex);
                             return (
                               <div key={t.id} onClick={() => toggleTarea(t.id)}
                                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', background: checked ? T.accentSoft : 'transparent', borderBottom: `1px solid ${T.faint}` }}>
@@ -3898,10 +3900,11 @@ const TABS_DEF = ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'G
 export default function ObraPresupuesto() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { obras, getDetalle, patchDetalle, updateObra } = useObras();
   const { clientes } = useClientes();
-  const { currentUser } = useUsuarios();
+  const { currentUser, usuarios } = useUsuarios();
+  const { addTarea } = useTareas();
   const isAdmin = currentUser?.rol === 'Admin';
   const canSeeGantt = isAdmin || ['Comprador', 'Director de obra'].includes(currentUser?.rol);
   const rolHiddenTabs = isAdmin ? [] : [
@@ -3914,6 +3917,13 @@ export default function ObraPresupuesto() {
     const t = parseInt(searchParams.get('tab'), 10);
     return isNaN(t) ? 0 : t;
   });
+  // Cuando la URL cambia desde afuera (breadcrumb que navega a la obra
+  // sin ?tab), sincroniza activeTab. Idempotente: solo updatea si difiere.
+  useEffect(() => {
+    const t = parseInt(searchParams.get('tab'), 10);
+    const next = isNaN(t) ? 0 : t;
+    setActiveTab(prev => prev === next ? prev : next);
+  }, [searchParams]);
   const [showExport, setShowExport] = useState(false);
   const [showClienteQR, setShowClienteQR] = useState(false);
 
@@ -3974,11 +3984,32 @@ export default function ObraPresupuesto() {
 
   const handleApprove = () => {
     if (!confirm('¿Aprobar y congelar el presupuesto?\n\nUna vez aprobado no podrás modificar rubros ni tareas.\nLos cambios futuros van en Cuenta corriente → Adicionales.')) return;
-    patch(d => ({ ...d, presupuestoAprobado: true, fechaAprobacion: new Date().toISOString().split('T')[0] }));
+    const hoy = new Date().toISOString().split('T')[0];
+
+    // Generar tareas automáticas desde el catálogo (tareasBase del tipo de
+    // obra + tareasEstandar de cada rubro). Idempotente vía obra.tareasGeneradas.
+    const detalleConFecha = { ...detalle, fechaAprobacion: hoy };
+    const { tareasNuevas, rubrosAplicados, tipoAplicado } = generarTareasObra({
+      obra, detalle: detalleConFecha, catalog, usuarios,
+      generadoPor: currentUser?.id,
+    });
+
+    patch(d => ({
+      ...d,
+      presupuestoAprobado: true,
+      fechaAprobacion: hoy,
+      tareasGeneradas: { tipoIdAplicado: tipoAplicado, rubrosAplicados },
+    }));
+    tareasNuevas.forEach(payload => addTarea(payload));
+
     if (obra.estado === 'en-presupuesto') updateObra(obra.id, { estado: 'activa' });
     setForcedUnfrozenPresu(false);
     setShowComputo(false);
     handleTab(2);
+
+    if (tareasNuevas.length > 0) {
+      setTimeout(() => alert(`Presupuesto aprobado.\nSe generaron ${tareasNuevas.length} tarea${tareasNuevas.length === 1 ? '' : 's'} automática${tareasNuevas.length === 1 ? '' : 's'} en /tareas.`), 100);
+    }
   };
 
   const handleReopen = () => {
@@ -3997,7 +4028,11 @@ export default function ObraPresupuesto() {
   };
 
   return (
-    <PageLayout breadcrumb={['Obras', obra.nombre, tabLabels[displayTab]]} active="Obras">
+    <PageLayout breadcrumb={[
+      { label: 'Obras', to: '/obras' },
+      { label: obra.nombre, to: `/obras/${obra.id}/presupuesto` },
+      tabLabels[displayTab],
+    ]} active="Obras">
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
         <div>

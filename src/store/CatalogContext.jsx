@@ -2,7 +2,14 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback, us
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
-import { resolverItemAPU, resolverMOAPU } from '../lib/apuPriceResolver';
+import { resolverItemAPU, resolverMOAPU, buildCatalogIndex } from '../lib/apuPriceResolver';
+import { loadSismatCostMap, migrarCatalogoConSismat } from '../lib/sismatCostFallback';
+
+// Versión de la migración SISMAT → catálogo APU. Bumpeala si querés re-correr
+// la migración (p.ej. si actualizamos las reglas de conversión).
+// v2: fix de encoding (Ã±→ñ) en normalizarNombre — sin esto los nombres del
+// catálogo no matcheaban con los del SISMAT.
+const CATALOG_SISMAT_MIGRATION_VERSION = '2';
 
 const newId = () => `cat-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -36,7 +43,24 @@ const SEED = {
   generales:    [],
   subcontratos: [],
   tareas:       [],
+  // Tipos de obra: lista chica para auto-generar tareas base al aprobar
+  // un presupuesto. Cada item: { id, nombre, descripcion, tareasBase: [...] }.
+  // Las tareasBase tienen el mismo shape que las tareasEstandar de rubros
+  // (ver más abajo).
+  tiposObra:    [],
 };
+
+// Shape de una "tarea estándar" (vive en rubro.tareasEstandar y en
+// tipoObra.tareasBase):
+// {
+//   id: 'te-xxx',
+//   titulo: 'Cotizar mueblería',
+//   descripcion: '',
+//   rol: 'Comprador' | 'Admin' | 'Capataz' | 'Director de obra' | ...,
+//   diasOffset: 0,          // días desde aprobación del presupuesto
+//   prioridad: 'baja'|'media'|'alta',
+//   checklist: ['llamar mueblería', 'agendar entrega', ...],
+// }
 
 const SISMAT_SEED_VERSION = '4';
 
@@ -148,7 +172,43 @@ export function CatalogProvider({ children }) {
     });
   }, []);
 
-  const value = useMemo(() => ({ catalog, add, update, remove, bulkSeed }), [catalog, add, update, remove, bulkSeed]);
+  // Index Map por nombre normalizado — lookup O(1) para calcTarea.
+  // Sin esto, resolver precios en presupuestos con muchos APUs y materiales
+  // se volvía O(N×M) con string normalization → render lentísimo.
+  const catalogIndex = useMemo(() => buildCatalogIndex(catalog), [catalog]);
+
+  // Carga el index de costos SISMAT (materiales + MO×0.5) que sirve para
+  // (1) migrar el catálogo una vez al cargar (ver useEffect debajo) y (2)
+  // como fallback en lugares como Plantillas si el catálogo todavía está
+  // incompleto antes de que termine la migración.
+  const [sismatCostMap, setSismatCostMap] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadSismatCostMap().then(m => { if (!cancelled) setSismatCostMap(m); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Migración one-shot: enriquecer APUs del catálogo con sub-contratos
+  // derivados de la MO SISMAT (× 0.5). Espera a que (a) sismatCostMap esté
+  // disponible y (b) catalog.tareas tenga datos cargados. Idempotente vía
+  // CATALOG_SISMAT_MIGRATION_VERSION en localStorage.
+  useEffect(() => {
+    if (!sismatCostMap || sismatCostMap.size === 0) return;
+    if (!catalog?.tareas || catalog.tareas.length === 0) return;
+    const ver = localStorage.getItem('kamak_catalog_sismat_migration_v');
+    if (ver === CATALOG_SISMAT_MIGRATION_VERSION) return;
+    const migrated = migrarCatalogoConSismat(catalog, sismatCostMap);
+    if (migrated) {
+      setCatalog(migrated);
+      // El save a Supabase lo dispara el useEffect [catalog] que ya existe.
+    }
+    localStorage.setItem('kamak_catalog_sismat_migration_v', CATALOG_SISMAT_MIGRATION_VERSION);
+  }, [sismatCostMap, catalog]);
+
+  const value = useMemo(
+    () => ({ catalog, catalogIndex, sismatCostMap, add, update, remove, bulkSeed }),
+    [catalog, catalogIndex, sismatCostMap, add, update, remove, bulkSeed]
+  );
 
   return (
     <CatalogContext.Provider value={value}>

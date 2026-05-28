@@ -243,7 +243,7 @@ export default function Dashboard() {
   }
 
   return (
-    <PageLayout breadcrumb={['Inicio', 'Dashboard']} active="Dashboard">
+    <PageLayout breadcrumb={[{ label: 'Inicio', to: '/' }, 'Dashboard']} active="Dashboard">
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12, gap: 12 }}>

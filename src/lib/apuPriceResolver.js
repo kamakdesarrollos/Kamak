@@ -84,9 +84,43 @@ function normalizarNombre(s) {
     .trim();
 }
 
-// Busca un item del catálogo por nombre. Devuelve null si no hay match.
+// Construye un Map normalizado para lookup O(1). Crítico para performance:
+// resolver precios linealmente contra el catálogo SISMAT (~2000 items) ×
+// miles de APUs × decenas de materiales escala a millones de operaciones
+// con normalizarNombre por render. Con Map: una sola pasada por catálogo.
+//
+// Uso: catalogIndex = buildCatalogItemsIndex(catalog.materiales)
+//      buscarEnCatalogo(nombre, catalogIndex)  // O(1)
+export function buildCatalogItemsIndex(items) {
+  if (!Array.isArray(items)) return items; // pasa-thru si ya es Map o null
+  const map = new Map();
+  for (const item of items) {
+    if (item?.nombre) map.set(normalizarNombre(item.nombre), item);
+  }
+  return map;
+}
+
+// Conveniencia: indexa los sub-catálogos de una vez. Incluye `tareas` (APU
+// del catálogo) para que las plantillas puedan buscar la APU por nombre y
+// derivar los costos desde ahí, sin guardar copia hardcoded.
+export function buildCatalogIndex(catalog) {
+  if (!catalog) return null;
+  return {
+    materiales:   buildCatalogItemsIndex(catalog.materiales),
+    subcontratos: buildCatalogItemsIndex(catalog.subcontratos),
+    mo:           buildCatalogItemsIndex(catalog.mo),
+    generales:    buildCatalogItemsIndex(catalog.generales),
+    tareas:       buildCatalogItemsIndex(catalog.tareas),
+  };
+}
+
+// Busca un item del catálogo por nombre. Acepta Map (rápido) o Array.
 export function buscarEnCatalogo(nombre, catalogoItems) {
-  if (!nombre || !Array.isArray(catalogoItems) || catalogoItems.length === 0) return null;
+  if (!nombre || !catalogoItems) return null;
+  if (catalogoItems instanceof Map) {
+    return catalogoItems.get(normalizarNombre(nombre)) || null;
+  }
+  if (!Array.isArray(catalogoItems) || catalogoItems.length === 0) return null;
   const target = normalizarNombre(nombre);
   return catalogoItems.find(c => normalizarNombre(c.nombre) === target) || null;
 }
@@ -102,7 +136,9 @@ export function buscarEnCatalogo(nombre, catalogoItems) {
 export function resolverItemAPU(itemApu, catalogoItems) {
   const cantidad = Number(itemApu?.cantidad) || 0;
   // Fallback si no hay catálogo: usar el precio del APU (comportamiento viejo).
-  if (!catalogoItems || catalogoItems.length === 0) {
+  const isEmpty = !catalogoItems
+    || (catalogoItems instanceof Map ? catalogoItems.size === 0 : catalogoItems.length === 0);
+  if (isEmpty) {
     const subtotal = cantidad * (Number(itemApu?.precio) || 0);
     return {
       subtotal,

@@ -5,7 +5,8 @@ import { Box, Btn, Chip, Divider } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
-import { resolverItemAPU, resolverMOAPU } from '../lib/apuPriceResolver';
+import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex } from '../lib/apuPriceResolver';
+import TareasEstandarEditor from './modales/TareasEstandarEditor';
 import { useUsuarios } from '../store/UsuariosContext';
 
 const newId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
@@ -137,14 +138,16 @@ function InsumoSearch({ items, onSelect, placeholder }) {
 const cellInSt = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, border: `1px solid ${T.faint2}`, borderRadius: 3, padding: '2px 5px', outline: 'none', background: T.paper };
 
 function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, generales, onSave, onCancel }) {
-  // Catalog sintético que pasamos a calcTarea — fuerza que tome los precios
-  // de las listas de catálogo (no del campo "precio" hardcoded en el APU,
-  // que el SISMAT cargó mal). Ver src/lib/apuPriceResolver.js.
-  const catalog = useMemo(
-    () => ({ materiales: materiales || [], subcontratos: subcontratos || [], mo: moItems || [], generales: generales || [] }),
-    [materiales, subcontratos, moItems, generales]
-  );
-  const costs = useMemo(() => calcTarea(form, catalog), [form, catalog]);
+  // Index del catálogo (Map por nombre normalizado) para lookup O(1) en
+  // calcTarea — sin esto, cada material × cada item del catálogo SISMAT
+  // (~2000) hacía string normalization lineal y mataba el render.
+  const catalogIndex = useMemo(() => ({
+    materiales:   buildCatalogItemsIndex(materiales || []),
+    subcontratos: buildCatalogItemsIndex(subcontratos || []),
+    mo:           buildCatalogItemsIndex(moItems || []),
+    generales:    buildCatalogItemsIndex(generales || []),
+  }), [materiales, subcontratos, moItems, generales]);
+  const costs = useMemo(() => calcTarea(form, catalogIndex), [form, catalogIndex]);
 
   const addMat = (item) => setForm(f => ({ ...f, materiales: [...f.materiales, { id: newId(), nombre: item.nombre, cantidad: 1, unidad: item.unidad, precio: item.precio }] }));
   const addSub = (item) => setForm(f => ({ ...f, subcontratos: [...(f.subcontratos||[]), { id: newId(), nombre: item.nombre, cantidad: 1, unidad: item.unidad, precio: item.precio }] }));
@@ -207,8 +210,7 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
         <div style={{ background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 20px', display: 'flex', gap: 20, alignItems: 'center', flexShrink: 0 }}>
           {[
             { label: 'Materiales', val: costs.mat },
-            { label: 'Sub contratos', val: costs.sub },
-            { label: 'Mano de obra', val: costs.mo },
+            { label: 'Mano de Obra', val: costs.sub + costs.mo },
           ].map(({ label, val }, i) => (
             <span key={label} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               {i > 0 && <span style={{ color: T.faint2 }}>|</span>}
@@ -236,7 +238,7 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
               <div>
                 <TableHeader />
                 {form.materiales.map(m => {
-                  const r = resolverItemAPU(m, materiales);
+                  const r = resolverItemAPU(m, catalogIndex.materiales);
                   const warn = !r.encontrado;
                   const unidadMostrar = r.encontrado ? r.unidadCatalogo : m.unidad;
                   return (
@@ -265,22 +267,22 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
 
           {/* SUB CONTRATOS */}
           <div>
-            <SectionHeader label="Sub contratos" />
+            <SectionHeader label="Mano de Obra — M.O" />
             <div style={{ marginBottom: 10 }}>
-              <InsumoSearch items={subcontratos} onSelect={addSub} placeholder="Buscar sub contrato del catálogo y agregar…" />
+              <InsumoSearch items={subcontratos} onSelect={addSub} placeholder="Buscar M.O del catálogo y agregar…" />
             </div>
             {(form.subcontratos||[]).length > 0 ? (
               <div>
                 <TableHeader />
                 {(form.subcontratos||[]).map(s => {
-                  const r = resolverItemAPU(s, subcontratos);
+                  const r = resolverItemAPU(s, catalogIndex.subcontratos);
                   const warn = !r.encontrado;
                   const unidadMostrar = r.encontrado ? r.unidadCatalogo : s.unidad;
                   return (
                   <div key={s.id} className="k-tr" style={{ alignItems: 'center', background: warn ? '#fff7ed' : 'transparent' }}>
                     <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>
                       {s.nombre}
-                      {warn && <span title="Sub contrato no encontrado en el catálogo" style={{ marginLeft: 6, fontSize: 9.5, padding: '1px 5px', borderRadius: 8, background: '#dc2626', color: '#fff', fontWeight: 700, letterSpacing: 0.4 }}>SIN CATÁLOGO</span>}
+                      {warn && <span title="Item de M.O no encontrado en el catálogo" style={{ marginLeft: 6, fontSize: 9.5, padding: '1px 5px', borderRadius: 8, background: '#dc2626', color: '#fff', fontWeight: 700, letterSpacing: 0.4 }}>SIN CATÁLOGO</span>}
                     </div>
                     <div className="k-cell" style={{ flex: 1 }}>
                       <input type="number" min="0" step="0.01" value={s.cantidad} onChange={e => updateSub(s.id, 'cantidad', +e.target.value)} style={cellInSt} />
@@ -296,52 +298,13 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
                 })}
               </div>
             ) : (
-              <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic', padding: '6px 0' }}>Sin sub contratos. Buscá en el catálogo para agregar.</div>
+              <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic', padding: '6px 0' }}>Sin items de M.O. Buscá en el catálogo para agregar.</div>
             )}
           </div>
 
-          {/* MANO DE OBRA */}
-          <div>
-            <SectionHeader label="Mano de obra" />
-            <div style={{ marginBottom: 10 }}>
-              <InsumoSearch items={moItems||[]} onSelect={addMO} placeholder="Buscar categoría de MO y agregar…" />
-            </div>
-            {(form.mo||[]).length > 0 ? (
-              <div>
-                <div className="k-tr" style={{ background: T.faint, fontWeight: 700, fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  <div className="k-cell" style={{ flex: 3 }}>Categoría</div>
-                  <div className="k-cell" style={{ flex: 1, textAlign: 'right' }}>Horas</div>
-                  <div className="k-cell" style={{ flex: 0.8 }} />
-                  <div className="k-cell" style={{ flex: 1.5, textAlign: 'right' }}>$/h</div>
-                  <div className="k-cell" style={{ flex: 1.5, textAlign: 'right' }}>Total $</div>
-                  <div className="k-cell" style={{ flex: 0.3 }} />
-                </div>
-                {(form.mo||[]).map(m => {
-                  const r = resolverMOAPU(m, moItems);
-                  const warn = !r.encontrado;
-                  return (
-                  <div key={m.id} className="k-tr" style={{ alignItems: 'center', background: warn ? '#fff7ed' : 'transparent' }}>
-                    <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>
-                      {m.nombre}
-                      {warn && <span title="Categoría de MO no encontrada en el catálogo" style={{ marginLeft: 6, fontSize: 9.5, padding: '1px 5px', borderRadius: 8, background: '#dc2626', color: '#fff', fontWeight: 700, letterSpacing: 0.4 }}>SIN CATÁLOGO</span>}
-                    </div>
-                    <div className="k-cell" style={{ flex: 1 }}>
-                      <input type="number" min="0" step="0.01" value={m.horas} onChange={e => updateMO(m.id, 'horas', +e.target.value)} style={cellInSt} />
-                    </div>
-                    <div className="k-cell" style={{ flex: 0.8, textAlign: 'center', color: T.ink2, fontSize: 11 }}>h</div>
-                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>$ {fmtN(r.precioHora)}</div>
-                    <div className="k-cell" style={{ flex: 1.5, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 12 }}>$ {fmtN(r.subtotal)}</div>
-                    <div className="k-cell" style={{ flex: 0.3, textAlign: 'center' }}>
-                      <span style={{ color: T.accent, cursor: 'pointer', fontSize: 15 }} onClick={() => removeMO(m.id)}>×</span>
-                    </div>
-                  </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic', padding: '6px 0' }}>Sin mano de obra. Buscá en el catálogo para agregar.</div>
-            )}
-          </div>
+          {/* MANO DE OBRA - antes había una sección de "MO por horas" (catalog.mo)
+              que se eliminó. Toda la mano de obra ahora vive en M.O / Sub
+              Contratos arriba. */}
         </div>
       </div>
     </div>
@@ -584,7 +547,7 @@ function ImportarAPUModal({ rubros, onImport, onClose }) {
 
               {/* Items editables */}
               {[{ label: 'Materiales (MA)', list: mats, color: '#3d7a4a' },
-                { label: 'Sub contratos (SC)', list: subs, color: '#4a7ab5' },
+                { label: 'Mano de Obra (M.O)', list: subs, color: '#4a7ab5' },
                 { label: 'Gastos generales (OT)', list: gens, color: '#a05a2c' }].map(({ label, list, color }) => (
                 <div key={label} style={{ background: T.faint, borderRadius: 5, padding: 10, border: `1px solid ${T.faint2}` }}>
                   <div style={{ fontSize: 10, fontWeight: 800, color, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
@@ -649,7 +612,7 @@ function ImportarAPUModal({ rubros, onImport, onClose }) {
 }
 
 // ── Tab: APU ──────────────────────────────────────────────────────────────────
-function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcontrato }) {
+function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcontrato }) {
   const { tareas, rubros, materiales, subcontratos, mo } = catalog;
   const [selRubro, setSelRubro] = useState('');
   const [search, setSearch] = useState('');
@@ -671,6 +634,22 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
     }
     return list;
   }, [tareas, selRubro, search, lastAddedId]);
+
+  // Memo de costos por APU. Sin esto, cada render recalcula calcTarea para
+  // las ~1500 APUs del SISMAT y el cambio de tab tarda varios segundos.
+  // Con el index O(1) + este cache → instantáneo.
+  const costsById = useMemo(() => {
+    const map = new Map();
+    for (const t of filtered) map.set(t.id, calcTarea(t, catalogIndex));
+    return map;
+  }, [filtered, catalogIndex]);
+
+  // Paginación virtual: renderear de a 200. Con 1500 filas DOM full
+  // el browser se ahoga; este "ver más" mantiene el mount inicial liviano.
+  const [pageSize, setPageSize] = useState(200);
+  useEffect(() => { setPageSize(200); }, [selRubro, search]);
+  const visibles = filtered.slice(0, pageSize);
+  const hayMas = filtered.length > pageSize;
 
   const startEdit = (t) => { setForm(JSON.parse(JSON.stringify(t))); setEditId(t.id); setEditMode(true); };
   const startNew  = () => {
@@ -773,7 +752,7 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: T.faint, position: 'sticky', top: 0, zIndex: 2 }}>
-                {['Tarea','Un','Mat $','Sub $','Total $'].map((h,i) => (
+                {['Tarea','Un','Mat $','M.O $','Total $'].map((h,i) => (
                   <th key={h} style={{ padding: '5px 10px', textAlign: i>=2 ? 'right' : 'left', fontWeight: 700, fontSize: 9, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: `1px solid ${T.faint2}` }}>{h}</th>
                 ))}
                 <th style={{ width: 56, borderBottom: `1px solid ${T.faint2}` }} />
@@ -784,7 +763,7 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
               {(() => {
                 const rows = [];
                 let lastRubro = null;
-                filtered.forEach(t => {
+                visibles.forEach(t => {
                   // Group header when showing all rubros
                   if (!selRubro && t.rubroNombre !== lastRubro) {
                     lastRubro = t.rubroNombre;
@@ -801,7 +780,7 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
                       </tr>
                     );
                   }
-                  const c = calcTarea(t, catalog);
+                  const c = costsById.get(t.id) || { mat: 0, sub: 0, total: 0 };
                   rows.push(
                     <tr key={t.id} onClick={() => startEdit(t)}
                       style={{ cursor: 'pointer', borderBottom: `1px solid ${T.faint2}`, background: editId === t.id ? T.accentSoft : 'transparent' }}>
@@ -826,6 +805,13 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
               })()}
             </tbody>
           </table>
+          {hayMas && (
+            <div style={{ padding: '10px 14px', textAlign: 'center', borderTop: `1px solid ${T.faint2}`, background: T.faint }}>
+              <span style={{ fontSize: 11, color: T.ink3, marginRight: 10 }}>Mostrando {visibles.length} de {filtered.length}</span>
+              <Btn sm onClick={() => setPageSize(p => p + 200)}>Ver 200 más</Btn>
+              <Btn sm style={{ marginLeft: 6 }} onClick={() => setPageSize(filtered.length)}>Ver todas</Btn>
+            </div>
+          )}
         </div>
       </Box>
 
@@ -855,7 +841,7 @@ function TabAPU({ catalog, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcon
 }
 
 // ── Tab: Rubros / Gremios ─────────────────────────────────────────────────────
-function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
+function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateMO }) {
   const { rubros, tareas, mo, subcontratos } = catalog;
   const subs = subcontratos || [];
   const [form, setForm] = useState(null);
@@ -921,36 +907,10 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
           </div>
 
           <div>
-            <div style={{ fontSize: 10, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Mano de obra · precios por hora</div>
-            {activeMOs.length === 0 && <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic' }}>Sin categorías MO para este gremio</div>}
-            {activeMOs.map(m => (
-              <div key={m.id} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', background: T.faint, borderRadius: 4, marginBottom: 6, gap: 10, border: `1px solid ${T.faint2}` }}>
-                <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{m.nombre}</div>
-                <span style={{ fontSize: 11, color: T.ink2 }}>por hora</span>
-                {moEdit?.id === m.id ? (
-                  <input autoFocus type="number" min="0" step="any"
-                    style={{ ...inputSt, width: 100, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700 }}
-                    value={moEdit.value}
-                    onChange={e => setMoEdit(x => ({ ...x, value: e.target.value }))}
-                    onBlur={saveMO}
-                    onKeyDown={e => { if (e.key === 'Enter') saveMO(); if (e.key === 'Escape') setMoEdit(null); }} />
-                ) : (
-                  <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 15, color: T.accent, cursor: 'text', padding: '2px 8px', borderRadius: 3, border: `1px solid ${T.faint2}`, background: T.paper }}
-                    onClick={() => setMoEdit({ id: m.id, value: String(m.precioHora) })}>
-                    $ {fmtN(m.precioHora)}/h
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <Divider />
-
-          <div>
             <div style={{ fontSize: 10, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-              Sub contratos · {activeSubs.length} items
+              Mano de Obra — M.O · {activeSubs.length} items
             </div>
-            {activeSubs.length === 0 && <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic' }}>Sin sub contratos para este gremio</div>}
+            {activeSubs.length === 0 && <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic' }}>Sin items de M.O para este gremio</div>}
             {activeSubs.map(s => (
               <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, marginBottom: 5, gap: 10 }}>
                 <div style={{ flex: 1 }}>
@@ -971,7 +931,7 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
             </div>
             {activeAPUs.length === 0 && <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic' }}>Sin tareas APU — creá una desde la pestaña "Tareas (APU)"</div>}
             {activeAPUs.map(t => {
-              const c = calcTarea(t, catalog);
+              const c = calcTarea(t, catalogIndex);
               return (
                 <div key={t.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, marginBottom: 5, gap: 10 }}>
                   <div style={{ flex: 1 }}>
@@ -980,13 +940,32 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
                   </div>
                   <div style={{ display: 'flex', gap: 12, fontSize: 11, fontFamily: T.fontMono, alignItems: 'center' }}>
                     <span style={{ color: T.ink2 }}>Mat: $ {fmtN(c.mat)}</span>
-                    <span style={{ color: T.ink2 }}>Sub: $ {fmtN(c.sub)}</span>
+                    <span style={{ color: T.ink2 }}>M.O: $ {fmtN(c.sub)}</span>
                     <span style={{ fontWeight: 800, color: T.accent }}>$ {fmtN(c.total)}</span>
                     <span style={{ fontFamily: T.font, fontSize: 10, color: T.ink3 }}>{t.unidad}</span>
                   </div>
                 </div>
               );
             })}
+          </div>
+
+          <Divider />
+
+          {/* Tareas estándar — se generan automáticamente al aprobar un
+              presupuesto que tenga este rubro. */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                ◆ Tareas estándar
+              </div>
+              <span style={{ fontSize: 9.5, color: T.ink3, fontStyle: 'italic' }}>
+                se generan al aprobar un presupuesto con este rubro
+              </span>
+            </div>
+            <TareasEstandarEditor
+              value={activeRubro.tareasEstandar || []}
+              onChange={(next) => onUpdate(activeRubro.id, { tareasEstandar: next })}
+            />
           </div>
         </Box>
       ) : (
@@ -1001,8 +980,117 @@ function TabRubros({ catalog, onAdd, onUpdate, onDelete, onUpdateMO }) {
   );
 }
 
+// ── Tab: Tipos de obra ────────────────────────────────────────────────────────
+// CRUD de tipos de obra (Vivienda / Panadería / Estación / etc.) + lista de
+// tareasBase que se generan al aprobar el presupuesto de una obra de ese
+// tipo. No depende del rubro — son tareas administrativas/papeleo típicas.
+function TabTiposObra({ tiposObra, onAdd, onUpdate, onDelete }) {
+  const [form, setForm] = useState(null); // { nombre, descripcion } al crear/editar
+  const [editId, setEditId] = useState(null);
+  const [activeId, setActiveId] = useState(null);
+
+  const activeTipo = tiposObra.find(t => t.id === activeId) || null;
+
+  const submitForm = () => {
+    if (!form?.nombre?.trim()) return;
+    if (editId) onUpdate(editId, { nombre: form.nombre, descripcion: form.descripcion || '' });
+    else onAdd({ nombre: form.nombre, descripcion: form.descripcion || '', tareasBase: [] });
+    setForm(null); setEditId(null);
+  };
+
+  return (
+    <div style={{ display: 'flex', gap: 10, height: '100%' }}>
+      {/* Sidebar: lista de tipos */}
+      <div style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0, paddingBottom: 8 }}>
+          <Btn sm fill onClick={() => { setForm({ nombre: '', descripcion: '' }); setEditId(null); }}>+ Nuevo tipo</Btn>
+        </div>
+        {form && (
+          <div style={{ background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 5, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, marginBottom: 8 }}>
+            <div>
+              <div style={labelSt}>Nombre</div>
+              <input style={inputSt} value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Ej: Panadería completa" autoFocus />
+            </div>
+            <div>
+              <div style={labelSt}>Descripción (opcional)</div>
+              <input style={inputSt} value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} placeholder="Ej: Local 80–150 m²" />
+            </div>
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <Btn sm onClick={() => { setForm(null); setEditId(null); }}>✕</Btn>
+              <Btn sm fill onClick={submitForm}>OK</Btn>
+            </div>
+          </div>
+        )}
+        {tiposObra.length === 0 && !form && (
+          <div style={{ fontSize: 11, color: T.ink3, fontStyle: 'italic', padding: '8px 4px' }}>
+            Sin tipos de obra cargados. Agregá uno para definir tareas base que se generen automáticamente al aprobar presupuestos.
+          </div>
+        )}
+        {tiposObra.map(t => {
+          const isActive = activeId === t.id;
+          const n = (t.tareasBase || []).length;
+          return (
+            <div key={t.id}
+              style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 3, borderLeft: `3px solid ${isActive ? T.accent : T.faint2}`, background: isActive ? T.accentSoft : 'transparent', cursor: 'pointer', gap: 6, marginBottom: 2 }}
+              onClick={() => setActiveId(t.id === activeId ? null : t.id)}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: isActive ? 700 : 500, color: isActive ? T.ink : T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.nombre}</div>
+                {t.descripcion && <div style={{ fontSize: 9.5, color: T.ink3, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</div>}
+              </div>
+              {n > 0 && <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono }}>{n}</span>}
+              <span style={{ fontSize: 11, color: T.ink3, cursor: 'pointer', opacity: 0.6, lineHeight: 1, padding: '0 3px' }}
+                onClick={e => { e.stopPropagation(); setForm({ nombre: t.nombre, descripcion: t.descripcion || '' }); setEditId(t.id); }}>
+                ✎
+              </span>
+              <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer', opacity: 0.6, lineHeight: 1, padding: '0 3px' }}
+                onClick={e => { e.stopPropagation(); if (confirm(`¿Eliminar tipo "${t.nombre}"?`)) { onDelete(t.id); if (activeId === t.id) setActiveId(null); } }}>
+                ×
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Detalle: tareas base */}
+      {activeTipo ? (
+        <Box style={{ flex: 1, padding: 14, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 20 }}>{activeTipo.nombre}</div>
+            {activeTipo.descripcion && <div style={{ fontSize: 12, color: T.ink2, marginTop: 2 }}>{activeTipo.descripcion}</div>}
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                ◆ Tareas base
+              </div>
+              <span style={{ fontSize: 9.5, color: T.ink3, fontStyle: 'italic' }}>
+                se generan al aprobar el presupuesto de una obra de este tipo
+              </span>
+            </div>
+            <TareasEstandarEditor
+              value={activeTipo.tareasBase || []}
+              onChange={(next) => onUpdate(activeTipo.id, { tareasBase: next })}
+            />
+          </div>
+        </Box>
+      ) : (
+        <Box style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink3 }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 36, marginBottom: 10 }}>👈</div>
+            <div style={{ fontSize: 12 }}>Seleccioná un tipo para ver y editar sus tareas base</div>
+          </div>
+        </Box>
+      )}
+    </div>
+  );
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
-const TABS = ['Materiales', 'Sub contratos', 'Mano de Obra', 'Generales', 'Tareas (APU)', 'Rubros / Gremios'];
+// Tab "Sub contratos" se llama ahora "Mano de Obra - M.O" porque en el modelo
+// de Kamak toda MO se factura como sub-contrato. El catálogo MO por hora
+// quedó deprecado — sus datos siguen sumándose en calcTarea por compat con
+// APUs viejos, pero no hay UI para editarlos.
+const TABS = ['Materiales', 'Mano de Obra - M.O', 'Generales', 'Tareas (APU)', 'Rubros / Gremios', 'Tipos de obra'];
 
 export default function Catalogos() {
   const { currentUser } = useUsuarios();
@@ -1014,17 +1102,18 @@ export default function Catalogos() {
   }, [currentUser, isAdmin, navigate]);
 
   const [tab, setTab] = useState(4);
-  const { catalog, add, update, remove } = useCatalog();
+  const { catalog, catalogIndex, add, update, remove } = useCatalog();
 
   // KPIs = tabs (clickeables). Reemplaza la fila de tabs duplicada que había
   // abajo del banner — single source of truth para la navegación.
+  // Tab "Mano de Obra" (por hora) fue eliminado — todo va por "M.O" (sub).
   const tabCounts = [
     catalog.materiales.length,
     (catalog.subcontratos||[]).length,
-    catalog.mo.length,
     catalog.generales.length,
     catalog.tareas.length,
     catalog.rubros.length,
+    (catalog.tiposObra||[]).length,
   ];
 
   return (
@@ -1123,39 +1212,7 @@ export default function Catalogos() {
             />
           );
         })()}
-        {tab === 2 && (() => {
-          const seen = new Set();
-          const rs = catalog.mo.map(i => i.oficio).filter(r => r && !seen.has(r) && seen.add(r));
-          return (
-            <TabSimple
-              items={catalog.mo}
-              onAdd={item => add('mo', item)}
-              onUpdate={(id, ch) => update('mo', id, ch)}
-              onDelete={id => remove('mo', id)}
-              rubros={rs}
-              rubroKey="oficio"
-              cols={[
-                { key: 'nombre', label: 'Nombre / Categoría' },
-                { key: 'oficio', label: 'Gremio' },
-                { key: 'precioHora', label: '$/h', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
-                { key: 'unidad', label: 'Unidad' },
-              ]}
-              emptyForm={{ nombre: '', oficio: catalog.rubros[0]?.nombre || '', unidad: 'h', precioHora: 0 }}
-              renderForm={(form, setForm) => (
-                <>
-                  <FRow label="Nombre / Categoría"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
-                  <FRow label="Gremio / Oficio">
-                    <select style={inputSt} value={form.oficio||''} onChange={e => setForm(f=>({...f, oficio:e.target.value}))}>
-                      {catalog.rubros.map(r => <option key={r.id}>{r.nombre}</option>)}
-                    </select>
-                  </FRow>
-                  <FRow label="Precio por hora $"><input style={inputSt} type="number" min="0" value={form.precioHora||0} onChange={e => setForm(f=>({...f, precioHora:+e.target.value}))} /></FRow>
-                </>
-              )}
-            />
-          );
-        })()}
-        {tab === 3 && (
+        {tab === 2 && (
           <TabSimple
             items={catalog.generales}
             onAdd={item => add('generales', item)}
@@ -1178,9 +1235,10 @@ export default function Catalogos() {
             )}
           />
         )}
-        {tab === 4 && (
+        {tab === 3 && (
           <TabAPU
             catalog={catalog}
+            catalogIndex={catalogIndex}
             onAdd={item => add('tareas', item)}
             onUpdate={(id, ch) => update('tareas', id, ch)}
             onDelete={id => remove('tareas', id)}
@@ -1188,13 +1246,22 @@ export default function Catalogos() {
             onAddSubcontrato={item => add('subcontratos', item)}
           />
         )}
-        {tab === 5 && (
+        {tab === 4 && (
           <TabRubros
             catalog={catalog}
+            catalogIndex={catalogIndex}
             onAdd={item => add('rubros', item)}
             onUpdate={(id, ch) => update('rubros', id, ch)}
             onDelete={id => remove('rubros', id)}
             onUpdateMO={(id, ch) => update('mo', id, ch)}
+          />
+        )}
+        {tab === 5 && (
+          <TabTiposObra
+            tiposObra={catalog.tiposObra || []}
+            onAdd={item => add('tiposObra', item)}
+            onUpdate={(id, ch) => update('tiposObra', id, ch)}
+            onDelete={id => remove('tiposObra', id)}
           />
         )}
       </div>

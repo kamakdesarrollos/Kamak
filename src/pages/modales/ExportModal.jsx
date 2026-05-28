@@ -147,7 +147,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div class="totales-lbl">MONTOS TOTALES</div>
         <div class="totales-grid">
           <span>Subtotal materiales</span><span class="mono">$ ${fmtN(totalMat)}</span>
-          <span>Subtotal subcontratos</span><span class="mono">$ ${fmtN(totalSub)}</span>
+          <span>Subtotal mano de obra</span><span class="mono">$ ${fmtN(totalSub)}</span>
         </div>
         <div class="totales-rule"></div>
         <div class="total-final">
@@ -193,7 +193,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
             <div class="dmnd-corner"></div>
             <div class="totales-grid-sm">
               <span>Subtotal mat.</span><span class="mono">$ ${fmtN(totalMat)}</span>
-              <span>Subtotal sub.</span><span class="mono">$ ${fmtN(totalSub)}</span>
+              <span>Subtotal M.O</span><span class="mono">$ ${fmtN(totalSub)}</span>
             </div>
             <div class="totales-rule"></div>
             <div class="total-final">

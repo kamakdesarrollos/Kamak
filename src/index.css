@@ -244,6 +244,39 @@ body {
   background-size: 260px 260px;
 }
 
+/* ── Topbar ──────────────────────────────────── */
+/* Barra accent vertical animada a la izquierda + leve sombra inferior.
+   Solo se animan props GPU-friendly (opacity, transform) para no frenar
+   el render del resto de la página. */
+.k-topbar {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.4);
+}
+.k-topbar::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  background: linear-gradient(180deg, transparent 0%, var(--accent) 25%, var(--accent) 75%, transparent 100%);
+  border-radius: 0 3px 3px 0;
+  opacity: 0.65;
+  pointer-events: none;
+}
+.k-topbar-logo {
+  transition: transform 0.2s ease;
+}
+.k-topbar-logo:hover {
+  transform: scale(1.05);
+}
+
+.k-search-trigger {
+  transition: border-color 0.18s;
+}
+.k-search-trigger:hover {
+  border-color: var(--accent) !important;
+}
+
 /* ── Portal del cliente ──────────────────────── */
 /* Desktop: padding 28px laterales, KPIs en grilla amplia. */
 .portal-page { overflow-x: hidden; }

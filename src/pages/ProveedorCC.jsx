@@ -70,7 +70,7 @@ export default function ProveedorCC() {
   }
 
   return (
-    <PageLayout breadcrumb={['Proveedores', proveedor.nombre]} active="Proveedores">
+    <PageLayout breadcrumb={[{ label: 'Proveedores', to: '/proveedores' }, proveedor.nombre]} active="Proveedores">
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

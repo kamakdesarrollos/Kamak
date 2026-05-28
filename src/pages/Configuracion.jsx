@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { Navigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Label, Divider, Chip } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
@@ -6,7 +7,6 @@ import { T } from '../theme';
 import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useDolar } from '../store/DolarContext';
 import { useUsuarios } from '../store/UsuariosContext';
-import { supabase } from '../lib/supabase';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -111,66 +111,6 @@ function DolarSection() {
   );
 }
 
-// ── Mi cuenta ─────────────────────────────────────────────────────────────────
-function CambiarNombre() {
-  const { currentUser, updateUsuario } = useUsuarios();
-  const [nombre, setNombre] = useState(currentUser?.nombre || '');
-  const [msg, setMsg] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const guardar = async () => {
-    if (!nombre.trim() || loading) return;
-    setLoading(true);
-    await updateUsuario(currentUser.id, { nombre: nombre.trim() });
-    setLoading(false);
-    setMsg('Nombre actualizado');
-    setTimeout(() => setMsg(''), 2000);
-  };
-
-  return (
-    <Box style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 340 }}>
-      <div style={{ fontWeight: 700, fontSize: 13 }}>Mi perfil</div>
-      <FField label="Nombre" value={nombre} onChange={setNombre} />
-      <FField label="Usuario (email)" value={currentUser?.email || ''} readOnly />
-      {msg && <div style={{ fontSize: 12, color: T.ok }}>{msg}</div>}
-      <Btn sm fill onClick={guardar} style={{ opacity: loading ? 0.5 : 1 }}>
-        {loading ? 'Guardando…' : 'Guardar nombre'}
-      </Btn>
-    </Box>
-  );
-}
-
-function CambiarContrasena() {
-  const [pass1, setPass1] = useState('');
-  const [pass2, setPass2] = useState('');
-  const [msg, setMsg] = useState('');
-  const [err, setErr] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const guardar = async () => {
-    if (pass1.length < 6) { setErr('Mínimo 6 caracteres'); return; }
-    if (pass1 !== pass2) { setErr('Las contraseñas no coinciden'); return; }
-    setLoading(true); setErr(''); setMsg('');
-    const { error } = await supabase.auth.updateUser({ password: pass1 });
-    setLoading(false);
-    if (error) { setErr(error.message); return; }
-    setMsg('Contraseña actualizada correctamente');
-    setPass1(''); setPass2('');
-  };
-
-  return (
-    <Box style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 340 }}>
-      <div style={{ fontWeight: 700, fontSize: 13 }}>Cambiar mi contraseña</div>
-      <FField label="Nueva contraseña" type="password" value={pass1} onChange={setPass1} />
-      <FField label="Repetir contraseña" type="password" value={pass2} onChange={setPass2} />
-      {err && <div style={{ fontSize: 12, color: T.accent }}>{err}</div>}
-      {msg && <div style={{ fontSize: 12, color: T.ok }}>{msg}</div>}
-      <Btn sm fill onClick={guardar} style={{ opacity: loading ? 0.5 : 1 }}>
-        {loading ? 'Guardando…' : 'Guardar contraseña'}
-      </Btn>
-    </Box>
-  );
-}
 
 // ── Medios de pago ────────────────────────────────────────────────────────────
 function MediosDePago({ medios, onChange }) {
@@ -229,21 +169,9 @@ export default function Configuracion() {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  // Vista reducida para usuarios no-admin
+  // Vista reducida para usuarios no-admin → todo el perfil vive en /perfil.
   if (currentUser?.rol !== 'Admin') {
-    return (
-      <PageLayout breadcrumb={['Configuración']} active="Configuración">
-        <PageHero
-          label="MI CUENTA"
-          title="Mi cuenta"
-          subtitle="Perfil y seguridad"
-        />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 360 }}>
-          <CambiarNombre />
-          <CambiarContrasena />
-        </div>
-      </PageLayout>
-    );
+    return <Navigate to="/perfil" replace />;
   }
 
   return (
@@ -341,8 +269,6 @@ export default function Configuracion() {
             onChange={v => save(patchRoot, { mediosDePago: v })}
           />
         </Box>
-
-        <CambiarContrasena />
 
       </div>
     </PageLayout>
