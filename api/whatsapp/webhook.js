@@ -1,5 +1,7 @@
 // Meta WhatsApp Cloud API — sin dependencias externas
 
+import { extractSlots, mergeSlots, slotsCompletosPara } from './extractors.js';
+
 const META_TOKEN      = process.env.META_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
 const VERIFY_TOKEN    = process.env.META_VERIFY_TOKEN;
@@ -528,21 +530,65 @@ async function getAllAdmins() {
 }
 
 // ── Conversación ──────────────────────────────────────────────────────────────
+// Estado persistido en tabla whatsapp_conversations:
+//   { phone, state, data, history, slots, defaults, updated_at }
+//
+// - state:    'idle' | 'confirmando' | 'conversando' | 'linking_*' | etc.
+// - data:     misc por estado (pendingMediaUrl, lastTareaId, etc).
+// - history:  últimos N mensajes (texto) para contexto al LLM.
+// - slots:    slots de la intención EN CURSO (intent, monto, obraId, tareaId,
+//             cantidad, unidad, ...). Se vacía al ejecutar/cancelar.
+// - defaults: persiste entre sesiones (lastObraId, lastCajaId, lastProveedorId).
+//
+// TTL: si la conversación lleva >20 min sin update y NO estamos en idle,
+// reseteamos `state='idle'` y `slots={}` pero conservamos `defaults` y
+// dejamos `history` (vale como recordatorio liviano).
+const TTL_MIN = 20;
+const HISTORY_MAX = 16; // antes era 8, corto para flujos con foto
+
 async function loadConversation(phone) {
   const rows = await sbGet('whatsapp_conversations', `?phone=eq.${phone}`);
-  return rows[0] || { phone, state: 'idle', data: {}, history: [] };
+  const row = rows[0] || { phone, state: 'idle', data: {}, history: [], slots: {}, defaults: {} };
+  // Defaults para filas viejas que no tienen las nuevas columnas
+  row.slots = row.slots || {};
+  row.defaults = row.defaults || {};
+  // TTL
+  if (row.updated_at && row.state !== 'idle') {
+    const age = (Date.now() - new Date(row.updated_at).getTime()) / 60000;
+    if (age > TTL_MIN) {
+      row.state = 'idle';
+      row.slots = {};
+      // history y defaults se conservan
+    }
+  }
+  return row;
 }
 
-async function saveConversation(phone, state, data, history) {
-  await sbUpsert('whatsapp_conversations', {
-    phone, state, data,
-    history: history.slice(-8),
+// Save completo de la conversación. Permite pasar `opts` con campos parciales
+// (state, data, history, slots, defaults). Lo que no se pase se conserva
+// del estado actual — para evitar borradas accidentales tipo el bug previo
+// donde pasar `[]` como history hacía un wipe.
+async function saveConversation(phone, opts = {}) {
+  // Cargar el estado actual para mergear (evita pisar slots/defaults si
+  // el caller solo quiere actualizar history o state).
+  const current = await loadConversation(phone);
+  const next = {
+    phone,
+    state:    opts.state    !== undefined ? opts.state    : current.state,
+    data:     opts.data     !== undefined ? opts.data     : current.data,
+    history:  opts.history  !== undefined ? opts.history  : current.history,
+    slots:    opts.slots    !== undefined ? opts.slots    : current.slots,
+    defaults: opts.defaults !== undefined ? opts.defaults : current.defaults,
     updated_at: new Date().toISOString(),
-  });
+  };
+  next.history = (next.history || []).slice(-HISTORY_MAX);
+  await sbUpsert('whatsapp_conversations', next);
 }
 
+// Reset de intent: vuelve a idle, vacía slots y data, PERO mantiene history
+// y defaults. Antes el clearConversation borraba todo y el bot se olvidaba.
 async function clearConversation(phone) {
-  await saveConversation(phone, 'idle', {}, []);
+  await saveConversation(phone, { state: 'idle', data: {}, slots: {} });
 }
 
 // ── Usuario vinculado ─────────────────────────────────────────────────────────
@@ -560,7 +606,7 @@ async function getLinkedUser(phone) {
 async function handleLinkingFlow(phone, text, conv) {
   if (conv.state === 'idle' || conv.state === 'linking_awaiting_user') {
     if (conv.state === 'idle') {
-      await saveConversation(phone, 'linking_awaiting_user', {}, []);
+      await saveConversation(phone, { state: 'linking_awaiting_user', data: {}, history: [] });
       await sendWA(phone,
         '👋 Hola! Soy el asistente de *Kamak Desarrollos*.\n\n' +
         'Para vincular tu número con tu cuenta, escribí tu *nombre completo* o tu *email* registrado en el sistema.'
@@ -593,7 +639,7 @@ async function handleLinkingFlow(phone, text, conv) {
       expires_at: expiresAt,
     });
 
-    await saveConversation(phone, 'linking_awaiting_confirmation', { user_email: match.email, user_name: match.nombre }, []);
+    await saveConversation(phone, { state: 'linking_awaiting_confirmation', data: { user_email: match.email, user_name: match.nombre }, history: [] });
 
     await sendWA(phone,
       `✅ Encontré tu cuenta: *${match.nombre}*\n\n` +
@@ -810,8 +856,25 @@ async function callClaude(user, messageText, base64Media, mimeType, conv, ctx, m
     return `  OBRA:${o.id}|${o.nombre}${isCtx ? ' ← CONTEXTO ACTUAL' : ''}\n${rubStr}`;
   }).filter(Boolean).join('\n') || 'sin rubros cargados';
 
+  // ── SLOTS YA CONOCIDOS — bloque crítico anti-repreguntas ────────────────────
+  // Si el caller cargó conv.slots (con valores extraídos por extractors.js),
+  // los inyectamos al prompt con instrucción explícita de NO repreguntar.
+  const slotsObj = conv?.slots || {};
+  const slotsEntries = Object.entries(slotsObj).filter(([_, v]) => v != null && v !== '');
+  const slotsBlock = slotsEntries.length > 0
+    ? `\n\n🔑 SLOTS YA CONOCIDOS (NO REPREGUNTES POR ESTOS):\n${slotsEntries.map(([k, v]) => `  ${k}: ${v}`).join('\n')}\nUsalos directamente en la acción. Si falta algo, preguntá SOLO por lo que falta. Si el usuario corrige uno ("no, eran 60k"), mergealo sobre los slots ya conocidos sin pedir lo que ya tenías.`
+    : '';
+
+  // Defaults: última obra/caja/etc usada por el user (persiste entre sesiones).
+  const defaultsObj = conv?.defaults || {};
+  const defaultsEntries = Object.entries(defaultsObj).filter(([_, v]) => v != null && v !== '');
+  const defaultsBlock = defaultsEntries.length > 0
+    ? `\n\n📌 DEFAULTS DEL USUARIO (usá si el mensaje no especifica obra/caja/etc):\n${defaultsEntries.map(([k, v]) => `  ${k}: ${v}`).join('\n')}`
+    : '';
+
   const systemPrompt = `Sos el asistente de WhatsApp de Kamak Desarrollos, una constructora argentina.
 Ayudás al equipo interno a registrar información en el sistema de gestión.
+${slotsBlock}${defaultsBlock}
 
 USUARIO ACTUAL:
 - Nombre: ${user.user_name}
@@ -1039,19 +1102,19 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       const tel = normalizePhone(cliente.whatsapp || cliente.telefono);
       if (!tel) {
         // Cliente sin teléfono → pedirlo por WA.
-        await saveConversation(user.phone, 'awaiting_client_phone', {
+        await saveConversation(user.phone, { state: 'awaiting_client_phone', data: {
           clienteId:     cliente.id,
           clienteNombre: cliente.nombre,
           obraNombre:    obra.nombre,
           monto,
           moneda:        obraMoneda,
           recibidoPor:   user.user_name,
-        }, []);
+        } });
         return `✅ Ingreso de *${montoFmt}* aplicado a *${obra.nombre}*.\n\n📱 *${cliente.nombre}* no tiene WhatsApp cargado. ¿Cuál es su número? (con cód. país, ej. 5491155551234)\n\nO escribí *no* para omitir el aviso.`;
       }
 
       // Cliente OK → preguntar antes de mandar.
-      await saveConversation(user.phone, 'awaiting_client_notice', {
+      await saveConversation(user.phone, { state: 'awaiting_client_notice', data: {
         clienteId:     cliente.id,
         clienteNombre: cliente.nombre,
         clienteTel:    tel,
@@ -1059,7 +1122,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         monto,
         moneda:        obraMoneda,
         recibidoPor:   user.user_name,
-      }, []);
+      } });
       return `✅ Ingreso de *${montoFmt}* aplicado a *${obra.nombre}*.\n\n¿Aviso a *${cliente.nombre}* por WhatsApp? (sí/no)`;
     }
 
@@ -1588,10 +1651,10 @@ async function ejecutarComando(comando, datos, user, ctx) {
     // Guardar mapping para referencia posterior por numero.
     if (user.phone) {
       const conv = await loadConversation(user.phone);
-      await saveConversation(user.phone, conv.state || 'idle', {
-        ...(conv.data || {}),
-        lastTareasList: mias.map(t => t.id),
-      }, conv.history || []);
+      await saveConversation(user.phone, {
+        state: conv.state || 'idle',
+        data: { ...(conv.data || {}), lastTareasList: mias.map(t => t.id) },
+      });
     }
 
     const lineas = mias.slice(0, 10).map((t, i) => {
@@ -1622,10 +1685,10 @@ async function ejecutarComando(comando, datos, user, ctx) {
 
     // Guardar la última tarea vista para que despues pueda decir "completé item 3"
     if (user.phone) {
-      await saveConversation(user.phone, conv.state || 'idle', {
-        ...(conv.data || {}),
-        lastTareaId: tareaId,
-      }, conv.history || []);
+      await saveConversation(user.phone, {
+        state: conv.state || 'idle',
+        data: { ...(conv.data || {}), lastTareaId: tareaId },
+      });
     }
 
     const totalItems = (t.checklist || []).length;
@@ -1916,6 +1979,24 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     { rol: 'usuario', texto: messageText || '(foto)', ts: Date.now() },
   ];
 
+  // ── PRE-EXTRACCIÓN DE SLOTS (anti-repreguntas) ──────────────────────────────
+  // Antes de llamar a Claude, extraemos lo más posible del mensaje con regex.
+  // El resultado se mergea con los slots ya conocidos de turnos previos. Si
+  // tenemos todo lo necesario, podemos saltear preguntas redundantes.
+  // Esto cubre el caso: "AGENDA AVANCE DE OBRA 25 MTS2 DE COLOCACION DE PISOS"
+  // → extrae intent=avance, cantidad=25, unidad=m², tarea=colocacion de pisos
+  // → si todo matchea, va directo a confirmar sin preguntar nada.
+  const ctxExt = {
+    obras:        ctx.obras,
+    cajas:        ctx.cajas,
+    proveedores:  ctx.proveedores,
+    detalles:     ctx.detalles,
+    defaults:     conv.defaults || {},
+  };
+  const extractedSlots = extractSlots(messageText || '', ctxExt);
+  const mergedSlots = mergeSlots(conv.slots || {}, extractedSlots);
+  conv.slots = mergedSlots;
+
   // ── BYPASS CORRECCIÓN: "me equivoqué", "corregir avance", etc. ──────────────
   const correccionDetectada = extractCorreccion(messageText || '', ctx.obras, ctx.detalles);
   if (correccionDetectada?.completo) {
@@ -1930,7 +2011,7 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       `✏️ Nuevo valor: *${cantidadAvance}${unidad}*${pctNuevo != null ? ` → *${Math.min(pctNuevo, 100)}%*` : ''}\n\n` +
       `Esto *reemplaza* el avance anterior. ¿Confirmás? (sí/no)`;
     const newHist = [...updatedHistory, { rol: 'asistente', texto: confMsg, ts: Date.now() }];
-    await saveConversation(phone, 'confirmando', { accion: { tipo: 'avance_obra', datos: correccionDetectada }, pendingMediaUrl: mediaUrl }, newHist);
+    await saveConversation(phone, { state: 'confirmando', data: { accion: { tipo: 'avance_obra', datos: correccionDetectada }, pendingMediaUrl: mediaUrl }, history: newHist, slots: conv.slots || {} });
     await sendWA(phone, confMsg);
     return;
   }
@@ -1952,7 +2033,7 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       (mediaUrl ? `📷 Con foto adjunta\n` : '') +
       `\n¿Confirmás? (sí/no)`;
     const newHist = [...updatedHistory, { rol: 'asistente', texto: confMsg, ts: Date.now() }];
-    await saveConversation(phone, 'confirmando', { accion: { tipo: 'avance_obra', datos: avanceDetectado }, pendingMediaUrl: mediaUrl }, newHist);
+    await saveConversation(phone, { state: 'confirmando', data: { accion: { tipo: 'avance_obra', datos: avanceDetectado }, pendingMediaUrl: mediaUrl }, history: newHist, slots: conv.slots || {} });
     await sendWA(phone, confMsg);
     return;
   }
@@ -1971,14 +2052,28 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     // si quedo en idle/confirmando.
     const afterExec = await loadConversation(phone);
     if (afterExec.state === 'idle' || afterExec.state === 'confirmando') {
-      await saveConversation(phone, 'idle', {}, newHistory);
+      // Persist defaults: lo último usado queda como sugerencia para próxima
+      // sesión. Así "cargá otro gasto" infiere obra/caja sin pedir.
+      const accionDatos = claudeRes.accion.datos || {};
+      const nuevosDefaults = mergeSlots(conv.defaults || {}, {
+        lastObraId:      accionDatos.obraId      || conv.slots?.obraId,
+        lastCajaId:      accionDatos.cajaId      || conv.slots?.cajaId,
+        lastProveedorId: accionDatos.proveedorId || conv.slots?.proveedorId,
+        lastRubroId:     accionDatos.rubroId     || conv.slots?.rubroId,
+      });
+      // Mantener defaults y history para "y otro gasto más"; limpiar slots
+      // de la intención que acaba de ejecutarse.
+      await saveConversation(phone, {
+        state: 'idle', data: {}, slots: {},
+        defaults: nuevosDefaults, history: newHistory,
+      });
     }
     await sendWA(phone, resultado);
     return;
   }
 
   if (claudeRes.estado === 'confirmando') {
-    await saveConversation(phone, 'confirmando', { accion: claudeRes.accion, pendingMediaUrl: mediaUrl }, newHistory);
+    await saveConversation(phone, { state: 'confirmando', data: { accion: claudeRes.accion, pendingMediaUrl: mediaUrl }, history: newHistory, slots: conv.slots || {} });
     await sendWA(phone, claudeRes.mensaje);
     return;
   }
@@ -1991,12 +2086,12 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
 
   if (claudeRes.estado === 'comando') {
     const resultado = await ejecutarComando(claudeRes.accion?.datos?.comando, claudeRes.accion?.datos || {}, { ...user, phone }, ctx);
-    await saveConversation(phone, 'idle', {}, newHistory);
+    await saveConversation(phone, { state: 'idle', data: {}, slots: {}, history: newHistory });
     await sendWA(phone, resultado);
     return;
   }
 
-  await saveConversation(phone, 'conversando', { ...(conv.data || {}), pendingMediaUrl: mediaUrl }, newHistory);
+  await saveConversation(phone, { state: 'conversando', data: { ...(conv.data || {}), pendingMediaUrl: mediaUrl }, history: newHistory, slots: conv.slots || {} });
   await sendWA(phone, claudeRes.mensaje);
 }
 
