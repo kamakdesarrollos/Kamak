@@ -2453,6 +2453,22 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       mediaUrl = await uploadToStorage(base64Media, mimeType, filepath);
       console.log(`MEDIA uploaded: ${mediaUrl}`);
     }
+  } else if (mediaUrl && conv.state === 'conversando') {
+    // Caso típico: el usuario mandó la FOTO en un mensaje y el TEXTO en
+    // otro ("pagué de baradero"). La foto quedó guardada como pendingMediaUrl
+    // pero Claude no la tenía en este turno → no podía leer monto/medio.
+    // La re-descargamos del storage para volver a pasársela al modelo.
+    try {
+      const r = await fetch(mediaUrl);
+      if (r.ok) {
+        const buf = Buffer.from(await r.arrayBuffer());
+        base64Media = buf.toString('base64');
+        mimeType = mediaUrl.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
+        console.log(`MEDIA re-descargada de pendingMediaUrl para pasar a Claude`);
+      }
+    } catch (e) {
+      console.error('re-download pendingMedia error:', e.message);
+    }
   }
 
   // ── El usuario pide ver sus tareas (en lenguaje natural) ───────────────────
