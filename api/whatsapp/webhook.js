@@ -1083,6 +1083,7 @@ ACCIONES DISPONIBLES:
 7. TAREAS — comandos: tareas (lista mis pendientes), tarea_detalle (con datos.numero=N), completar_item (con datos.numero=N — marca item N de la última tarea vista)
 8. NUEVA_TAREA (solo Admin): si el admin dice "creale tarea a Juan: comprar cemento" o similar, accion.tipo='nueva_tarea' con datos: { titulo, descripcion?, asignadoNombre (nombre del usuario destinatario), prioridad?('baja'|'media'|'alta'), fechaLimite?(YYYY-MM-DD), checklist?[textos] }. Si falta el asignado, preguntar a quién. Si no es admin, responder que solo el admin puede crear tareas para otros — pero cualquier user puede pedir "crear tarea para mí" (auto-asignación).
 9. TRASPASO (solo Admin): si el admin dice "pasá $200k de Caja Franco a Banco Galicia" o similar, accion.tipo='traspaso' con datos: { monto, cajaId (ID de la caja origen), cajaDestinoId (ID de la caja destino), montoDestino?(opcional para cross-moneda con TC distinto), descripcion? }. Matchear nombre de caja por nombre parcial. Si las cajas son de moneda distinta y el user no aclaró tipo de cambio, preguntá.
+10. PAGO_PROVEEDOR (solo Admin): si el admin dice "pagué $300k a Pérez por la cert de revoque" / "le pagué a Juancito $150k de baradero" → accion.tipo='pago_proveedor' con datos: { monto, proveedorNombre (nombre del proveedor), obraId (ID de la obra si la menciona), cajaId (caja de egreso, sino su efectivo), medioPago, concepto? }. Es DISTINTO de un gasto común: registra el pago contra la cuenta corriente del proveedor. Usalo cuando el destinatario es un proveedor/sub-contratista conocido y se habla de "pagar/abonar/cancelar" a esa persona. Matchear proveedor por nombre parcial.
 
 REGLAS DE FLUJO:
 - El usuario escribe corto y conciso. Interpretá la intención aunque falten datos.
@@ -1106,7 +1107,7 @@ Respondé ÚNICAMENTE con JSON válido:
   "mensaje": "texto a enviar al usuario (máx 400 chars)",
   "estado": "conversando" | "confirmando" | "ejecutar" | "cancelar" | "comando",
   "accion": {
-    "tipo": "gasto" | "ingreso" | "factura_compra" | "avance_obra" | "cheque_recibido" | "comando" | "nueva_tarea" | "traspaso" | null,
+    "tipo": "gasto" | "ingreso" | "factura_compra" | "avance_obra" | "cheque_recibido" | "comando" | "nueva_tarea" | "traspaso" | "pago_proveedor" | null,
     "datos": {}
   }
 }`;
@@ -1403,6 +1404,72 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     }
 
     return `✅ Factura${datos.tipoFactura ? ` ${datos.tipoFactura}` : ''} de *${datos.proveedor || 'proveedor'}* recibida.\n${datos.montoTotal != null ? `Monto: *${montoStr}*\n` : ''}Los administradores la revisarán para aprobarla.`;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGO A PROVEEDOR (contra cuenta corriente)
+  // ─────────────────────────────────────────────────────────────────────────
+  if (tipo === 'pago_proveedor') {
+    const monto = Math.round(parseFloat(datos.monto) || 0);
+    if (!monto || monto <= 0) return '❌ El monto del pago debe ser mayor a 0.';
+    const prov = ctx.proveedores.find(p => p.id === datos.proveedorId) ||
+                 ctx.proveedores.find(p => p.nombre?.toLowerCase().includes((datos.proveedorNombre || '').toLowerCase()));
+    if (!prov) return '❌ No encontré ese proveedor.';
+    const obra = datos.obraId ? ctx.obras.find(o => o.id === datos.obraId) : null;
+    const caja = ctx.cajas.find(c => c.id === datos.cajaId) ||
+                 ctx.cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email && c.moneda === 'ARS');
+    if (!caja) return '⚠️ No sé de qué caja sale el pago. Decime la caja o configurá tu caja efectivo.';
+
+    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+    const concepto = datos.concepto || `Pago a ${prov.nombre}${obra ? ` · ${obra.nombre}` : ''}`;
+
+    if (user.user_rol !== 'Admin') {
+      return '⚠️ Los pagos a proveedor los registra un Admin.';
+    }
+
+    // 1) Movimiento gasto (categoria subcontrato)
+    const movData = await loadSharedData('movimientos');
+    const movs  = movData?.movimientos || [];
+    const cajas = movData?.cajas || ctx.cajas;
+    const mov = {
+      id: `mov-${Date.now()}`,
+      tipo: 'gasto',
+      descripcion: concepto,
+      monto,
+      fecha: datos.fecha || new Date().toISOString().split('T')[0],
+      obraId: obra?.id || null,
+      obraNombre: obra?.nombre || 'General',
+      cajaId: caja.id,
+      cajaDestinoId: null,
+      proveedor: prov.nombre,
+      proveedorId: prov.id,
+      categoria: 'subcontrato',
+      medioPago: datos.medioPago || 'Transferencia',
+      creadoPorWA: true,
+      creadoPor: user.user_name,
+    };
+    const updatedCajas = cajas.map(c => c.id === caja.id ? { ...c, saldo: (c.saldo || 0) - monto } : c);
+    await saveSharedData('movimientos', { movimientos: [mov, ...movs], cajas: updatedCajas });
+
+    // 2) Asiento en la CC del proveedor (haber = pago) si hay obra.
+    if (obra) {
+      const provData = await loadSharedData('proveedores');
+      const ccEntries = provData?.ccEntries || [];
+      const asiento = {
+        id: `cc-${Date.now()}`,
+        proveedorId: prov.id,
+        obraId: obra.id,
+        obraNombre: obra.nombre,
+        fecha: mov.fecha,
+        concepto,
+        tipo: 'pago',
+        debe: 0,
+        haber: monto,
+      };
+      await saveSharedData('proveedores', { ...provData, ccEntries: [...ccEntries, asiento] });
+    }
+
+    return `✅ *Pago registrado*\n${fmt(monto)} a *${prov.nombre}*${obra ? ` · ${obra.nombre}` : ''}\nSale de: ${caja.nombre}` + (obra ? `\nImputado a la CC del proveedor.` : '');
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1870,8 +1937,12 @@ async function ejecutarComando(comando, datos, user, ctx) {
       (esAdmin ? `• *cheques* — cheques por vencer\n` : '') +
       (esAdmin ? `• *resumen [obra] [fecha]* — resumen del día\n` : '') +
       `• _"como va [obra]"_ — KPIs: avance, gastado, próx. cuota, top gastos\n` +
+      `• _"últimos 5 gastos de [obra]"_ — buscar gastos\n` +
       (esAdmin ? `• _"cuánto le debo a [proveedor]"_ — CC + últimas certs/pagos\n` : '') +
       `• _"contacto [proveedor]"_ — tel/wa/email\n` +
+      (esAdmin ? `• _"pagué $300k a [proveedor] de [obra]"_ — pago contra CC\n` : '') +
+      `• _"dejá nota en [obra]: ..."_ — guardar recordatorio en la obra\n` +
+      `• _"deposité el cheque 4421"_ / _"se cobró el 4421"_ — estado de cheque\n` +
       (esAdmin ? `• _"aprobar N"_ / _"rechazar N"_ — sobre pendientes (escribí *pendientes* para verlos)\n` : '') +
       (esAdmin ? `• _"pasá $200k de Caja X a Caja Y"_ — traspaso entre cajas\n` : '') +
       `• *deshacer* — revierte tu último movimiento cargado\n` +
@@ -2320,6 +2391,74 @@ async function ejecutarComando(comando, datos, user, ctx) {
     return `↩️ Deshecho: *${mio.tipo}* de ${fmt(mio.monto)}${mio.obraNombre && mio.obraNombre !== 'General' ? ` en ${mio.obraNombre}` : ''}.\n_${mio.descripcion || ''}_`;
   }
 
+  // ── Búsqueda cross-obra: "últimos N gastos de [obra]" / "gastos de cemento" ──
+  if (comando === 'buscar_gastos') {
+    const obraQuery = (datos.obra || '').toLowerCase().trim();
+    const concepto  = (datos.concepto || '').toLowerCase().trim();
+    const limite    = datos.limite || 5;
+    let movs = (ctx.movimientos || []).filter(m => m.tipo === 'gasto');
+    if (obraQuery) {
+      const obra = ctx.obras.find(o => o.nombre?.toLowerCase().includes(obraQuery) || obraQuery.includes(o.nombre?.toLowerCase()));
+      if (obra) movs = movs.filter(m => m.obraId === obra.id);
+    }
+    if (concepto) {
+      movs = movs.filter(m =>
+        (m.descripcion || '').toLowerCase().includes(concepto) ||
+        (m.proveedor || '').toLowerCase().includes(concepto)
+      );
+    }
+    movs = movs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, limite);
+    if (!movs.length) return '🔍 No encontré gastos con ese criterio.';
+    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+    const lineas = movs.map(m => {
+      const d = (m.fecha || '').split('-').reverse().join('/');
+      return `• ${d} · ${fmt(m.monto)} · ${m.descripcion || m.proveedor || '—'}${m.obraNombre && m.obraNombre !== 'General' ? ` (${m.obraNombre})` : ''}`;
+    });
+    return `🔍 *Gastos encontrados (${movs.length}):*\n\n${lineas.join('\n')}`;
+  }
+
+  // ── Nota rápida en obra: "dejá nota en Baradero: faltan ladrillos" ──────────
+  if (comando === 'nota_obra') {
+    const obraQuery = (datos.obra || '').toLowerCase().trim();
+    const texto = (datos.texto || '').trim();
+    if (!obraQuery || !texto) return '🤔 Decime la obra y la nota. Ej: *dejá nota en Baradero: faltan ladrillos*';
+    const obra = ctx.obras.find(o => o.nombre?.toLowerCase().includes(obraQuery) || obraQuery.includes(o.nombre?.toLowerCase()));
+    if (!obra) return `❌ No encontré la obra "${datos.obra}".`;
+    const obrasData = await loadSharedData('obras');
+    const detalles = obrasData?.detalles || {};
+    const det = detalles[obra.id] || {};
+    const nuevaNota = {
+      id: `nota-${Date.now()}`,
+      texto,
+      autor: user.user_name,
+      fecha: new Date().toISOString(),
+      origen: 'whatsapp',
+    };
+    const notasObra = [nuevaNota, ...(det.notasRapidas || [])];
+    const nuevoDetalles = { ...detalles, [obra.id]: { ...det, notasRapidas: notasObra } };
+    await saveSharedData('obras', { ...obrasData, detalles: nuevoDetalles });
+    return `📝 Nota guardada en *${obra.nombre}*:\n_"${texto}"_`;
+  }
+
+  // ── Estado de cheque: "deposité el cheque 4421" / "se cobró el 4421" ────────
+  if (comando === 'estado_cheque') {
+    const numero = (datos.numero || '').toString().trim();
+    const nuevoEstado = datos.estado; // 'depositado' | 'cobrado' | 'rechazado' | 'anulado'
+    if (!numero) return '🤔 Decime el número de cheque. Ej: *deposité el cheque 4421*';
+    const chequesData = await loadSharedData('cheques');
+    const cheques = chequesData?.cheques || [];
+    const chq = cheques.find(c => (c.numero || '').toString().replace(/\D/g, '') === numero.replace(/\D/g, ''));
+    if (!chq) return `❌ No encontré un cheque N° ${numero}.`;
+    const updated = cheques.map(c => c.id === chq.id
+      ? { ...c, estado: nuevoEstado, ...(nuevoEstado === 'depositado' ? { fechaDeposito: new Date().toISOString().split('T')[0] } : {}) }
+      : c
+    );
+    await saveSharedData('cheques', { ...chequesData, cheques: updated });
+    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+    const label = { depositado: 'depositado', cobrado: 'cobrado', rechazado: 'rechazado', anulado: 'anulado' }[nuevoEstado] || nuevoEstado;
+    return `✅ Cheque N° *${chq.numero}* (${chq.banco || ''} · ${fmt(chq.monto)}) marcado como *${label}*.`;
+  }
+
   // "Teléfono/contacto de [proveedor]"
   if (comando === 'contacto_proveedor') {
     const query = (datos.proveedor || '').toLowerCase().trim();
@@ -2380,6 +2519,46 @@ function pideCCProveedor(texto) {
     }
   }
   return null;
+}
+
+// "dejá nota en Baradero: faltan ladrillos" → { obra, texto }.
+function pideNotaObra(texto) {
+  const t = (texto || '').trim();
+  const m = t.match(/^(?:dej[aá]|anot[aá]|nota)\s+(?:una\s+)?nota\s+(?:en|a|para)\s+([^:]+):\s*(.+)$/i)
+        || t.match(/^nota\s+([^:]+):\s*(.+)$/i);
+  if (m) return { obra: m[1].trim(), texto: m[2].trim() };
+  return null;
+}
+
+// "últimos 5 gastos de Baradero" / "gastos de cemento" → { obra?, concepto?, limite }.
+function pideBuscarGastos(texto) {
+  const t = (texto || '').toLowerCase().trim().replace(/[¡!¿?.,]/g, '');
+  if (!/\bgastos?\b/.test(t)) return null;
+  // "ultimos N gastos de X"
+  const mNum = t.match(/ultimos?\s+(\d+)\s+gastos?\s+(?:de\s+|en\s+)?(.+)?/);
+  if (mNum) return { limite: parseInt(mNum[1], 10), obra: (mNum[2] || '').trim() };
+  // "gastos de X" / "gastos en X"
+  const mDe = t.match(/gastos?\s+(?:de\s+|en\s+)(.+)/);
+  if (mDe) {
+    const q = mDe[1].trim();
+    return { obra: q, concepto: q, limite: 8 };
+  }
+  return null;
+}
+
+// "deposité el cheque 4421" / "se cobró el cheque 4421" → { numero, estado }.
+function pideEstadoCheque(texto) {
+  const t = (texto || '').toLowerCase().trim().replace(/[¡!¿?.,]/g, '');
+  if (!/\b(cheque|echeq)\b/.test(t)) return null;
+  const num = (t.match(/\b(\d{3,})\b/) || [])[1];
+  if (!num) return null;
+  let estado = null;
+  if (/\b(deposit[eé]|deposit[aá]r?|deposite)\b/.test(t)) estado = 'depositado';
+  else if (/\b(cobr[oó]|cobr[eé]|se cobr[oó]|cobrado)\b/.test(t)) estado = 'cobrado';
+  else if (/\b(rechaz)\b/.test(t)) estado = 'rechazado';
+  else if (/\b(anul)\b/.test(t)) estado = 'anulado';
+  if (!estado) return null;
+  return { numero: num, estado };
 }
 
 // "aprobar 1" / "aprobar pendiente 2" → aprobar_pendiente con datos.numero=N.
@@ -2505,6 +2684,24 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     const aprob = pideAprobacion(messageText);
     if (aprob) {
       const respuesta = await ejecutarComando(aprob.accion, { numero: aprob.numero }, { ...user, phone }, ctx);
+      await sendWA(phone, respuesta);
+      return;
+    }
+    const nota = pideNotaObra(messageText);
+    if (nota) {
+      const respuesta = await ejecutarComando('nota_obra', nota, { ...user, phone }, ctx);
+      await sendWA(phone, respuesta);
+      return;
+    }
+    const buscar = pideBuscarGastos(messageText);
+    if (buscar) {
+      const respuesta = await ejecutarComando('buscar_gastos', buscar, { ...user, phone }, ctx);
+      await sendWA(phone, respuesta);
+      return;
+    }
+    const estadoChq = pideEstadoCheque(messageText);
+    if (estadoChq) {
+      const respuesta = await ejecutarComando('estado_cheque', estadoChq, { ...user, phone }, ctx);
       await sendWA(phone, respuesta);
       return;
     }
