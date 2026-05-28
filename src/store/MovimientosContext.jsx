@@ -54,10 +54,48 @@ function persist(key, data) {
   try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
 }
 
+// ── Saldo derivado (rediseño "libro único") ─────────────────────────────────
+// El saldo de una caja se CALCULA: saldoInicial + suma del efecto de TODOS sus
+// movimientos. Antes era un número mutado a mano (drift, y el bot lo pisaba).
+// efectoEnCaja replica EXACTAMENTE los signos del viejo applyEfectoEnCajas.
+function efectoEnCaja(m, cajaId) {
+  if (m.tipo === 'ingreso' && m.cajaId === cajaId) return (m.monto || 0);
+  if (m.tipo === 'gasto'   && m.cajaId === cajaId) return -(m.monto || 0);
+  if (m.tipo === 'traspaso') {
+    if (m.cajaId === cajaId)        return -(m.monto || 0);
+    if (m.cajaDestinoId === cajaId) return (m.montoDestino ?? m.monto ?? 0);
+  }
+  return 0; // endoso y otros tipos no mueven saldo (igual que antes)
+}
+
+export function calcSaldoCaja(caja, movimientos) {
+  const efecto = (movimientos || []).reduce((s, m) => s + efectoEnCaja(m, caja.id), 0);
+  return Math.round((caja.saldoInicial || 0) + efecto);
+}
+
+// Migración one-time: si una caja todavía no tiene saldoInicial, lo
+// back-calculamos para que (saldoInicial + suma de movs) == saldo actual.
+// Así el saldo mostrado NO cambia ni un peso al pasar a "calculado".
+// IMPORTANTE: los movimientos semilla NO estaban aplicados a los saldos
+// semilla, por eso usamos el saldo actual como base y restamos el efecto.
+function migrarSaldoInicial(cajas, movimientos) {
+  return (cajas || []).map(c => {
+    if (c.saldoInicial != null) return c; // ya migrada
+    const efecto = (movimientos || []).reduce((s, m) => s + efectoEnCaja(m, c.id), 0);
+    return { ...c, saldoInicial: Math.round((c.saldo || 0) - efecto) };
+  });
+}
+
 // ── Provider ──────────────────────────────────────────────────────────────────
 export function MovimientosProvider({ children }) {
-  const [cajas,       setCajas]       = useState(() => load(LS_CAJAS, SEED_CAJAS));
+  const [cajas,       setCajas]       = useState(() => migrarSaldoInicial(load(LS_CAJAS, SEED_CAJAS), load(LS_MOVS, SEED_MOVS)));
   const [movimientos, setMovimientos] = useState(() => load(LS_MOVS,  SEED_MOVS));
+  // Saldo de cada caja CALCULADO en vivo desde sus movimientos (única fuente de
+  // verdad). Los consumidores leen este `cajasConSaldo` como `cajas`.
+  const cajasConSaldo = useMemo(
+    () => cajas.map(c => ({ ...c, saldo: calcSaldoCaja(c, movimientos) })),
+    [cajas, movimientos]
+  );
   const sbLoaded   = useRef(false);
   const fromRemote = useRef(false);
   const cajasRef   = useRef(cajas);
@@ -68,7 +106,9 @@ export function MovimientosProvider({ children }) {
   // (mismo patrón que useSyncedSharedData, que evitó que se pisaran los cheques).
   const lastLocalSaveAt = useRef(0);
   const { markReady } = useAppLoading();
-  useEffect(() => { cajasRef.current = cajas; }, [cajas]);
+  // cajasRef apunta al saldo CALCULADO, así lo que se persiste a Supabase
+  // lleva el saldo correcto (para el bot y cualquier lector externo).
+  useEffect(() => { cajasRef.current = cajasConSaldo; }, [cajasConSaldo]);
   useEffect(() => { movsRef.current = movimientos; }, [movimientos]);
 
   useEffect(() => {
@@ -78,8 +118,9 @@ export function MovimientosProvider({ children }) {
       if (cancelled) return;
       if (data) {
         fromRemote.current = true;
-        if (data.cajas)       { setCajas(data.cajas);             persist(LS_CAJAS, data.cajas); }
-        if (data.movimientos) { setMovimientos(data.movimientos); persist(LS_MOVS,  data.movimientos); }
+        const movs = data.movimientos || movsRef.current || [];
+        if (data.movimientos) { setMovimientos(movs); persist(LS_MOVS, movs); }
+        if (data.cajas)       { const cm = migrarSaldoInicial(data.cajas, movs); setCajas(cm); persist(LS_CAJAS, cm); }
         setTimeout(() => { fromRemote.current = false; }, 0);
       } else if (data === null) {
         // data === null: query OK pero no hay registro (primer save).
@@ -101,8 +142,9 @@ export function MovimientosProvider({ children }) {
       loadSharedData('movimientos').then(d => {
         if (cancelled || !d) return;
         fromRemote.current = true;
-        if (d.cajas)       { setCajas(d.cajas);             persist(LS_CAJAS, d.cajas); }
-        if (d.movimientos) { setMovimientos(d.movimientos); persist(LS_MOVS,  d.movimientos); }
+        const movs = d.movimientos || movsRef.current || [];
+        if (d.movimientos) { setMovimientos(movs); persist(LS_MOVS, movs); }
+        if (d.cajas)       { const cm = migrarSaldoInicial(d.cajas, movs); setCajas(cm); persist(LS_CAJAS, cm); }
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
@@ -126,7 +168,9 @@ export function MovimientosProvider({ children }) {
 
   // ── Cajas CRUD ────────────────────────────────────────────────────────────
   const addCaja = useCallback((data) => {
-    const nueva = { ...data, id: cajaId(), saldo: data.saldo || 0, activa: true };
+    // El saldo inicial que carga el form es el saldoInicial (base del cálculo).
+    const inicial = data.saldoInicial ?? data.saldo ?? 0;
+    const nueva = { ...data, id: cajaId(), saldoInicial: inicial, saldo: inicial, activa: true };
     setCajas(prev => { const next = [...prev, nueva]; persist(LS_CAJAS, next); return next; });
     return nueva.id;
   }, []);
@@ -144,57 +188,26 @@ export function MovimientosProvider({ children }) {
   }, []);
 
   // ── Movimientos CRUD ──────────────────────────────────────────────────────
-  // Helper: aplica el efecto de un mov sobre las cajas (sign=+1 al crear, -1 al borrar).
-  const applyEfectoEnCajas = (m, sign, list) => list.map(c => {
-    if (m.tipo === 'ingreso' && c.id === m.cajaId) return { ...c, saldo: (c.saldo || 0) + sign * (m.monto || 0) };
-    if (m.tipo === 'gasto'   && c.id === m.cajaId) return { ...c, saldo: (c.saldo || 0) - sign * (m.monto || 0) };
-    if (m.tipo === 'traspaso') {
-      if (c.id === m.cajaId)        return { ...c, saldo: (c.saldo || 0) - sign * (m.monto || 0) };
-      if (c.id === m.cajaDestinoId) return { ...c, saldo: (c.saldo || 0) + sign * (m.montoDestino ?? m.monto ?? 0) };
-    }
-    // Otros tipos (endoso, etc.) no tocan saldo.
-    return c;
-  });
+  // Ya NO se muta el saldo de la caja acá: el saldo se CALCULA en vivo desde la
+  // lista de movimientos (ver cajasConSaldo / calcSaldoCaja). Agregar, editar o
+  // borrar un movimiento recalcula el saldo solo — sin drift y sin que el bot
+  // y la app peleen por el mismo número.
 
   const addMovimiento = useCallback((data) => {
     const nuevo = { ...data, id: newId(), fecha: data.fecha || today() };
-    setCajas(prev => {
-      const next = applyEfectoEnCajas(nuevo, +1, prev);
-      persist(LS_CAJAS, next);
-      return next;
-    });
     setMovimientos(prev => { const next = [nuevo, ...prev]; persist(LS_MOVS, next); return next; });
     return nuevo.id;
   }, []);
 
-  // Bug previo: solo cambiaba el objeto, no recalculaba el saldo de la caja.
-  // Si editabas monto/cajaId/tipo, las cajas quedaban con plata fantasma.
   const updateMovimiento = useCallback((id, changes) => {
-    const viejo = movsRef.current.find(m => m.id === id);
-    if (!viejo) return;
-    const nuevo = { ...viejo, ...changes };
-    setCajas(prev => {
-      // Revertir efecto del viejo y aplicar el del nuevo.
-      const sinViejo = applyEfectoEnCajas(viejo, -1, prev);
-      const conNuevo = applyEfectoEnCajas(nuevo, +1, sinViejo);
-      persist(LS_CAJAS, conNuevo);
-      return conNuevo;
-    });
     setMovimientos(prev => {
-      const next = prev.map(m => m.id === id ? nuevo : m);
+      const next = prev.map(m => m.id === id ? { ...m, ...changes } : m);
       persist(LS_MOVS, next);
       return next;
     });
   }, []);
 
   const removeMovimiento = useCallback((id) => {
-    const mov = movsRef.current.find(m => m.id === id);
-    if (!mov) return;
-    setCajas(prev => {
-      const next = applyEfectoEnCajas(mov, -1, prev);
-      persist(LS_CAJAS, next);
-      return next;
-    });
     setMovimientos(prev => { const next = prev.filter(m => m.id !== id); persist(LS_MOVS, next); return next; });
   }, []);
 
@@ -213,23 +226,18 @@ export function MovimientosProvider({ children }) {
       proveedor: '', categoria: 'traspaso', medioPago: 'Interno',
       referencia: '', fondoReparo: false, tcAplicado: tcAplicado || null,
     };
-    setCajas(prev => {
-      const next = applyEfectoEnCajas(mov, +1, prev);
-      persist(LS_CAJAS, next);
-      return next;
-    });
     setMovimientos(prev => { const next = [mov, ...prev]; persist(LS_MOVS, next); return next; });
     return mov.id;
   }, []);
 
   // ── Computed helpers ──────────────────────────────────────────────────────
   const totalARS = useMemo(() =>
-    cajas.filter(c => c.moneda === 'ARS' && c.activa).reduce((s, c) => s + (c.saldo || 0), 0),
-    [cajas]);
+    cajasConSaldo.filter(c => c.moneda === 'ARS' && c.activa).reduce((s, c) => s + (c.saldo || 0), 0),
+    [cajasConSaldo]);
 
   const totalUSD = useMemo(() =>
-    cajas.filter(c => c.moneda === 'USD' && c.activa).reduce((s, c) => s + (c.saldo || 0), 0),
-    [cajas]);
+    cajasConSaldo.filter(c => c.moneda === 'USD' && c.activa).reduce((s, c) => s + (c.saldo || 0), 0),
+    [cajasConSaldo]);
 
   const getMovsByObraId = useCallback((obraId) =>
     movimientos.filter(m => m.obraId === obraId).sort((a, b) => b.fecha.localeCompare(a.fecha)),
@@ -242,14 +250,14 @@ export function MovimientosProvider({ children }) {
 
   // Memoizar el value para evitar re-renders en cascada de los consumidores.
   const value = useMemo(() => ({
-    cajas, movimientos,
+    cajas: cajasConSaldo, movimientos,
     addCaja, updateCaja, removeCaja,
     addMovimiento, updateMovimiento, removeMovimiento,
     traspasar,
     totalARS, totalUSD,
     getMovsByObraId, getMovsByCajaId,
   }), [
-    cajas, movimientos,
+    cajasConSaldo, movimientos,
     addCaja, updateCaja, removeCaja,
     addMovimiento, updateMovimiento, removeMovimiento,
     traspasar,
