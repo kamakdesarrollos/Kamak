@@ -1104,7 +1104,7 @@ ACCIONES DISPONIBLES:
 9. TRASPASO (solo Admin): si el admin dice "pasá $200k de Caja Franco a Banco Galicia" o similar, accion.tipo='traspaso' con datos: { monto, cajaId (ID de la caja origen), cajaDestinoId (ID de la caja destino), montoDestino?(opcional para cross-moneda con TC distinto), descripcion? }. Matchear nombre de caja por nombre parcial. Si las cajas son de moneda distinta y el user no aclaró tipo de cambio, preguntá.
 10. PAGO_PROVEEDOR (solo Admin): si el admin dice "pagué $300k a Pérez por la cert de revoque" / "le pagué a Juancito $150k de baradero" → accion.tipo='pago_proveedor' con datos: { monto, proveedorNombre (nombre del proveedor), obraId (ID de la obra si la menciona), cajaId (caja de egreso, sino su efectivo), medioPago, concepto? }. Es DISTINTO de un gasto común: registra el pago contra la cuenta corriente del proveedor. Usalo cuando el destinatario es un proveedor/sub-contratista conocido y se habla de "pagar/abonar/cancelar" a esa persona. Matchear proveedor por nombre parcial.
 
-11. CHEQUE_RECIBIDO: si mandan una FOTO de un cheque/ECheq, o dicen "me dieron un cheque", "cobré con un cheque de X", "recibí un echeq de Y" → accion.tipo='cheque_recibido'. LEÉ de la foto/texto y poné en datos: { numero (N° del cheque), banco, titular (quién lo firma/emite), monto, fechaVencimiento (fecha de cobro/pago en formato YYYY-MM-DD), esEcheq (true si es electrónico/ECheq), clienteNombre? (de quién lo recibimos, si se sabe), obraId? (ID de obra si la menciona), cajaId? (si dice a qué caja; sino su efectivo) }. Si de la foto/texto NO salen el monto o la fechaVencimiento, preguntá SOLO eso. NO lo trates como un gasto.
+11. CHEQUE_RECIBIDO: si mandan una FOTO de un cheque/ECheq, o dicen "me dieron un cheque", "cobré con un cheque de X", "recibí un echeq de Y" → accion.tipo='cheque_recibido'. LEÉ de la foto/texto y poné en datos: { numero (N° del cheque), banco, titular (quién lo firma/emite), monto, fechaVencimiento (fecha de cobro/pago en formato YYYY-MM-DD), esEcheq (true si es electrónico/ECheq), clienteNombre? (de quién lo recibimos, si se sabe), obraId? (ID de obra si la menciona), cajaId (SOLO si el usuario dijo EXPLÍCITAMENTE a qué caja entra, ej. "a mi efectivo", "caja Pablo") }. IMPORTANTE: la caja NO se infiere de la obra ni del cheque. Si el usuario NO dijo explícitamente la caja, dejá cajaId vacío y respondé estado:"conversando" preguntando "¿A qué caja entra el cheque?" mostrando sus cajas. Si falta el monto o la fechaVencimiento, preguntá eso. NO lo trates como un gasto.
 
 REGLAS DE FLUJO:
 - El usuario escribe corto y conciso. Interpretá la intención aunque falten datos.
@@ -1548,18 +1548,22 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
 
   if (tipo === 'cheque_recibido') {
     const monto = Math.round(parseFloat(datos.monto) || 0);
+    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
     if (!monto) return '🤔 ¿Cuál es el monto del cheque?';
     if (!datos.fechaVencimiento) return '🤔 ¿Para qué fecha es el cheque? (fecha de cobro, ej. 2026-07-20)';
-    // El cheque queda "en cartera" en una caja: la indicada o el efectivo del
-    // usuario (su caja). Mismo modelo que la app: al recibirlo entra a la caja.
-    const caja = ctx.cajas.find(c => c.id === datos.cajaId) ||
-                 ctx.cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email && c.moneda === 'ARS') ||
-                 ctx.cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email);
-    if (!caja) return '⚠️ No sé en qué caja guardar el cheque. Decime la caja, o pedí que te asignen una caja de efectivo.';
+    // La caja la decide el usuario: un ingreso es importante, no lo metemos en
+    // una caja por adivinanza. Si dijo la caja, la usamos; si no, preguntamos.
+    // (NO se infiere de la obra: la obra es solo atribución.)
+    const caja = datos.cajaId ? ctx.cajas.find(c => c.id === datos.cajaId && cajaEsVisible(user.cajasVisibles, c.id)) : null;
+    if (!caja) {
+      const opciones = ctx.cajas
+        .filter(c => cajaEsVisible(user.cajasVisibles, c.id) && c.moneda === 'ARS')
+        .slice(0, 8).map(c => `• ${c.nombre}`).join('\n');
+      return `🧾 Cheque de *${fmt(monto)}*${datos.banco ? ` · ${datos.banco}` : ''}${datos.numero ? ` · #${datos.numero}` : ''} listo.\n\n*¿A qué caja entra?*\n${opciones || '(no tenés cajas accesibles)'}\n\nDecime el nombre de la caja.`;
+    }
     const obra = datos.obraId ? ctx.obras.find(o => o.id === datos.obraId) : null;
     const esEcheq = !!datos.esEcheq;
     const hoy = new Date().toISOString().split('T')[0];
-    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
 
     // 1) Ingreso a la caja (al recibirlo entra, igual que en la app).
     const movData = await loadSharedData('movimientos');
