@@ -1,6 +1,6 @@
 // Meta WhatsApp Cloud API — sin dependencias externas
 
-import { extractSlots, mergeSlots, slotsCompletosPara } from './extractors.js';
+import { extractSlots, mergeSlots, slotsCompletosPara, parseDictado } from './extractors.js';
 
 const META_TOKEN      = process.env.META_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
@@ -999,6 +999,17 @@ RUBRO — SUGERENCIA INTELIGENTE:
 - Si no hay obra seleccionada todavía, primero confirmá la obra, luego preguntás el rubro.
 - El rubro se guarda en el campo "descripcion" del gasto junto al material: "Tornillos - Albañilería".
 
+RAZONAMIENTO DE CATEGORÍA — INFERÍ SIN PREGUNTAR:
+- Si el gasto NO corresponde a un material/servicio de obra (no matchea ningún rubro), inferí la categoría lógica por sentido común y poné una descripción clara. NO preguntes, asumí lo razonable:
+  · comida, almuerzo, vianda, café, agua, asado, factura(panadería) → *Viáticos* (descripcion: "Viáticos - comida" o similar)
+  · nafta, combustible, gasoil, peaje, estacionamiento, uber, remís, pasaje, colectivo → *Movilidad / Combustible*
+  · herramienta, taladro, amoladora, alquiler de equipo, andamio → *Herramientas / Equipos*
+  · librería, fotocopias, impresión, resma → *Gastos administrativos*
+  · seguro, ART, sindicato, honorarios → *Gastos generales*
+  · propina, adelanto, anticipo a alguien → *Anticipo / Varios*
+- Ejemplo: "gasté en comida \$2.000 en Baradero" → gasto, monto:2000, obraId:baradero, descripcion:"Viáticos - comida", categoria:"general". Ejecutá directo si tenés obra + monto, no repreguntes.
+- Cuando dudes entre 2 categorías muy distintas, ahí sí preguntá; pero para casos obvios (comida=viáticos, nafta=combustible) asumí y avisá en el resumen de confirmación qué asumiste.
+
 FOTO EN ESTA CONVERSACIÓN:
 - Foto en este mensaje: ${base64Media ? 'SÍ (recién recibida)' : 'NO'}
 - Foto guardada de mensaje anterior: ${conv.data?.pendingMediaUrl ? 'SÍ (ya subida, disponible para usar)' : 'NO'}
@@ -1730,7 +1741,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
 
       `*◆ GASTO* (foto de factura o texto)\n` +
       `Ej: _"pagué $50.000 de materiales en Baradero"_\n` +
-      `O mandá foto/PDF de factura — el bot extrae proveedor, monto, CUIT.\n\n` +
+      `O mandá foto/PDF de factura — el bot extrae proveedor, monto, CUIT.\n` +
+      `📋 *Varios juntos:* _"cargá: 50k cemento baradero, 12k flete, 3k comida"_\n\n` +
 
       `*◆ INGRESO / COBRO*\n` +
       `Ej: _"cobré U$S 5.000 de cuota 2 en Baradero"_\n` +
@@ -2340,6 +2352,70 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       await sendWA(phone, respuesta);
       return;
     }
+
+    // ── MODO DICTADO: gastos múltiples ──────────────────────────────────────
+    // "cargá: 50k cemento baradero, 12k flete, 3k almuerzo"
+    const dictado = parseDictado(messageText, { obras: ctx.obras });
+    if (dictado && dictado.items.length > 0) {
+      // Caja efectivo del usuario para los gastos sin caja explícita.
+      const cajaEfectivo = ctx.cajas.find(c =>
+        c.tipo === 'efectivo' && c.usuarioId === user.email && c.moneda === 'ARS'
+      );
+      // Completar items: si no tienen obra, usar el default del usuario.
+      const items = dictado.items.map(it => ({
+        ...it,
+        obraId:     it.obraId || conv.defaults?.lastObraId || null,
+        cajaId:     cajaEfectivo?.id || null,
+      }));
+      const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+      const total = items.reduce((s, it) => s + it.monto, 0);
+      const resumen =
+        `📝 *Voy a cargar ${items.length} gasto${items.length === 1 ? '' : 's'}:*\n\n` +
+        items.map((it, i) => {
+          const obraN = it.obraId ? (ctx.obras.find(o => o.id === it.obraId)?.nombre || '') : '';
+          return `${i + 1}. ${fmt(it.monto)} — ${it.descripcion}${obraN ? ` · ${obraN}` : ' · ⚠️ sin obra'}`;
+        }).join('\n') +
+        `\n\n*Total: ${fmt(total)}*`;
+      await saveConversation(phone, {
+        state: 'dictado_confirmando',
+        data: { dictadoItems: items },
+        history: updatedHistory,
+        slots: conv.slots || {},
+      });
+      await sendWAButtons(phone, resumen, BOTONES_CONFIRMAR);
+      return;
+    }
+  }
+
+  // ── Estado: confirmando gastos múltiples del modo dictado ──────────────────
+  if (conv.state === 'dictado_confirmando' && Array.isArray(conv.data?.dictadoItems)) {
+    const respLower = (messageText || '').trim().toLowerCase();
+    const confirma  = ['sí', 'si', 'dale', 'ok', 'confirmo', 'correcto', 's'].some(p => respLower.startsWith(p));
+    const cancela   = ['no', 'cancelar', 'mal', 'n'].some(p => respLower.startsWith(p));
+    if (confirma) {
+      let creados = 0;
+      for (const it of conv.data.dictadoItems) {
+        if (!it.monto) continue;
+        await ejecutarAccion('gasto', {
+          monto:       it.monto,
+          descripcion: it.descripcion,
+          obraId:      it.obraId,
+          cajaId:      it.cajaId,
+          comprobante: 'negro',
+        }, { ...user, phone }, ctx, null);
+        creados++;
+      }
+      await clearConversation(phone);
+      await sendWA(phone, `✅ Cargué *${creados}* gasto${creados === 1 ? '' : 's'}. Escribí *deshacer* si te equivocaste en alguno.`);
+      return;
+    }
+    if (cancela) {
+      await clearConversation(phone);
+      await sendWA(phone, '❌ Cancelado, no cargué nada.');
+      return;
+    }
+    await sendWAButtons(phone, 'Tocá *Confirmar* para cargar los gastos o *Cancelar* para descartar.', BOTONES_CONFIRMAR);
+    return;
   }
 
   // ── Saludo solo (sin pedir tareas): respuesta cortés breve ─────────────────

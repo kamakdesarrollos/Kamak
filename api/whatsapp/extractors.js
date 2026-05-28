@@ -289,3 +289,50 @@ export function mergeSlots(prev = {}, next = {}) {
   }
   return out;
 }
+
+// ── Modo dictado: gastos múltiples en un mensaje ─────────────────────────────
+// Detecta mensajes tipo:
+//   "cargá: 50k cemento baradero, 12k flete, 3k almuerzo"
+//   "anotar gastos: 30000 arena, 5000 nafta"
+// Devuelve { items: [{ monto, descripcion, obraId, obraNombre }] } o null.
+//
+// Cada item: extrae el monto y, del resto del texto, intenta matchear obra.
+// Lo que sobra (sin monto ni nombre de obra) queda como descripción.
+const RE_DICTADO_PREFIJO = /^\s*(carg[aá]r?|anot[aá]r?|gastos?)\s*:?\s*/i;
+
+export function parseDictado(text, ctx) {
+  if (!text) return null;
+  if (!RE_DICTADO_PREFIJO.test(text)) return null;
+  const cuerpo = text.replace(RE_DICTADO_PREFIJO, '').trim();
+  if (!cuerpo) return null;
+
+  // Separadores: coma, salto de línea, " y " entre items.
+  const partes = cuerpo
+    .split(/[,;\n]+|\s+y\s+/i)
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (partes.length === 0) return null;
+
+  const items = [];
+  for (const parte of partes) {
+    const monto = extractMonto(parte);
+    if (monto == null) continue; // sin monto no es un gasto válido
+    const obra = extractObra(parte, ctx?.obras);
+    // Descripción: el texto sin el monto y sin el nombre de obra.
+    let desc = parte;
+    if (obra) {
+      const reObra = new RegExp(normalizar(obra.nombre).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      desc = desc.replace(reObra, '');
+    }
+    // Sacar el monto del texto de descripción
+    desc = desc.replace(/(?:\$|usd|u\$s|ars)?\s*\d[\d.,]*\s*(k|mil|m|millones?)?/i, '').trim();
+    desc = desc.replace(/\s{2,}/g, ' ').replace(/^[\s\-–·]+|[\s\-–·]+$/g, '');
+    items.push({
+      monto,
+      descripcion: desc || 'Gasto',
+      obraId:     obra?.id || null,
+      obraNombre: obra?.nombre || null,
+    });
+  }
+  return items.length > 0 ? { items } : null;
+}
