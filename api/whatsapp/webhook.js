@@ -30,6 +30,13 @@ async function sbUpsert(table, data) {
 }
 
 async function sbDelete(table, params) {
+  await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, {
+    method: 'DELETE',
+    headers: sbH(),
+  });
+}
+
+async function sbDelete(table, params) {
   await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, { method: 'DELETE', headers: sbH() });
 }
 
@@ -707,6 +714,12 @@ async function handleLinkingFlow(phone, text, conv) {
 
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    // Limpiar códigos previos de este número antes de crear el nuevo. La PK de
+    // whatsapp_verifications es el `code`, así que sin esto cada pedido dejaba
+    // una fila nueva y se acumulaban varias para el mismo email — lo que rompía
+    // el banner de confirmación en la app (usaba .maybeSingle()).
+    await sbDelete('whatsapp_verifications', `?phone=eq.${phone}`);
 
     await sbUpsert('whatsapp_verifications', {
       code,
@@ -2739,7 +2752,10 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       await saveConversation(phone, {
         state: 'dictado_confirmando',
         data: { dictadoItems: items },
-        history: updatedHistory,
+        // NOTA: no usar `updatedHistory` acá — se declara con const más abajo
+        // (línea ~2927) y este bloque corre antes, así que estaría en la zona
+        // muerta temporal y tiraba ReferenceError, rompiendo el dictado.
+        history: [...conv.history, { rol: 'usuario', texto: messageText || '(foto)', ts: Date.now() }],
         slots: conv.slots || {},
       });
       await sendWAButtons(phone, resumen, BOTONES_CONFIRMAR);

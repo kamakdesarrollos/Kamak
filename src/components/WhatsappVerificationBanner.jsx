@@ -15,12 +15,20 @@ export default function WhatsappVerificationBanner() {
   useEffect(() => {
     if (!currentUser?.email || dismissed || accessDenied.current) return;
     const check = async () => {
+      // NOTA: NO usar .maybeSingle() acá. El bot crea una fila nueva por cada
+      // código que pide el usuario (la PK es el `code`), así que puede haber
+      // VARIAS verificaciones vigentes para el mismo email. .maybeSingle()
+      // tira error si hay >1 fila y ese error se tragaba en silencio → el
+      // banner nunca aparecía. Pedimos la lista y nos quedamos con la más nueva.
+      // Email con .ilike (case-insensitive) por si el mail guardado difiere en
+      // mayúsculas del de la sesión.
       const { data, error } = await supabase
         .from('whatsapp_verifications')
         .select('*')
-        .eq('user_email', currentUser.email)
+        .ilike('user_email', currentUser.email)
         .gt('expires_at', new Date().toISOString())
-        .maybeSingle();
+        .order('expires_at', { ascending: false })
+        .limit(1);
       if (error) {
         // 401/403 = no hay RLS configurada o el usuario no tiene permiso.
         // Detenemos el polling — esto no se va a arreglar reintentando.
@@ -28,10 +36,12 @@ export default function WhatsappVerificationBanner() {
           accessDenied.current = true;
           console.warn('[WhatsappVerificationBanner] Sin permiso para leer whatsapp_verifications. Polling detenido. Configurar RLS en Supabase si querés que funcione la vinculación interactiva.');
           clearInterval(interval);
+        } else {
+          console.warn('[WhatsappVerificationBanner] Error leyendo verificaciones:', error.message || error);
         }
         return;
       }
-      setVerif(data || null);
+      setVerif(data?.[0] || null);
     };
     check();
     const interval = setInterval(check, 15000);
@@ -49,13 +59,15 @@ export default function WhatsappVerificationBanner() {
       user_rol: currentUser.rol,
       linked_at: new Date().toISOString(),
     }, { onConflict: 'phone' });
-    await supabase.from('whatsapp_verifications').delete().eq('code', verif.code);
+    // Borrar TODAS las verificaciones de este número (pueden haberse acumulado
+    // varias si el usuario pidió el código más de una vez), no solo la actual.
+    await supabase.from('whatsapp_verifications').delete().eq('phone', verif.phone);
     setVerif(null);
     setLoading(false);
   };
 
   const reject = async () => {
-    await supabase.from('whatsapp_verifications').delete().eq('code', verif.code);
+    await supabase.from('whatsapp_verifications').delete().eq('phone', verif.phone);
     setVerif(null);
   };
 
