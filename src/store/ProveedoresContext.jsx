@@ -64,6 +64,37 @@ export function calcSaldoCC(proveedorId, obraId, ccEntries) {
     .reduce((s, e) => s + (e.debe || 0) - (e.haber || 0), 0);
 }
 
+// ── CC del proveedor DERIVADA de los movimientos (libro único) ────────────────
+// Lo que le PAGAMOS a un proveedor sale de los movimientos (gastos a ese
+// proveedor, por id o por nombre) — no de los 'haber' de ccEntries, que quedan
+// vestigiales. Lo que le DEBEMOS (debe: certificaciones/facturas/contratos)
+// sigue viniendo de ccEntries. Así un pago cargado por el bot o por la app
+// aparece en la CC sin que nadie tenga que duplicar el asiento.
+const _normProv = s => (s || '').toLowerCase().trim();
+
+export function pagosProveedorDesdeMovs(prov, movimientos, obraId = null) {
+  if (!prov) return [];
+  const nombreN = _normProv(prov.nombre);
+  return (movimientos || []).filter(m =>
+    m.tipo === 'gasto' &&
+    (m.proveedorId === prov.id || (m.proveedor && _normProv(m.proveedor) === nombreN)) &&
+    (!obraId || m.obraId === obraId)
+  );
+}
+
+// Asientos DEBE de ccEntries (lo que debemos: certificaciones/facturas/etc).
+export function debeEntriesProveedor(proveedorId, ccEntries, obraId = null) {
+  return (ccEntries || []).filter(e =>
+    e.proveedorId === proveedorId && (e.debe || 0) > 0 && (!obraId || e.obraId === obraId)
+  );
+}
+
+export function calcSaldoProveedorMov(prov, ccEntries, movimientos, obraId = null) {
+  const debe = debeEntriesProveedor(prov?.id, ccEntries, obraId).reduce((s, e) => s + (e.debe || 0), 0);
+  const pagado = pagosProveedorDesdeMovs(prov, movimientos, obraId).reduce((s, m) => s + (m.monto || 0), 0);
+  return debe - pagado;
+}
+
 // ── Provider ──────────────────────────────────────────────────────────────────
 export function ProveedoresProvider({ children }) {
   const [proveedores, setProveedores] = useState(() => load(LS_PROVS, SEED_PROVS));

@@ -1388,7 +1388,7 @@ function generarHTMLAdicionales({ obra, detalle, moneda }) {
 </body></html>`;
 }
 
-function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight }) {
+function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight, cobradoUSD = 0 }) {
   const tc = dolarVenta || 1070;
   const toUSD  = n => `U$S ${fmtNE(Math.round(n / tc))}`; // ARS → USD display
   const fmtUSD = n => `U$S ${fmtNE(n)}`;                  // already-USD display
@@ -1397,6 +1397,9 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, l
   const rubros = detalle.rubros || [];
   const adic = (detalle.adicionales || []).filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false);
   const cuotas = detalle.cuotas || [];
+  // Lo cobrado por cuota DERIVADO de los movimientos (mismo criterio que la
+  // pantalla), repartido sobre las cuotas en orden.
+  const _repartoPdf = repartirCobroEnCuotas(cuotas, cobradoUSD, moneda || 'ARS', tc);
   const fin = detalle.financiacion || {};
 
   let ventaBase = 0;
@@ -1422,11 +1425,11 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, l
 
   const cuotaRows = incluirPagos && cuotas.length > 0 ? cuotas.map((c, i) => {
     const m = cuotaMonto(c); // already USD
-    const estadoC = cuotaEstadoCalc(c, 'USD', tc);
+    const estadoC = cuotaEstadoDesdeCobrado(c, _repartoPdf[c.id], moneda || 'ARS', tc);
     const pagadaC = estadoC === 'pagado';
     return `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${c.n || i+1}</td><td>${c.descripcion}</td><td class="r">${fmtDE(c.fecha)}</td><td class="r">${fmtUSD(m)}</td><td><span class="pill ${pagadaC ? 'ok' : 'warn'}">${estadoC}</span></td></tr>`;
   }).join('') : '';
-  const pagado = cuotas.filter(c => cuotaEstadoCalc(c, 'USD', tc) === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
+  const pagado = Math.round(cobradoUSD);
   const saldo = Math.round(totalCliente / tc) - pagado;
 
   const logoHtml = logoLight
@@ -2685,7 +2688,7 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
                 <input type="checkbox" checked={incluirPagos} onChange={e => setIncluirPagos(e.target.checked)} />
                 Incluir plan de pagos
               </label>
-              <Btn sm onClick={() => { const origin = window.location.origin; abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight: `${origin}/assets/kamak-logo-light.png` }), 'Resumen'); }}>↗ Exportar resumen total</Btn>
+              <Btn sm onClick={() => { const origin = window.location.origin; abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight: `${origin}/assets/kamak-logo-light.png`, cobradoUSD: cobradoTotalUSD }), 'Resumen'); }}>↗ Exportar resumen total</Btn>
             </>
           )}
         </div>
@@ -2910,7 +2913,7 @@ function TabCuentaCorriente({ obra, detalle, patch, moneda, onExport }) {
                   <input type="checkbox" checked={incluirPagos} onChange={e => setIncluirPagos(e.target.checked)} />
                   Incluir plan de pagos
                 </label>
-                <Btn sm onClick={() => { const origin = window.location.origin; abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight: `${origin}/assets/kamak-logo-light.png` }), 'Resumen'); }}>↗ Exportar resumen total</Btn>
+                <Btn sm onClick={() => { const origin = window.location.origin; abrirExport(generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, logoLight: `${origin}/assets/kamak-logo-light.png`, cobradoUSD: cobradoTotalUSD }), 'Resumen'); }}>↗ Exportar resumen total</Btn>
               </>
             )}
           </div>

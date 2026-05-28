@@ -4,7 +4,7 @@ import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Label } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
-import { useProveedores } from '../store/ProveedoresContext';
+import { useProveedores, calcSaldoProveedorMov } from '../store/ProveedoresContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
@@ -147,8 +147,11 @@ export default function Proveedores() {
   const navigate = useNavigate();
   const { currentUser } = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
-  const { proveedores, addProveedor, updateProveedor, removeProveedor, getSaldo, getObrasProveedor } = useProveedores();
+  const { proveedores, addProveedor, updateProveedor, removeProveedor, getObrasProveedor, ccEntries: ccRaw } = useProveedores();
   const { movimientos } = useMovimientos();
+  // Saldo DERIVADO: lo que debemos (debe de ccEntries) − lo que pagamos (gastos
+  // a ese proveedor en movimientos). Libro único: los pagos son movimientos.
+  const getSaldo = (pid, obraId = null) => calcSaldoProveedorMov(proveedores.find(p => p.id === pid), ccRaw, movimientos, obraId);
   const [pagoProvId, setPagoProvId] = useState(null);
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editProv, setEditProv] = useState(null);

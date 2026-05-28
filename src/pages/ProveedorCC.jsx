@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Label } from '../components/ui';
 import { T } from '../theme';
-import { useProveedores } from '../store/ProveedoresContext';
+import { useProveedores, debeEntriesProveedor, pagosProveedorDesdeMovs, calcSaldoProveedorMov } from '../store/ProveedoresContext';
+import { useMovimientos } from '../store/MovimientosContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
 
@@ -35,7 +36,8 @@ export default function ProveedorCC() {
   }, [currentUser, isAdmin, navigate]);
 
   const { id } = useParams();
-  const { proveedores, getCC, getSaldo, getObrasProveedor, removeCC } = useProveedores();
+  const { proveedores, getObrasProveedor, removeCC, ccEntries: ccRaw } = useProveedores();
+  const { movimientos } = useMovimientos();
   const [pagoOpen, setPagoOpen] = useState(false);
   const [selectedObraId, setSelectedObraId] = useState(null);
   const [tab, setTab] = useState('cc');
@@ -43,12 +45,27 @@ export default function ProveedorCC() {
   const proveedor = proveedores.find(p => p.id === id);
 
   const obras = useMemo(() => getObrasProveedor(id), [getObrasProveedor, id]);
-  const saldoTotal = getSaldo(id);
 
-  const allEntries = useMemo(() => getCC(id), [getCC, id]);
+  // CC DERIVADA (libro único): asientos DEBE de ccEntries (lo que debemos:
+  // certificaciones, facturas, contratos) + PAGOS de los movimientos (gastos a
+  // este proveedor). Los 'haber' de ccEntries quedan vestigiales (los pagos
+  // ahora son movimientos), así un pago del bot o de la app aparece solo.
+  const buildEntries = (obraId) => {
+    const debe = debeEntriesProveedor(id, ccRaw, obraId);
+    const pagos = pagosProveedorDesdeMovs(proveedor, movimientos, obraId).map(m => ({
+      id: m.id, proveedorId: id, obraId: m.obraId, obraNombre: m.obraNombre,
+      fecha: m.fecha, concepto: m.descripcion || `Pago${m.medioPago ? ' · ' + m.medioPago : ''}`,
+      tipo: 'pago', debe: 0, haber: m.monto || 0, _esMov: true,
+    }));
+    return [...debe, ...pagos].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+  };
+
+  const allEntries  = useMemo(() => buildEntries(null), [ccRaw, movimientos, id, proveedor]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saldoTotal  = useMemo(() => calcSaldoProveedorMov(proveedor, ccRaw, movimientos), [proveedor, ccRaw, movimientos]);
+  const saldoObra   = (obraId) => calcSaldoProveedorMov(proveedor, ccRaw, movimientos, obraId);
 
   const selObraId = selectedObraId || obras[0]?.id || null;
-  const ccEntries = useMemo(() => getCC(id, selObraId), [getCC, id, selObraId]);
+  const ccEntries = useMemo(() => buildEntries(selObraId), [ccRaw, movimientos, id, selObraId, proveedor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saldoSel = useMemo(() => {
     let acc = 0;
@@ -137,8 +154,8 @@ export default function ProveedorCC() {
               <div style={{ fontSize: 12, color: T.ink3, padding: '8px 0' }}>Sin obras registradas.</div>
             )}
             {obras.map(o => {
-              const saldo = getSaldo(id, o.id);
-              const entries = getCC(id, o.id);
+              const saldo = saldoObra(o.id);
+              const entries = buildEntries(o.id);
               const debe = entries.reduce((s, e) => s + (e.debe || 0), 0);
               const haber = entries.reduce((s, e) => s + (e.haber || 0), 0);
               const isActive = selObraId === o.id;
@@ -177,7 +194,7 @@ export default function ProveedorCC() {
               <>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}` }}>
                   <div className="k-h" style={{ fontSize: 16 }}>CC · {obras.find(o => o.id === selObraId)?.nombre || selObraId}</div>
-                  <Chip style={{ fontSize: 10 }}>Saldo {getSaldo(id, selObraId) > 0 ? `$ ${fmtN(getSaldo(id, selObraId))}` : 'al día'}</Chip>
+                  <Chip style={{ fontSize: 10 }}>Saldo {saldoObra(selObraId) > 0 ? `$ ${fmtN(saldoObra(selObraId))}` : 'al día'}</Chip>
                   <span style={{ fontSize: 11, color: T.ink2, marginLeft: 'auto' }}>{ccEntries.length} movimiento{ccEntries.length !== 1 ? 's' : ''}</span>
                 </div>
 
@@ -228,8 +245,8 @@ export default function ProveedorCC() {
                     <span style={{ flex: 4.1 }}>Saldo actual</span>
                     <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, color: T.accent }}>$ {fmtN(totalDebe)}</span>
                     <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, color: T.ok }}>$ {fmtN(totalHaber)}</span>
-                    <span style={{ flex: 1.4, textAlign: 'right', fontFamily: T.fontMono, color: getSaldo(id, selObraId) > 0 ? T.accent : T.ok }}>
-                      {getSaldo(id, selObraId) > 0 ? `$ ${fmtN(getSaldo(id, selObraId))}` : 'Al día'}
+                    <span style={{ flex: 1.4, textAlign: 'right', fontFamily: T.fontMono, color: saldoObra(selObraId) > 0 ? T.accent : T.ok }}>
+                      {saldoObra(selObraId) > 0 ? `$ ${fmtN(saldoObra(selObraId))}` : 'Al día'}
                     </span>
                   </div>
                 )}
