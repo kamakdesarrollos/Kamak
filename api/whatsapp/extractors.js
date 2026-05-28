@@ -147,11 +147,32 @@ export function extractObra(text, obras) {
   return matchPorNombre(text, obras || []);
 }
 
+// ── Medio de pago ────────────────────────────────────────────────────────────
+// Detecta cómo se pagó. Devuelve { medio, hint } donde hint es una palabra
+// para matchear la caja por nombre ('mercado', 'tarjeta', 'banco') o null.
+export function extractMedioPago(text) {
+  const t = normalizar(text);
+  if (/\b(mercado\s*pago|mercadopago|\bmp\b)\b/.test(t)) return { medio: 'Mercado Pago', hint: 'mercado' };
+  if (/\b(tarjeta|debito|credito|visa|master|mastercard)\b/.test(t)) return { medio: 'Tarjeta', hint: 'tarjeta' };
+  if (/\b(transferencia|transferi|transfer|deposito|deposite)\b/.test(t)) return { medio: 'Transferencia', hint: 'banco' };
+  if (/\b(efectivo|cash|en\s*mano|en\s*efectivo)\b/.test(t)) return { medio: 'Efectivo', hint: 'efectivo' };
+  return null;
+}
+
 // ── Caja ─────────────────────────────────────────────────────────────────────
 export function extractCaja(text, cajas) {
   if (!cajas || cajas.length === 0) return null;
-  // Si el texto menciona "efectivo" o "caja propia", buscamos la caja efectivo del user.
-  // Esta lógica vive en webhook.js (necesita conocer al user). Acá solo matching por nombre.
+  // 1) Si menciona un medio (MP/tarjeta/banco), buscar caja por ese hint.
+  const mp = extractMedioPago(text);
+  if (mp?.hint && mp.hint !== 'efectivo') {
+    const porMedio = cajas.find(c =>
+      normalizar(c.nombre).includes(mp.hint) ||
+      (mp.hint === 'banco' && c.tipo === 'banco') ||
+      (mp.hint === 'tarjeta' && (c.tipo === 'banco' || normalizar(c.nombre).includes('tarjeta')))
+    );
+    if (porMedio) return porMedio;
+  }
+  // 2) Matching por nombre explícito ("caja franco", "galicia").
   return matchPorNombre(text, cajas);
 }
 
@@ -221,12 +242,14 @@ export function extractSlots(text, ctx) {
     slots.obraNombre = obra.nombre;
   }
 
-  // Caja
+  // Caja + medio de pago
   const caja = extractCaja(text, ctx?.cajas);
   if (caja) {
     slots.cajaId = caja.id;
     slots.cajaNombre = caja.nombre;
   }
+  const mp = extractMedioPago(text);
+  if (mp) slots.medioPago = mp.medio;
 
   // Proveedor
   const prov = extractProveedor(text, ctx?.proveedores);

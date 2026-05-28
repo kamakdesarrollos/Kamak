@@ -979,14 +979,19 @@ MATCHING DE CAJAS Y OBRAS — MUY IMPORTANTE:
 - Si hay una sola coincidencia parcial, usala directamente sin preguntar.
 - Solo preguntá si hay ambigüedad (2+ coincidencias) o ninguna.
 
-CAJA POR DEFECTO — MUY IMPORTANTE (NO REPREGUNTAR LA CAJA):
-- El usuario casi nunca dice la caja. NO se la preguntes salvo que sea imprescindible. Resolvé en este orden:
-  1. Si menciona una caja por nombre ("de caja franco", "banco galicia") → matching parcial.
-  2. Si NO menciona caja y el monto es en pesos → su "Caja efectivo ARS propia".
-  3. Si NO menciona caja y el monto es en dólares → su "Caja efectivo USD propia".
-  4. Si NO tiene caja efectivo propia configurada → usá la caja de "lastCajaId" de los DEFAULTS DEL USUARIO (la última que usó).
-  5. Solo si NO hay ninguna de las anteriores → preguntá la caja (única excepción).
-- NUNCA preguntés qué caja para gastos en efectivo si el usuario tiene caja efectivo propia o un lastCajaId.
+CAJA / MEDIO DE PAGO — MUY IMPORTANTE (NO REPREGUNTAR SI SE PUEDE INFERIR):
+- El usuario suele decir CÓMO pagó. Detectá el medio y elegí la caja:
+  · "efectivo", "en mano", "cash", "de mi caja", "caja propia" o NO dice nada → su CAJA EFECTIVO (ARS si el monto es en $, USD si es en u$s).
+  · "mercado pago", "mp", "mercadopago" → la caja cuyo nombre contenga "mercado" o "mp".
+  · "tarjeta", "débito", "crédito", "visa", "master", "con la tarjeta del banco" → la caja tipo banco (o la que tenga "tarjeta"/"banco" en el nombre).
+  · "transferencia", "transferí", "por transferencia", "banco", "galicia", "nación", etc. → la caja banco que matchee por nombre.
+  · Si menciona una caja por nombre explícito ("de caja franco") → matching parcial directo.
+- Guardá SIEMPRE el medio en datos.medioPago: "Efectivo" | "Mercado Pago" | "Tarjeta" | "Transferencia".
+- Orden de fallback si NO se infiere medio ni caja:
+  1. Caja efectivo propia (según moneda).
+  2. lastCajaId de los DEFAULTS DEL USUARIO.
+  3. Solo si no hay ninguna → preguntá la caja (única excepción).
+- Si el usuario menciona un medio (MP/tarjeta/banco) pero NO existe una caja accesible que matchee, ahí SÍ preguntá cuál usar (mostrale las opciones de sus cajas).
 
 OBRA — INFERENCIA Y CONFIRMACIÓN:
 - Si el usuario no menciona obra pero hay "Última obra del usuario": proponé esa obra y pedí confirmación.
@@ -1201,7 +1206,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       cajaDestinoId:    null,
       proveedor:        datos.proveedorNombre || '',
       categoria:        datos.tipo === 'mano_de_obra' ? 'mano-de-obra' : datos.tipo === 'material' ? 'material' : 'general',
-      medioPago:        'Transferencia',
+      medioPago:        datos.medioPago || 'Efectivo',
       comprobante:      datos.comprobante || 'negro',
       comprobanteUrl:   mediaUrl || null,
       creadoPorWA:      true,
