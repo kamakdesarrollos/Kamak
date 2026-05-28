@@ -48,10 +48,12 @@ async function saveSharedData(key, value) {
 }
 
 // ── Helpers Meta API ──────────────────────────────────────────────────────────
-// Botones estándar de confirmación. El id 'confirmar'/'cancelar' se mapea a
-// "sí"/"no" cuando vuelve, reutilizando la lógica de confirmación por texto.
+// Botones estándar de confirmación. Los ids se mapean a texto cuando vuelven:
+// 'confirmar'→"sí", 'cancelar'→"no", 'editar'→"editar". El "editar" deja la
+// acción en curso y pide al user el dato a corregir (sin perder el resto).
 const BOTONES_CONFIRMAR = [
   { id: 'confirmar', title: 'Confirmar ✅' },
+  { id: 'editar',    title: 'Editar ✏️' },
   { id: 'cancelar',  title: 'Cancelar ❌' },
 ];
 
@@ -1127,6 +1129,54 @@ Respondé ÚNICAMENTE con JSON válido:
 }
 
 // ── Ejecutar acción ───────────────────────────────────────────────────────────
+// Arma el texto de confirmación de una acción a partir de sus datos.
+// Usado cuando el user edita un dato durante la confirmación, para re-mostrar
+// el resumen actualizado sin volver a llamar a Claude.
+function resumenAccion(accion, ctx) {
+  const d = accion?.datos || {};
+  const obra = ctx.obras.find(o => o.id === d.obraId);
+  const caja = ctx.cajas.find(c => c.id === d.cajaId);
+  const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
+  if (accion.tipo === 'gasto' || accion.tipo === 'ingreso') {
+    return (
+      `📋 *Confirmar ${accion.tipo}:*\n\n` +
+      `💵 Monto: *${fmt(d.monto)}*\n` +
+      (obra ? `🏗 Obra: *${obra.nombre}*\n` : '') +
+      (d.descripcion ? `📝 ${d.descripcion}\n` : '') +
+      (caja ? `🏦 Caja: ${caja.nombre}\n` : '')
+    );
+  }
+  if (accion.tipo === 'avance_obra') {
+    const obraA = ctx.obras.find(o => o.id === d.obraId);
+    let tareaNombre = d.tareaNombre;
+    if (!tareaNombre && obraA) {
+      const det = ctx.detalles?.[obraA.id];
+      for (const r of (det?.rubros || [])) {
+        const t = (r.tareas || []).find(x => x.id === d.tareaId);
+        if (t) { tareaNombre = t.nombre; break; }
+      }
+    }
+    return (
+      `📋 *Confirmar avance:*\n\n` +
+      (obraA ? `🏗 Obra: *${obraA.nombre}*\n` : '') +
+      (tareaNombre ? `📐 Tarea: *${tareaNombre}*\n` : '') +
+      `📊 Cantidad: *${d.cantidadAvance ?? d.cantidad ?? '?'}${d.unidad || ''}*\n`
+    );
+  }
+  if (accion.tipo === 'traspaso') {
+    const co = ctx.cajas.find(c => c.id === d.cajaId);
+    const cd = ctx.cajas.find(c => c.id === d.cajaDestinoId);
+    return (
+      `📋 *Confirmar traspaso:*\n\n` +
+      `💵 Monto: *${fmt(d.monto)}*\n` +
+      (co ? `↳ De: ${co.nombre}\n` : '') +
+      (cd ? `↳ A: ${cd.nombre}\n` : '')
+    );
+  }
+  // Genérico
+  return `📋 *Confirmar ${accion.tipo}:*\n\n${JSON.stringify(d, null, 1)}`;
+}
+
 async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
   if (tipo === 'gasto' || tipo === 'ingreso') {
     const obra  = ctx.obras.find(o => o.id === datos.obraId);
@@ -2431,6 +2481,7 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     const respLower = messageText.trim().toLowerCase();
     const confirma  = ['sí', 'si', 'dale', 'ok', 'confirmo', 'correcto', 's'].some(p => respLower.startsWith(p));
     const cancela   = ['no', 'cancelar', 'error', 'mal', 'n'].some(p => respLower.startsWith(p));
+    const editar    = respLower === 'editar' || respLower === 'corregir' || respLower === 'cambiar';
 
     if (confirma) {
       const resultado = await ejecutarAccion(conv.data.accion.tipo, conv.data.accion.datos, { ...user, phone }, ctx, mediaUrl || conv.data.pendingMediaUrl);
@@ -2448,6 +2499,48 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       await sendWA(phone, '❌ Cancelado. ¿En qué más te puedo ayudar?');
       return;
     }
+    if (editar) {
+      await sendWA(phone,
+        '✏️ ¿Qué corregís? Mandame el dato nuevo, ej:\n' +
+        '• _"monto 60000"_ o _"60k"_\n' +
+        '• _"obra Sismat"_\n' +
+        '• _"30 m²"_ (para avances)\n' +
+        '• _"tarea revoque grueso"_\n\n' +
+        'Lo demás queda igual.'
+      );
+      return; // sigue en 'confirmando'
+    }
+    // ── CORRECCIÓN: el user mandó un dato distinto a sí/no/editar ────────────
+    // Extraemos lo que cambió y lo mergeamos sobre la acción en curso, sin
+    // perder lo que ya estaba. Re-mostramos la confirmación actualizada.
+    const ext = extractSlots(messageText || '', {
+      obras: ctx.obras, cajas: ctx.cajas, proveedores: ctx.proveedores,
+      detalles: ctx.detalles, defaults: conv.defaults || {},
+    });
+    const datos = { ...(conv.data.accion.datos || {}) };
+    let cambios = 0;
+    if (ext.monto != null)    { datos.monto = ext.monto; cambios++; }
+    if (ext.obraId)           { datos.obraId = ext.obraId; cambios++; }
+    if (ext.cajaId)           { datos.cajaId = ext.cajaId; cambios++; }
+    if (ext.cantidad != null) { datos.cantidadAvance = ext.cantidad; cambios++; }
+    if (ext.unidad)           { datos.unidad = ext.unidad; cambios++; }
+    if (ext.tareaId)          { datos.tareaId = ext.tareaId; datos.rubroId = ext.rubroId || datos.rubroId; cambios++; }
+    if (ext.proveedorId)      { datos.proveedorNombre = ext.proveedorNombre; cambios++; }
+
+    if (cambios > 0) {
+      const accionAct = { ...conv.data.accion, datos };
+      await saveConversation(phone, {
+        state: 'confirmando',
+        data: { ...conv.data, accion: accionAct },
+        slots: mergeSlots(conv.slots || {}, ext),
+      });
+      const resumen = resumenAccion(accionAct, ctx);
+      await sendWAButtons(phone, `🔁 Actualicé:\n\n${resumen}`, BOTONES_CONFIRMAR);
+      return;
+    }
+    // Si no detectó ninguna corrección concreta, recordá las opciones.
+    await sendWAButtons(phone, 'No entendí la corrección. Tocá *Confirmar*, *Editar* (y mandá el dato), o *Cancelar*.', BOTONES_CONFIRMAR);
+    return;
   }
 
   // ── Estado: esperando confirmación para avisar al cliente del cobro ─────────
@@ -2742,6 +2835,7 @@ export default async function handler(req, res) {
       const rawId = btn?.id || lst?.id || '';
       if (rawId === 'confirmar') text = 'sí';
       else if (rawId === 'cancelar') text = 'no';
+      else if (rawId === 'editar') text = 'editar';
       else if (rawId.startsWith('pick:')) text = rawId.slice(5);
       else text = btn?.title || lst?.title || rawId;
     } else {
