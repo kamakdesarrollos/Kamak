@@ -100,6 +100,10 @@ const BOTONES_CONFIRMAR = [
   { id: 'cancelar',  title: 'Cancelar ❌' },
 ];
 
+// Devuelve { ok, status?, error? }. Los callers que responden al admin pueden
+// ignorar el retorno (no rompe nada). Pero para AVISOS al cliente (texto libre)
+// importa: Meta rechaza el texto libre fuera de la ventana de 24hs, y antes eso
+// se tragaba en silencio → el bot decía "listo" sin haber enviado nada.
 async function sendWA(to, body) {
   try {
     const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
@@ -110,9 +114,12 @@ async function sendWA(to, body) {
     if (!r.ok) {
       const t = await r.text();
       console.error('sendWA error:', r.status, t);
+      return { ok: false, status: r.status, error: t };
     }
+    return { ok: true };
   } catch (e) {
     console.error('sendWA exception:', e.message);
+    return { ok: false, error: e.message };
   }
 }
 
@@ -348,7 +355,12 @@ async function notifyClienteCobro({ telefono, clienteNombre, monto, moneda, obra
     `Te confirmamos que recibimos ${fmtMonto(monto, moneda)} por la obra *${obraNombre}*.\n\n` +
     `Recibido por: ${recibidoPor}\n\n` +
     `¡Gracias por confiar en Kamak Desarrollos! 🙏`;
-  await sendWA(telefono, msg);
+  const res = await sendWA(telefono, msg);
+  if (!res?.ok) {
+    // Casi siempre: fuera de la ventana de 24hs (el cliente no le escribió al
+    // bot hace poco) → Meta rechaza el texto libre. Avisamos al admin de verdad.
+    throw new Error('Meta no dejó enviar el aviso (probablemente el cliente no te escribió en las últimas 24 hs, así que la ventana está cerrada). El cobro quedó igual y el cliente lo ve en el portal.');
+  }
 }
 
 // ── Cliente vinculado al portal ──────────────────────────────────────────────
@@ -1079,11 +1091,18 @@ CAJA / MEDIO DE PAGO — MUY IMPORTANTE (NO REPREGUNTAR SI SE PUEDE INFERIR):
   · Si menciona una caja por nombre explícito ("de caja franco") → matching parcial directo.
 - Guardá SIEMPRE el medio en datos.medioPago: "Efectivo" | "Mercado Pago" | "Tarjeta" | "Transferencia".
 - PRIORIDAD: lo que dice el usuario en el texto > lo que dice la foto. Si el usuario escribe "pagué en efectivo" pero la foto dice débito, preguntá cuál vale.
-- Orden de fallback si NO se infiere medio ni caja:
+- Orden de fallback si NO se infiere medio ni caja (SOLO PARA GASTOS):
   1. Caja efectivo propia (según moneda).
   2. lastCajaId de los DEFAULTS DEL USUARIO.
-  3. Solo si no hay ninguna → preguntá la caja (única excepción).
+  3. Solo si no hay ninguna → preguntá la caja.
 - Si el usuario menciona un medio (MP/tarjeta/banco) pero NO existe una caja accesible que matchee, ahí SÍ preguntá cuál usar (mostrale las opciones de sus cajas).
+- INGRESOS — REGLA ESPECIAL: un ingreso es plata que entra y la caja importa. NO uses
+  el fallback de arriba para ingresos. NUNCA infieras la caja a partir del nombre de la
+  OBRA (una obra y una caja pueden llamarse igual, ej. "Baradero": "baradero" ahí es la
+  OBRA, no la caja). Para un ingreso, completá datos.cajaId SOLO si el usuario nombró una
+  caja explícita ("a caja Pablo", "entra a Galicia") o un medio de pago claro (efectivo/
+  MP/transferencia/tarjeta). Si NO mencionó caja ni medio, dejá datos.cajaId VACÍO
+  (sin completar) — el bot le preguntará a qué caja.
 
 OBRA — INFERENCIA Y CONFIRMACIÓN:
 - Si el usuario no menciona obra pero hay "Última obra del usuario": proponé esa obra y pedí confirmación.
@@ -1301,6 +1320,16 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     const tipoStr = tipo === 'gasto' ? 'gasto' : 'ingreso';
     const obraMoneda = obra?.moneda || 'ARS';
     const montoFmt = fmtMonto(monto, obraMoneda);
+
+    // INGRESO: la caja la elige SIEMPRE el usuario, entre sus cajas VISIBLES.
+    // Si no nombró una caja explícita, preguntamos — nunca la adivinamos (y
+    // jamás del nombre de la obra). Un ingreso es plata que entra: la caja importa.
+    if (tipo === 'ingreso' && !caja) {
+      const visibles = ctx.cajas.filter(c => cajaEsVisible(user.cajasVisibles, c.id));
+      const opciones = visibles.slice(0, 10).map(c => `• ${c.nombre}`).join('\n');
+      await saveConversation(user.phone, { state: 'awaiting_ingreso_caja', data: { datos, mediaUrl } });
+      return `💰 Ingreso de *${montoFmt}*${obra ? ` para *${obra.nombre}*` : ''} anotado.\n\n*¿A qué caja entra?*\n${opciones || '(no tenés cajas visibles configuradas)'}\n\nDecime el nombre de la caja.`;
+    }
 
     const nuevoMov = {
       id:               `mov-${Date.now()}`,
@@ -2955,6 +2984,42 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     }
     // Si no detectó ninguna corrección concreta, recordá las opciones.
     await sendWAButtons(phone, 'No entendí la corrección. Tocá *Confirmar*, *Editar* (y mandá el dato), o *Cancelar*.', BOTONES_CONFIRMAR);
+    return;
+  }
+
+  // ── Estado: esperando que el usuario diga a qué caja entra un ingreso ───────
+  // Solo ofrecemos las cajas VISIBLES del usuario. Al elegir, re-ejecutamos el
+  // ingreso con la caja ya resuelta (sigue luego al aviso al cliente si aplica).
+  if (conv.state === 'awaiting_ingreso_caja' && conv.data?.datos) {
+    const q = (messageText || '').trim().toLowerCase();
+    if (['no', 'cancelar', 'dejalo', 'n', 'cancela'].some(p => q === p)) {
+      await clearConversation(phone);
+      await sendWA(phone, '❌ Cancelado, no cargué el ingreso.');
+      return;
+    }
+    const ext = extractSlots(messageText || '', {
+      obras: ctx.obras, cajas: ctx.cajas, proveedores: ctx.proveedores,
+      detalles: ctx.detalles, defaults: conv.defaults || {},
+    });
+    let cajaId = ext.cajaId;
+    if (!cajaId) {
+      const match = ctx.cajas.find(c => cajaEsVisible(user.cajasVisibles, c.id) &&
+        (c.nombre?.toLowerCase().includes(q) || (q.length > 2 && q.includes(c.nombre?.toLowerCase()))));
+      cajaId = match?.id;
+    }
+    const caja = cajaId ? ctx.cajas.find(c => c.id === cajaId && cajaEsVisible(user.cajasVisibles, c.id)) : null;
+    if (!caja) {
+      const opciones = ctx.cajas.filter(c => cajaEsVisible(user.cajasVisibles, c.id)).slice(0, 10).map(c => `• ${c.nombre}`).join('\n');
+      await sendWA(phone, `No reconocí esa caja. Elegí una de las tuyas:\n${opciones || '(no tenés cajas visibles)'}\n\nO escribí *no* para cancelar.`);
+      return;
+    }
+    const datos = { ...conv.data.datos, cajaId: caja.id };
+    const resultado = await ejecutarAccion('ingreso', datos, { ...user, phone }, ctx, conv.data.mediaUrl);
+    // ejecutarAccion pudo dejar un estado posterior (aviso al cliente). Si quedó
+    // en este estado, ya terminó: lo limpiamos.
+    const newConv = await loadConversation(phone);
+    if (newConv.state === 'awaiting_ingreso_caja') await clearConversation(phone);
+    await sendWA(phone, resultado);
     return;
   }
 
