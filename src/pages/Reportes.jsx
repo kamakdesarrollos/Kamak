@@ -8,6 +8,8 @@ import { useObras } from '../store/ObrasContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
+import { useDolar } from '../store/DolarContext';
+import { cuotaEstadoCalc } from './obra/helpers';
 
 const CY = new Date().getFullYear();
 const fmtM = (n) => {
@@ -41,6 +43,8 @@ export default function Reportes() {
   const { obras, detalles } = useObras();
   const { proveedores } = useProveedores();
   const { movimientos } = useMovimientos();
+  const { dolarVenta } = useDolar();
+  const tc = dolarVenta || 1070;
   const [rubroObraId, setRubroObraId] = useState('');
 
   // ── KPIs ──
@@ -112,7 +116,7 @@ export default function Reportes() {
     const all = [];
     obras.forEach(o => {
       (detalles[o.id]?.cuotas || [])
-        .filter(c => c.estado !== 'pagado' && c.fecha >= hoy && c.fecha <= limite)
+        .filter(c => cuotaEstadoCalc(c, 'USD', tc) !== 'pagado' && c.fecha >= hoy && c.fecha <= limite)
         .forEach(c => all.push({ ...c, obraNombre: o.nombre, obraId: o.id }));
     });
     return all.sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -123,8 +127,8 @@ export default function Reportes() {
     [obras, detalles]);
 
   const cuotasCobradas = useMemo(() =>
-    obras.reduce((s, o) => s + (detalles[o.id]?.cuotas || []).filter(c => c.estado === 'pagado').reduce((ss, c) => ss + (c.monto || 0), 0), 0),
-    [obras, detalles]);
+    obras.reduce((s, o) => s + (detalles[o.id]?.cuotas || []).filter(c => cuotaEstadoCalc(c, 'USD', tc) === 'pagado').reduce((ss, c) => ss + (c.monto || 0), 0), 0),
+    [obras, detalles, tc]);
 
   // ── Resumen por tipo de obra ──
   const tiposMap = useMemo(() => {

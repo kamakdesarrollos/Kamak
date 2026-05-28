@@ -37,20 +37,40 @@ export const arsToUSD = (montoARS, tc) => Math.round((montoARS || 0) / (tc || 1)
  * Suma todos los pagos de una cuota, convertidos a la moneda activa.
  * Cada pago puede estar en moneda distinta (ARS/USD) — usa su propio TC si lo
  * tiene, sino el TC vigente.
+ *
+ * Caso especial (cuotas sin pagos): una cuota puede estar marcada como
+ * 'pagado' con el toggle manual o venir de datos legacy SIN un pago
+ * registrado. En ese caso contamos su monto completo como cobrado, para que
+ * el importe coincida con el estado y no quede saldo fantasma. Esta es la
+ * UNICA fuente de verdad de "cuánto se cobró" en toda la app.
  */
-export const cuotaCobrado = (c, moneda, tc) =>
-  (c.pagos || []).reduce((s, p) => {
+export const cuotaCobrado = (c, moneda, tc) => {
+  const pagos = c.pagos || [];
+  if (pagos.length === 0) return c.estado === 'pagado' ? cuotaMontoFn(c, moneda, tc) : 0;
+  return pagos.reduce((s, p) => {
     if (moneda === 'USD') return s + (p.moneda === 'ARS' ? Math.round((p.monto || 0) / (p.tc || tc)) : (p.monto || 0));
     return s + (p.moneda === 'USD' ? Math.round((p.monto || 0) * (p.tc || tc)) : (p.monto || 0));
   }, 0);
+};
 
 /**
- * Estado calculado de la cuota a partir de sus pagos.
- * - 'pendiente' si nada cobrado
- * - 'pagado' si cubierto al 100%
- * - 'parcial' si cobro parcial
+ * Estado calculado de la cuota. UNICA fuente de verdad de "¿está pagada?" en
+ * toda la app (portal, admin, dashboard, reportes) — usala siempre en vez de
+ * leer c.estado directo.
+ * - Si NO tiene pagos registrados: respeta el estado guardado (toggle manual
+ *   o legacy).
+ * - Si tiene pagos: deriva del cobrado real vs el monto.
+ *   - 'pendiente' si nada cobrado
+ *   - 'pagado' si cubierto al 100%
+ *   - 'parcial' si cobro parcial
  */
 export const cuotaEstadoCalc = (c, moneda, tc) => {
+  const pagos = c.pagos || [];
+  if (pagos.length === 0) {
+    if (c.estado === 'pagado') return 'pagado';
+    if (c.estado === 'parcial') return 'parcial';
+    return 'pendiente';
+  }
   const cobrado = cuotaCobrado(c, moneda, tc);
   if (cobrado <= 0) return 'pendiente';
   if (cobrado >= cuotaMontoFn(c, moneda, tc)) return 'pagado';

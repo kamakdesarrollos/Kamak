@@ -8,14 +8,19 @@ import { useClientes } from '../../store/ClientesContext';
 import { Box, Btn, Chip, Stat, Bar } from '../../components/ui';
 import { T } from '../../theme';
 import { fmtN, fmtFecha } from '../../lib/format';
-import { cuotaEstadoCalc, calcObra } from '../obra/helpers';
+import { cuotaEstadoCalc, cuotaCobrado, calcObra } from '../obra/helpers';
 
 const fmtD = fmtFecha;
 
-const rubroAvance = (rubro) =>
-  rubro.tareas.length > 0
-    ? Math.round(rubro.tareas.reduce((s, t) => s + t.avance, 0) / rubro.tareas.length)
+// Avance del rubro: promedio de avance de sus tareas, EXCLUYENDO las secciones
+// (separadores visuales sin avance). Tiene que dar idéntico al admin
+// (helpers.calcRubro), sino el cliente ve un avance distinto o NaN.
+const rubroAvance = (rubro) => {
+  const tareas = (rubro.tareas || []).filter(t => t.tipo !== 'seccion');
+  return tareas.length > 0
+    ? Math.round(tareas.reduce((s, t) => s + (t.avance || 0), 0) / tareas.length)
     : 0;
+};
 
 export default function PortalCliente() {
   const { id } = useParams();
@@ -234,7 +239,10 @@ export default function PortalCliente() {
   // Cuotas en USD (cada una segun su moneda real).
   const cuotaEnUSD = c => toUSD(c.monto || 0, obraEsUSD || !!c._usd);
   const totalCuotasUSD  = cuotas.reduce((s, c) => s + cuotaEnUSD(c), 0);
-  const pagadoCuotasUSD = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').reduce((s, c) => s + cuotaEnUSD(c), 0);
+  // Pagado = suma de TODOS los pagos (incluye parciales), convertidos a USD.
+  // Mismo cálculo que el admin (ObraPresupuesto totalCobrado) para que el
+  // cliente vea exactamente lo mismo que registramos como cobrado.
+  const pagadoCuotasUSD = cuotas.reduce((s, c) => s + cuotaCobrado(c, 'USD', tc), 0);
   const countPagadas    = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').length;
 
   // Total acordado al cliente: venta del presupuesto (costos *en ARS* +

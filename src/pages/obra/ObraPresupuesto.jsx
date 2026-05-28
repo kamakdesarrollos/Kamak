@@ -213,6 +213,28 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
         </div>
       )}
 
+      {/* Notas de obra — cargadas desde la app o por WhatsApp ("dejá nota en X: ...") */}
+      {(detalle.notasRapidas || []).length > 0 && (
+        <div>
+          <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
+            ◆ Notas de obra
+          </div>
+          <Box style={{ padding: 0, overflow: 'hidden' }}>
+            {(detalle.notasRapidas || []).map((n) => (
+              <div key={n.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, borderLeft: `3px solid ${T.accent}` }}>
+                <span style={{ fontSize: 14, lineHeight: 1.3 }}>{n.origen === 'whatsapp' ? '🟢' : '📝'}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.35 }}>{n.texto}</div>
+                  <div style={{ fontSize: 10.5, color: T.ink3, marginTop: 2, fontFamily: T.fontMono }}>
+                    {n.autor || '—'}{n.origen === 'whatsapp' ? ' · WhatsApp' : ''} · {fmtD((n.fecha || '').slice(0, 10))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </Box>
+        </div>
+      )}
+
       {/* Últimos movimientos — solo admin (no-admin los ve filtrados por cajasVisibles en tab Movimientos) */}
       {isAdmin && detalle.movimientos.length > 0 && (
         <div>
@@ -409,8 +431,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
     (catalog.tareas || []).forEach(t => {
       if (seen.has(t.nombre)) return;
       seen.add(t.nombre);
-      const { mat, mo } = calcTarea(t, catalogIndex);
-      list.push({ nombre: t.nombre, unidad: t.unidad || 'u', costoMat: Math.round(mat), costoSub: Math.round(mo), codigo: t.codigo || '', fuente: 'Catálogo' });
+      const { mat, sub, mo } = calcTarea(t, catalogIndex);
+      list.push({ nombre: t.nombre, unidad: t.unidad || 'u', costoMat: Math.round(mat), costoSub: Math.round(sub + mo), codigo: t.codigo || '', fuente: 'Catálogo' });
     });
     // From all obras
     Object.values(detalles).forEach(d => {
@@ -1383,9 +1405,11 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, l
 
   const cuotaRows = incluirPagos && cuotas.length > 0 ? cuotas.map((c, i) => {
     const m = cuotaMonto(c); // already USD
-    return `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${c.n || i+1}</td><td>${c.descripcion}</td><td class="r">${fmtDE(c.fecha)}</td><td class="r">${fmtUSD(m)}</td><td><span class="pill ${c.estado === 'pagado' ? 'ok' : 'warn'}">${c.estado === 'pagado' ? 'pagado' : 'pendiente'}</span></td></tr>`;
+    const estadoC = cuotaEstadoCalc(c, 'USD', tc);
+    const pagadaC = estadoC === 'pagado';
+    return `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${c.n || i+1}</td><td>${c.descripcion}</td><td class="r">${fmtDE(c.fecha)}</td><td class="r">${fmtUSD(m)}</td><td><span class="pill ${pagadaC ? 'ok' : 'warn'}">${estadoC}</span></td></tr>`;
   }).join('') : '';
-  const pagado = cuotas.filter(c => c.estado === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
+  const pagado = cuotas.filter(c => cuotaEstadoCalc(c, 'USD', tc) === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
   const saldo = Math.round(totalCliente / tc) - pagado;
 
   const logoHtml = logoLight

@@ -9,6 +9,7 @@ import { useDolar } from '../store/DolarContext';
 import { useAlertas } from '../store/AlertasContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { cuotaEstadoCalc } from './obra/helpers';
 
 const fmtN = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
 const currMes = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; };
@@ -109,7 +110,7 @@ export default function Dashboard() {
     obras.forEach(o => {
       const det = getDetalle(o.id);
       (det.cuotas || []).forEach(c => {
-        if (c.estado === 'pagado') return;
+        if (cuotaEstadoCalc(c, 'USD', tc) === 'pagado') return;
         const fecha = c.fecha ? new Date(c.fecha + 'T00:00:00') : null;
         if (!fecha || fecha > limit) return;
         const diasRestantes = Math.ceil((fecha - now) / 86400000);
@@ -150,7 +151,7 @@ export default function Dashboard() {
     obras.forEach(o => {
       const det = getDetalle(o.id);
       const vencidas = (det.cuotas || []).filter(c => {
-        if (c.estado === 'pagado') return false;
+        if (cuotaEstadoCalc(c, 'USD', tc) === 'pagado') return false;
         const f = c.fecha ? new Date(c.fecha + 'T00:00:00') : null;
         return f && f < hoy;
       });
