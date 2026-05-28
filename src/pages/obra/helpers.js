@@ -78,6 +78,53 @@ export const cuotaEstadoCalc = (c, moneda, tc) => {
 };
 
 /**
+ * Total cobrado al cliente de una obra, en USD, DERIVADO de los movimientos de
+ * ingreso (única fuente de verdad, rediseño "libro único"). Convierte cada
+ * ingreso a USD: si tiene montoDolar (ingreso cargado con ref USD) lo usa; sino
+ * mira la moneda de la caja (USD → tal cual; ARS → dividido por el tc).
+ */
+export const cobradoObraUSD = (movimientos, cajas, obraId, tc) =>
+  (movimientos || [])
+    .filter(m => m.obraId === obraId && m.tipo === 'ingreso')
+    .reduce((s, m) => {
+      if (m.montoDolar) return s + Math.round(m.montoDolar);
+      const caja = (cajas || []).find(c => c.id === m.cajaId);
+      const esUSD = caja?.moneda === 'USD';
+      return s + (esUSD ? Math.round(m.monto || 0) : Math.round((m.monto || 0) / (tc || 1)));
+    }, 0);
+
+/**
+ * Reparte el total cobrado de la obra (en USD, derivado de movimientos) sobre
+ * las cuotas EN ORDEN (primero el adelanto). Devuelve { [cuotaId]: cobradoUSD }.
+ * Las cuotas marcadas pagadas a mano (estado 'pagado' sin pagos registrados) se
+ * consideran pagas aparte y NO consumen del total de movimientos (se pagaron
+ * por otro medio no registrado como movimiento).
+ */
+export const repartirCobroEnCuotas = (cuotas, cobradoTotalUSD, obraMoneda, tc) => {
+  let restante = Math.max(0, Math.round(cobradoTotalUSD || 0));
+  const out = {};
+  for (const c of (cuotas || [])) {
+    const montoC = cuotaMontoUSD(c, obraMoneda || 'ARS', tc);
+    if (c.estado === 'pagado' && !((c.pagos || []).length)) { out[c.id] = montoC; continue; }
+    const aplicado = Math.min(montoC, restante);
+    out[c.id] = aplicado;
+    restante -= aplicado;
+  }
+  return out;
+};
+
+/**
+ * Estado de una cuota a partir del cobrado ya repartido (USD). Reemplaza a
+ * cuotaEstadoCalc cuando el cobrado se deriva de movimientos.
+ */
+export const cuotaEstadoDesdeCobrado = (c, cobradoUSD, obraMoneda, tc) => {
+  const montoC = cuotaMontoUSD(c, obraMoneda || 'ARS', tc);
+  if ((cobradoUSD || 0) <= 0) return 'pendiente';
+  if ((cobradoUSD || 0) >= montoC) return 'pagado';
+  return 'parcial';
+};
+
+/**
  * Precio de venta unitario de una tarea, considerando margenes por linea
  * o por rubro (mat / mano de obra).
  */
