@@ -30,13 +30,6 @@ async function sbUpsert(table, data) {
 }
 
 async function sbDelete(table, params) {
-  await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, {
-    method: 'DELETE',
-    headers: sbH(),
-  });
-}
-
-async function sbDelete(table, params) {
   await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, { method: 'DELETE', headers: sbH() });
 }
 
