@@ -33,6 +33,49 @@ async function sbDelete(table, params) {
   await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, { method: 'DELETE', headers: sbH() });
 }
 
+// Rediseño "libro único": el bot SOLO entrega el movimiento. Lo agrega de forma
+// ATÓMICA con la función append_movimiento de Postgres (no lee-y-reescribe el
+// bloque entero, así nunca pisa lo que escribió la app). El saldo de la caja lo
+// calcula la app sola desde los movimientos — el bot ya NO toca cajas.
+async function appendMovimiento(mov) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/append_movimiento`, {
+      method: 'POST',
+      headers: sbH(),
+      body: JSON.stringify({ nuevo: mov }),
+    });
+    if (!res.ok) throw new Error(`rpc ${res.status}`);
+  } catch (e) {
+    // Red de seguridad: si la función atómica no está disponible (permisos,
+    // no creada, etc.), caemos al método viejo (read-modify-write) para NO
+    // perder el movimiento. Tiene riesgo de pisada, pero es preferible a perderlo.
+    console.error('[appendMovimiento] RPC falló, fallback read-modify-write:', e.message);
+    const movData = await loadSharedData('movimientos');
+    const movs = movData?.movimientos || [];
+    await saveSharedData('movimientos', { ...(movData || {}), movimientos: [mov, ...movs] });
+    return; // saveSharedData ya hace broadcast
+  }
+  await broadcastChange('movimientos');
+}
+
+// Saldo EN VIVO de una caja (igual que la app): saldoInicial + suma de sus
+// movimientos. Así el comando `saldo` refleja un movimiento recién agregado
+// aunque la app todavía no haya recalculado/persistido. Si la caja aún no tiene
+// saldoInicial (pre-migración), usamos el saldo guardado tal cual (no duplicar).
+function calcSaldoCajaBot(caja, movimientos) {
+  if (caja.saldoInicial == null) return caja.saldo || 0;
+  const efecto = (movimientos || []).reduce((s, m) => {
+    if (m.tipo === 'ingreso' && m.cajaId === caja.id) return s + (m.monto || 0);
+    if (m.tipo === 'gasto'   && m.cajaId === caja.id) return s - (m.monto || 0);
+    if (m.tipo === 'traspaso') {
+      if (m.cajaId === caja.id)        return s - (m.monto || 0);
+      if (m.cajaDestinoId === caja.id) return s + (m.montoDestino ?? m.monto ?? 0);
+    }
+    return s;
+  }, 0);
+  return Math.round(caja.saldoInicial + efecto);
+}
+
 async function loadSharedData(key) {
   const rows = await sbGet('shared_data', `?key=eq.${key}&select=data`);
   return rows[0]?.data ?? null;
@@ -1252,18 +1295,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
 
     // ── Rama Admin: auto-aplicar (sin pasar por Autorizaciones) ───────────────
     if (user.user_rol === 'Admin') {
-      const movData = await loadSharedData('movimientos');
-      const movs  = movData?.movimientos || [];
-      const cajas = movData?.cajas || ctx.cajas;
-      // Actualizar saldo de la caja en el momento.
-      const delta = tipo === 'ingreso' ? monto : -monto;
-      const updatedCajas = cajas.map(c =>
-        c.id === datos.cajaId ? { ...c, saldo: (c.saldo || 0) + delta } : c
-      );
-      await saveSharedData('movimientos', {
-        movimientos: [nuevoMov, ...movs],
-        cajas:       updatedCajas,
-      });
+      // Solo entregamos el movimiento (atómico). El saldo lo calcula la app.
+      await appendMovimiento(nuevoMov);
 
       // Si es gasto → confirmación seca y listo.
       if (tipo === 'gasto') {
@@ -1469,8 +1502,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       creadoPorWA: true,
       creadoPor: user.user_name,
     };
-    const updatedCajas = cajas.map(c => c.id === caja.id ? { ...c, saldo: (c.saldo || 0) - monto } : c);
-    await saveSharedData('movimientos', { movimientos: [mov, ...movs], cajas: updatedCajas });
+    await appendMovimiento(mov);
 
     // 2) Asiento en la CC del proveedor (haber = pago) si hay obra.
     if (obra) {
@@ -1528,13 +1560,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         creadoPorWA:  true,
         creadoPor:    user.user_name,
       };
-      // Actualizar saldos
-      const updatedCajas = cajas.map(c => {
-        if (c.id === cajaOrigen.id)  return { ...c, saldo: (c.saldo || 0) - monto };
-        if (c.id === cajaDestino.id) return { ...c, saldo: (c.saldo || 0) + montoDestino };
-        return c;
-      });
-      await saveSharedData('movimientos', { movimientos: [nuevoMov, ...movs], cajas: updatedCajas });
+      await appendMovimiento(nuevoMov);
       return (
         `✅ *Traspaso registrado*\n\n` +
         `${fmt(monto, cajaOrigen.moneda)} de *${cajaOrigen.nombre}*\n` +
@@ -1581,8 +1607,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       referencia: datos.numero || '', comprobanteUrl: mediaUrl || null,
       creadoPorWA: true, creadoPor: user.user_name,
     };
-    const updatedCajas = cajas.map(c => c.id === caja.id ? { ...c, saldo: (c.saldo || 0) + monto } : c);
-    await saveSharedData('movimientos', { movimientos: [nuevoMov, ...movs], cajas: updatedCajas });
+    await appendMovimiento(nuevoMov);
 
     // 2) Cheque en cartera. OJO: shared_data 'cheques' es un ARRAY directo
     // (la app usa useSyncedSharedData), no { cheques: [...] }.
@@ -2165,7 +2190,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
     const cajasUsuario = ctx.cajas.filter(c => cajaEsVisible(user.cajasVisibles, c.id));
     if (!cajasUsuario.length) return 'No tenés cajas asignadas.';
     const lineas = cajasUsuario.map(c =>
-      `• ${c.nombre}: *$${Math.round(c.saldo || 0).toLocaleString('es-AR')}* ${c.moneda}`
+      `• ${c.nombre}: *$${calcSaldoCajaBot(c, ctx.movimientos).toLocaleString('es-AR')}* ${c.moneda}`
     );
     return `💰 *Saldo de tus cajas:*\n\n${lineas.join('\n')}`;
   }
@@ -2229,10 +2254,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
       const cajas = movData?.cajas || ctx.cajas;
       const mov = { ...item.movimiento, id: `mov-${Date.now()}`, creadoPorWA: true };
       const delta = mov.tipo === 'ingreso' ? mov.monto : -mov.monto;
-      const updatedCajas = cajas.map(c =>
-        c.id === mov.cajaId ? { ...c, saldo: (c.saldo || 0) + delta } : c
-      );
-      await saveSharedData('movimientos', { movimientos: [mov, ...movs], cajas: updatedCajas });
+      await appendMovimiento(mov);
       return `✅ Aprobado pendiente #${num} — gasto cargado.`;
     }
 
@@ -2269,8 +2291,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
         creadoPorWA: true,
         creadoPor: user.user_name,
       };
-      const updatedCajas = cajas.map(c => c.id === cajaId ? { ...c, saldo: (c.saldo || 0) - mov.monto } : c);
-      await saveSharedData('movimientos', { movimientos: [mov, ...movs], cajas: updatedCajas });
+      await appendMovimiento(mov);
       const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
       return `✅ Factura aprobada y cargada como gasto: ${fmt(mov.monto)}${obra ? ` en ${obra.nombre}` : ' (General)'}.${!item.obraId ? '\n_Quedó en General — si era de una obra, editala desde Movimientos._' : ''}`;
     }
@@ -2454,18 +2475,10 @@ async function ejecutarComando(comando, datos, user, ctx) {
       .sort((a, b) => (b.id || '').localeCompare(a.id || ''))[0];
     if (!mio) return '🤷 No encontré ningún movimiento reciente tuyo para deshacer.';
 
-    // Revertir el efecto en cajas según tipo.
-    const updatedCajas = cajas.map(c => {
-      if (mio.tipo === 'ingreso'  && c.id === mio.cajaId)        return { ...c, saldo: (c.saldo || 0) - (mio.monto || 0) };
-      if (mio.tipo === 'gasto'    && c.id === mio.cajaId)        return { ...c, saldo: (c.saldo || 0) + (mio.monto || 0) };
-      if (mio.tipo === 'traspaso') {
-        if (c.id === mio.cajaId)        return { ...c, saldo: (c.saldo || 0) + (mio.monto || 0) };
-        if (c.id === mio.cajaDestinoId) return { ...c, saldo: (c.saldo || 0) - (mio.montoDestino ?? mio.monto ?? 0) };
-      }
-      return c;
-    });
+    // El saldo se calcula solo desde los movimientos: deshacer solo QUITA el
+    // movimiento (la app recalcula el saldo). Preservamos las cajas tal cual.
     const sinMov = movs.filter(m => m.id !== mio.id);
-    await saveSharedData('movimientos', { movimientos: sinMov, cajas: updatedCajas });
+    await saveSharedData('movimientos', { movimientos: sinMov, cajas });
 
     const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
     return `↩️ Deshecho: *${mio.tipo}* de ${fmt(mio.monto)}${mio.obraNombre && mio.obraNombre !== 'General' ? ` en ${mio.obraNombre}` : ''}.\n_${mio.descripcion || ''}_`;
