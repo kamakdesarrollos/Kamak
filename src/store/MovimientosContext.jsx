@@ -62,6 +62,11 @@ export function MovimientosProvider({ children }) {
   const fromRemote = useRef(false);
   const cajasRef   = useRef(cajas);
   const movsRef    = useRef(movimientos);
+  const pendingSaveRef = useRef(null);
+  // Timestamp del último save local — para ignorar broadcasts inmediatamente
+  // posteriores que traen datos viejos del server y pisarían cambios recientes
+  // (mismo patrón que useSyncedSharedData, que evitó que se pisaran los cheques).
+  const lastLocalSaveAt = useRef(0);
   const { markReady } = useAppLoading();
   useEffect(() => { cajasRef.current = cajas; }, [cajas]);
   useEffect(() => { movsRef.current = movimientos; }, [movimientos]);
@@ -76,7 +81,11 @@ export function MovimientosProvider({ children }) {
         if (data.cajas)       { setCajas(data.cajas);             persist(LS_CAJAS, data.cajas); }
         if (data.movimientos) { setMovimientos(data.movimientos); persist(LS_MOVS,  data.movimientos); }
         setTimeout(() => { fromRemote.current = false; }, 0);
-      } else {
+      } else if (data === null) {
+        // data === null: query OK pero no hay registro (primer save).
+        // Si fue undefined (error de red/permiso) NO guardamos: sino pisaríamos
+        // el remoto con el cache local y se perdería, p.ej., un movimiento que
+        // acaba de cargar el bot.
         saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
       }
       sbLoaded.current = true;
@@ -84,6 +93,11 @@ export function MovimientosProvider({ children }) {
     });
 
     const unsub = onRemoteChange('movimientos', () => {
+      // Si tenemos un save propio pendiente o muy reciente (<3s), ignoramos el
+      // broadcast: puede traer datos del server SIN nuestro último cambio y
+      // pisarlo. (Mismo guard que usa el sync de cheques.)
+      if (pendingSaveRef.current) return;
+      if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData('movimientos').then(d => {
         if (cancelled || !d) return;
         fromRemote.current = true;
@@ -95,12 +109,12 @@ export function MovimientosProvider({ children }) {
     return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
     pendingSaveRef.current = { cajas: cajasRef.current, movimientos: movsRef.current };
     const t = setTimeout(() => {
       saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
+      lastLocalSaveAt.current = Date.now();
       pendingSaveRef.current = null;
     }, 800);
     return () => clearTimeout(t);
