@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Btn, Divider } from '../../components/ui';
 import { T } from '../../theme';
 import { useClientes } from '../../store/ClientesContext';
+import { useCatalog } from '../../store/CatalogContext';
 
-const TIPOS = [
+// Tipos base (fallback si el catálogo de "Tipos de obra" está vacío).
+const TIPOS_BASE = [
   'Estación de Servicio', 'Panadería completa', 'Vivienda unifamiliar',
   'Vivienda 2 plantas', 'Local comercial', 'Galpón industrial',
-  'Refacción baño', 'Pileta + obras civiles', 'Otro',
+  'Refacción baño', 'Pileta + obras civiles',
 ];
 
 const inputStyle = {
@@ -168,6 +170,19 @@ function Textarea({ label, value, onChange, placeholder }) {
 // ── Modal principal ────────────────────────────────────────────────────────────
 export default function NuevaObraModal({ obra, onSave, onClose }) {
   const { clientes } = useClientes();
+  const { catalog } = useCatalog();
+
+  // Lista de tipos: prioriza los del catálogo "Tipos de obra" (los que tienen
+  // tareas base configuradas → al aprobar presupuesto se auto-generan tareas).
+  // Suma los base que no estén, y "Otro" al final para texto libre.
+  const TIPOS = useMemo(() => {
+    const delCatalogo = (catalog?.tiposObra || []).map(t => t.nombre).filter(Boolean);
+    const set = new Set(delCatalogo);
+    const combinados = [...delCatalogo];
+    for (const t of TIPOS_BASE) if (!set.has(t)) combinados.push(t);
+    combinados.push('Otro');
+    return combinados;
+  }, [catalog]);
 
   const EMPTY = {
     nombre: '', cliente: '', clienteId: '', direccion: '', tipo: TIPOS[0],
