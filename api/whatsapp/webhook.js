@@ -1063,9 +1063,8 @@ ORDEN DE PREGUNTAS (nunca más de una a la vez):
    - Si el texto tiene cantidad en unidades (m², ml, u, etc.) + trabajo + sin precio → avance_obra directo.
    - Si el texto dice "avancé"/"colocamos"/"terminamos"/"instalados"/"terminé" → avance_obra.
    - SOLO usá factura_compra si: el texto dice EXPLÍCITAMENTE "factura"/"facturá esto"/"cargá la factura", O no hay ningún contexto (ni obra ni concepto) y la foto es claramente una factura formal de proveedor.
-   - Si NO hay texto claro y rol es "Jefe de obra"/"Capataz" → asumí avance_obra, preguntá SOLO lo que no se sabe.
-   - Si NO hay texto claro y rol es "Compras"/"Administración" → preguntá "¿Factura o gasto?"
-   - Si NO hay texto claro y rol es "Admin" → preguntá "¿Avance, gasto o factura?"
+   - FOTO DE TICKET/COMPROBANTE DE COMPRA SIN TEXTO (ticket de super, estación de servicio, ferretería, restaurante, etc.): es SIEMPRE un GASTO. NUNCA respondas solo describiendo la foto ("veo un ticket de..."). Leé el monto y el medio de pago de la imagen, inferí la categoría por el comercio (supermercado/restaurante→Viáticos, estación→Combustible, ferretería/corralón→Materiales) y armá el gasto. Si NO sabés la obra, preguntá SOLO eso: "¿Para qué obra es este gasto de $X?" — proponé la última obra del usuario. NUNCA preguntes "¿avance, gasto o factura?" cuando es obvio que es un ticket de compra.
+   - Si NO hay texto claro y rol es "Jefe de obra"/"Capataz" y la foto es de obra (no ticket) → asumí avance_obra, preguntá SOLO lo que no se sabe.
 2. Si llega FOTO + texto de gasto (con obra o concepto): procesá como gasto con comprobante=blanco automáticamente, monto leído de la foto, caja efectivo del usuario. NO repreguntes obra ni caja si están claras.
 3. Si llega FOTO + texto de avance ("avancé", "foto de avance", "progreso", "terminé", "colocamos", "terminado", "avance de obra"): procesá como avance_obra directamente.
 4. MONTO: si hay FOTO de ticket/factura/comprobante, LEÉ el monto total de la imagen (el TOTAL a pagar, no subtotales). NUNCA preguntes el monto cuando hay un comprobante adjunto — el monto SIEMPRE está en el ticket. Solo preguntá el monto si NO hay foto y el usuario no lo escribió.
@@ -2956,9 +2955,26 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    console.log(`MSG phone=${phone} type=${messageType} text=${text?.slice(0,30)}`);
+    console.log(`MSG phone=${phone} type=${messageType} id=${message.id} text=${text?.slice(0,30)}`);
 
     const conv = await loadConversation(phone);
+
+    // ── DEDUPLICACIÓN ───────────────────────────────────────────────────────
+    // Meta reintenta el webhook si no respondemos 200 a tiempo, lo que hace
+    // que el mismo mensaje se procese (y conteste) 2 veces. Guardamos los
+    // últimos message.id en defaults.lastMsgIds y descartamos repetidos.
+    const msgId = message.id;
+    const procesados = conv.defaults?.lastMsgIds || [];
+    if (msgId && procesados.includes(msgId)) {
+      console.log(`DEDUP: mensaje ${msgId} ya procesado, ignoro`);
+      return res.status(200).json({ ok: true, dedup: true });
+    }
+    if (msgId) {
+      const nuevosDefaults = { ...(conv.defaults || {}), lastMsgIds: [...procesados, msgId].slice(-25) };
+      await saveConversation(phone, { defaults: nuevosDefaults });
+      conv.defaults = nuevosDefaults;
+    }
+
     const user = await getLinkedUser(phone);
     const cliente = !user ? await getLinkedCliente(phone) : null;
     console.log(`USER linked=${!!user} cliente=${!!cliente} state=${conv?.state}`);
