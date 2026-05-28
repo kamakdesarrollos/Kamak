@@ -979,12 +979,14 @@ MATCHING DE CAJAS Y OBRAS — MUY IMPORTANTE:
 - Si hay una sola coincidencia parcial, usala directamente sin preguntar.
 - Solo preguntá si hay ambigüedad (2+ coincidencias) o ninguna.
 
-CAJA EFECTIVO AUTOMÁTICA — MUY IMPORTANTE:
-- Si el usuario dice "en efectivo", "de mi caja", "caja propia", "pagué en mano" o no especifica caja: usá automáticamente SU caja efectivo.
-- Si el monto es en pesos ($, ARS, pesos): usá su "Caja efectivo ARS propia".
-- Si el monto es en dólares (USD, u$s, dólares): usá su "Caja efectivo USD propia".
-- Si el usuario especifica otra caja por nombre: buscala por matching parcial entre "Otras cajas accesibles".
-- NUNCA preguntés qué caja si el pago es en efectivo y el usuario tiene su caja efectivo configurada.
+CAJA POR DEFECTO — MUY IMPORTANTE (NO REPREGUNTAR LA CAJA):
+- El usuario casi nunca dice la caja. NO se la preguntes salvo que sea imprescindible. Resolvé en este orden:
+  1. Si menciona una caja por nombre ("de caja franco", "banco galicia") → matching parcial.
+  2. Si NO menciona caja y el monto es en pesos → su "Caja efectivo ARS propia".
+  3. Si NO menciona caja y el monto es en dólares → su "Caja efectivo USD propia".
+  4. Si NO tiene caja efectivo propia configurada → usá la caja de "lastCajaId" de los DEFAULTS DEL USUARIO (la última que usó).
+  5. Solo si NO hay ninguna de las anteriores → preguntá la caja (única excepción).
+- NUNCA preguntés qué caja para gastos en efectivo si el usuario tiene caja efectivo propia o un lastCajaId.
 
 OBRA — INFERENCIA Y CONFIRMACIÓN:
 - Si el usuario no menciona obra pero hay "Última obra del usuario": proponé esa obra y pedí confirmación.
@@ -1047,16 +1049,17 @@ AVANCE DE OBRA — PARSEO INTELIGENTE:
 
 ORDEN DE PREGUNTAS (nunca más de una a la vez):
 0. SIEMPRE revisá el historial ANTES de hacer preguntas. Si la información ya fue dada, usala. No repitas preguntas.
-1. Si llega FOTO:
-   - Si el texto dice "avance de obra", "Avance de obra", o tiene cantidad+tarea → avance_obra DIRECTO, armá el registro con toda la info disponible (texto + historial).
-   - Si parece factura (números, CUIT, totales, IVA) → factura_compra.
+1. Si llega FOTO — REGLA DE ORO: si el texto menciona una OBRA y/o un CONCEPTO de gasto (combustible, nafta, comida, materiales, flete, herramienta, etc.), es un GASTO DIRECTO (no factura). Leé el monto de la foto del ticket/comprobante y cargá el gasto. NO lo mandes a factura_compra solo porque la foto tenga números o CUIT.
+   - Si el texto dice "avance de obra" o tiene cantidad+tarea → avance_obra DIRECTO.
+   - Si el texto menciona obra o concepto de gasto (ej: "combustible baradero", "comida en sismat", "materiales pilar") → GASTO directo: extraé el monto de la foto, obra del texto, caja efectivo del usuario, comprobante=blanco. Inferí la categoría (combustible→Movilidad, comida→Viáticos, etc.). NO preguntes caja ni mandes a factura.
    - Si el texto dice "gasto"/"pagué"/"compré" → gasto con comprobante.
    - Si el texto tiene cantidad en unidades (m², ml, u, etc.) + trabajo + sin precio → avance_obra directo.
    - Si el texto dice "avancé"/"colocamos"/"terminamos"/"instalados"/"terminé" → avance_obra.
+   - SOLO usá factura_compra si: el texto dice EXPLÍCITAMENTE "factura"/"facturá esto"/"cargá la factura", O no hay ningún contexto (ni obra ni concepto) y la foto es claramente una factura formal de proveedor.
    - Si NO hay texto claro y rol es "Jefe de obra"/"Capataz" → asumí avance_obra, preguntá SOLO lo que no se sabe.
    - Si NO hay texto claro y rol es "Compras"/"Administración" → preguntá "¿Factura o gasto?"
    - Si NO hay texto claro y rol es "Admin" → preguntá "¿Avance, gasto o factura?"
-2. Si llega FOTO + texto de gasto: procesá como gasto con comprobante=blanco automáticamente.
+2. Si llega FOTO + texto de gasto (con obra o concepto): procesá como gasto con comprobante=blanco automáticamente, monto leído de la foto, caja efectivo del usuario. NO repreguntes obra ni caja si están claras.
 3. Si llega FOTO + texto de avance ("avancé", "foto de avance", "progreso", "terminé", "colocamos", "terminado", "avance de obra"): procesá como avance_obra directamente.
 4. Si falta monto → preguntá el monto
 5. Si falta obra → proponé la última o pedí que la indique
@@ -1317,6 +1320,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       concepto:      datos.concepto      || '',
       monto:         datos.monto         != null ? Math.round(datos.monto) : null,
       montoTotal:    datos.montoTotal    != null ? Math.round(datos.montoTotal) : null,
+      obraId:        datos.obraId        || null,  // si el texto mencionó obra
       mediaType:     mediaUrl?.endsWith('.pdf') ? 'pdf' : 'image',
       mediaUrl:      mediaUrl || null,
       from:          user.phone,
@@ -2014,7 +2018,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
     );
     await saveSharedData('whatsapp_pending', updated);
 
-    // Si es aprobación de movimiento → aplicarlo de verdad
+    // Si es aprobación de MOVIMIENTO → aplicarlo de verdad.
     if (accion === 'confirmed' && item.tipoPendiente === 'movimiento' && item.movimiento) {
       const movData = await loadSharedData('movimientos');
       const movs  = movData?.movimientos || [];
@@ -2025,6 +2029,46 @@ async function ejecutarComando(comando, datos, user, ctx) {
         c.id === mov.cajaId ? { ...c, saldo: (c.saldo || 0) + delta } : c
       );
       await saveSharedData('movimientos', { movimientos: [mov, ...movs], cajas: updatedCajas });
+      return `✅ Aprobado pendiente #${num} — gasto cargado.`;
+    }
+
+    // Si es aprobación de FACTURA → crear el gasto. La factura no trae caja
+    // (la app la pide), pero desde WA usamos la caja efectivo del usuario y
+    // la obra del pending si la tiene. Si falta caja, avisamos.
+    if (accion === 'confirmed' && item.tipoPendiente === 'factura') {
+      const movData = await loadSharedData('movimientos');
+      const movs  = movData?.movimientos || [];
+      const cajas = movData?.cajas || ctx.cajas;
+      const cajaEf = cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email && c.moneda === 'ARS');
+      const cajaId = item.cajaId || cajaEf?.id || null;
+      if (!cajaId) {
+        return `⚠️ Aprobé la factura pero no pude cargar el gasto: no tenés una caja efectivo configurada. Cargala desde la app → Autorizaciones, o pedile a un admin que te enlace una caja.`;
+      }
+      const monto = item.montoTotal != null ? item.montoTotal : (item.monto || 0);
+      const obra  = item.obraId ? ctx.obras.find(o => o.id === item.obraId) : null;
+      const mov = {
+        id: `mov-${Date.now()}`,
+        tipo: 'gasto',
+        descripcion: item.concepto || `Factura ${item.tipoFactura || ''} ${item.numeroFactura || ''} · ${item.proveedor || ''}`.trim(),
+        monto: Math.round(monto),
+        fecha: item.fecha || new Date().toISOString().split('T')[0],
+        obraId: item.obraId || null,
+        obraNombre: obra?.nombre || 'General',
+        cajaId,
+        cajaDestinoId: null,
+        proveedor: item.proveedor || '',
+        categoria: 'factura-proveedor',
+        medioPago: 'Transferencia',
+        referencia: item.numeroFactura || '',
+        comprobante: 'blanco',
+        comprobanteUrl: item.mediaUrl || null,
+        creadoPorWA: true,
+        creadoPor: user.user_name,
+      };
+      const updatedCajas = cajas.map(c => c.id === cajaId ? { ...c, saldo: (c.saldo || 0) - mov.monto } : c);
+      await saveSharedData('movimientos', { movimientos: [mov, ...movs], cajas: updatedCajas });
+      const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+      return `✅ Factura aprobada y cargada como gasto: ${fmt(mov.monto)}${obra ? ` en ${obra.nombre}` : ' (General)'}.${!item.obraId ? '\n_Quedó en General — si era de una obra, editala desde Movimientos._' : ''}`;
     }
 
     const verbo = accion === 'confirmed' ? '✅ Aprobado' : '❌ Rechazado';
