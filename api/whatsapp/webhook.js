@@ -678,6 +678,19 @@ async function getLinkedUser(phone) {
   return { ...linked, email: appUser.email, user_rol: appUser.rol || linked.user_rol, permisos: appUser.permisos, cajasVisibles: appUser.cajas_visibles || [] };
 }
 
+// ¿La caja es visible para el usuario? cajasVisibles puede ser:
+//  - el string '*'  → admin: ve TODAS las cajas
+//  - un array vacío → sin restricción: ve todas
+//  - un array de ids → ve solo esas
+// Antes el código hacía cajasVisibles.length===0 || cajasVisibles.includes(id),
+// que con '*' (string) daba length 1 e includes false → el usuario quedaba SIN
+// ninguna caja (bug que rompía 'saldo' y la carga de gastos para admins).
+function cajaEsVisible(cajasVisibles, cajaId) {
+  if (cajasVisibles === '*') return true;
+  if (!Array.isArray(cajasVisibles) || cajasVisibles.length === 0) return true;
+  return cajasVisibles.includes(cajaId);
+}
+
 // ── Flujo de vinculación ──────────────────────────────────────────────────────
 async function handleLinkingFlow(phone, text, conv) {
   if (conv.state === 'idle' || conv.state === 'linking_awaiting_user') {
@@ -896,7 +909,7 @@ function extractAvanceCompleto(text, obras, detalles) {
 
 // ── Claude: interpretar mensaje ───────────────────────────────────────────────
 async function callClaude(user, messageText, base64Media, mimeType, conv, ctx, mediaUrl = null) {
-  const cajasUsuario = ctx.cajas.filter(c => user.cajasVisibles.length === 0 || user.cajasVisibles.includes(c.id));
+  const cajasUsuario = ctx.cajas.filter(c => cajaEsVisible(user.cajasVisibles, c.id));
   const cajasEfectivo = ctx.cajas.filter(c => c.tipo === 'efectivo' && c.usuarioId === user.email);
   const cajaEfectivoARS = cajasEfectivo.find(c => c.moneda === 'ARS');
   const cajaEfectivoUSD = cajasEfectivo.find(c => c.moneda === 'USD');
@@ -2086,9 +2099,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
   }
 
   if (comando === 'saldo') {
-    const cajasUsuario = ctx.cajas.filter(c =>
-      user.cajasVisibles.length === 0 || user.cajasVisibles.includes(c.id)
-    );
+    const cajasUsuario = ctx.cajas.filter(c => cajaEsVisible(user.cajasVisibles, c.id));
     if (!cajasUsuario.length) return 'No tenés cajas asignadas.';
     const lineas = cajasUsuario.map(c =>
       `• ${c.nombre}: *$${Math.round(c.saldo || 0).toLocaleString('es-AR')}* ${c.moneda}`
