@@ -1309,6 +1309,39 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
   if (tipo === 'factura_compra') {
     const pendingRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
     const existing = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
+
+    // ── Detección de factura duplicada ──────────────────────────────────────
+    // Si ya hay un pending o un movimiento con el mismo N° de factura + mismo
+    // proveedor/CUIT, avisamos y NO la cargamos de nuevo.
+    const numF = (datos.numeroFactura || '').replace(/[\s\-.]/g, '').toLowerCase();
+    if (numF) {
+      const mismoProv = (a, b) => {
+        const na = (a || '').toLowerCase().trim(), nb = (b || '').toLowerCase().trim();
+        return na && nb && (na.includes(nb) || nb.includes(na));
+      };
+      const cuitClean = (datos.cuit || '').replace(/\D/g, '');
+      // 1) ¿Ya está en pendings?
+      const dupPending = existing.find(p =>
+        p.tipoPendiente === 'factura' &&
+        (p.numeroFactura || '').replace(/[\s\-.]/g, '').toLowerCase() === numF &&
+        (mismoProv(p.proveedor, datos.proveedor) || (cuitClean && (p.cuit || '').replace(/\D/g, '') === cuitClean))
+      );
+      // 2) ¿Ya se cargó como movimiento (factura aprobada)?
+      const movData = await loadSharedData('movimientos');
+      const dupMov = (movData?.movimientos || []).find(m =>
+        m.referencia && m.referencia.replace(/[\s\-.]/g, '').toLowerCase() === numF &&
+        mismoProv(m.proveedor, datos.proveedor)
+      );
+      if (dupPending || dupMov) {
+        const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
+        const ref = dupMov || dupPending;
+        const cuando = dupMov ? `ya está cargada como gasto el ${dupMov.fecha}` : `ya está en el buzón pendiente de aprobar`;
+        return `⚠️ *Factura duplicada*\nLa factura N° *${datos.numeroFactura}* de *${datos.proveedor || 'ese proveedor'}* ${cuando}` +
+          (ref.monto || ref.montoTotal ? ` (${fmt(ref.montoTotal || ref.monto)})` : '') +
+          `.\n\nNo la cargué de nuevo. Si es otra factura distinta, verificá el número.`;
+      }
+    }
+
     const newPending = [{
       id:            `wp-${Date.now()}`,
       tipoPendiente: 'factura',

@@ -916,12 +916,19 @@ function Panel({ tipo, movs, cajas, obras, proveedores, clientes, dolarVenta, to
 }
 
 // ── Panel comprobantes del mes ────────────────────────────────────────────────
+// Pensado para armarle el cierre al contador: lista de movimientos del mes que
+// tienen comprobante adjunto (facturas/tickets), con su total, descarga del
+// ZIP de imágenes y un CSV con el detalle (fecha, proveedor, concepto, monto,
+// obra) para la planilla contable.
 function ComprobantesPanel({ movimientos, mes }) {
   const [open,        setOpen]        = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   const conFoto = movimientos.filter(m => m.comprobanteUrl);
   if (!conFoto.length) return null;
+
+  const totalConFoto = conFoto.reduce((s, m) => s + (m.tipo === 'ingreso' ? 1 : -1) * (m.monto || 0), 0);
+  const totalGastos  = conFoto.filter(m => m.tipo === 'gasto').reduce((s, m) => s + (m.monto || 0), 0);
 
   const sanitize = s => (s || '').replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _-]/g, '').slice(0, 40).trim();
 
@@ -950,17 +957,44 @@ function ComprobantesPanel({ movimientos, mes }) {
     }
   };
 
+  // CSV para el contador. Separador ';' (Excel ARG lo abre directo).
+  const downloadCSV = () => {
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const cols = ['Fecha', 'Tipo', 'Proveedor/Cliente', 'Concepto', 'Monto', 'Obra', 'Caja', 'Comprobante'];
+    const filas = conFoto
+      .slice()
+      .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+      .map(m => [
+        m.fecha || '',
+        m.tipo || '',
+        m.proveedor || '',
+        m.descripcion || '',
+        Math.round(m.monto || 0),
+        m.obraNombre || 'General',
+        m.cajaNombre || m.cajaId || '',
+        m.comprobanteUrl || '',
+      ].map(esc).join(';'));
+    const csv = '﻿' + [cols.join(';'), ...filas].join('\n'); // BOM para tildes en Excel
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `comprobantes_${mes}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   return (
     <Box style={{ marginTop: 14 }}>
-      <div style={{ padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+      <div style={{ padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', flexWrap: 'wrap', gap: 8 }}
         onClick={() => setOpen(o => !o)}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 700, fontSize: 13 }}>Comprobantes del mes</span>
           <span style={{ fontSize: 11, background: T.faint2, borderRadius: 10, padding: '1px 8px', color: T.ink2 }}>{conFoto.length}</span>
+          <span style={{ fontSize: 11, color: T.warn, fontFamily: T.fontMono, fontWeight: 700 }}>gastos $ {fmtN(totalGastos)}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Btn sm onClick={e => { e.stopPropagation(); downloadCSV(); }}>↓ CSV contador</Btn>
           <Btn sm fill onClick={e => { e.stopPropagation(); downloadZip(); }} style={{ opacity: downloading ? 0.6 : 1, pointerEvents: downloading ? 'none' : 'auto' }}>
-            {downloading ? 'Preparando...' : '↓ Descargar ZIP'}
+            {downloading ? 'Preparando...' : '↓ ZIP imágenes'}
           </Btn>
           <span style={{ color: T.ink3, fontSize: 11 }}>{open ? '▲' : '▼'}</span>
         </div>
@@ -1020,6 +1054,7 @@ export default function Movimientos() {
   const [searchParams] = useSearchParams();
   const [mes,        setMes]        = useState(currMes);
   const [filtroObra, setFiltroObra] = useState(() => searchParams.get('obra') || '');
+  const [soloComprobante, setSoloComprobante] = useState(false);
 
   useEffect(() => {
     const o = searchParams.get('obra');
@@ -1037,6 +1072,7 @@ export default function Movimientos() {
       .filter(m => {
         if (!m.fecha.startsWith(mes)) return false;
         if (filtroObra && m.obraId !== filtroObra) return false;
+        if (soloComprobante && !m.comprobanteUrl) return false;
         if (!isAdmin && cv !== '*') {
           // Fail-closed: si el mov no tiene cajaId, o su caja NO esta entre
           // las visibles del usuario, lo ocultamos. (Antes los movs sin cajaId
@@ -1046,7 +1082,7 @@ export default function Movimientos() {
         return true;
       })
       .sort((a, b) => b.fecha.localeCompare(a.fecha));
-  }, [movimientos, mes, filtroObra, isAdmin, cajaIdsMias, currentUser?.cajasVisibles]);
+  }, [movimientos, mes, filtroObra, soloComprobante, isAdmin, cajaIdsMias, currentUser?.cajasVisibles]);
 
   const ingresos   = useMemo(() => filtered.filter(m => m.tipo === 'ingreso'),  [filtered]);
   const gastos     = useMemo(() => filtered.filter(m => m.tipo === 'gasto'),    [filtered]);
@@ -1102,6 +1138,12 @@ export default function Movimientos() {
               <span onClick={() => setMes(m => navMes(m, +1))}
                 style={{ padding: '5px 10px', cursor: 'pointer', fontSize: 14, color: '#fff', background: 'rgba(255,255,255,0.06)', userSelect: 'none', lineHeight: 1 }}>›</span>
             </div>
+            <span
+              onClick={() => setSoloComprobante(v => !v)}
+              title="Mostrar solo movimientos con comprobante adjunto"
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 4, border: `1px solid ${soloComprobante ? T.accent : '#3a3a3e'}`, background: soloComprobante ? T.accent : 'rgba(255,255,255,0.06)', color: '#fff', cursor: 'pointer', fontSize: 11, fontWeight: 600, userSelect: 'none' }}>
+              📎 Con comprobante
+            </span>
             <Btn sm onClick={exportCSV}>↗ CSV</Btn>
           </>
         }
