@@ -1104,6 +1104,8 @@ ACCIONES DISPONIBLES:
 9. TRASPASO (solo Admin): si el admin dice "pasá $200k de Caja Franco a Banco Galicia" o similar, accion.tipo='traspaso' con datos: { monto, cajaId (ID de la caja origen), cajaDestinoId (ID de la caja destino), montoDestino?(opcional para cross-moneda con TC distinto), descripcion? }. Matchear nombre de caja por nombre parcial. Si las cajas son de moneda distinta y el user no aclaró tipo de cambio, preguntá.
 10. PAGO_PROVEEDOR (solo Admin): si el admin dice "pagué $300k a Pérez por la cert de revoque" / "le pagué a Juancito $150k de baradero" → accion.tipo='pago_proveedor' con datos: { monto, proveedorNombre (nombre del proveedor), obraId (ID de la obra si la menciona), cajaId (caja de egreso, sino su efectivo), medioPago, concepto? }. Es DISTINTO de un gasto común: registra el pago contra la cuenta corriente del proveedor. Usalo cuando el destinatario es un proveedor/sub-contratista conocido y se habla de "pagar/abonar/cancelar" a esa persona. Matchear proveedor por nombre parcial.
 
+11. CHEQUE_RECIBIDO: si mandan una FOTO de un cheque/ECheq, o dicen "me dieron un cheque", "cobré con un cheque de X", "recibí un echeq de Y" → accion.tipo='cheque_recibido'. LEÉ de la foto/texto y poné en datos: { numero (N° del cheque), banco, titular (quién lo firma/emite), monto, fechaVencimiento (fecha de cobro/pago en formato YYYY-MM-DD), esEcheq (true si es electrónico/ECheq), clienteNombre? (de quién lo recibimos, si se sabe), obraId? (ID de obra si la menciona), cajaId? (si dice a qué caja; sino su efectivo) }. Si de la foto/texto NO salen el monto o la fechaVencimiento, preguntá SOLO eso. NO lo trates como un gasto.
+
 REGLAS DE FLUJO:
 - El usuario escribe corto y conciso. Interpretá la intención aunque falten datos.
 - Si la caja se resuelve por efectivo automático, NO la preguntes.
@@ -1542,6 +1544,63 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     } else {
       return '⚠️ Los traspasos entre cajas los puede hacer solo un Admin.';
     }
+  }
+
+  if (tipo === 'cheque_recibido') {
+    const monto = Math.round(parseFloat(datos.monto) || 0);
+    if (!monto) return '🤔 ¿Cuál es el monto del cheque?';
+    if (!datos.fechaVencimiento) return '🤔 ¿Para qué fecha es el cheque? (fecha de cobro, ej. 2026-07-20)';
+    // El cheque queda "en cartera" en una caja: la indicada o el efectivo del
+    // usuario (su caja). Mismo modelo que la app: al recibirlo entra a la caja.
+    const caja = ctx.cajas.find(c => c.id === datos.cajaId) ||
+                 ctx.cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email && c.moneda === 'ARS') ||
+                 ctx.cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email);
+    if (!caja) return '⚠️ No sé en qué caja guardar el cheque. Decime la caja, o pedí que te asignen una caja de efectivo.';
+    const obra = datos.obraId ? ctx.obras.find(o => o.id === datos.obraId) : null;
+    const esEcheq = !!datos.esEcheq;
+    const hoy = new Date().toISOString().split('T')[0];
+    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+
+    // 1) Ingreso a la caja (al recibirlo entra, igual que en la app).
+    const movData = await loadSharedData('movimientos');
+    const movs  = movData?.movimientos || [];
+    const cajas = movData?.cajas || ctx.cajas;
+    const movId = `mov-${Date.now()}`;
+    const nuevoMov = {
+      id: movId, tipo: 'ingreso',
+      descripcion: `Cheque recibido${datos.numero ? ` #${datos.numero}` : ''}${datos.banco ? ` · ${datos.banco}` : ''}`,
+      monto, fecha: datos.fecha || hoy,
+      obraId: obra?.id || null, obraNombre: obra?.nombre || 'General',
+      cajaId: caja.id, cajaDestinoId: null,
+      proveedor: datos.clienteNombre || datos.titular || '',
+      categoria: 'cheque', medioPago: esEcheq ? 'E-cheq' : 'Cheque',
+      referencia: datos.numero || '', comprobanteUrl: mediaUrl || null,
+      creadoPorWA: true, creadoPor: user.user_name,
+    };
+    const updatedCajas = cajas.map(c => c.id === caja.id ? { ...c, saldo: (c.saldo || 0) + monto } : c);
+    await saveSharedData('movimientos', { movimientos: [nuevoMov, ...movs], cajas: updatedCajas });
+
+    // 2) Cheque en cartera. OJO: shared_data 'cheques' es un ARRAY directo
+    // (la app usa useSyncedSharedData), no { cheques: [...] }.
+    const chequesArr = await loadSharedData('cheques');
+    const cheques = Array.isArray(chequesArr) ? chequesArr : (chequesArr?.cheques || []);
+    const nuevoCheque = {
+      id: `chq-${Date.now()}`,
+      tipo: esEcheq ? 'echeq_tercero' : 'tercero',
+      numero: datos.numero || '', banco: datos.banco || '', titular: datos.titular || '',
+      monto, moneda: 'ARS',
+      fechaIngreso: datos.fecha || hoy, fechaVencimiento: datos.fechaVencimiento,
+      obraId: obra?.id || null, obraNombre: obra?.nombre || '',
+      clienteNombre: datos.clienteNombre || '', proveedorNombre: '',
+      estado: 'cartera', cajaId: caja.id,
+      cajaDestinoId: null, cajaDestinoNombre: null, fechaDeposito: null, movimientoId: movId,
+      endosadoA: null, fechaEndoso: null, traspasoA: null, fechaTraspaso: null,
+      fechaRechazo: null, motivoRechazo: null,
+      observacion: '', createdAt: new Date().toISOString(), creadoPorWA: true, creadoPor: user.user_name,
+    };
+    await saveSharedData('cheques', [nuevoCheque, ...cheques]);
+
+    return `🧾 *Cheque en cartera*\n${fmt(monto)}${datos.banco ? ` · ${datos.banco}` : ''}${datos.numero ? ` · #${datos.numero}` : ''}\nVence: ${datos.fechaVencimiento}\nEntró a tu caja *${caja.nombre}*. Editable desde la app.`;
   }
 
   if (tipo === 'avance_obra') {
@@ -2219,7 +2278,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
   if (comando === 'cheques') {
     if (user.user_rol !== 'Admin') return '❌ Este comando es solo para administradores.';
     const chequesData = await loadSharedData('cheques');
-    const cheques = chequesData?.cheques || [];
+    const cheques = Array.isArray(chequesData) ? chequesData : (chequesData?.cheques || []);
     const hoy = new Date();
     const en7dias = new Date(hoy.getTime() + 7 * 24 * 60 * 60 * 1000);
     const proximos = cheques.filter(c => {
@@ -2463,14 +2522,14 @@ async function ejecutarComando(comando, datos, user, ctx) {
     const nuevoEstado = datos.estado; // 'depositado' | 'cobrado' | 'rechazado' | 'anulado'
     if (!numero) return '🤔 Decime el número de cheque. Ej: *deposité el cheque 4421*';
     const chequesData = await loadSharedData('cheques');
-    const cheques = chequesData?.cheques || [];
+    const cheques = Array.isArray(chequesData) ? chequesData : (chequesData?.cheques || []);
     const chq = cheques.find(c => (c.numero || '').toString().replace(/\D/g, '') === numero.replace(/\D/g, ''));
     if (!chq) return `❌ No encontré un cheque N° ${numero}.`;
     const updated = cheques.map(c => c.id === chq.id
       ? { ...c, estado: nuevoEstado, ...(nuevoEstado === 'depositado' ? { fechaDeposito: new Date().toISOString().split('T')[0] } : {}) }
       : c
     );
-    await saveSharedData('cheques', { ...chequesData, cheques: updated });
+    await saveSharedData('cheques', updated);
     const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
     const label = { depositado: 'depositado', cobrado: 'cobrado', rechazado: 'rechazado', anulado: 'anulado' }[nuevoEstado] || nuevoEstado;
     return `✅ Cheque N° *${chq.numero}* (${chq.banco || ''} · ${fmt(chq.monto)}) marcado como *${label}*.`;
