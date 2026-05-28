@@ -101,7 +101,7 @@ function ResumenBand({ cheques }) {
 }
 
 // ── Tabla de cheques ──────────────────────────────────────────────────────────
-function ChequesTable({ cheques, onAccion }) {
+function ChequesTable({ cheques, onAccion, cajas, currentUserEmail }) {
   if (cheques.length === 0) return (
     <div style={{ padding: '32px 0', textAlign: 'center', color: T.ink3, fontSize: 13 }}>No hay cheques en esta vista</div>
   );
@@ -117,7 +117,7 @@ function ChequesTable({ cheques, onAccion }) {
         </thead>
         <tbody>
           {cheques.map(c => (
-            <ChequeFila key={c.id} cheque={c} onAccion={onAccion} />
+            <ChequeFila key={c.id} cheque={c} onAccion={onAccion} cajas={cajas} currentUserEmail={currentUserEmail} />
           ))}
         </tbody>
       </table>
@@ -125,21 +125,38 @@ function ChequesTable({ cheques, onAccion }) {
   );
 }
 
-function ChequeFila({ cheque: c, onAccion }) {
+function ChequeFila({ cheque: c, onAccion, cajas, currentUserEmail }) {
   const [hover, setHover] = useState(false);
   const navigate = useNavigate();
   const { proveedores } = useProveedores();
   const { clientes }    = useClientes();
   const esTercero = c.tipo === 'tercero' || c.tipo === 'echeq_tercero';
   const sinCaja = !c.cajaId;
-  const btnAccion = (label, action, style = {}) => (
-    <Btn sm
-      onClick={() => !sinCaja && onAccion(action, c)}
-      title={sinCaja ? 'Este cheque no tiene caja asociada — editalo para asignarle una' : ''}
-      style={{ fontSize: 10, opacity: sinCaja ? 0.4 : 1, cursor: sinCaja ? 'not-allowed' : 'pointer', ...style }}>
-      {label}
-    </Btn>
-  );
+  // Caja que tiene físicamente el cheque (para "en cartera de quién").
+  const cajaActual = c.cajaId ? (cajas || []).find(x => x.id === c.cajaId) : null;
+  // Posesión: solo quien tiene el cheque en SU caja puede depositarlo/endosarlo/
+  // traspasarlo (aunque un admin lo vea). Si la caja no tiene dueño asignado
+  // (ej. caja compartida/banco), no se restringe.
+  const esPoseedor = !cajaActual?.usuarioId || cajaActual.usuarioId === currentUserEmail;
+  const puedeOperar = !sinCaja && esPoseedor;
+  // soloPosesion=true → requiere ser el poseedor; false → basta con tener caja
+  // (ej. rechazar, que es registrar un hecho, no operar la tenencia).
+  const btnAccion = (label, action, style = {}, soloPosesion = true) => {
+    const habilitado = soloPosesion ? puedeOperar : !sinCaja;
+    const title = sinCaja
+      ? 'Este cheque no tiene caja asociada — editalo para asignarle una'
+      : (soloPosesion && !esPoseedor)
+        ? `Solo puede operarlo quien lo tiene en su caja${cajaActual ? ` (${cajaActual.nombre})` : ''}`
+        : '';
+    return (
+      <Btn sm
+        onClick={() => habilitado && onAccion(action, c)}
+        title={title}
+        style={{ fontSize: 10, opacity: habilitado ? 1 : 0.4, cursor: habilitado ? 'pointer' : 'not-allowed', ...style }}>
+        {label}
+      </Btn>
+    );
+  };
   return (
     <tr
       style={{ background: hover ? T.faint : 'transparent', transition: 'background .1s', cursor: 'default' }}
@@ -209,6 +226,11 @@ function ChequeFila({ cheque: c, onAccion }) {
       </td>
       <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.faint2}` }}>
         <Badge estado={c.estado} />
+        {c.estado === 'cartera' && (
+          <div style={{ fontSize: 10, color: cajaActual ? T.ink2 : '#dc2626', marginTop: 2 }}>
+            {cajaActual ? `📍 En ${cajaActual.nombre}` : '⚠ sin caja'}
+          </div>
+        )}
       </td>
       <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.faint2}` }}>
         <div style={{ display: 'flex', gap: 4 }}>
@@ -223,7 +245,7 @@ function ChequeFila({ cheque: c, onAccion }) {
             btnAccion('Acreditado', 'acreditar')
           )}
           {c.estado === 'cartera' && (
-            btnAccion('Rechazar', 'rechazar', { color: sinCaja ? undefined : '#dc2626', borderColor: sinCaja ? undefined : '#dc2626' })
+            btnAccion('Rechazar', 'rechazar', { color: sinCaja ? undefined : '#dc2626', borderColor: sinCaja ? undefined : '#dc2626' }, false)
           )}
           {(c.estado === 'rechazado' || c.estado === 'endosado') && (
             <Btn sm onClick={() => onAccion('reactivar', c)} style={{ fontSize: 10 }}>Reactivar</Btn>
@@ -927,7 +949,7 @@ export default function Cheques() {
 
       {/* Tabla */}
       <Box style={{ padding: 0, overflow: 'hidden' }}>
-        <ChequesTable cheques={visibles} onAccion={onAccion} />
+        <ChequesTable cheques={visibles} onAccion={onAccion} cajas={cajas} currentUserEmail={currentUser?.email} />
       </Box>
 
       {/* Modales */}
