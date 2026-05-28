@@ -9,7 +9,7 @@ import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useDolar } from '../store/DolarContext';
-import { cuotaEstadoCalc } from './obra/helpers';
+import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado } from './obra/helpers';
 
 const CY = new Date().getFullYear();
 const fmtM = (n) => {
@@ -42,7 +42,7 @@ export default function Reportes() {
 
   const { obras, detalles } = useObras();
   const { proveedores } = useProveedores();
-  const { movimientos } = useMovimientos();
+  const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
   const tc = dolarVenta || 1070;
   const [rubroObraId, setRubroObraId] = useState('');
@@ -115,20 +115,24 @@ export default function Reportes() {
     const limite = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const all = [];
     obras.forEach(o => {
+      const reparto = repartirCobroEnCuotas(detalles[o.id]?.cuotas || [], cobradoObraUSD(movimientos, cajas, o.id, tc), o.moneda || 'ARS', tc);
       (detalles[o.id]?.cuotas || [])
-        .filter(c => cuotaEstadoCalc(c, 'USD', tc) !== 'pagado' && c.fecha >= hoy && c.fecha <= limite)
+        .filter(c => cuotaEstadoDesdeCobrado(c, reparto[c.id], o.moneda || 'ARS', tc) !== 'pagado' && c.fecha >= hoy && c.fecha <= limite)
         .forEach(c => all.push({ ...c, obraNombre: o.nombre, obraId: o.id }));
     });
     return all.sort((a, b) => a.fecha.localeCompare(b.fecha));
-  }, [obras, detalles]);
+  }, [obras, detalles, tc, movimientos, cajas]);
 
   const cuotasTotalesMonto = useMemo(() =>
     obras.reduce((s, o) => s + (detalles[o.id]?.cuotas || []).reduce((ss, c) => ss + (c.monto || 0), 0), 0),
     [obras, detalles]);
 
   const cuotasCobradas = useMemo(() =>
-    obras.reduce((s, o) => s + (detalles[o.id]?.cuotas || []).filter(c => cuotaEstadoCalc(c, 'USD', tc) === 'pagado').reduce((ss, c) => ss + (c.monto || 0), 0), 0),
-    [obras, detalles, tc]);
+    obras.reduce((s, o) => {
+      const reparto = repartirCobroEnCuotas(detalles[o.id]?.cuotas || [], cobradoObraUSD(movimientos, cajas, o.id, tc), o.moneda || 'ARS', tc);
+      return s + (detalles[o.id]?.cuotas || []).filter(c => cuotaEstadoDesdeCobrado(c, reparto[c.id], o.moneda || 'ARS', tc) === 'pagado').reduce((ss, c) => ss + (c.monto || 0), 0);
+    }, 0),
+    [obras, detalles, tc, movimientos, cajas]);
 
   // ── Resumen por tipo de obra ──
   const tiposMap = useMemo(() => {

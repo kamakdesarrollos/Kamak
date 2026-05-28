@@ -8,7 +8,8 @@ import { useClientes } from '../../store/ClientesContext';
 import { Box, Btn, Chip, Stat, Bar } from '../../components/ui';
 import { T } from '../../theme';
 import { fmtN, fmtFecha } from '../../lib/format';
-import { cuotaEstadoCalc, cuotaCobrado, calcObra } from '../obra/helpers';
+import { cuotaEstadoCalc, cuotaCobrado, calcObra, cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado } from '../obra/helpers';
+import { useMovimientos } from '../../store/MovimientosContext';
 
 const fmtD = fmtFecha;
 
@@ -31,6 +32,9 @@ export default function PortalCliente() {
   const { currentUser } = useUsuarios();
   const { dolarVenta } = useDolar();
   const { clientes } = useClientes();
+  // Para el modo admin-preview: movimientos/cajas del contexto, para derivar lo
+  // cobrado. En modo cliente, el cobrado viene del endpoint (serverData.cobradoUSD).
+  const { movimientos: portalMovs, cajas: portalCajas } = useMovimientos();
   const [tab, setTab] = useState(0);
 
   // GATE de acceso al portal + modo de operacion.
@@ -222,6 +226,16 @@ export default function PortalCliente() {
   const obraM = obra.moneda || 'ARS';
   const obraEsUSD = obraM === 'USD';
 
+  // Cobrado del cliente DERIVADO de los movimientos (libro único), igual que el
+  // admin. Modo cliente: viene del endpoint. Modo admin-preview: se calcula del
+  // contexto. Repartido sobre las cuotas en orden. Sombreamos cuotaEstadoCalc
+  // con la versión derivada para que TODO el portal quede consistente con la obra.
+  const cobradoUSD = isClienteMode
+    ? (serverData?.cobradoUSD || 0)
+    : cobradoObraUSD(portalMovs, portalCajas, id, tc);
+  const repartoCuotas = repartirCobroEnCuotas(cuotas, cobradoUSD, obraM, tc);
+  const cuotaEstadoCalc = (c) => cuotaEstadoDesdeCobrado(c, repartoCuotas[c.id], obraM, tc);
+
   // ── Modelo de moneda del portal ─────────────────────────────────────────
   // - Costos del presupuesto (tareas): SIEMPRE en pesos (ARS), sin importar
   //   la moneda de la obra. La obra USD es solo para mostrar el total
@@ -242,8 +256,8 @@ export default function PortalCliente() {
   // Pagado = suma de TODOS los pagos (incluye parciales), convertidos a USD.
   // Mismo cálculo que el admin (ObraPresupuesto totalCobrado) para que el
   // cliente vea exactamente lo mismo que registramos como cobrado.
-  const pagadoCuotasUSD = cuotas.reduce((s, c) => s + cuotaCobrado(c, 'USD', tc), 0);
-  const countPagadas    = cuotas.filter(c => cuotaEstadoCalc(c, obraM, tc) === 'pagado').length;
+  const pagadoCuotasUSD = cobradoUSD;
+  const countPagadas    = cuotas.filter(c => cuotaEstadoCalc(c) === 'pagado').length;
 
   // Total acordado al cliente: venta del presupuesto (costos *en ARS* +
   // margen) + adicionales (en ARS) + interes de financiacion. Convertido a

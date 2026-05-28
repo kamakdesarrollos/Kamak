@@ -24,7 +24,22 @@ import {
   cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
   cuotaMontoUSD, arsToUSD,
   tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
+  cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado,
 } from './helpers';
+
+// Rediseño "libro único": lo cobrado de cada cuota se DERIVA de los movimientos
+// de ingreso de la obra (no del libro paralelo cuota.pagos[]). Estos helpers
+// arman, para una obra, las versiones "derivadas" de cuotaCobrado/cuotaEstadoCalc
+// repartiendo el total cobrado (de movimientos) sobre las cuotas en orden.
+function buildCuotaDerivados(cuotas, movimientos, cajas, obraId, obraMoneda, tc) {
+  const cobUSD = cobradoObraUSD(movimientos, cajas, obraId, tc);
+  const reparto = repartirCobroEnCuotas(cuotas, cobUSD, obraMoneda, tc);
+  return {
+    cuotaCobrado: (c) => reparto[c.id] || 0, // en USD
+    cuotaEstadoCalc: (c) => cuotaEstadoDesdeCobrado(c, reparto[c.id], obraMoneda, tc),
+    cobradoTotalUSD: cobUSD,
+  };
+}
 import { FRow, FInput, FSelect, FormPanel, inputSt, labelSt } from './forms';
 import TabDocumentos from './tabs/TabDocumentos';
 import ClienteAccesoModal from '../modales/ClienteAccesoModal';
@@ -60,7 +75,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
       : Math.round(rr.reduce((s, r) => s + r.avance, 0) / rr.length)
     : 0;
   const { dolarVenta } = useDolar();
-  const { movimientos: allMovs } = useMovimientos();
+  const { movimientos: allMovs, cajas: allCajasResumen } = useMovimientos();
   const today = new Date();
   const fin = obra.fechaFinEstim ? new Date(obra.fechaFinEstim) : null;
   const diasRest = fin ? Math.ceil((fin - today) / 86400000) : null;
@@ -103,6 +118,8 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   const totalClienteUSD = arsToUSD(totalClienteARS, tc);
   const adicionalClienteUSD = arsToUSD(adicionalCliente, tc);
   const cuotasPlan = detalle.cuotas || [];
+  // Cobrado por cuota DERIVADO de los movimientos (libro único).
+  const { cuotaEstadoCalc } = buildCuotaDerivados(cuotasPlan, allMovs, allCajasResumen, obra.id, obraMonedaResumen, tc);
   // Cuotas en USD (cada una segun su moneda nativa).
   const cuotasPagadasUSD = cuotasPlan
     .filter(c => cuotaEstadoCalc(c, obraMonedaResumen, tc) === 'pagado')
@@ -1870,6 +1887,9 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const interes = parseFloat(fin.interes) || 0;
   const baseTotal = ventaBase + adicionalCliente;
   const tc = dolarVenta || 1070;
+  // Cobrado/estado de cuota DERIVADO de los movimientos (libro único).
+  const { movimientos: _movsFin, cajas: _cajasFin } = useMovimientos();
+  const { cuotaEstadoCalc } = buildCuotaDerivados(detalle.cuotas || [], _movsFin, _cajasFin, obra.id, obra?.moneda || 'ARS', tc);
 
   // Input de interes — controlled con state local. interesLive es el valor
   // que se está mostrando en el input AHORA (no el del detalle): el "Total
@@ -2605,16 +2625,11 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
   const adicDisplay  = arsToUSD(adicionalClienteARS, tc);
 
   const cuotas = detalle.cuotas || [];
-
-  // Cobrado real en USD: suma de pagos convertidos a USD.
-  const totalCobrado = useMemo(
-    () => cuotas.reduce((s, c) => {
-      // cuotaCobrado devuelve en la moneda activa (le pasamos USD para que
-      // convierta automaticamente cualquier pago ARS a USD).
-      return s + cuotaCobrado(c, 'USD', tc);
-    }, 0),
-    [cuotas, tc]
-  );
+  // Cobrado por cuota DERIVADO de los movimientos de ingreso de la obra (libro
+  // único). Sombreamos cuotaCobrado/cuotaEstadoCalc con las versiones derivadas.
+  const { movimientos: _movsCC, cajas: _cajasCC } = useMovimientos();
+  const { cuotaCobrado, cuotaEstadoCalc, cobradoTotalUSD } = buildCuotaDerivados(cuotas, _movsCC, _cajasCC, obra.id, obra?.moneda || 'ARS', tc);
+  const totalCobrado = cobradoTotalUSD;
 
   const saldoPendiente = Math.max(0, total - totalCobrado);
   const cuotasPagadas = cuotas.filter(c => cuotaEstadoCalc(c, moneda, tc) === 'pagado').length;
@@ -2826,7 +2841,12 @@ function TabCuentaCorriente({ obra, detalle, patch, moneda, onExport }) {
   const totalUSD = arsToUSD(totalARS, tc);
   const adicionalUSD = arsToUSD(adicionalARS, tc);
   const cuotas = detalle.cuotas || [];
-  const cobradoUSD = cuotas.reduce((s, c) => s + cuotaCobrado(c, 'USD', tc), 0);
+  // Lo cobrado de cada cuota se DERIVA de los movimientos de ingreso de la obra
+  // (libro único). Sombreamos cuotaCobrado/cuotaEstadoCalc localmente con las
+  // versiones derivadas, así todos los usos de abajo quedan consistentes.
+  const { movimientos: _movs, cajas: _cajas } = useMovimientos();
+  const { cuotaCobrado, cuotaEstadoCalc, cobradoTotalUSD } = buildCuotaDerivados(cuotas, _movs, _cajas, obra.id, obraMon, tc);
+  const cobradoUSD = cobradoTotalUSD;
   const saldoUSD = Math.max(0, totalUSD - cobradoUSD);
 
   const fmtPesos = (n) => `$ ${fmtN(n)}`;

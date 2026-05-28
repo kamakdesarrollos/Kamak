@@ -46,10 +46,11 @@ export default async function handler(req, res) {
     const obraId = entry.obraId;
 
     // 2) Cargar data en paralelo
-    const [obrasData, clientesData, dolarData] = await Promise.all([
+    const [obrasData, clientesData, dolarData, movData] = await Promise.all([
       loadSharedData('obras'),
       loadSharedData('clientes'),
       loadSharedData('dolar'),
+      loadSharedData('movimientos'),
     ]);
 
     // 3) Filtrar al cliente solo a su obra (no exponer todas las obras)
@@ -69,12 +70,27 @@ export default async function handler(req, res) {
       ? (dolarData.manualVal || 1070)
       : (dolarData?.venta || 1070);
 
+    // Cobrado del cliente DERIVADO de los movimientos de ingreso de la obra
+    // (libro único). Lo calculamos acá (server) porque el portal no tiene
+    // acceso a los movimientos. El portal lo reparte sobre las cuotas.
+    const movs  = movData?.movimientos || [];
+    const cajas = movData?.cajas || [];
+    const cobradoUSD = movs
+      .filter(m => m.obraId === obraId && m.tipo === 'ingreso')
+      .reduce((s, m) => {
+        if (m.montoDolar) return s + Math.round(m.montoDolar);
+        const caja = cajas.find(c => c.id === m.cajaId);
+        const esUSD = caja?.moneda === 'USD';
+        return s + (esUSD ? Math.round(m.monto || 0) : Math.round((m.monto || 0) / (dolarVenta || 1)));
+      }, 0);
+
     return res.status(200).json({
       obra,
       detalle,
       // Devolvemos solo el cliente (nombre) — no toda la lista
       clienteNombre: cliente?.nombre || obra.cliente || '',
       dolarVenta,
+      cobradoUSD,
     });
   } catch (e) {
     console.error('[portal/data] error:', e.message);

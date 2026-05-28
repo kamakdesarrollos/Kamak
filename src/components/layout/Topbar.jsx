@@ -11,7 +11,8 @@ import { useSolicitudes } from '../../store/SolicitudesContext';
 import { useCheques } from '../../store/ChequesContext';
 import { useTareas } from '../../store/TareasContext';
 import { useObras } from '../../store/ObrasContext';
-import { cuotaEstadoCalc, cuotaMontoUSD } from '../../pages/obra/helpers';
+import { cuotaMontoUSD, cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado } from '../../pages/obra/helpers';
+import { useMovimientos } from '../../store/MovimientosContext';
 import GlobalSearch from '../GlobalSearch';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -231,6 +232,7 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
   const { cheques } = useCheques();
   const { tareas } = useTareas() ?? { tareas: [] };
   const { obras, detalles } = useObras();
+  const { movimientos, cajas } = useMovimientos();
   const navigate = useNavigate();
   const [showNotif, setShowNotif] = useState(false);
   const bellRef = useRef(null);
@@ -264,8 +266,9 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
       if (o.estado !== 'activa' && o.estado !== 'en-presupuesto') return;
       const det = detalles?.[o.id];
       if (!det || !det.cuotas) return;
+      const reparto = repartirCobroEnCuotas(det.cuotas, cobradoObraUSD(movimientos, cajas, o.id, tcAhora), o.moneda || 'ARS', tcAhora);
       det.cuotas.forEach(c => {
-        const estado = cuotaEstadoCalc(c, o.moneda || 'ARS', tcAhora);
+        const estado = cuotaEstadoDesdeCobrado(c, reparto[c.id], o.moneda || 'ARS', tcAhora);
         if (estado === 'pagado') return;
         if (!c.fecha) return;
         const d = diasHasta(c.fecha);
