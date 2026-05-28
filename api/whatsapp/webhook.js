@@ -1130,11 +1130,25 @@ Respondé ÚNICAMENTE con JSON válido:
   });
   const data = await res.json();
 
+  // Error de la API (rate limit, imagen muy grande, modelo, etc.)
+  if (!res.ok || data.error) {
+    console.error('callClaude API error:', res.status, JSON.stringify(data).slice(0, 500));
+    return { mensaje: '⚠️ Tuve un problema al procesar tu mensaje. Probá de nuevo en un momento o escribilo con palabras (ej. "gasté $5000 en Baradero").', estado: 'conversando', accion: { tipo: null, datos: {} } };
+  }
+
   try {
-    const text = data.content[0].text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '');
+    let text = (data.content?.[0]?.text || '').trim();
+    if (!text) throw new Error('respuesta vacía');
+    // Quitar fences de markdown si vienen.
+    text = text.replace(/^```json?\s*/i, '').replace(/\s*```$/, '');
+    // Si Claude agregó texto antes/después del JSON, extraer el bloque {...}.
+    const a = text.indexOf('{');
+    const b = text.lastIndexOf('}');
+    if (a >= 0 && b > a) text = text.slice(a, b + 1);
     return JSON.parse(text);
-  } catch {
-    return { mensaje: 'Perdón, no entendí bien. ¿Podés repetirlo?', estado: 'conversando', accion: { tipo: null, datos: {} } };
+  } catch (e) {
+    console.error('callClaude parse error:', e.message, '| raw:', JSON.stringify(data.content?.[0]?.text || data).slice(0, 600));
+    return { mensaje: 'Perdón, no entendí bien. ¿Podés repetirlo o escribirlo distinto? Ej: "gasté $5000 de combustible en Baradero".', estado: 'conversando', accion: { tipo: null, datos: {} } };
   }
 }
 
