@@ -8,7 +8,7 @@ import { useClientes } from '../../store/ClientesContext';
 import { Box, Btn, Chip, Stat, Bar } from '../../components/ui';
 import { T } from '../../theme';
 import { fmtN, fmtFecha } from '../../lib/format';
-import { cuotaEstadoCalc, cuotaCobrado, calcObra, cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado } from '../obra/helpers';
+import { cuotaEstadoCalc, cuotaCobrado, calcObra, cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, ingresosObraUSD, detallePagosCuotas } from '../obra/helpers';
 import { useMovimientos } from '../../store/MovimientosContext';
 
 const fmtD = fmtFecha;
@@ -235,6 +235,13 @@ export default function PortalCliente() {
     : cobradoObraUSD(portalMovs, portalCajas, id, tc);
   const repartoCuotas = repartirCobroEnCuotas(cuotas, cobradoUSD, obraM, tc);
   const cuotaEstadoCalc = (c) => cuotaEstadoDesdeCobrado(c, repartoCuotas[c.id], obraM, tc);
+  // Fecha de "Pagada el": último movimiento que saldó la cuota (waterfall).
+  // Modo cliente: ingresos vienen del endpoint (fecha+monto USD). Admin: del contexto.
+  const ingresosPortal = isClienteMode
+    ? (serverData?.ingresos || [])
+    : ingresosObraUSD(portalMovs, portalCajas, id, tc);
+  const detalleCuotas = detallePagosCuotas(cuotas, ingresosPortal, obraM, tc);
+  const cuotaFechaPagada = (c) => detalleCuotas[c.id]?.fechaPagada || null;
 
   // ── Modelo de moneda del portal ─────────────────────────────────────────
   // - Costos del presupuesto (tareas): SIEMPRE en pesos (ARS), sin importar
@@ -652,7 +659,7 @@ export default function PortalCliente() {
                   const isPagado = estado === 'pagado';
                   const isParcial = estado === 'parcial';
                   const urg = urgenciaPortal(c, estado);
-                  const ultimoPago = (c.pagos || []).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))[0];
+                  const fechaPagada = cuotaFechaPagada(c);
                   const rowBg = isPagado ? '#f0faf2'
                     : urg === 'vencida' ? '#fef2f2'
                     : urg === 'proxima' ? '#fffbeb'
@@ -678,9 +685,9 @@ export default function PortalCliente() {
                         <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{c.descripcion}</div>
                         <div style={{ fontSize: 11, color: T.ink2, marginTop: 1 }}>
                           {fmtD(c.fecha)}
-                          {isPagado && ultimoPago?.fecha && (
+                          {isPagado && fechaPagada && (
                             <span style={{ color: '#166534', marginLeft: 6, fontFamily: T.fontMono }}>
-                              · Pagada el {fmtD(ultimoPago.fecha)}
+                              · Pagada el {fmtD(fechaPagada)}
                             </span>
                           )}
                           {isParcial && (

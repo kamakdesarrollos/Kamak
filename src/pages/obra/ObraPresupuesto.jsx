@@ -25,6 +25,7 @@ import {
   cuotaMontoUSD, arsToUSD,
   tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
   cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado,
+  ingresosObraUSD, detallePagosCuotas,
 } from './helpers';
 
 // Rediseño "libro único": lo cobrado de cada cuota se DERIVA de los movimientos
@@ -34,9 +35,13 @@ import {
 function buildCuotaDerivados(cuotas, movimientos, cajas, obraId, obraMoneda, tc) {
   const cobUSD = cobradoObraUSD(movimientos, cajas, obraId, tc);
   const reparto = repartirCobroEnCuotas(cuotas, cobUSD, obraMoneda, tc);
+  const ingresos = ingresosObraUSD(movimientos, cajas, obraId, tc);
+  const detalle = detallePagosCuotas(cuotas, ingresos, obraMoneda, tc);
   return {
     cuotaCobrado: (c) => reparto[c.id] || 0, // en USD
     cuotaEstadoCalc: (c) => cuotaEstadoDesdeCobrado(c, reparto[c.id], obraMoneda, tc),
+    cuotaPagos: (c) => detalle[c.id]?.pagos || [], // detalle derivado de movimientos
+    cuotaFechaPagada: (c) => detalle[c.id]?.fechaPagada || null,
     cobradoTotalUSD: cobUSD,
   };
 }
@@ -2631,7 +2636,7 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
   // Cobrado por cuota DERIVADO de los movimientos de ingreso de la obra (libro
   // único). Sombreamos cuotaCobrado/cuotaEstadoCalc con las versiones derivadas.
   const { movimientos: _movsCC, cajas: _cajasCC } = useMovimientos();
-  const { cuotaCobrado, cuotaEstadoCalc, cobradoTotalUSD } = buildCuotaDerivados(cuotas, _movsCC, _cajasCC, obra.id, obra?.moneda || 'ARS', tc);
+  const { cuotaCobrado, cuotaEstadoCalc, cuotaPagos, cobradoTotalUSD } = buildCuotaDerivados(cuotas, _movsCC, _cajasCC, obra.id, obra?.moneda || 'ARS', tc);
   const totalCobrado = cobradoTotalUSD;
 
   const saldoPendiente = Math.max(0, total - totalCobrado);
@@ -2756,7 +2761,7 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
             const monto  = cuotaMontoUSD(c, moneda || 'ARS', tc);
             const cobrado = cuotaCobrado(c, 'USD', tc);
             const saldo  = Math.max(0, monto - cobrado);
-            const pagos  = c.pagos || [];
+            const pagos  = cuotaPagos(c); // derivados de movimientos (en USD)
             const isOpen = expandedId === c.id;
             return (
               <div key={c.id}>
@@ -2784,22 +2789,11 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
                     {pagos.length === 0 ? (
                       <div style={{ padding: '10px 14px 10px 54px', fontSize: 11, color: T.ink3 }}>Sin cobros registrados aún</div>
                     ) : pagos.map((p, pi) => (
-                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: `${pi === 0 ? 10 : 6}px 14px ${pi === pagos.length - 1 ? 10 : 6}px 54px`, borderTop: pi > 0 ? `1px solid ${T.faint2}` : 'none' }}>
+                      <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: `${pi === 0 ? 10 : 6}px 14px ${pi === pagos.length - 1 ? 10 : 6}px 54px`, borderTop: pi > 0 ? `1px solid ${T.faint2}` : 'none' }}>
                         <span style={{ fontSize: 11, color: T.ink2, flexShrink: 0 }}>{fmtD(p.fecha)}</span>
-                        <span style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 12, color: T.ok }}>
-                          {p.moneda === 'USD' ? `U$S ${fmtN(p.monto)}` : `$ ${fmtN(p.monto)}`}
-                        </span>
-                        {p.moneda === 'ARS' && p.tc > 0 && (
-                          <span style={{ fontSize: 10, color: T.ink3 }}>≈ U$S {fmtN(Math.round(p.monto / p.tc))}</span>
-                        )}
-                        {p.cobradoPor && <span style={{ fontSize: 11, color: T.ink2 }}>{p.cobradoPor}</span>}
-                        {p.fotoUrl && (
-                          <a href={p.fotoUrl} target="_blank" rel="noopener noreferrer"
-                            style={{ fontSize: 10, color: T.accent, textDecoration: 'underline', flexShrink: 0 }}
-                            onClick={e => e.stopPropagation()}>
-                            Ver comprobante →
-                          </a>
-                        )}
+                        <span style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 12, color: T.ok }}>U$S {fmtN(p.monto)}</span>
+                        {p.cajaNombre && <span style={{ fontSize: 11, color: T.ink2, flexShrink: 0 }}>{p.cajaNombre}</span>}
+                        {p.concepto && <span style={{ fontSize: 11, color: T.ink3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.concepto}</span>}
                       </div>
                     ))}
                   </div>
@@ -2848,7 +2842,7 @@ function TabCuentaCorriente({ obra, detalle, patch, moneda, onExport }) {
   // (libro único). Sombreamos cuotaCobrado/cuotaEstadoCalc localmente con las
   // versiones derivadas, así todos los usos de abajo quedan consistentes.
   const { movimientos: _movs, cajas: _cajas } = useMovimientos();
-  const { cuotaCobrado, cuotaEstadoCalc, cobradoTotalUSD } = buildCuotaDerivados(cuotas, _movs, _cajas, obra.id, obraMon, tc);
+  const { cuotaCobrado, cuotaEstadoCalc, cuotaFechaPagada, cobradoTotalUSD } = buildCuotaDerivados(cuotas, _movs, _cajas, obra.id, obraMon, tc);
   const cobradoUSD = cobradoTotalUSD;
   const saldoUSD = Math.max(0, totalUSD - cobradoUSD);
 
@@ -3086,7 +3080,7 @@ function EstadoDeCuenta({ obra, detalle, tc }) {
         const parcial = estado === 'parcial';
         const monto = cuotaMontoUSD(c, obraMon, tc);
         const cobrado = cuotaCobrado(c, 'USD', tc);
-        const ultimoPago = (c.pagos || []).slice().sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))[0];
+        const fechaPagada = cuotaFechaPagada(c); // derivada del último movimiento que la saldó
         const urg = urgenciaCuota(c, estado, hoyStr);
         // Colores por urgencia: verde claro (a tiempo), amarillo (próxima),
         // rojo (vencida), verde sólido (pagada).
@@ -3130,9 +3124,9 @@ function EstadoDeCuenta({ obra, detalle, tc }) {
             }}>{c.n}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.descripcion}</div>
-              {pagada && ultimoPago?.fecha && (
+              {pagada && fechaPagada && (
                 <div style={{ fontSize: 11, color: '#166534', fontFamily: T.fontMono, marginTop: 1 }}>
-                  Cobrada el {fmtD(ultimoPago.fecha)}
+                  Cobrada el {fmtD(fechaPagada)}
                 </div>
               )}
               {parcial && (

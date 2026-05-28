@@ -12,6 +12,7 @@ import { useDolar } from '../store/DolarContext';
 import { useSolicitudes } from '../store/SolicitudesContext';
 import { useWhatsappPending } from '../store/WhatsappPendingContext';
 import AprobarFacturaModal from './modales/AprobarFacturaModal';
+import { cobradoObraUSD, repartirCobroEnCuotas, cuotaMontoUSD } from './obra/helpers';
 
 // Hub unificado de aprobaciones admin:
 // - Solicitudes de eliminacion (creadas por no-admins en /movimientos)
@@ -35,22 +36,9 @@ const fmtDatetime = (iso) => {
     d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 };
 
-const newPagoId = () => `pago-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const newAdicId = () => `adic-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 
 const cuotaMontoFn   = (c, moneda, tc) => (c._usd || moneda !== 'USD') ? (c.monto||0) : Math.round((c.monto||0)/tc);
-const cuotaCobradoFn = (c, moneda, tc) =>
-  (c.pagos||[]).reduce((s,p) =>
-    moneda==='USD'
-      ? s+(p.moneda==='ARS' ? Math.round((p.monto||0)/(p.tc||tc)) : (p.monto||0))
-      : s+(p.moneda==='USD' ? Math.round((p.monto||0)*(p.tc||tc)) : (p.monto||0))
-  , 0);
-const cuotaEstado = (c, moneda, tc) => {
-  const cob = cuotaCobradoFn(c, moneda, tc);
-  if (cob<=0) return 'pendiente';
-  if (cob>=cuotaMontoFn(c, moneda, tc)) return 'pagado';
-  return 'parcial';
-};
 
 // ── Cards/filas por tipo ──────────────────────────────────────────────────────
 
@@ -156,9 +144,26 @@ function MovimientoCard({ item, isPendiente, navigate, proveedores, obras, getDe
   const obraObj    = obras.find(o => o.id === m.obraId);
   const obraMoneda = obraObj?.moneda || 'ARS';
   const cuotas     = !esGasto && m.obraId ? (getDetalle(m.obraId)?.cuotas || []) : [];
-  const cuotasPend = cuotas.filter(c => cuotaEstado(c, obraMoneda, tc) !== 'pagado');
+  // Cobrado por cuota DERIVADO de los movimientos de ingreso (libro único).
+  const { movimientos: allMovs, cajas: allCajas } = useMovimientos();
+  const repartoUSD = useMemo(
+    () => repartirCobroEnCuotas(cuotas, cobradoObraUSD(allMovs, allCajas, m.obraId, tc), obraMoneda, tc),
+    [cuotas, allMovs, allCajas, m.obraId, obraMoneda, tc]
+  );
+  const cobradoCuotaObra = (c) => {
+    const usd = repartoUSD[c.id] || 0;
+    return (obraMoneda === 'USD' || c._usd) ? usd : Math.round(usd * tc);
+  };
+  const estadoCuotaDeriv = (c) => {
+    const cobUSD = repartoUSD[c.id] || 0;
+    const mUSD = cuotaMontoUSD(c, obraMoneda, tc);
+    if (cobUSD <= 0) return 'pendiente';
+    if (cobUSD >= mUSD) return 'pagado';
+    return 'parcial';
+  };
+  const cuotasPend = cuotas.filter(c => estadoCuotaDeriv(c) !== 'pagado');
   const totalCuotas    = cuotas.reduce((s, c) => s + cuotaMontoFn(c, obraMoneda, tc), 0);
-  const totalCobrado   = cuotas.reduce((s, c) => s + cuotaCobradoFn(c, obraMoneda, tc), 0);
+  const totalCobrado   = cuotas.reduce((s, c) => s + cobradoCuotaObra(c), 0);
   const saldoPendiente = Math.max(0, totalCuotas - totalCobrado);
   const fmtC = n => obraMoneda === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
 
@@ -229,8 +234,8 @@ function MovimientoCard({ item, isPendiente, navigate, proveedores, obras, getDe
                   <option value="">— Sin vincular —</option>
                   {cuotasPend.map(c => {
                     const montoC  = cuotaMontoFn(c, obraMoneda, tc);
-                    const cobC    = cuotaCobradoFn(c, obraMoneda, tc);
-                    const est     = cuotaEstado(c, obraMoneda, tc);
+                    const cobC    = cobradoCuotaObra(c);
+                    const est     = estadoCuotaDeriv(c);
                     return (
                       <option key={c.id} value={c.id}>
                         {`${c.n ? `#${c.n} · ` : ''}${c.descripcion} · ${est === 'parcial' ? `saldo ${fmtC(montoC-cobC)}` : fmtC(montoC)}`}
@@ -372,7 +377,7 @@ export default function Autorizaciones() {
     const m = item.movimiento;
     if (!m) return;
     const cajaResuelta = resolveCaja(item, m);
-    const movId = addMovimiento({
+    addMovimiento({
       tipo:           m.tipo,
       descripcion:    m.descripcion,
       monto:          m.monto,
@@ -390,41 +395,9 @@ export default function Autorizaciones() {
       cuotaId:        cuotaId || null,
     });
 
-    // Aplicar pago a cuota si fue vinculado
-    if (m.tipo === 'ingreso' && cuotaId && m.obraId) {
-      const tc = dolarVenta || 1070;
-      const obraMoneda = obras.find(o => o.id === m.obraId)?.moneda || 'ARS';
-      const cobradoPor = currentUser?.nombre || currentUser?.email || '';
-      patchDetalle(m.obraId, d => {
-        const cuotas = [...(d.cuotas || [])];
-        let remaining = m.monto;
-        let idx = cuotas.findIndex(c => c.id === cuotaId);
-        while (remaining > 0 && idx < cuotas.length) {
-          const c = cuotas[idx];
-          const montoC  = cuotaMontoFn(c, obraMoneda, tc);
-          const cobC    = cuotaCobradoFn(c, obraMoneda, tc);
-          const saldoC  = montoC - cobC;
-          if (saldoC <= 0) { idx++; continue; }
-          const toApply = Math.min(remaining, saldoC);
-          cuotas[idx] = {
-            ...c,
-            pagos: [...(c.pagos||[]), {
-              id: newPagoId(),
-              movimientoId: movId || null,
-              monto: toApply,
-              moneda: 'ARS',
-              tc,
-              fecha: m.fecha,
-              cobradoPor,
-              fotoUrl: m.comprobanteUrl || null,
-            }],
-          };
-          remaining -= toApply;
-          idx++;
-        }
-        return { ...d, cuotas };
-      });
-    }
+    // Libro único: el cobro queda como movimiento de ingreso (con cuotaId de
+    // referencia, arriba). NO escribimos cuota.pagos[]: la cuenta corriente del
+    // cliente se deriva de los movimientos repartidos sobre las cuotas en orden.
     if (esAdicional && m.obraId) {
       patchDetalle(m.obraId, d => ({
         ...d,

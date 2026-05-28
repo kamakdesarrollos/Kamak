@@ -75,14 +75,22 @@ export default async function handler(req, res) {
     // acceso a los movimientos. El portal lo reparte sobre las cuotas.
     const movs  = movData?.movimientos || [];
     const cajas = movData?.cajas || [];
-    const cobradoUSD = movs
+    // Lista de cobros en USD (fecha + monto), ordenada. NO exponemos caja ni
+    // concepto interno: el cliente solo necesita la fecha para "Pagada el". El
+    // portal reparte esto sobre las cuotas (mismo waterfall que el admin).
+    const ingresos = movs
       .filter(m => m.obraId === obraId && m.tipo === 'ingreso')
-      .reduce((s, m) => {
-        if (m.montoDolar) return s + Math.round(m.montoDolar);
-        const caja = cajas.find(c => c.id === m.cajaId);
-        const esUSD = caja?.moneda === 'USD';
-        return s + (esUSD ? Math.round(m.monto || 0) : Math.round((m.monto || 0) / (dolarVenta || 1)));
-      }, 0);
+      .map(m => {
+        let monto;
+        if (m.montoDolar) monto = Math.round(m.montoDolar);
+        else {
+          const caja = cajas.find(c => c.id === m.cajaId);
+          monto = caja?.moneda === 'USD' ? Math.round(m.monto || 0) : Math.round((m.monto || 0) / (dolarVenta || 1));
+        }
+        return { fecha: m.fecha, monto };
+      })
+      .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+    const cobradoUSD = ingresos.reduce((s, i) => s + i.monto, 0);
 
     return res.status(200).json({
       obra,
@@ -91,6 +99,7 @@ export default async function handler(req, res) {
       clienteNombre: cliente?.nombre || obra.cliente || '',
       dolarVenta,
       cobradoUSD,
+      ingresos,
     });
   } catch (e) {
     console.error('[portal/data] error:', e.message);

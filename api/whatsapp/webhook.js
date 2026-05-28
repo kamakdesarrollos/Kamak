@@ -1509,10 +1509,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       return '⚠️ Los pagos a proveedor los registra un Admin.';
     }
 
-    // 1) Movimiento gasto (categoria subcontrato)
-    const movData = await loadSharedData('movimientos');
-    const movs  = movData?.movimientos || [];
-    const cajas = movData?.cajas || ctx.cajas;
+    // Movimiento gasto (categoria subcontrato). La CC del proveedor se deriva.
     const mov = {
       id: `mov-${Date.now()}`,
       tipo: 'gasto',
@@ -1532,24 +1529,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     };
     await appendMovimiento(mov);
 
-    // 2) Asiento en la CC del proveedor (haber = pago) si hay obra.
-    if (obra) {
-      const provData = await loadSharedData('proveedores');
-      const ccEntries = provData?.ccEntries || [];
-      const asiento = {
-        id: `cc-${Date.now()}`,
-        proveedorId: prov.id,
-        obraId: obra.id,
-        obraNombre: obra.nombre,
-        fecha: mov.fecha,
-        concepto,
-        tipo: 'pago',
-        debe: 0,
-        haber: monto,
-      };
-      await saveSharedData('proveedores', { ...provData, ccEntries: [...ccEntries, asiento] });
-    }
-
+    // Libro único: NO escribimos asiento 'haber' en la CC del proveedor. Lo
+    // pagado se DERIVA del movimiento de gasto (por proveedorId/nombre) tanto en
+    // la app como en el bot. Los 'debe' (deuda: certificaciones/facturas) sí
+    // viven en ccEntries. Así no se duplica el pago.
     return `✅ *Pago registrado*\n${fmt(monto)} a *${prov.nombre}*${obra ? ` · ${obra.nombre}` : ''}\nSale de: ${caja.nombre}` + (obra ? `\nImputado a la CC del proveedor.` : '');
   }
 
@@ -2459,25 +2442,23 @@ async function ejecutarComando(comando, datos, user, ctx) {
     const gastos = movs.filter(m => m.tipo === 'gasto');
     const pagado = gastos.reduce((s, m) => s + (m.monto || 0), 0);
 
-    // Certificaciones contra contratos MO de todas las obras (sumadas)
-    let certTotal = 0;
-    Object.values(ctx.detalles || {}).forEach(d => {
-      (d.contratos || []).forEach(c => {
-        if (c.gremio?.toLowerCase().includes(prov.nombre?.toLowerCase())
-         || prov.nombre?.toLowerCase().includes(c.gremio?.toLowerCase())) {
-          (c.certificaciones || []).forEach(cert => { certTotal += cert.monto || 0; });
-        }
-      });
-    });
+    // Deuda registrada: asientos DEBE de la CC del proveedor (certificaciones,
+    // facturas, contratos, adicionales). MISMA fuente que la app (ProveedorCC).
+    // Antes esto leía contratos[].certificaciones, que NUNCA se escribe → daba 0
+    // siempre y el saldo salía mal. Lo pagado ya se deriva de los movimientos.
+    const provDataCC = await loadSharedData('proveedores');
+    const debeTotal = (provDataCC?.ccEntries || [])
+      .filter(e => e.proveedorId === prov.id && (e.debe || 0) > 0)
+      .reduce((s, e) => s + (e.debe || 0), 0);
 
-    const saldo = certTotal - pagado;
+    const saldo = debeTotal - pagado;
     const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
 
     let r = `🏢 *${prov.nombre}*${prov.tipo ? ` · ${prov.tipo}` : ''}\n\n`;
     if (saldo > 0) r += `💸 Saldo a favor del proveedor: *${fmt(saldo)}*\n`;
     else if (saldo < 0) r += `💰 Está a favor nuestro: *${fmt(-saldo)}*\n`;
     else r += `✓ Al día\n`;
-    if (certTotal > 0) r += `Certificado: ${fmt(certTotal)} · Pagado: ${fmt(pagado)}\n`;
+    if (debeTotal > 0) r += `Debe: ${fmt(debeTotal)} · Pagado: ${fmt(pagado)}\n`;
 
     // Últimos 3 movimientos
     const recientes = movs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, 3);

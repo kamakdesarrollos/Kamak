@@ -50,20 +50,6 @@ function save(key, data) {
   try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
 }
 
-// ── Calcula saldo de un proveedor a partir de sus CC entries ──────────────────
-export function calcSaldoProveedor(proveedorId, ccEntries) {
-  return ccEntries
-    .filter(e => e.proveedorId === proveedorId)
-    .reduce((s, e) => s + (e.debe || 0) - (e.haber || 0), 0);
-}
-
-// ── Saldo por obra para un proveedor ─────────────────────────────────────────
-export function calcSaldoCC(proveedorId, obraId, ccEntries) {
-  return ccEntries
-    .filter(e => e.proveedorId === proveedorId && e.obraId === obraId)
-    .reduce((s, e) => s + (e.debe || 0) - (e.haber || 0), 0);
-}
-
 // ── CC del proveedor DERIVADA de los movimientos (libro único) ────────────────
 // Lo que le PAGAMOS a un proveedor sale de los movimientos (gastos a ese
 // proveedor, por id o por nombre) — no de los 'haber' de ccEntries, que quedan
@@ -209,16 +195,6 @@ export function ProveedoresProvider({ children }) {
     });
   }, []);
 
-  const getCC = useCallback((proveedorId, obraId = null) =>
-    ccEntries
-      .filter(e => e.proveedorId === proveedorId && (obraId === null || e.obraId === obraId))
-      .sort((a, b) => a.fecha.localeCompare(b.fecha)),
-    [ccEntries]);
-
-  const getSaldo = useCallback((proveedorId, obraId = null) =>
-    obraId ? calcSaldoCC(proveedorId, obraId, ccEntries) : calcSaldoProveedor(proveedorId, ccEntries),
-    [ccEntries]);
-
   const getObrasProveedor = useCallback((proveedorId) => {
     const map = {};
     ccEntries
@@ -230,11 +206,11 @@ export function ProveedoresProvider({ children }) {
   const value = useMemo(() => ({
     proveedores, ccEntries,
     addProveedor, updateProveedor, removeProveedor,
-    addCC, updateCC, removeCC, getCC, getSaldo, getObrasProveedor,
+    addCC, updateCC, removeCC, getObrasProveedor,
   }), [
     proveedores, ccEntries,
     addProveedor, updateProveedor, removeProveedor,
-    addCC, updateCC, removeCC, getCC, getSaldo, getObrasProveedor,
+    addCC, updateCC, removeCC, getObrasProveedor,
   ]);
 
   return (

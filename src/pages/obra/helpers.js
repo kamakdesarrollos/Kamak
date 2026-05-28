@@ -125,6 +125,62 @@ export const cuotaEstadoDesdeCobrado = (c, cobradoUSD, obraMoneda, tc) => {
 };
 
 /**
+ * Historial de cobros al cliente de una obra (en USD), derivado de los
+ * movimientos de ingreso (única fuente). Cada item: { id, fecha, monto (USD),
+ * concepto, cajaNombre }. Ordenado por fecha. Es el "detalle de pagos" real.
+ */
+export const ingresosObraUSD = (movimientos, cajas, obraId, tc) =>
+  (movimientos || [])
+    .filter(m => m.obraId === obraId && m.tipo === 'ingreso')
+    .map(m => {
+      const caja = (cajas || []).find(c => c.id === m.cajaId);
+      const monto = m.montoDolar
+        ? Math.round(m.montoDolar)
+        : (caja?.moneda === 'USD' ? Math.round(m.monto || 0) : Math.round((m.monto || 0) / (tc || 1)));
+      return { id: m.id, fecha: m.fecha, monto, concepto: m.concepto || m.descripcion || 'Cobro', cajaNombre: caja?.nombre || '' };
+    })
+    .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+/**
+ * Reparte el historial de cobros (ingresosObraUSD) sobre las cuotas EN ORDEN,
+ * estilo cascada: cada cobro llena la cuota actual y desborda a la siguiente.
+ * Devuelve { [cuotaId]: { cobrado, pagos: [{fecha, monto, concepto, cajaNombre}],
+ * fechaPagada } }. El reparto del campo `cobrado` coincide exactamente con
+ * repartirCobroEnCuotas; este helper agrega además el detalle (de dónde salió
+ * cada parte y cuándo quedó saldada), todo derivado de movimientos.
+ * Respeta las cuotas marcadas pagadas a mano (estado 'pagado' sin pagos): se
+ * cuentan saldadas, sin consumir cobros y sin fecha de movimiento.
+ */
+export const detallePagosCuotas = (cuotas, ingresosUSD, obraMoneda, tc) => {
+  const ing = [...(ingresosUSD || [])];
+  const out = {};
+  let idx = 0;
+  let restante = ing[idx] ? ing[idx].monto : 0;
+  for (const c of (cuotas || [])) {
+    const montoC = cuotaMontoUSD(c, obraMoneda || 'ARS', tc);
+    if (c.estado === 'pagado' && !((c.pagos || []).length)) {
+      out[c.id] = { cobrado: montoC, pagos: [], fechaPagada: null, manual: true };
+      continue;
+    }
+    let llenado = 0;
+    const pagos = [];
+    while (idx < ing.length && llenado < montoC) {
+      if (restante <= 0) { idx++; restante = ing[idx] ? ing[idx].monto : 0; continue; }
+      const aplicar = Math.min(restante, montoC - llenado);
+      pagos.push({ fecha: ing[idx].fecha, monto: aplicar, concepto: ing[idx].concepto, cajaNombre: ing[idx].cajaNombre });
+      llenado += aplicar;
+      restante -= aplicar;
+    }
+    out[c.id] = {
+      cobrado: llenado,
+      pagos,
+      fechaPagada: (llenado >= montoC && montoC > 0 && pagos.length) ? pagos[pagos.length - 1].fecha : null,
+    };
+  }
+  return out;
+};
+
+/**
  * Precio de venta unitario de una tarea, considerando margenes por linea
  * o por rubro (mat / mano de obra).
  */

@@ -15,6 +15,7 @@ import { useCatalog } from '../store/CatalogContext';
 import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useCheques } from '../store/ChequesContext';
 import { supabase } from '../lib/supabase';
+import { cobradoObraUSD, repartirCobroEnCuotas, cuotaMontoUSD } from './obra/helpers';
 
 const DEFAULT_MEDIOS = ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débito', 'Tarjeta'];
 
@@ -67,20 +68,7 @@ function SolicitarEliminacionModal({ movimiento, solicitante, onConfirm, onClose
 }
 const MEDIOS_NO_USD = new Set(['Cheque', 'E-cheq', 'Débito']);
 
-const newPagoId = () => `pago-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const cuotaMontoFn = (c, moneda, tc) => (c._usd || moneda !== 'USD') ? (c.monto||0) : Math.round((c.monto||0)/tc);
-const cuotaCobradoFn = (c, moneda, tc) =>
-  (c.pagos||[]).reduce((s,p) =>
-    moneda==='USD'
-      ? s+(p.moneda==='ARS' ? Math.round((p.monto||0)/(p.tc||tc)) : (p.monto||0))
-      : s+(p.moneda==='USD' ? Math.round((p.monto||0)*(p.tc||tc)) : (p.monto||0))
-  , 0);
-const cuotaEstado = (c, moneda, tc) => {
-  const cob = cuotaCobradoFn(c, moneda, tc);
-  if (cob<=0) return 'pendiente';
-  if (cob>=cuotaMontoFn(c, moneda, tc)) return 'pagado';
-  return 'parcial';
-};
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none' };
 const fmtN   = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
@@ -374,6 +362,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const { config } = useConfiguracion();
   const { addCheque } = useCheques();
   const { patchDetalle, getDetalle } = useObras();
+  const { movimientos: allMovs } = useMovimientos();
   const { currentUser } = useUsuarios();
   const fotoRef = useRef(null);
   const mediosDePago = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
@@ -416,7 +405,9 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
     const obraM = obras.find(o => o.id === obraId)?.moneda || 'ARS';
     const tc = dolarVenta || 1070;
     const cuotas = det?.cuotas || [];
-    const first = cuotas.find(c => cuotaEstado(c, obraM, tc) !== 'pagado');
+    // Primera cuota no cubierta por los movimientos de ingreso (libro único).
+    const reparto = repartirCobroEnCuotas(cuotas, cobradoObraUSD(allMovs, cajas, obraId, tc), obraM, tc);
+    const first = cuotas.find(c => (reparto[c.id] || 0) < cuotaMontoUSD(c, obraM, tc));
     setCuotaId(first?.id || '');
   }, [obraId, isGasto]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -457,7 +448,25 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const obraSelObj = obras.find(o => o.id === obraId);
   const obraMoneda = obraSelObj?.moneda || 'ARS';
   const detalleCuotas = !isGasto && obraId ? (getDetalle(obraId)?.cuotas || []) : [];
-  const cuotasPendientes = detalleCuotas.filter(c => cuotaEstado(c, obraMoneda, parsedTC) !== 'pagado');
+  // Cobrado previo por cuota DERIVADO de los movimientos de ingreso (libro
+  // único), en USD. Reemplaza el viejo cálculo desde cuota.pagos[].
+  const repartoPrevioUSD = useMemo(
+    () => repartirCobroEnCuotas(detalleCuotas, cobradoObraUSD(allMovs, cajas, obraId, parsedTC), obraMoneda, parsedTC),
+    [detalleCuotas, allMovs, cajas, obraId, obraMoneda, parsedTC]
+  );
+  // Cobrado de una cuota en la moneda de la obra (el reparto viene en USD).
+  const cobradoCuotaObra = (c) => {
+    const usd = repartoPrevioUSD[c.id] || 0;
+    return (obraMoneda === 'USD' || c._usd) ? usd : Math.round(usd * parsedTC);
+  };
+  const estadoCuotaDeriv = (c) => {
+    const cobUSD = repartoPrevioUSD[c.id] || 0;
+    const montoUSD = cuotaMontoUSD(c, obraMoneda, parsedTC);
+    if (cobUSD <= 0) return 'pendiente';
+    if (cobUSD >= montoUSD) return 'pagado';
+    return 'parcial';
+  };
+  const cuotasPendientes = detalleCuotas.filter(c => estadoCuotaDeriv(c) !== 'pagado');
 
   const pagoMoneda = !isGasto && monedaIngreso === 'USD' ? 'USD' : 'ARS';
   const distribucionPrev = useMemo(() => {
@@ -469,7 +478,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
     while (remaining > 0 && idx < detalleCuotas.length) {
       const c = detalleCuotas[idx];
       const montoC   = cuotaMontoFn(c, obraMoneda, parsedTC);
-      const cobradoC = cuotaCobradoFn(c, obraMoneda, parsedTC);
+      const cobradoC = cobradoCuotaObra(c);
       const saldoC   = montoC - cobradoC;
       if (saldoC <= 0) { idx++; continue; }
       const remEnObra = obraMoneda === 'USD' && pagoMoneda === 'ARS'
@@ -488,7 +497,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       idx++;
     }
     return result;
-  }, [cuotaId, montoFinal, detalleCuotas, obraMoneda, parsedTC, pagoMoneda, isGasto]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cuotaId, montoFinal, detalleCuotas, obraMoneda, parsedTC, pagoMoneda, isGasto, repartoPrevioUSD]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
     if (!canSave) return;
@@ -559,51 +568,10 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       }));
     }
 
-    // Vincular pago a cuota(s)
-    if (!isGasto && cuotaId && obraId) {
-      const cobradoPor = currentUser?.nombre || currentUser?.email || '';
-      patchDetalle(obraId, d => {
-        const cuotas = [...(d.cuotas || [])];
-        let remaining = montoFinal; // en pagoMoneda
-        let idx = cuotas.findIndex(c => c.id === cuotaId);
-        while (remaining > 0 && idx < cuotas.length) {
-          const c = cuotas[idx];
-          const montoC = cuotaMontoFn(c, obraMoneda, parsedTC);
-          const cobradoC = cuotaCobradoFn(c, obraMoneda, parsedTC);
-          const saldoC = montoC - cobradoC; // en obraMoneda
-          if (saldoC <= 0) { idx++; continue; }
-          // Convertir remaining a obraMoneda para comparar
-          const remainingEnObra = obraMoneda === 'USD' && pagoMoneda === 'ARS'
-            ? Math.round(remaining / parsedTC)
-            : obraMoneda === 'ARS' && pagoMoneda === 'USD'
-            ? Math.round(remaining * parsedTC)
-            : remaining;
-          const aplicar = Math.min(remainingEnObra, saldoC);
-          // Convertir aplicar de obraMoneda a pagoMoneda para el pago
-          const pagoMonto = obraMoneda === 'USD' && pagoMoneda === 'ARS'
-            ? Math.round(aplicar * parsedTC)
-            : obraMoneda === 'ARS' && pagoMoneda === 'USD'
-            ? Math.round(aplicar / parsedTC)
-            : aplicar;
-          cuotas[idx] = {
-            ...c,
-            pagos: [...(c.pagos||[]), {
-              id: newPagoId(),
-              movimientoId: movId || null,
-              monto: pagoMonto,
-              moneda: pagoMoneda,
-              tc: pagoMoneda === 'ARS' ? parsedTC : null,
-              fecha,
-              cobradoPor,
-              fotoUrl,
-            }],
-          };
-          remaining -= pagoMonto;
-          idx++;
-        }
-        return { ...d, cuotas };
-      });
-    }
+    // Libro único: NO escribimos cuota.pagos[]. El cobro queda registrado como
+    // movimiento de ingreso (con cuotaId de referencia) y la cuenta corriente
+    // del cliente se DERIVA de los movimientos (repartidos sobre las cuotas en
+    // orden) tanto en la obra como en el portal.
 
     if (isCheckPayment && cheqVencimiento) {
       const tipoCheck = isGasto

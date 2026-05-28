@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Btn, Divider } from '../../components/ui';
 import { T } from '../../theme';
-import { useProveedores } from '../../store/ProveedoresContext';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useObras } from '../../store/ObrasContext';
 import { useConfiguracion } from '../../store/ConfiguracionContext';
@@ -13,7 +12,6 @@ const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 const DEFAULT_MEDIOS = ['Transferencia', 'Cheque', 'E-cheq', 'Efectivo', 'Tarjeta'];
 
 export default function RegistrarPagoModal({ proveedor = '', proveedorId = null, onClose }) {
-  const { addCC } = useProveedores();
   const { cajas, addMovimiento } = useMovimientos();
   const { obras } = useObras();
   const { config } = useConfiguracion();
@@ -42,6 +40,10 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
 
     const concFinal = concepto.trim() || `Pago a ${proveedor}${obraNombre ? ` · ${obraNombre}` : ''}`;
 
+    // Libro único: el pago al proveedor queda SOLO como movimiento de gasto.
+    // La cuenta corriente del proveedor (lo pagado) se DERIVA de los movimientos
+    // (por proveedorId o nombre), así que no escribimos un asiento 'haber' en
+    // ccEntries (sería duplicar el pago). Los 'debe' (deuda) sí viven en ccEntries.
     addMovimiento({
       fecha,
       tipo: 'gasto',
@@ -52,24 +54,12 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
       cajaId,
       cajaDestinoId: null,
       proveedor,
+      proveedorId: proveedorId || null,
       categoria: 'subcontrato',
       medioPago: medio,
       referencia,
       fondoReparo,
     });
-
-    if (proveedorId && imputar === 'obra' && obraId) {
-      addCC({
-        proveedorId,
-        obraId,
-        obraNombre,
-        fecha,
-        concepto: concFinal,
-        tipo: 'pago',
-        debe: 0,
-        haber: montoNum,
-      });
-    }
 
     onClose();
   };

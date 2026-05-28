@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
   tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
+  ingresosObraUSD, detallePagosCuotas, repartirCobroEnCuotas, cobradoObraUSD,
 } from './helpers';
 
 describe('cuotaMontoFn', () => {
@@ -64,6 +65,72 @@ describe('cuotaEstadoCalc', () => {
       monto: 1000,
       pagos: [{ monto: 500, moneda: 'ARS' }],
     }, 'ARS', 1000)).toBe('parcial');
+  });
+});
+
+describe('ingresosObraUSD', () => {
+  const cajas = [
+    { id: 'ars', moneda: 'ARS' },
+    { id: 'usd', moneda: 'USD' },
+  ];
+  it('convierte ingresos ARS a USD por la caja y ordena por fecha', () => {
+    const movs = [
+      { id: 'm2', obraId: 'o1', tipo: 'ingreso', cajaId: 'ars', monto: 1000000, fecha: '2026-02-01' },
+      { id: 'm1', obraId: 'o1', tipo: 'ingreso', cajaId: 'usd', monto: 500, fecha: '2026-01-01' },
+      { id: 'g1', obraId: 'o1', tipo: 'gasto',   cajaId: 'ars', monto: 999, fecha: '2026-01-15' },
+      { id: 'mx', obraId: 'otra', tipo: 'ingreso', cajaId: 'usd', monto: 999, fecha: '2026-01-10' },
+    ];
+    const out = ingresosObraUSD(movs, cajas, 'o1', 1000);
+    expect(out.map(i => i.id)).toEqual(['m1', 'm2']); // ordenado por fecha, solo ingresos de o1
+    expect(out[0].monto).toBe(500);   // caja USD: tal cual
+    expect(out[1].monto).toBe(1000);  // 1.000.000 ARS / 1000
+  });
+  it('usa montoDolar si el ingreso lo trae', () => {
+    const movs = [{ id: 'm1', obraId: 'o1', tipo: 'ingreso', cajaId: 'ars', monto: 1234567, montoDolar: 1000, fecha: '2026-01-01' }];
+    expect(ingresosObraUSD(movs, cajas, 'o1', 1000)[0].monto).toBe(1000);
+  });
+});
+
+describe('detallePagosCuotas', () => {
+  const obraMoneda = 'USD';
+  const cuotas = [
+    { id: 'c1', monto: 1000, _usd: true },
+    { id: 'c2', monto: 1000, _usd: true },
+    { id: 'c3', monto: 1000, _usd: true },
+  ];
+  it('reparte en cascada y marca fecha del movimiento que la salda', () => {
+    const ingresos = [
+      { fecha: '2026-01-01', monto: 1000 },
+      { fecha: '2026-02-01', monto: 500 },
+    ];
+    const d = detallePagosCuotas(cuotas, ingresos, obraMoneda, 1000);
+    expect(d.c1.cobrado).toBe(1000);
+    expect(d.c1.fechaPagada).toBe('2026-01-01'); // saldada por el 1er ingreso
+    expect(d.c2.cobrado).toBe(500);
+    expect(d.c2.fechaPagada).toBe(null); // parcial, no saldada
+    expect(d.c3.cobrado).toBe(0);
+  });
+  it('cuota pagada a mano (estado pagado sin pagos) no consume cobros', () => {
+    const cuotasMix = [
+      { id: 'c1', monto: 1000, _usd: true, estado: 'pagado' }, // toggle manual
+      { id: 'c2', monto: 1000, _usd: true },
+    ];
+    const ingresos = [{ fecha: '2026-01-01', monto: 1000 }];
+    const d = detallePagosCuotas(cuotasMix, ingresos, obraMoneda, 1000);
+    expect(d.c1.cobrado).toBe(1000);   // marcada paga
+    expect(d.c1.pagos).toEqual([]);    // sin movimiento
+    expect(d.c2.cobrado).toBe(1000);   // el ingreso fue a c2, no lo comió c1
+  });
+  it('el cobrado por cuota coincide con repartirCobroEnCuotas (invariante)', () => {
+    const cajas = [{ id: 'usd', moneda: 'USD' }];
+    const movs = [
+      { id: 'm1', obraId: 'o1', tipo: 'ingreso', cajaId: 'usd', monto: 700, fecha: '2026-01-01' },
+      { id: 'm2', obraId: 'o1', tipo: 'ingreso', cajaId: 'usd', monto: 900, fecha: '2026-02-01' },
+    ];
+    const ingresos = ingresosObraUSD(movs, cajas, 'o1', 1000);
+    const detalle = detallePagosCuotas(cuotas, ingresos, obraMoneda, 1000);
+    const reparto = repartirCobroEnCuotas(cuotas, cobradoObraUSD(movs, cajas, 'o1', 1000), obraMoneda, 1000);
+    for (const c of cuotas) expect(detalle[c.id].cobrado).toBe(reparto[c.id]);
   });
 });
 
