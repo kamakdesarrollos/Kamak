@@ -19,6 +19,7 @@ function handleChunkError(error) {
     msg.includes('Failed to fetch dynamically imported module') ||
     msg.includes('Failed to load module script') ||
     msg.includes('Importing a module script failed') ||
+    msg.includes('error loading dynamically imported module') ||
     (msg.includes('ChunkLoadError'));
   if (!isChunkError) return false;
   try {

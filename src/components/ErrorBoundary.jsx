@@ -20,6 +20,24 @@ export default class ErrorBoundary extends Component {
   componentDidCatch(error, info) {
     console.error('[ErrorBoundary] Error capturado:', error);
     console.error('[ErrorBoundary] Stack:', info?.componentStack);
+
+    // Si el error es por un chunk/módulo que ya no existe (típico después de
+    // un deploy: el index cacheado apunta a JS viejo con otro hash), React lo
+    // atrapa acá y NO llega al window.onerror de main.jsx. Auto-recargamos
+    // UNA vez para tomar la versión nueva — así el usuario no tiene que F5.
+    const msg = error?.message || String(error);
+    const isChunkError = /Failed to fetch dynamically imported module|Failed to load module script|Importing a module script failed|error loading dynamically imported module|ChunkLoadError/i.test(msg);
+    if (isChunkError) {
+      try {
+        if (!sessionStorage.getItem('kamak_chunk_reload_done')) {
+          sessionStorage.setItem('kamak_chunk_reload_done', '1');
+          console.warn('[ErrorBoundary] chunk faltante (deploy nuevo). Recargando...');
+          window.location.reload();
+          return;
+        }
+      } catch { /* sin sessionStorage */ }
+    }
+
     this.setState({ info });
   }
 
