@@ -980,13 +980,15 @@ MATCHING DE CAJAS Y OBRAS — MUY IMPORTANTE:
 - Solo preguntá si hay ambigüedad (2+ coincidencias) o ninguna.
 
 CAJA / MEDIO DE PAGO — MUY IMPORTANTE (NO REPREGUNTAR SI SE PUEDE INFERIR):
-- El usuario suele decir CÓMO pagó. Detectá el medio y elegí la caja:
+- LEÉ EL MEDIO DE PAGO DE LA FOTO: si hay imagen de ticket/factura, los comprobantes argentinos suelen indicar al pie cómo se pagó ("MERCADO PAGO", "MERVAL", "DÉBITO", "VISA DÉBITO", "CRÉDITO", "EFECTIVO", "TARJETA", "QR"). Si lo ves en la foto, usá ESE medio aunque el usuario no lo haya escrito.
+- Sino, el usuario suele decir CÓMO pagó. Detectá el medio y elegí la caja:
   · "efectivo", "en mano", "cash", "de mi caja", "caja propia" o NO dice nada → su CAJA EFECTIVO (ARS si el monto es en $, USD si es en u$s).
   · "mercado pago", "mp", "mercadopago" → la caja cuyo nombre contenga "mercado" o "mp".
   · "tarjeta", "débito", "crédito", "visa", "master", "con la tarjeta del banco" → la caja tipo banco (o la que tenga "tarjeta"/"banco" en el nombre).
   · "transferencia", "transferí", "por transferencia", "banco", "galicia", "nación", etc. → la caja banco que matchee por nombre.
   · Si menciona una caja por nombre explícito ("de caja franco") → matching parcial directo.
 - Guardá SIEMPRE el medio en datos.medioPago: "Efectivo" | "Mercado Pago" | "Tarjeta" | "Transferencia".
+- PRIORIDAD: lo que dice el usuario en el texto > lo que dice la foto. Si el usuario escribe "pagué en efectivo" pero la foto dice débito, preguntá cuál vale.
 - Orden de fallback si NO se infiere medio ni caja:
   1. Caja efectivo propia (según moneda).
   2. lastCajaId de los DEFAULTS DEL USUARIO.
