@@ -2068,7 +2068,39 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     const venc = nueva.fechaLimite ? `\n📅 Vence: ${nueva.fechaLimite.split('-').reverse().join('/')}` : '';
     const prio = nueva.prioridad === 'alta' ? ' 🔴' : nueva.prioridad === 'media' ? ' 🟡' : '';
     const destino = asignadoId === creadorId ? 'para vos' : `para *${asignadoNombre}*`;
-    const notifInfo = asignadoId === creadorId ? '' : '\n\n_(Verá la notificación cuando entre a la app — WhatsApp no puede notificar fuera de la ventana de 24h.)_';
+
+    // Si la tarea es para OTRA persona y esa persona escribió al bot en las
+    // últimas 24h (ventana abierta), le avisamos por WhatsApp. Si no, lo verá
+    // en la app (Meta no deja texto libre fuera de la ventana de 24h).
+    let notifInfo = '';
+    if (asignadoId !== creadorId) {
+      try {
+        const waUsers = await sbGet('whatsapp_users', '?select=user_id,phone');
+        const asignadoPhone = waUsers.find(w => w.user_id === asignadoId)?.phone;
+        let enVentana = false;
+        if (asignadoPhone) {
+          const convs = await sbGet('whatsapp_conversations', `?phone=eq.${asignadoPhone}&select=updated_at`);
+          const lastAt = convs[0]?.updated_at;
+          enVentana = lastAt && (Date.now() - new Date(lastAt).getTime()) < 24 * 60 * 60 * 1000;
+        }
+        if (enVentana) {
+          const aviso = `📋 *${asignadoNombre}*, te asignaron una tarea:\n*${nueva.titulo}*` +
+            (nueva.descripcion ? `\n${nueva.descripcion}` : '') +
+            venc + items + `\n\nEscribí *tareas* para verla.`;
+          const r = await sendWA(asignadoPhone, aviso);
+          notifInfo = r?.ok
+            ? `\n\n📲 Le avisé a *${asignadoNombre}* por WhatsApp.`
+            : `\n\n_(No pude avisarle por WhatsApp ahora; lo verá en la app.)_`;
+        } else {
+          notifInfo = asignadoPhone
+            ? `\n\n_(${asignadoNombre} no escribió al bot en las últimas 24h, así que lo verá cuando entre a la app.)_`
+            : `\n\n_(${asignadoNombre} no tiene WhatsApp vinculado; lo verá cuando entre a la app.)_`;
+        }
+      } catch (e) {
+        console.error('aviso tarea asignado error:', e.message);
+        notifInfo = `\n\n_(Lo verá cuando entre a la app.)_`;
+      }
+    }
     return `✅ Tarea creada ${destino}:\n*${nueva.titulo}*${prio}${venc}${items}${notifInfo}`;
   }
 
