@@ -8,9 +8,12 @@ const LS_KEY = 'kamak_config_v1';
 
 const DEFAULT = {
   empresa: {
-    razonSocial: 'Kamak Desarrollos SRL',
-    cuit: '30-71234567-8',
-    direccion: 'Av. Corrientes 1234, CABA',
+    razonSocial: 'Conquies Soluciones Constructivas SA',
+    nombreFantasia: 'Kamak',
+    cuit: '30-71795385-8',
+    condicionIVA: 'RI',           // Responsable Inscripto (emisor)
+    puntoVenta: 1,                // punto de venta AFIP (ajustable)
+    direccion: 'Calle 42 N°3703, Necochea (CP 7630)',
     email: 'admin@kamak.ar',
     telefono: '+54 11 4800-0000',
   },

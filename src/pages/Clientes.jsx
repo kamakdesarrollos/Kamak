@@ -8,6 +8,7 @@ import { useClientes } from '../store/ClientesContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { CONDICIONES_IVA, validarCUIT } from '../lib/afip';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -21,8 +22,9 @@ function Avatar({ nombre, size = 36 }) {
 }
 
 function NuevoClienteModal({ initial = null, onSave, onClose }) {
-  const [form, setForm] = useState(initial || { nombre: '', empresa: '', cuit: '', telefono: '', email: '', notas: '' });
+  const [form, setForm] = useState(initial || { nombre: '', empresa: '', cuit: '', condicionIVA: 'CF', telefono: '', email: '', notas: '' });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const cuitInvalido = form.cuit && form.cuit.replace(/\D/g, '').length > 0 && !validarCUIT(form.cuit);
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
@@ -43,12 +45,19 @@ function NuevoClienteModal({ initial = null, onSave, onClose }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>CUIT</label>
-              <input style={inputSt} value={form.cuit} onChange={e => set('cuit', e.target.value)} placeholder="20-12345678-9" />
+              <input style={{ ...inputSt, borderColor: cuitInvalido ? '#b91c1c' : T.faint2 }} value={form.cuit} onChange={e => set('cuit', e.target.value)} placeholder="20-12345678-9" />
+              {cuitInvalido && <div style={{ fontSize: 10, color: '#b91c1c', fontWeight: 700, marginTop: 2 }}>⚠ CUIT inválido</div>}
             </div>
             <div>
-              <label style={labelSt}>Teléfono</label>
-              <input style={inputSt} value={form.telefono} onChange={e => set('telefono', e.target.value)} placeholder="+54 11 1234-5678" />
+              <label style={labelSt}>Condición IVA</label>
+              <select style={{ ...inputSt, cursor: 'pointer' }} value={form.condicionIVA || 'CF'} onChange={e => set('condicionIVA', e.target.value)}>
+                {CONDICIONES_IVA.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
             </div>
+          </div>
+          <div>
+            <label style={labelSt}>Teléfono</label>
+            <input style={inputSt} value={form.telefono} onChange={e => set('telefono', e.target.value)} placeholder="+54 11 1234-5678" />
           </div>
           <div>
             <label style={labelSt}>Email</label>

@@ -7,6 +7,7 @@ import { GastosFijosProvider } from './store/GastosFijosContext';
 import { DolarProvider } from './store/DolarContext';
 import { ProveedoresProvider } from './store/ProveedoresContext';
 import { ClientesProvider } from './store/ClientesContext';
+import { ComprobantesProvider } from './store/ComprobantesContext';
 import { MovimientosProvider } from './store/MovimientosContext';
 import { ChequesProvider } from './store/ChequesContext';
 import { WhatsappPendingProvider } from './store/WhatsappPendingContext';
@@ -33,6 +34,7 @@ const ObraPresupuesto    = lazy(() => import('./pages/obra/ObraPresupuesto'));
 const ObraGantt          = lazy(() => import('./pages/obra/ObraGantt'));
 const Proveedores        = lazy(() => import('./pages/Proveedores'));
 const Clientes           = lazy(() => import('./pages/Clientes'));
+const Facturacion        = lazy(() => import('./pages/Facturacion'));
 const ProveedorCC        = lazy(() => import('./pages/ProveedorCC'));
 const Movimientos        = lazy(() => import('./pages/Movimientos'));
 const Cajas              = lazy(() => import('./pages/Cajas'));
@@ -166,6 +168,7 @@ function DataProviders({ children }) {
     <GastosFijosProvider>
     <ProveedoresProvider>
     <ClientesProvider>
+    <ComprobantesProvider>
     <MovimientosProvider>
     <ChequesProvider>
     <WhatsappPendingProvider>
@@ -181,6 +184,7 @@ function DataProviders({ children }) {
     </WhatsappPendingProvider>
     </ChequesProvider>
     </MovimientosProvider>
+    </ComprobantesProvider>
     </ClientesProvider>
     </ProveedoresProvider>
     </GastosFijosProvider>
@@ -225,6 +229,7 @@ function AppShell() {
                   <Route path="/cajas" element={<Cajas />} />
                   <Route path="/cajas/conciliacion" element={<Conciliacion />} />
                   <Route path="/cheques" element={<Cheques />} />
+                  <Route path="/facturacion" element={<Facturacion />} />
                   {/* /whatsapp queda como atajo a la seccion WhatsApp de /autorizaciones */}
                   <Route path="/whatsapp" element={<Navigate to="/autorizaciones?origen=whatsapp" replace />} />
                   <Route path="/prorrateo" element={<Prorrateo />} />
