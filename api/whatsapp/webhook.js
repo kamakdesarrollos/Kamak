@@ -2766,6 +2766,9 @@ function pideTareas(texto) {
   if (/\btarea\s+\d+/.test(t)) return false;
   // "hice/completé el item N" tampoco es pedir la lista.
   if (/\b(item|ítem)\b/.test(t)) return false;
+  // CREAR/asignar una tarea ("agregar/crear/asignar/ponele tarea a X") NO es
+  // pedir la lista → dejar pasar al parser para que la cree (nueva_tarea).
+  if (/\b(agreg|cre[aá]|asign|pon[eé]|carg|nueva|hac[eé]le|encarg|nuev[ao])\w*/.test(t) && /\btareas?\b/.test(t)) return false;
   // Mencion directa a "tarea(s)" → lista.
   if (/\btareas?\b/.test(t)) return true;
   // "pendientes" o "que tengo pendiente" sin la palabra tarea
@@ -3071,8 +3074,12 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       await sendWA(phone, `👌 No le avisé al cliente. El ingreso quedó cargado igual.`);
       return;
     }
-    await sendWA(phone, `Respondeme *sí* para avisarle a ${conv.data.clienteNombre} o *no* para omitir.`);
-    return;
+    // No respondió sí/no: cambió de tema. NO lo atrapamos — asumimos "no aviso"
+    // (el cobro ya quedó cargado) y procesamos su mensaje nuevo desde cero.
+    await clearConversation(phone);
+    return handleMainFlow(phone, user, messageText, mediaId, mimeType, {
+      state: 'idle', data: {}, slots: conv.slots || {}, defaults: conv.defaults || {}, history: conv.history || [],
+    });
   }
 
   // ── Estado: esperando teléfono del cliente que no estaba cargado ────────────
