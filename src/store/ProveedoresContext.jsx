@@ -89,6 +89,14 @@ export function ProveedoresProvider({ children }) {
   const fromRemote = useRef(false);
   const provsRef   = useRef(proveedores);
   const ccRef      = useRef(ccEntries);
+  // Marca true si el usuario edita ANTES del primer fetch a Supabase (sino el
+  // remoto pisaría sus cambios tempranos). Mismo guard que Obras/Movimientos.
+  const userEditedBeforeFirstLoad = useRef(false);
+  // Timestamp del último save local: el handler de onRemoteChange ignora
+  // broadcasts inmediatamente posteriores (traen datos del server sin el cambio
+  // local todavía → hacían "desaparecer" cambios recién guardados).
+  const lastLocalSaveAt = useRef(0);
+  const pendingSaveRef = useRef(null);
   const { markReady } = useAppLoading();
   useEffect(() => { provsRef.current = proveedores; }, [proveedores]);
   useEffect(() => { ccRef.current = ccEntries; }, [ccEntries]);
@@ -97,7 +105,15 @@ export function ProveedoresProvider({ children }) {
     let cancelled = false;
     loadSharedData('proveedores').then(data => {
       if (cancelled) return;
-      if (data) {
+      if (data === undefined) {
+        // Error de red/permiso: NO guardamos (terminaría con el mismo error);
+        // la app se renderea con lo que ya hay en localStorage.
+        sbLoaded.current = true; markReady(); return;
+      }
+      if (userEditedBeforeFirstLoad.current) {
+        // El usuario ya editó antes del fetch → subimos lo suyo, no lo pisamos.
+        saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
+      } else if (data) {
         fromRemote.current = true;
         if (data.proveedores) { setProveedores(data.proveedores); save(LS_PROVS, data.proveedores); }
         if (data.ccEntries)   { setCCEntries(data.ccEntries);     save(LS_CC,    data.ccEntries); }
@@ -110,6 +126,10 @@ export function ProveedoresProvider({ children }) {
     });
 
     const unsub = onRemoteChange('proveedores', () => {
+      // Ignorar el broadcast si hay un save local pendiente o recién disparado
+      // (< 3s): suele traer datos del server sin el cambio local todavía.
+      if (pendingSaveRef.current) return;
+      if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData('proveedores').then(d => {
         if (cancelled || !d) return;
         fromRemote.current = true;
@@ -121,12 +141,12 @@ export function ProveedoresProvider({ children }) {
     return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
     pendingSaveRef.current = { proveedores: provsRef.current, ccEntries: ccRef.current };
     const t = setTimeout(() => {
       saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
+      lastLocalSaveAt.current = Date.now();
       pendingSaveRef.current = null;
     }, 800);
     return () => clearTimeout(t);
@@ -136,8 +156,12 @@ export function ProveedoresProvider({ children }) {
     if (pendingSaveRef.current) saveSharedData('proveedores', pendingSaveRef.current, { silent: true });
   }, []);
 
+  // Marca que el usuario editó antes del primer fetch (no pisar sus cambios).
+  const markUserEdit = () => { if (!sbLoaded.current) userEditedBeforeFirstLoad.current = true; };
+
   // ── Proveedores CRUD ──────────────────────────────────────────────────────
   const addProveedor = useCallback((data) => {
+    markUserEdit();
     const nuevo = { ...data, id: newId() };
     setProveedores(prev => {
       const next = [...prev, nuevo];
@@ -148,6 +172,7 @@ export function ProveedoresProvider({ children }) {
   }, []);
 
   const updateProveedor = useCallback((id, changes) => {
+    markUserEdit();
     setProveedores(prev => {
       const next = prev.map(p => p.id === id ? { ...p, ...changes } : p);
       save(LS_PROVS, next);
@@ -156,6 +181,7 @@ export function ProveedoresProvider({ children }) {
   }, []);
 
   const removeProveedor = useCallback((id) => {
+    markUserEdit();
     setProveedores(prev => {
       const next = prev.filter(p => p.id !== id);
       save(LS_PROVS, next);
@@ -170,6 +196,7 @@ export function ProveedoresProvider({ children }) {
 
   // ── CC CRUD ───────────────────────────────────────────────────────────────
   const addCC = useCallback((entry) => {
+    markUserEdit();
     const nuevo = { ...entry, id: ccId(), fecha: entry.fecha || today() };
     setCCEntries(prev => {
       const next = [...prev, nuevo];
@@ -180,6 +207,7 @@ export function ProveedoresProvider({ children }) {
   }, []);
 
   const updateCC = useCallback((id, changes) => {
+    markUserEdit();
     setCCEntries(prev => {
       const next = prev.map(e => e.id === id ? { ...e, ...changes } : e);
       save(LS_CC, next);
@@ -188,6 +216,7 @@ export function ProveedoresProvider({ children }) {
   }, []);
 
   const removeCC = useCallback((id) => {
+    markUserEdit();
     setCCEntries(prev => {
       const next = prev.filter(e => e.id !== id);
       save(LS_CC, next);

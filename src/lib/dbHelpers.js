@@ -99,6 +99,26 @@ export async function loadSharedData(key) {
   return res?.data?.data ?? null;
 }
 
+// Edita (merge) UN ítem por id dentro de una key cuyo data es un array, de forma
+// ATÓMICA (RPC server-side patch_item_in_shared_array): NO reescribe el array
+// entero, así no pisa ítems que el bot u otra pestaña agregaron en paralelo.
+// Fallback a read-modify-write si el RPC no está disponible.
+export async function patchItemInSharedArray(key, id, patch) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return false;
+    const { error } = await supabase.rpc('patch_item_in_shared_array', { p_key: key, p_id: id, p_patch: patch });
+    if (error) throw error;
+    broadcastChange(key);
+    return true;
+  } catch (e) {
+    console.error('[patchItemInSharedArray] fallback RMW:', key, e?.message || e);
+    const data = await loadSharedData(key);
+    const arr = Array.isArray(data) ? data : [];
+    return saveSharedData(key, arr.map(x => x.id === id ? { ...x, ...patch } : x));
+  }
+}
+
 export async function saveSharedData(key, value, { silent = false } = {}) {
   try {
     // Guard: si no hay sesion auth activa, no intentar guardar.

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData, patchItemInSharedArray } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 
 const CTX = createContext(null);
@@ -25,11 +25,9 @@ export function AlertasProvider({ children }) {
   }, [reload]);
 
   const marcarLeida = useCallback((id) => {
-    setAlertas(prev => {
-      const next = prev.map(a => a.id === id ? { ...a, leida: true } : a);
-      saveSharedData(KEY, next);
-      return next;
-    });
+    // Patch atómico por id (no pisa alertas que el bot agregó en paralelo).
+    setAlertas(prev => prev.map(a => a.id === id ? { ...a, leida: true } : a));
+    patchItemInSharedArray(KEY, id, { leida: true });
   }, []);
 
   const marcarTodasLeidas = useCallback(() => {
