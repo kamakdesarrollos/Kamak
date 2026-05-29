@@ -2761,7 +2761,12 @@ function esSaludo(texto) {
 function pideTareas(texto) {
   const t = (texto || '').toLowerCase().trim().replace(/[!¡¿?.,]/g, '');
   if (!t) return false;
-  // Mencion directa a "tarea(s)"
+  // "tarea N" (ver detalle) NO es pedir la lista → dejar pasar al parser, sino
+  // este atajo devolvía la lista una y otra vez (loop al pedir el detalle).
+  if (/\btarea\s+\d+/.test(t)) return false;
+  // "hice/completé el item N" tampoco es pedir la lista.
+  if (/\b(item|ítem)\b/.test(t)) return false;
+  // Mencion directa a "tarea(s)" → lista.
   if (/\btareas?\b/.test(t)) return true;
   // "pendientes" o "que tengo pendiente" sin la palabra tarea
   if (/\b(mis pendientes|que tengo pendiente|pendientes que tengo|que hago hoy|que tengo hoy)\b/.test(t)) return true;
