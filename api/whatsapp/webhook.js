@@ -58,6 +58,72 @@ async function appendMovimiento(mov) {
   await broadcastChange('movimientos');
 }
 
+// ── Helpers de mutación ATÓMICA (mismo criterio que appendMovimiento) ─────────
+// Toda key que escriban bot Y app se muta con un RPC server-side (agrega/edita
+// de a un ítem), NUNCA reescribiendo el blob entero → así el bot no pisa lo que
+// guardó la app. Si el RPC falla (no creado/permisos), caen al método viejo
+// (read-modify-write) para no perder el dato.
+async function sbRpc(fn, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST', headers: sbH(), body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`rpc ${fn} ${res.status}`);
+}
+
+// Agrega un ítem (al principio) a una key cuyo data es un array.
+async function sbAppendArray(key, item) {
+  try { await sbRpc('append_to_shared_array', { p_key: key, p_item: item }); }
+  catch (e) {
+    console.error(`[sbAppendArray ${key}] fallback:`, e.message);
+    const data = await loadSharedData(key);
+    const arr = Array.isArray(data) ? data : [];
+    await saveSharedData(key, [item, ...arr]);
+    return;
+  }
+  await broadcastChange(key);
+}
+
+// Edita (merge) un ítem por id dentro de una key array, sin tocar los demás.
+async function sbPatchItem(key, id, patch) {
+  try { await sbRpc('patch_item_in_shared_array', { p_key: key, p_id: id, p_patch: patch }); }
+  catch (e) {
+    console.error(`[sbPatchItem ${key}] fallback:`, e.message);
+    const data = await loadSharedData(key);
+    const arr = Array.isArray(data) ? data : [];
+    await saveSharedData(key, arr.map(x => x.id === id ? { ...x, ...patch } : x));
+    return;
+  }
+  await broadcastChange(key);
+}
+
+// Agrega un asiento a la CC del proveedor (proveedores.ccEntries) sin pisar el resto.
+async function sbAppendCCEntry(entry) {
+  try { await sbRpc('append_ccentry', { p_entry: entry }); }
+  catch (e) {
+    console.error('[sbAppendCCEntry] fallback:', e.message);
+    const data = await loadSharedData('proveedores');
+    const cc = data?.ccEntries || [];
+    await saveSharedData('proveedores', { ...(data || {}), ccEntries: [...cc, entry] });
+    return;
+  }
+  await broadcastChange('proveedores');
+}
+
+// Mergea un patch en el detalle de UNA obra (obras.detalles[obraId]) sin pisar
+// las demás obras ni el resto del bloque.
+async function sbPatchDetalleObra(obraId, patch) {
+  try { await sbRpc('patch_detalle_obra', { p_obra_id: obraId, p_patch: patch }); }
+  catch (e) {
+    console.error('[sbPatchDetalleObra] fallback:', e.message);
+    const data = await loadSharedData('obras');
+    const detalles = data?.detalles || {};
+    const cur = detalles[obraId] || {};
+    await saveSharedData('obras', { obras: data?.obras || [], detalles: { ...detalles, [obraId]: { ...cur, ...patch } } });
+    return;
+  }
+  await broadcastChange('obras');
+}
+
 // Saldo EN VIVO de una caja (igual que la app): saldoInicial + suma de sus
 // movimientos. Así el comando `saldo` refleja un movimiento recién agregado
 // aunque la app todavía no haya recalculado/persistido. Si la caja aún no tiene
@@ -454,13 +520,11 @@ async function onboardCliente(phone, nombreCliente, nombreObra) {
   // No bloqueamos.
 
   // Marcar el cliente como vinculado con su telefono.
-  const updatedClientes = clientes.map(c =>
-    c.id === cliente.id
-      ? { ...c, telefono: '+' + phone, whatsappActivo: true, whatsappVinculadoAt: new Date().toISOString() }
-      : c
-  );
-  const ok = await saveSharedData('clientes', updatedClientes);
-  console.log(`onboardCliente: vinculado cliente=${cliente.id} (${cliente.nombre}) phone=+${phone} save_ok=${ok}`);
+  // Atómico: parchea SOLO ese cliente por id (no pisa la lista de clientes).
+  await sbPatchItem('clientes', cliente.id, {
+    telefono: '+' + phone, whatsappActivo: true, whatsappVinculadoAt: new Date().toISOString(),
+  });
+  console.log(`onboardCliente: vinculado cliente=${cliente.id} (${cliente.nombre}) phone=+${phone}`);
   // Re-leer para verificar que se persistio (defensa contra pisado por
   // frontend o por algun race condition).
   const verify = await loadSharedData('clientes');
@@ -1400,9 +1464,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // ── Rama no-Admin: flujo de aprobación (igual que antes) ──────────────────
     nuevoMov.estadoAprobacion = 'pendiente';
 
-    const pendingRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
-    const existing = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
-    const newPending = [{
+    await sbAppendArray('whatsapp_pending', { // atómico
       id:            `wp-${Date.now()}`,
       tipoPendiente: 'movimiento',
       movimiento:    nuevoMov,
@@ -1410,14 +1472,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       creadoPor:     user.user_name,
       receivedAt:    new Date().toISOString(),
       status:        'pendiente',
-    }, ...existing];
-
-    await fetch(`${SUPABASE_URL}/rest/v1/shared_data`, {
-      method: 'POST',
-      headers: { ...sbH(), 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({ key: 'whatsapp_pending', data: newPending, updated_at: new Date().toISOString() }),
     });
-    await broadcastChange('whatsapp_pending');
 
     const admins = await getAllAdmins();
     const msgAdmin =
@@ -1474,7 +1529,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       }
     }
 
-    const newPending = [{
+    await sbAppendArray('whatsapp_pending', { // atómico
       id:            `wp-${Date.now()}`,
       tipoPendiente: 'factura',
       tipoFactura:   datos.tipoFactura   || '',
@@ -1492,14 +1547,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       creadoPor:     user.user_name,
       receivedAt:    new Date().toISOString(),
       status:        'pendiente',
-    }, ...existing];
-
-    await fetch(`${SUPABASE_URL}/rest/v1/shared_data`, {
-      method: 'POST',
-      headers: { ...sbH(), 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({ key: 'whatsapp_pending', data: newPending, updated_at: new Date().toISOString() }),
     });
-    await broadcastChange('whatsapp_pending');
 
     const admins = await getAllAdmins();
     const montoStr = datos.montoTotal != null ? `$${Math.round(datos.montoTotal).toLocaleString('es-AR')}` : '—';
@@ -1649,10 +1697,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     };
     await appendMovimiento(nuevoMov);
 
-    // 2) Cheque en cartera. OJO: shared_data 'cheques' es un ARRAY directo
-    // (la app usa useSyncedSharedData), no { cheques: [...] }.
-    const chequesArr = await loadSharedData('cheques');
-    const cheques = Array.isArray(chequesArr) ? chequesArr : (chequesArr?.cheques || []);
+    // 2) Cheque en cartera (se agrega atómicamente más abajo).
     const nuevoCheque = {
       id: `chq-${Date.now()}`,
       tipo: esEcheq ? 'echeq_tercero' : 'tercero',
@@ -1667,7 +1712,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       fechaRechazo: null, motivoRechazo: null,
       observacion: '', createdAt: new Date().toISOString(), creadoPorWA: true, creadoPor: user.user_name,
     };
-    await saveSharedData('cheques', [nuevoCheque, ...cheques]);
+    await sbAppendArray('cheques', nuevoCheque); // atómico
 
     return `🧾 *Cheque en cartera*\n${fmt(monto)}${datos.banco ? ` · ${datos.banco}` : ''}${datos.numero ? ` · #${datos.numero}` : ''}\nVence: ${datos.fechaVencimiento}\nEntró a tu caja *${caja.nombre}*. Editable desde la app.`;
   }
@@ -1837,12 +1882,14 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
           ]
         : [...(detalle.adicionales || []), ...(nuevoAdicional ? [nuevoAdicional] : [])],
     };
-    await fetch(`${SUPABASE_URL}/rest/v1/shared_data`, {
-      method: 'POST',
-      headers: { ...sbH(), 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({ key: 'obras', data: { obras: obrasData?.obras || [], detalles: { ...detalles, [obra.id]: detalleActualizado } }, updated_at: new Date().toISOString() }),
+    // Atómico: parchea SOLO el detalle de esta obra (no pisa las demás).
+    await sbPatchDetalleObra(obra.id, {
+      rubros:      updatedRubros,
+      gantt:       updatedGantt,
+      contratos:   updatedContratos,
+      fotos:       detalleActualizado.fotos,
+      adicionales: detalleActualizado.adicionales,
     });
-    await broadcastChange('obras');
 
     // Agregar certificación a cuenta corriente del proveedor
     let ccMsg = '';
@@ -1862,54 +1909,45 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       if (!prov) {
         ccMsg = `\n⚠️ Proveedor "*${rubro.proveedor}*" no encontrado en el sistema. Revisá el nombre en el rubro.`;
       } else {
-        const ccEntries = provData.ccEntries || [];
         const cantStr = cantAvance > 0 ? `${cantAvance}${datos.unidad || ''}` : `${Math.abs(avanceAgregado)}%`;
-        let updatedCCEntries;
+        const hoyCert = new Date().toISOString().split('T')[0];
+        // ¿Hay una cert previa de esta tarea para CORREGIR en su lugar? (caso raro)
+        let certPrevia = null;
         if (esCorreccion) {
-          // Buscar la última cert de este proveedor + obra + tarea y actualizarla
           const tareaKey = (tarea?.nombre || '').toLowerCase();
-          let lastIdx = -1;
-          for (let i = ccEntries.length - 1; i >= 0; i--) {
-            const e = ccEntries[i];
-            if (e.obraId === obra.id && e.tipo === 'cert' && (e.concepto || '').toLowerCase().includes(tareaKey)) {
-              lastIdx = i; break;
-            }
+          const cc = provData.ccEntries || [];
+          for (let i = cc.length - 1; i >= 0; i--) {
+            const e = cc[i];
+            if (e.obraId === obra.id && e.tipo === 'cert' && (e.concepto || '').toLowerCase().includes(tareaKey)) { certPrevia = e; break; }
           }
-          if (lastIdx >= 0) {
-            updatedCCEntries = ccEntries.map((e, i) => i !== lastIdx ? e : {
-              ...e,
-              fecha:    new Date().toISOString().split('T')[0],
-              concepto: `Corrección: ${tarea?.nombre || 'Avance'} (${cantStr}) — por ${user.user_name}`,
-              debe:     valorCertificado,
-            });
-          } else {
-            updatedCCEntries = [...ccEntries, {
-              id: `cc-${Date.now()}`, proveedorId: prov.id,
-              obraId: obra.id, obraNombre: obra.nombre,
-              fecha: new Date().toISOString().split('T')[0],
-              concepto: `Corrección: ${tarea?.nombre || 'Avance'} (${cantStr})`,
-              tipo: 'cert', debe: valorCertificado, haber: 0,
-            }];
-          }
+        }
+        if (certPrevia) {
+          // Corrección en su lugar: edita SOLO ese asiento por id (caso raro).
+          // No hay RPC de patch para ccEntries todavía → read-modify-write acotado.
+          const provFresh = await loadSharedData('proveedores');
+          const ccFresh = provFresh?.ccEntries || [];
+          const updated = ccFresh.map(e => e.id !== certPrevia.id ? e : {
+            ...e, fecha: hoyCert,
+            concepto: `Corrección: ${tarea?.nombre || 'Avance'} (${cantStr}) — por ${user.user_name}`,
+            debe: valorCertificado,
+          });
+          await saveSharedData('proveedores', { ...(provFresh || {}), ccEntries: updated });
         } else {
-          updatedCCEntries = [...ccEntries, {
+          // Cert nueva → agregar atómicamente (no pisa el resto de la CC).
+          await sbAppendCCEntry({
             id:          `cc-${Date.now()}`,
             proveedorId: prov.id,
             obraId:      obra.id,
             obraNombre:  obra.nombre,
-            fecha:       new Date().toISOString().split('T')[0],
-            concepto:    `Cert: ${datos.descripcion || tarea?.nombre || 'Avance'} (${cantStr})`,
+            fecha:       hoyCert,
+            concepto:    esCorreccion
+              ? `Corrección: ${tarea?.nombre || 'Avance'} (${cantStr})`
+              : `Cert: ${datos.descripcion || tarea?.nombre || 'Avance'} (${cantStr})`,
             tipo:        'cert',
             debe:        valorCertificado,
             haber:       0,
-          }];
+          });
         }
-        await fetch(`${SUPABASE_URL}/rest/v1/shared_data`, {
-          method: 'POST',
-          headers: { ...sbH(), 'Prefer': 'resolution=merge-duplicates' },
-          body: JSON.stringify({ key: 'proveedores', data: { proveedores: provData.proveedores, ccEntries: updatedCCEntries }, updated_at: new Date().toISOString() }),
-        });
-        await broadcastChange('proveedores');
         const montoFmt = String(valorCertificado).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
         ccMsg = esCorreccion
           ? `\n💰 CC de *${prov.nombre}* actualizada → $${montoFmt}`
@@ -1931,8 +1969,6 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
 
       // Guardar también en shared_data 'alertas' para el dashboard
       try {
-        const alertasData = await loadSharedData('alertas');
-        const existingAlertas = Array.isArray(alertasData) ? alertasData : [];
         const nuevasAlertas = alertasAdmin.map((msg, i) => ({
           id:        `alerta-${Date.now()}-${i}`,
           tipo:      msg.includes('Exceso') ? 'exceso' : 'proveedor_faltante',
@@ -1945,12 +1981,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
           fuente:    'whatsapp',
           creadoPor: user.user_name,
         }));
-        await fetch(`${SUPABASE_URL}/rest/v1/shared_data`, {
-          method: 'POST',
-          headers: { ...sbH(), 'Prefer': 'resolution=merge-duplicates' },
-          body: JSON.stringify({ key: 'alertas', data: [...nuevasAlertas, ...existingAlertas.slice(0, 50)], updated_at: new Date().toISOString() }),
-        });
-        await broadcastChange('alertas');
+        for (const a of nuevasAlertas) await sbAppendArray('alertas', a); // atómico
       } catch (e) { console.error('saveAlertas error:', e.message); }
     }
 
@@ -2029,8 +2060,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       completadoAt: null,
     };
 
-    const tareas = (await loadSharedData('tareas')) || [];
-    await saveSharedData('tareas', [nueva, ...tareas]);
+    await sbAppendArray('tareas', nueva); // atómico
 
     const items = checklistItems.length > 0
       ? `\n📋 ${checklistItems.length} item${checklistItems.length === 1 ? '' : 's'} en el checklist`
@@ -2193,30 +2223,25 @@ async function ejecutarComando(comando, datos, user, ctx) {
     if (!item) return `Esa tarea solo tiene ${(t.checklist || []).length} item${(t.checklist || []).length === 1 ? '' : 's'}.`;
     if (item.completado) return `Ese item ya estaba marcado: "${item.texto}". ✅`;
 
-    // Actualizar tarea
+    // Actualizar tarea — atómico: parchea SOLO esa tarea por id (no pisa otras).
     const userId = user.user_id || user.id;
     const nowIso = new Date().toISOString();
-    const newTareas = tareas.map(x => {
-      if (x.id !== tareaId) return x;
-      const newChecklist = (x.checklist || []).map((it, i) =>
-        i === num - 1 ? { ...it, completado: true, completadoPor: userId, completadoAt: nowIso } : it
-      );
-      const completosAhora = newChecklist.filter(it => it.completado).length;
-      const totalAhora = newChecklist.length;
-      let estado = 'pendiente';
-      if (completosAhora === totalAhora && totalAhora > 0) estado = 'completada';
-      else if (completosAhora > 0) estado = 'en_progreso';
-      return {
-        ...x,
-        checklist: newChecklist,
-        estado,
-        actualizadoAt: nowIso,
-        completadoAt: estado === 'completada' ? nowIso : null,
-      };
+    const newChecklist = (t.checklist || []).map((it, i) =>
+      i === num - 1 ? { ...it, completado: true, completadoPor: userId, completadoAt: nowIso } : it
+    );
+    const completosAhora = newChecklist.filter(it => it.completado).length;
+    const totalAhora = newChecklist.length;
+    let estado = 'pendiente';
+    if (completosAhora === totalAhora && totalAhora > 0) estado = 'completada';
+    else if (completosAhora > 0) estado = 'en_progreso';
+    await sbPatchItem('tareas', tareaId, {
+      checklist: newChecklist,
+      estado,
+      actualizadoAt: nowIso,
+      completadoAt: estado === 'completada' ? nowIso : null,
     });
-    await saveSharedData('tareas', newTareas);
 
-    const tareaActualizada = newTareas.find(x => x.id === tareaId);
+    const tareaActualizada = { ...t, checklist: newChecklist, estado };
     const totalItems = tareaActualizada.checklist.length;
     const completos = tareaActualizada.checklist.filter(it => it.completado).length;
     const allDone = completos === totalItems && totalItems > 0;
@@ -2281,11 +2306,9 @@ async function ejecutarComando(comando, datos, user, ctx) {
     if (!item) return 'El pendiente ya no existe (quizás fue resuelto desde la app).';
 
     const accion = comando === 'aprobar_pendiente' ? 'confirmed' : 'rejected';
-    const updated = pending.map(p => p.id === pendienteId
-      ? { ...p, status: accion, resolvedBy: user.user_name, resolvedAt: new Date().toISOString() }
-      : p
-    );
-    await saveSharedData('whatsapp_pending', updated);
+    await sbPatchItem('whatsapp_pending', pendienteId, {
+      status: accion, resolvedBy: user.user_name, resolvedAt: new Date().toISOString(),
+    });
 
     // Si es aprobación de MOVIMIENTO → aplicarlo de verdad.
     if (accion === 'confirmed' && item.tipoPendiente === 'movimiento' && item.movimiento) {
@@ -2556,8 +2579,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
     const obra = ctx.obras.find(o => o.nombre?.toLowerCase().includes(obraQuery) || obraQuery.includes(o.nombre?.toLowerCase()));
     if (!obra) return `❌ No encontré la obra "${datos.obra}".`;
     const obrasData = await loadSharedData('obras');
-    const detalles = obrasData?.detalles || {};
-    const det = detalles[obra.id] || {};
+    const det = obrasData?.detalles?.[obra.id] || {};
     const nuevaNota = {
       id: `nota-${Date.now()}`,
       texto,
@@ -2565,9 +2587,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
       fecha: new Date().toISOString(),
       origen: 'whatsapp',
     };
-    const notasObra = [nuevaNota, ...(det.notasRapidas || [])];
-    const nuevoDetalles = { ...detalles, [obra.id]: { ...det, notasRapidas: notasObra } };
-    await saveSharedData('obras', { ...obrasData, detalles: nuevoDetalles });
+    // Atómico: parchea SOLO el detalle de esta obra.
+    await sbPatchDetalleObra(obra.id, { notasRapidas: [nuevaNota, ...(det.notasRapidas || [])] });
     return `📝 Nota guardada en *${obra.nombre}*:\n_"${texto}"_`;
   }
 
@@ -2580,11 +2601,10 @@ async function ejecutarComando(comando, datos, user, ctx) {
     const cheques = Array.isArray(chequesData) ? chequesData : (chequesData?.cheques || []);
     const chq = cheques.find(c => (c.numero || '').toString().replace(/\D/g, '') === numero.replace(/\D/g, ''));
     if (!chq) return `❌ No encontré un cheque N° ${numero}.`;
-    const updated = cheques.map(c => c.id === chq.id
-      ? { ...c, estado: nuevoEstado, ...(nuevoEstado === 'depositado' ? { fechaDeposito: new Date().toISOString().split('T')[0] } : {}) }
-      : c
-    );
-    await saveSharedData('cheques', updated);
+    await sbPatchItem('cheques', chq.id, { // atómico
+      estado: nuevoEstado,
+      ...(nuevoEstado === 'depositado' ? { fechaDeposito: new Date().toISOString().split('T')[0] } : {}),
+    });
     const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
     const label = { depositado: 'depositado', cobrado: 'cobrado', rechazado: 'rechazado', anulado: 'anulado' }[nuevoEstado] || nuevoEstado;
     return `✅ Cheque N° *${chq.numero}* (${chq.banco || ''} · ${fmt(chq.monto)}) marcado como *${label}*.`;
@@ -3071,12 +3091,7 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     // Se guarda con "+" para que el campo telefono de la app conserve formato
     // legible (ej. "+5491155551234"). El bot normaliza antes de enviar.
     try {
-      const clientesData = await loadSharedData('clientes');
-      const clientes = Array.isArray(clientesData) ? clientesData : [];
-      const updated = clientes.map(c =>
-        c.id === conv.data.clienteId ? { ...c, telefono: '+' + tel } : c
-      );
-      await saveSharedData('clientes', updated);
+      await sbPatchItem('clientes', conv.data.clienteId, { telefono: '+' + tel }); // atómico
     } catch (e) {
       console.error('save cliente phone error:', e.message);
     }
