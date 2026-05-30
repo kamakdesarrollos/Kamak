@@ -21,6 +21,7 @@ import {
   signoComprobanteRecibido, CONCEPTOS_AFIP, CONCEPTO_AFIP_DEFAULT, getConceptoAfip,
   resolverComprobanteAsociado,
 } from '../lib/afip';
+import { generarLibroIvaDigital, NOMBRES_ARCHIVO_LIBRO_IVA } from '../lib/libroIvaDigital';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -501,6 +502,31 @@ export default function Facturacion() {
     downloadCSV(`libro-iva-ventas-${mes}.csv`, [head, ...rows]);
   };
 
+  // Export TXT del Libro IVA Digital de AFIP (RG 5363): 4 archivos de ancho fijo
+  // (ventas/compras × cabecera/alícuotas) en un ZIP. OJO: las ventas usan el N°
+  // de AFIP — los comprobantes que todavía son borrador (sin emitir) salen con
+  // N° 0 y habría que emitirlos antes de presentar. Las compras usan los datos
+  // reales de las facturas de proveedor.
+  const downloadLibroIvaDigital = async () => {
+    const archivos = generarLibroIvaDigital({ ventas: ventasMes, compras: comprasMes });
+    const sinNumero = ventasMes.filter(c => !c.numero).length;
+    if (sinNumero > 0 && !confirm(
+      `Atención: ${sinNumero} comprobante(s) de venta del mes todavía son borrador (sin número de AFIP) y se exportarán con número 0. ` +
+      `El Libro IVA Digital se presenta con comprobantes ya emitidos. ¿Generar igual?`
+    )) return;
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    for (const [k, contenido] of Object.entries(archivos)) {
+      if (contenido) zip.file(NOMBRES_ARCHIVO_LIBRO_IVA[k], contenido);
+    }
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `libro-iva-digital-${mes}.zip`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 200);
+  };
+
   // ZIP con todos los comprobantes adjuntos de las compras del mes — útil para
   // que el contador tenga el respaldo en pdf/foto sin tener que abrir el sistema.
   const sanitize = (s) => (s || '').replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _-]/g, '').slice(0, 40).trim();
@@ -677,6 +703,10 @@ export default function Facturacion() {
             <Btn sm onClick={exportCSVCompras} style={{ opacity: comprasMes.length ? 1 : 0.5, pointerEvents: comprasMes.length ? 'auto' : 'none' }}>⬇ CSV Libro IVA Compras</Btn>
             <Btn sm onClick={downloadZipComprobantes} style={{ opacity: comprasMes.some(m => m.comprobanteUrl) && !zipping ? 1 : 0.5, pointerEvents: comprasMes.some(m => m.comprobanteUrl) && !zipping ? 'auto' : 'none' }}>
               {zipping ? '⏳ Armando ZIP…' : '🗂 ZIP comprobantes del mes'}
+            </Btn>
+            <Btn sm onClick={downloadLibroIvaDigital} style={{ opacity: (ventasMes.length || comprasMes.length) ? 1 : 0.5, pointerEvents: (ventasMes.length || comprasMes.length) ? 'auto' : 'none' }}
+              title="Archivos de ancho fijo (RG 5363) para importar en el Libro IVA Digital de AFIP">
+              📦 TXT Libro IVA Digital (AFIP)
             </Btn>
           </Box>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
