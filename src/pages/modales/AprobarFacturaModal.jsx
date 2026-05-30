@@ -54,6 +54,11 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
   const [categoriaFiscal, setCategoriaFiscal] = useState('');
   const SIN_IVA_CREDITO = new Set(['sueldo', 'cs-soc', 'sind', 'iibb']);
   const esNoIvaCredito = SIN_IVA_CREDITO.has(categoriaFiscal);
+  // Percepción IIBB sufrida: si el bot la leyó del ticket, viene en item.percepcionIIBB.
+  // El admin puede ajustarla. Se descuenta del IIBB del mes en el panel Financiero.
+  const [percepcionIIBB, setPercepcionIIBB] = useState(
+    item.percepcionIIBB != null ? String(item.percepcionIIBB) : ''
+  );
 
   const montoNum = Math.round(parseFloat(String(monto).replace(/[^0-9.]/g, '')) || 0);
   // Si la factura es C (emisor monotributo), no hay IVA discriminado para tomar
@@ -91,6 +96,10 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
       proveedor:      proveedor.trim(),
       categoria:      esNoIvaCredito ? 'general' : 'factura-proveedor',
       categoriaFiscal: categoriaFiscal || undefined,
+      percepcionIIBB: (() => {
+        const n = Math.round(parseFloat(String(percepcionIIBB).replace(',', '.')) || 0);
+        return n > 0 ? n : undefined;
+      })(),
       medioPago:      'Transferencia',
       referencia:     item.numeroFactura || '',
       comprobante:    esNoIvaCredito ? 'negro' : 'blanco',
@@ -257,6 +266,20 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
                 ⓘ 10,5% aplica solo a <b>obras destinadas a vivienda</b> (Ley 23905). NO aplica a materiales de terminación.
               </div>
             )}
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${T.faint2}` }}>
+              <label style={labelSt}>Percepción IIBB sufrida $ (opcional)</label>
+              <input
+                type="text" inputMode="decimal" placeholder="0"
+                style={{ ...inputSt, fontFamily: T.fontMono, textAlign: 'right' }}
+                value={percepcionIIBB}
+                onChange={e => setPercepcionIIBB(e.target.value)}
+              />
+              <div style={{ fontSize: 10, color: T.ink3, marginTop: 4 }}>
+                Típica en estaciones de servicio. {item.percepcionIIBB != null
+                  ? <b style={{ color: '#25803a' }}>El bot la leyó del ticket.</b>
+                  : 'Si el ticket la discrimina, cargala — se descuenta del IIBB del mes.'}
+              </div>
+            </div>
             </>)}
           </div>
         </div>

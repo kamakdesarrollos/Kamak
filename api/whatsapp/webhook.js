@@ -1313,8 +1313,9 @@ ORDEN DE PREGUNTAS (nunca más de una a la vez):
 8. Con todo completo → mostrá resumen y pedí confirmación
 
 ACCIONES DISPONIBLES:
-1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional), categoriaFiscal(opcional: 'sueldo'|'cs-soc'|'sind'|'alquiler'|'servicios'|'seguro'|'otro').
+1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional), categoriaFiscal(opcional: 'sueldo'|'cs-soc'|'sind'|'iibb'|'alquiler'|'servicios'|'seguro'|'otro'), percepcionIIBB(opcional, número en pesos).
    IMPORTANTE — DATOS FISCALES EN GASTOS CON FOTO DE FACTURA/TICKET: si la imagen MUESTRA un comprobante formal (Factura A/B/C, ticket fiscal con CAE/CAI), agregá TAMBIÉN en datos: tipoFactura ('A'/'B'/'C', leído de la foto), numeroFactura, cuit (del emisor), monto (neto sin IVA si la foto lo discrimina), montoTotal (total con IVA, igual al monto del gasto). El sistema usa esto para el Libro IVA Compras. Es ortogonal a la regla de oro: el gasto sigue cargándose rápido como gasto, NO como factura_compra, pero los datos fiscales viajan dentro del gasto. Si la foto NO discrimina IVA (ticket no fiscal), no completes esos campos.
+   PERCEPCIÓN IIBB DISCRIMINADA EN EL TICKET: muy común en estaciones de servicio (YPF/Shell/Axion), supermercados mayoristas, ferreterías grandes — aparece como "Perc. IIBB", "Percepción IIBB Bs As", "IB Pcia Bs As" o similar, como un renglón EXTRA arriba del total. Si la foto lo discrimina, leé el monto en pesos y ponelo en datos.percepcionIIBB. NO lo confundas con el IVA, ni con el neto. Sumarlo aparte permite que el sistema lo descuente del IIBB del mes. Si no aparece discriminado en el ticket, no completes el campo.
    RECIBO DE SUELDO / CARGAS / SINDICATO / ALQUILER / SERVICIOS: si el texto o la foto refieren a "recibo de sueldo", "haberes", "liquidación", "sueldo de X", "F.931" (cargas sociales), "boleta UOCRA"/"sindicato", "alquiler", o servicios (luz/gas/internet) — completá el campo categoriaFiscal con la opción que corresponda y NO incluyas tipoFactura/numeroFactura/cuit/montoTotal (estos comprobantes NO generan IVA crédito y no van al Libro IVA Compras; el panel Financiero los suma a su columna por categoría). El gasto sigue siendo un GASTO normal con su monto y su foto.
 2. INGRESO: monto, descripción, obraId, cajaId
 3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(neto sin IVA), montoTotal(con IVA), concepto
@@ -1476,6 +1477,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       proveedor:        datos.proveedorNombre || '',
       categoria:        datos.tipo === 'mano_de_obra' ? 'mano-de-obra' : datos.tipo === 'material' ? 'material' : 'general',
       categoriaFiscal:  (tipo === 'gasto' && datos.categoriaFiscal) ? datos.categoriaFiscal : undefined,
+      // Percepción IIBB sufrida (leída del ticket si la LLM la detectó). Se descuenta
+      // del IIBB del mes en el panel Financiero. Típica de estaciones de servicio.
+      percepcionIIBB:   (tipo === 'gasto' && datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
+                          ? Math.round(Number(datos.percepcionIIBB)) : undefined,
       medioPago:        datos.medioPago || 'Efectivo',
       comprobante:      datos.comprobante || 'negro',
       comprobanteUrl:   mediaUrl || null,
@@ -1692,6 +1697,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
           fondoReparo: false,
           creadoPorWA: true,
           creadoPor: user.user_name,
+          percepcionIIBB: (datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
+                            ? Math.round(Number(datos.percepcionIIBB)) : undefined,
           comprobanteRecibido: {
             tipo: tipoLetra, numero: datos.numeroFactura || '', cuit: datos.cuit || '',
             fecha: fechaMov, neto, iva, alicuota, total,
@@ -1719,6 +1726,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       concepto:      datos.concepto      || '',
       monto:         datos.monto         != null ? Math.round(datos.monto) : null,
       montoTotal:    datos.montoTotal    != null ? Math.round(datos.montoTotal) : null,
+      percepcionIIBB: (datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
+                        ? Math.round(Number(datos.percepcionIIBB)) : null,
       obraId:        datos.obraId        || null,  // si el texto mencionó obra
       mediaType:     mediaUrl?.endsWith('.pdf') ? 'pdf' : 'image',
       mediaUrl:      mediaUrl || null,
