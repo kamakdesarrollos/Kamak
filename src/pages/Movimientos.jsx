@@ -381,6 +381,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const [cheqTitular,    setCheqTitular]    = useState('');
   const [cheqVencimiento,setCheqVencimiento]= useState('');
   const [esAdicional,    setEsAdicional]    = useState(false);
+  const [categoriaFiscal,setCategoriaFiscal]= useState(''); // sueldo|cs-soc|sind|alquiler|servicios|seguro|otro (vacío = no fiscal)
   const [cuotaId,        setCuotaId]        = useState('');
   const [fotoFile,       setFotoFile]       = useState(null);
   const [fotoUploading,  setFotoUploading]  = useState(false);
@@ -544,6 +545,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       cajaDestinoId: null,
       proveedor:     contraparteName,
       categoria:     isGasto ? 'general' : 'cobro-cliente',
+      categoriaFiscal: isGasto && categoriaFiscal ? categoriaFiscal : undefined,
       medioPago:     medio,
       referencia:    cheqNumero || '',
       fondoReparo:   false,
@@ -596,7 +598,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       });
     }
 
-    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false);
+    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false); setCategoriaFiscal('');
     setCheqNumero(''); setCheqBanco(''); setCheqTitular(''); setCheqVencimiento('');
     setCuotaId(''); setFotoFile(null); if (fotoRef.current) fotoRef.current.value = '';
   };
@@ -767,6 +769,25 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           <input type="checkbox" checked={esAdicional} onChange={e => setEsAdicional(e.target.checked)} />
           Registrar también como <b style={{ color: T.accent }}>adicional pendiente</b> de {obras.find(o => o.id === obraId)?.nombre || 'la obra'}
         </label>
+      )}
+
+      {/* Categoría fiscal (opcional) — sirve para que el panel Financiero
+          sume sueldos / cargas / etc. automáticamente al mes correspondiente. */}
+      {isGasto && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Categoría fiscal (Financiero):</span>
+          <select value={categoriaFiscal} onChange={e => setCategoriaFiscal(e.target.value)}
+            style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px' }}>
+            <option value="">— sin categoría fiscal —</option>
+            <option value="sueldo">Sueldo</option>
+            <option value="cs-soc">Cargas sociales</option>
+            <option value="sind">Sindicato (UOCRA)</option>
+            <option value="alquiler">Alquiler</option>
+            <option value="servicios">Servicios (luz/gas/internet)</option>
+            <option value="seguro">Seguro</option>
+            <option value="otro">Otro gasto fijo</option>
+          </select>
+        </div>
       )}
 
       {/* Distribución automática de cuotas + comprobante */}

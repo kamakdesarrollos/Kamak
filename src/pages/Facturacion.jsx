@@ -736,13 +736,25 @@ export default function Facturacion() {
 
       {/* ── TAB FINANCIERO ──────────────────────────────────────────────────── */}
       {tab === 'financiero' && (() => {
-        // Meses con cualquier tipo de dato (comprobantes, compras con factura, o cargas).
+        // Alícuota IIBB de la config (default 3% para construcción Bs.As.).
+        const iibbAli = Number(empresa.iibbAlicuota ?? 3);
+        // Suma de gastos con cierta categoríaFiscal en un mes.
+        const sumPorCatFiscal = (mes, cat) => (movimientos || [])
+          .filter(m => m.tipo === 'gasto' && m.categoriaFiscal === cat && String(m.fecha || '').slice(0, 7) === mes)
+          .reduce((s, m) => s + (m.monto || 0), 0);
+        // Reúno meses con CUALQUIER dato (comprobantes, compras con factura, gastos
+        // categorizados o cargas manuales) + el mes actual.
         const setM = new Set();
         comprobantes.forEach(c => { if (c.estado !== 'anulado' && c.fecha) setM.add(String(c.fecha).slice(0, 7)); });
-        (movimientos || []).forEach(m => { if (m.comprobanteRecibido && m.fecha) setM.add(String(m.fecha).slice(0, 7)); });
+        (movimientos || []).forEach(m => {
+          if (m.comprobanteRecibido && m.fecha) setM.add(String(m.fecha).slice(0, 7));
+          if (m.categoriaFiscal && m.fecha)     setM.add(String(m.fecha).slice(0, 7));
+        });
         Object.keys(financiero || {}).forEach(k => setM.add(k));
         setM.add(mesActual());
         const meses = [...setM].sort();
+        // Resolver: manual (si está) ?? auto.
+        const v = (manual, auto) => (manual != null && manual !== '' ? Number(manual) : auto);
         let acum = 0;
         const filas = meses.map(mk => {
           const ventas = comprobantes
@@ -751,14 +763,22 @@ export default function Facturacion() {
           const compras = (movimientos || [])
             .filter(m => m.comprobanteRecibido && String(m.fecha || '').slice(0, 7) === mk)
             .reduce((s, m) => s + (m.comprobanteRecibido?.total || m.monto || 0), 0);
-          const cargas = financiero[mk] || {};
-          const iibb = Number(cargas.iibb || 0);
-          const sueldos = Number(cargas.sueldos || 0);
-          const csSoc = Number(cargas.csSoc || 0);
-          const sind = Number(cargas.sind || 0);
+          const cargas      = financiero[mk] || {};
+          const iibbAuto    = Math.round(ventas * iibbAli) / 100;
+          const sueldosAuto = sumPorCatFiscal(mk, 'sueldo');
+          const csSocAuto   = sumPorCatFiscal(mk, 'cs-soc');
+          const sindAuto    = sumPorCatFiscal(mk, 'sind');
+          const iibb        = v(cargas.iibb,    iibbAuto);
+          const sueldos     = v(cargas.sueldos, sueldosAuto);
+          const csSoc       = v(cargas.csSoc,   csSocAuto);
+          const sind        = v(cargas.sind,    sindAuto);
           const neto = ventas - compras - iibb - sueldos - csSoc - sind;
           acum += neto;
-          return { mes: mk, ventas, compras, iibb, sueldos, csSoc, sind, neto, acumulado: acum, _cargas: cargas };
+          return {
+            mes: mk, ventas, compras, iibb, sueldos, csSoc, sind, neto, acumulado: acum,
+            _cargas: cargas,
+            _auto: { iibb: iibbAuto, sueldos: sueldosAuto, csSoc: csSocAuto, sind: sindAuto },
+          };
         });
         const tot = filas.reduce((t, f) => ({
           ventas: t.ventas + f.ventas, compras: t.compras + f.compras,
@@ -779,18 +799,26 @@ export default function Facturacion() {
           downloadCSV(`financiero.csv`, [head, ...rows]);
         };
 
-        // Celda editable para una carga manual.
-        const CeldaCarga = ({ mes, field, valor }) => (
-          <input
-            type="number" inputMode="decimal" placeholder="—"
-            value={valor == null ? '' : valor}
-            onChange={e => setMesField(mes, field, e.target.value)}
-            style={{
-              width: '100%', padding: '4px 6px', textAlign: 'right',
-              border: `1px solid ${T.faint2}`, borderRadius: 3,
-              fontFamily: T.fontMono, fontSize: 11, background: T.paper, outline: 'none',
-            }}
-          />
+        // Celda editable con valor auto-calculado. Si el manual está vacío, se usa
+        // el auto (mostrado como placeholder + hint). Si lo escribís, prevalece.
+        const CeldaCarga = ({ mes, field, manual, auto }) => (
+          <div>
+            <input
+              type="number" inputMode="decimal"
+              placeholder={auto > 0 ? Math.round(auto).toString() : '—'}
+              value={manual == null || manual === '' ? '' : manual}
+              onChange={e => setMesField(mes, field, e.target.value)}
+              style={{
+                width: '100%', padding: '4px 6px', textAlign: 'right',
+                border: `1px solid ${(manual != null && manual !== '') ? T.accent : T.faint2}`,
+                borderRadius: 3, fontFamily: T.fontMono, fontSize: 11,
+                background: T.paper, outline: 'none',
+              }}
+            />
+            {auto > 0 && (manual == null || manual === '') && (
+              <div style={{ fontSize: 9, color: T.ink3, textAlign: 'right', marginTop: 1 }}>auto: {fmtMoney(auto)}</div>
+            )}
+          </div>
         );
 
         const cellNum = { padding: '6px 8px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 11.5 };
@@ -802,7 +830,7 @@ export default function Facturacion() {
               <div>
                 <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase' }}>◆ Financiero mensual</div>
                 <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
-                  Ventas y Compras se calculan solos desde los comprobantes. <b>IIBB / Sueldos / CS SOC / SIND</b> los carga el contador o vos, mes a mes — clic en la celda y escribís.
+                  Ventas y Compras se calculan solos desde los comprobantes. <b>IIBB</b> sale como % de Ventas (config: {iibbAli}%). <b>Sueldos / CS SOC / SIND</b> suman los gastos del mes con esa categoría fiscal (cargás el recibo en Movimientos y elegís la categoría). Cada celda se puede <b>overridear a mano</b> si el contador calcula distinto.
                 </div>
               </div>
               <Btn sm onClick={exportCSVFinanciero}>⬇ CSV Financiero</Btn>
@@ -829,10 +857,10 @@ export default function Facturacion() {
                     <td style={{ padding: '6px 8px', fontWeight: 700, color: T.ink, fontFamily: T.fontMono, fontSize: 11 }}>{labelMes(f.mes)}</td>
                     <td style={cellNum}>{f.ventas ? fmtMoney(f.ventas) : <span style={{ color: T.ink3 }}>—</span>}</td>
                     <td style={cellNum}>{f.compras ? fmtMoney(f.compras) : <span style={{ color: T.ink3 }}>—</span>}</td>
-                    <td style={{ padding: '4px 6px', width: 110 }}><CeldaCarga mes={f.mes} field="iibb"    valor={f._cargas.iibb} /></td>
-                    <td style={{ padding: '4px 6px', width: 110 }}><CeldaCarga mes={f.mes} field="sueldos" valor={f._cargas.sueldos} /></td>
-                    <td style={{ padding: '4px 6px', width: 110 }}><CeldaCarga mes={f.mes} field="csSoc"   valor={f._cargas.csSoc} /></td>
-                    <td style={{ padding: '4px 6px', width: 110 }}><CeldaCarga mes={f.mes} field="sind"    valor={f._cargas.sind} /></td>
+                    <td style={{ padding: '4px 6px', width: 120 }}><CeldaCarga mes={f.mes} field="iibb"    manual={f._cargas.iibb}    auto={f._auto.iibb} /></td>
+                    <td style={{ padding: '4px 6px', width: 120 }}><CeldaCarga mes={f.mes} field="sueldos" manual={f._cargas.sueldos} auto={f._auto.sueldos} /></td>
+                    <td style={{ padding: '4px 6px', width: 120 }}><CeldaCarga mes={f.mes} field="csSoc"   manual={f._cargas.csSoc}   auto={f._auto.csSoc} /></td>
+                    <td style={{ padding: '4px 6px', width: 120 }}><CeldaCarga mes={f.mes} field="sind"    manual={f._cargas.sind}    auto={f._auto.sind} /></td>
                     <td style={{ ...cellNum, fontWeight: 800, color: f.neto < 0 ? '#b91c1c' : '#166534' }}>{f.neto === 0 ? <span style={{ color: T.ink3 }}>—</span> : (f.neto < 0 ? '-' : '') + fmtMoney(Math.abs(f.neto))}</td>
                     <td style={{ ...cellNum, fontWeight: 800, color: f.acumulado < 0 ? '#b91c1c' : '#166534' }}>{(f.acumulado < 0 ? '-' : '') + fmtMoney(Math.abs(f.acumulado))}</td>
                   </tr>

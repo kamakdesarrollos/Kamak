@@ -14,6 +14,7 @@ const DEFAULT = {
     condicionIVA: 'RI',           // Responsable Inscripto (emisor)
     puntoVenta: 1,                // punto de venta AFIP (ajustable)
     direccion: 'Calle 42 N°3703, Necochea (CP 7630)',
+    iibbAlicuota: 3,              // % Ingresos Brutos (construcción Bs.As. ≈3, ajustable)
     email: 'admin@kamak.ar',
     telefono: '+54 11 4800-0000',
   },
