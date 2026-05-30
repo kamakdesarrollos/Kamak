@@ -17,7 +17,7 @@ import {
   TIPOS_COMPROBANTE, CONDICIONES_IVA, ALICUOTAS_IVA,
   calcDesdeNeto, tipoFacturaSugerido, validarComprobante,
   formatCUIT, getTipoComprobante, getCondicionIVA, validarCUIT,
-  buscarDuplicadoEmitido, buscarDuplicadoRecibido,
+  buscarDuplicadoEmitido, buscarDuplicadoRecibido, esJurisdiccionPBA,
 } from '../lib/afip';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
@@ -803,8 +803,16 @@ export default function Facturacion() {
           const retIIBB = (movimientos || [])
             .filter(m => m.tipo === 'ingreso' && Number(m.retencionIIBB) > 0 && String(m.fecha || '').slice(0, 7) === mk)
             .reduce((s, m) => s + Number(m.retencionIIBB || 0), 0);
-          const percIIBB = (movimientos || [])
-            .filter(m => m.tipo === 'gasto' && Number(m.percepcionIIBB) > 0 && String(m.fecha || '').slice(0, 7) === mk)
+          // Solo las percepciones de jurisdicción PBA descuentan del IIBB del mes
+          // (que se liquida contra PBA). Las de otra jurisdicción se acumulan
+          // aparte para avisar — no netean acá (Convenio Multilateral).
+          const percIIBBGastos = (movimientos || [])
+            .filter(m => m.tipo === 'gasto' && Number(m.percepcionIIBB) > 0 && String(m.fecha || '').slice(0, 7) === mk);
+          const percIIBB = percIIBBGastos
+            .filter(m => esJurisdiccionPBA(m.jurisdiccionIIBB))
+            .reduce((s, m) => s + Number(m.percepcionIIBB || 0), 0);
+          const percIIBBOtras = percIIBBGastos
+            .filter(m => !esJurisdiccionPBA(m.jurisdiccionIIBB))
             .reduce((s, m) => s + Number(m.percepcionIIBB || 0), 0);
           const descuentoIIBB = retIIBB + percIIBB;
           const iibbDevengado = Math.round(ventas * iibbAli) / 100;
@@ -825,6 +833,7 @@ export default function Facturacion() {
             _iibbDevengado: iibbDevengado,
             _retIIBB: retIIBB,
             _percIIBB: percIIBB,
+            _percIIBBOtras: percIIBBOtras,
           };
         });
         const tot = filas.reduce((t, f) => ({
@@ -916,6 +925,12 @@ export default function Facturacion() {
                           ? `(deveng ${fmtMoney(f._iibbDevengado)}${f._retIIBB > 0 ? ` − ret ${fmtMoney(f._retIIBB)}` : ''}${f._percIIBB > 0 ? ` − perc ${fmtMoney(f._percIIBB)}` : ''})`
                           : null}
                       />
+                      {f._percIIBBOtras > 0 && (
+                        <div title="Percepciones de otra jurisdicción (CABA/Córdoba/etc.). No descuentan del IIBB de PBA: se declaran contra el IIBB de su propia jurisdicción (Convenio Multilateral)."
+                          style={{ fontSize: 9, color: '#b45309', marginTop: 2, lineHeight: 1.2 }}>
+                          ⚠ {fmtMoney(f._percIIBBOtras)} de otra jurisdicción (no netea acá)
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '4px 6px', width: 120 }}><CeldaCarga mes={f.mes} field="sueldos" manual={f._cargas.sueldos} auto={f._auto.sueldos} /></td>
                     <td style={{ padding: '4px 6px', width: 120 }}><CeldaCarga mes={f.mes} field="csSoc"   manual={f._cargas.csSoc}   auto={f._auto.csSoc} /></td>

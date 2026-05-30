@@ -4,7 +4,7 @@ import { T } from '../../theme';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useObras } from '../../store/ObrasContext';
 import { useProveedores } from '../../store/ProveedoresContext';
-import { ALICUOTAS_IVA, buscarDuplicadoRecibido, parseMoneyAR, desglosarCompra } from '../../lib/afip';
+import { ALICUOTAS_IVA, buscarDuplicadoRecibido, parseMoneyAR, desglosarCompra, JURISDICCIONES_IIBB } from '../../lib/afip';
 
 // Modal de revisión y aprobación de una factura recibida por WhatsApp.
 // Extraido del antiguo WhatsappBuzon.jsx — la logica es la misma.
@@ -66,6 +66,8 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
   const [percepcionIIBB, setPercepcionIIBB] = useState(
     item.percepcionIIBB != null ? String(item.percepcionIIBB) : ''
   );
+  // Jurisdicción de la percepción IIBB (solo las de PBA descuentan del IIBB del mes).
+  const [jurisdiccionIIBB, setJurisdiccionIIBB] = useState(item.jurisdiccionIIBB || 'PBA');
   // Percepción IVA sufrida (RG 2408/3337, mayoristas): si el bot la leyó del ticket,
   // viene en item.percepcionIVA. Es un pago a cuenta que descuenta del IVA del mes.
   const [percepcionIVA, setPercepcionIVA] = useState(
@@ -116,6 +118,8 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
       // (no aplica). Evita data huérfana si el admin recategoriza algo que
       // venía con percepción auto-detectada.
       percepcionIIBB: (!esNoIvaCredito && percIIBBNum > 0) ? percIIBBNum : undefined,
+      // Jurisdicción IIBB: solo se guarda si NO es PBA (ausente = PBA).
+      jurisdiccionIIBB: (!esNoIvaCredito && percIIBBNum > 0 && jurisdiccionIIBB !== 'PBA') ? jurisdiccionIIBB : undefined,
       // Percepción IVA sufrida — pago a cuenta del IVA del mes. Mismo guard que IIBB.
       percepcionIVA:  (!esNoIvaCredito && percIVANum > 0) ? percIVANum : undefined,
       medioPago:      'Transferencia',
@@ -298,6 +302,20 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
                   : 'Si el ticket la discrimina, cargala — se descuenta del IIBB del mes.'}
                 {' '}El monto total de arriba debe incluirla (es lo que pagaste).
               </div>
+              {percIIBBNum > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <label style={labelSt}>Jurisdicción IIBB</label>
+                  <select value={jurisdiccionIIBB} onChange={e => setJurisdiccionIIBB(e.target.value)}
+                    style={{ ...inputSt, fontFamily: T.font }}>
+                    {JURISDICCIONES_IIBB.map(j => <option key={j.id} value={j.id}>{j.nombre}</option>)}
+                  </select>
+                  {jurisdiccionIIBB !== 'PBA' && (
+                    <div style={{ fontSize: 9.5, color: '#b45309', marginTop: 3 }}>
+                      ⚠ No descuenta del IIBB de PBA: se liquida contra el IIBB de su jurisdicción (Convenio Multilateral).
+                    </div>
+                  )}
+                </div>
+              )}
               <label style={{ ...labelSt, marginTop: 10 }}>Percepción IVA sufrida $ (opcional)</label>
               <input
                 type="text" inputMode="decimal" placeholder="0"

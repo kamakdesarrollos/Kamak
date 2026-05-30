@@ -16,7 +16,7 @@ import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useCheques } from '../store/ChequesContext';
 import { supabase } from '../lib/supabase';
 import { cobradoObraUSD, repartirCobroEnCuotas, cuotaMontoUSD } from './obra/helpers';
-import { parseMoneyAR } from '../lib/afip';
+import { parseMoneyAR, JURISDICCIONES_IIBB } from '../lib/afip';
 
 const DEFAULT_MEDIOS = ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débito', 'Tarjeta'];
 
@@ -385,6 +385,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const [categoriaFiscal,setCategoriaFiscal]= useState(''); // sueldo|cs-soc|sind|iibb|alquiler|servicios|seguro|otro (vacío = no fiscal)
   const [retencionIIBB,  setRetencionIIBB]  = useState(''); // Retención de IIBB que sufrió este cobro (descuenta del IIBB a pagar del mes)
   const [percepcionIIBB, setPercepcionIIBB] = useState(''); // Percepción de IIBB sufrida en este gasto (estación de servicio, etc.) — también descuenta del IIBB a pagar
+  const [jurisdiccionIIBB, setJurisdiccionIIBB] = useState('PBA'); // Jurisdicción de la percepción IIBB — solo las de PBA descuentan del IIBB del mes
   const [percepcionIVA,  setPercepcionIVA]  = useState(''); // Percepción de IVA sufrida (RG 2408/3337, mayoristas) — pago a cuenta que descuenta del IVA a pagar del mes
   const [cuotaId,        setCuotaId]        = useState('');
   const [fotoFile,       setFotoFile]       = useState(null);
@@ -554,6 +555,8 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       retencionIIBB:   (() => { const n = !isGasto ? Math.round(parseMoneyAR(retencionIIBB)) : 0; return n > 0 ? n : undefined; })(),
       // Percepción IIBB sufrida en un gasto (estaciones de servicio, etc.) — también descuenta.
       percepcionIIBB:  (() => { const n =  isGasto ? Math.round(parseMoneyAR(percepcionIIBB)) : 0; return n > 0 ? n : undefined; })(),
+      // Jurisdicción de la percepción IIBB. Solo se guarda si NO es PBA (ausente = PBA).
+      jurisdiccionIIBB: (() => { const n = isGasto ? Math.round(parseMoneyAR(percepcionIIBB)) : 0; return (n > 0 && jurisdiccionIIBB !== 'PBA') ? jurisdiccionIIBB : undefined; })(),
       // Percepción IVA sufrida en un gasto (mayoristas, RG 2408/3337) — pago a cuenta del IVA del mes.
       percepcionIVA:   (() => { const n =  isGasto ? Math.round(parseMoneyAR(percepcionIVA)) : 0; return n > 0 ? n : undefined; })(),
       medioPago:     medio,
@@ -608,7 +611,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       });
     }
 
-    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false); setCategoriaFiscal(''); setRetencionIIBB(''); setPercepcionIIBB(''); setPercepcionIVA('');
+    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false); setCategoriaFiscal(''); setRetencionIIBB(''); setPercepcionIIBB(''); setPercepcionIVA(''); setJurisdiccionIIBB('PBA');
     setCheqNumero(''); setCheqBanco(''); setCheqTitular(''); setCheqVencimiento('');
     setCuotaId(''); setFotoFile(null); if (fotoRef.current) fotoRef.current.value = '';
   };
@@ -822,6 +825,17 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           <input type="text" inputMode="decimal" placeholder="0"
             value={percepcionIIBB} onChange={e => setPercepcionIIBB(e.target.value)}
             style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
+        </div>
+      )}
+      {/* Jurisdicción de la percepción IIBB: solo las de PBA descuentan del IIBB
+          del mes (las de otra provincia se liquidan aparte, Convenio Multilateral). */}
+      {isGasto && Math.round(parseMoneyAR(percepcionIIBB)) > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Jurisdicción IIBB:</span>
+          <select value={jurisdiccionIIBB} onChange={e => setJurisdiccionIIBB(e.target.value)}
+            style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px' }}>
+            {JURISDICCIONES_IIBB.map(j => <option key={j.id} value={j.id}>{j.nombre}</option>)}
+          </select>
         </div>
       )}
       {/* Percepción IVA sufrida (RG 2408/3337): típica en mayoristas. Es un pago a

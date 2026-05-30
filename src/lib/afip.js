@@ -40,6 +40,21 @@ export const TIPOS_COMPROBANTE = [
 export const getTipoComprobante = (id) => TIPOS_COMPROBANTE.find(t => t.id === id) || null;
 export const getCondicionIVA   = (id) => CONDICIONES_IVA.find(c => c.id === id) || null;
 
+// ── Jurisdicciones de IIBB (percepciones/retenciones sufridas) ────────────────
+// Conquies opera hoy SOLO en Provincia de Buenos Aires; el campo existe para
+// soportar compras en otra jurisdicción a futuro. Convenio Multilateral: cada
+// jurisdicción liquida su propio IIBB, así que una percepción de CABA NO se
+// descuenta del IIBB de PBA (se declara contra el IIBB de CABA).
+export const JURISDICCIONES_IIBB = [
+  { id: 'PBA',  nombre: 'Buenos Aires (PBA)' },
+  { id: 'CABA', nombre: 'CABA' },
+  { id: 'CBA',  nombre: 'Córdoba' },
+  { id: 'OTRA', nombre: 'Otra' },
+];
+// Data legacy sin el campo = PBA (era el único caso antes de existir el campo).
+export const esJurisdiccionPBA = (j) => !j || j === 'PBA';
+export const nombreJurisdiccion = (id) => JURISDICCIONES_IIBB.find(j => j.id === id)?.nombre || id || 'Buenos Aires (PBA)';
+
 // Redondeo a 2 decimales (centavos), estable ante errores de float.
 export const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 

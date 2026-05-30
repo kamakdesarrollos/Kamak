@@ -6,7 +6,26 @@ import {
   fingerprintRecibido, buscarDuplicadoRecibido,
   fingerprintEmitido, buscarDuplicadoEmitido,
   parseMoneyAR, desglosarCompra,
+  esJurisdiccionPBA, nombreJurisdiccion, JURISDICCIONES_IIBB,
 } from './afip';
+
+describe('jurisdicciones IIBB', () => {
+  it('legacy sin jurisdicción o PBA → cuenta como PBA', () => {
+    expect(esJurisdiccionPBA(undefined)).toBe(true);
+    expect(esJurisdiccionPBA(null)).toBe(true);
+    expect(esJurisdiccionPBA('')).toBe(true);
+    expect(esJurisdiccionPBA('PBA')).toBe(true);
+  });
+  it('otra jurisdicción → NO es PBA (no netea contra IIBB PBA)', () => {
+    expect(esJurisdiccionPBA('CABA')).toBe(false);
+    expect(esJurisdiccionPBA('CBA')).toBe(false);
+    expect(esJurisdiccionPBA('OTRA')).toBe(false);
+  });
+  it('nombreJurisdiccion mapea el código a etiqueta legible', () => {
+    expect(nombreJurisdiccion('CABA')).toBe('CABA');
+    expect(JURISDICCIONES_IIBB.map(j => j.id)).toEqual(['PBA', 'CABA', 'CBA', 'OTRA']);
+  });
+});
 
 describe('parseMoneyAR', () => {
   it('parsea enteros simples', () => {
