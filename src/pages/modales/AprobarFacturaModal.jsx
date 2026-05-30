@@ -4,7 +4,7 @@ import { T } from '../../theme';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useObras } from '../../store/ObrasContext';
 import { useProveedores } from '../../store/ProveedoresContext';
-import { calcDesdeTotal, ALICUOTAS_IVA, buscarDuplicadoRecibido } from '../../lib/afip';
+import { calcDesdeTotal, ALICUOTAS_IVA, buscarDuplicadoRecibido, parseMoneyAR } from '../../lib/afip';
 
 // Modal de revisión y aprobación de una factura recibida por WhatsApp.
 // Extraido del antiguo WhatsappBuzon.jsx — la logica es la misma.
@@ -60,12 +60,19 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
     item.percepcionIIBB != null ? String(item.percepcionIIBB) : ''
   );
 
-  const montoNum = Math.round(parseFloat(String(monto).replace(/[^0-9.]/g, '')) || 0);
+  const montoNum = Math.round(parseMoneyAR(monto));
+  const percIIBBNum = Math.round(parseMoneyAR(percepcionIIBB));
+  // Base fiscal del comprobante = total del ticket SIN la percepción IIBB.
+  // La percepción es un crédito a cuenta del IIBB del mes, no integra la base
+  // imponible del IVA. Si dividieras el monto-con-percepción por 1.21, inflarías
+  // el IVA crédito del Libro Compras (y declararías más de lo que dice la
+  // Factura A real del proveedor → riesgo de impugnación AFIP).
+  const baseFiscal = Math.max(0, montoNum - percIIBBNum);
   // Si la factura es C (emisor monotributo), no hay IVA discriminado para tomar
-  // crédito → neto = total, iva = 0.
+  // crédito → neto = base, iva = 0.
   const fiscal = tipoLetra === 'C'
-    ? { neto: montoNum, iva: 0, total: montoNum, alicuota: 0 }
-    : (() => { const r = calcDesdeTotal(montoNum, alicuota); return { ...r, alicuota }; })();
+    ? { neto: baseFiscal, iva: 0, total: baseFiscal, alicuota: 0 }
+    : (() => { const r = calcDesdeTotal(baseFiscal, alicuota); return { ...r, alicuota }; })();
   const canSave  = montoNum > 0 && proveedor.trim() && cajaId;
 
   const guardar = () => {
@@ -96,10 +103,11 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
       proveedor:      proveedor.trim(),
       categoria:      esNoIvaCredito ? 'general' : 'factura-proveedor',
       categoriaFiscal: categoriaFiscal || undefined,
-      percepcionIIBB: (() => {
-        const n = Math.round(parseFloat(String(percepcionIIBB).replace(',', '.')) || 0);
-        return n > 0 ? n : undefined;
-      })(),
+      // Percepción IIBB sufrida: solo persistir si el comprobante es comercial.
+      // Un recibo de sueldo / cargas / boleta IIBB no tiene percepción sufrida
+      // (no aplica). Evita data huérfana si el admin recategoriza algo que
+      // venía con percepción auto-detectada.
+      percepcionIIBB: (!esNoIvaCredito && percIIBBNum > 0) ? percIIBBNum : undefined,
       medioPago:      'Transferencia',
       referencia:     item.numeroFactura || '',
       comprobante:    esNoIvaCredito ? 'negro' : 'blanco',
@@ -278,7 +286,14 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
                 Típica en estaciones de servicio. {item.percepcionIIBB != null
                   ? <b style={{ color: '#25803a' }}>El bot la leyó del ticket.</b>
                   : 'Si el ticket la discrimina, cargala — se descuenta del IIBB del mes.'}
+                {' '}El monto total de arriba debe incluirla (es lo que pagaste).
               </div>
+              {percIIBBNum > 0 && tipoLetra !== 'C' && (
+                <div style={{ marginTop: 6, fontSize: 10.5, color: T.ink2, background: T.faint, padding: '5px 8px', borderRadius: 3, fontFamily: T.fontMono }}>
+                  Base fiscal IVA: <b style={{ color: T.ink }}>$ {fmtN(baseFiscal)}</b>
+                  <span style={{ color: T.ink3 }}> (= total $ {fmtN(montoNum)} − percep $ {fmtN(percIIBBNum)})</span>
+                </div>
+              )}
             </div>
             </>)}
           </div>

@@ -16,6 +16,7 @@ import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useCheques } from '../store/ChequesContext';
 import { supabase } from '../lib/supabase';
 import { cobradoObraUSD, repartirCobroEnCuotas, cuotaMontoUSD } from './obra/helpers';
+import { parseMoneyAR } from '../lib/afip';
 
 const DEFAULT_MEDIOS = ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débito', 'Tarjeta'];
 
@@ -549,9 +550,9 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       categoria:     isGasto ? 'general' : 'cobro-cliente',
       categoriaFiscal: isGasto && categoriaFiscal ? categoriaFiscal : undefined,
       // Retención IIBB sufrida en un cobro — se descuenta del IIBB del mes en el Financiero.
-      retencionIIBB:   !isGasto && retencionIIBB ? Math.round(parseFloat(retencionIIBB.replace(',', '.')) || 0) : undefined,
+      retencionIIBB:   (() => { const n = !isGasto ? Math.round(parseMoneyAR(retencionIIBB)) : 0; return n > 0 ? n : undefined; })(),
       // Percepción IIBB sufrida en un gasto (estaciones de servicio, etc.) — también descuenta.
-      percepcionIIBB:  isGasto && percepcionIIBB ? Math.round(parseFloat(percepcionIIBB.replace(',', '.')) || 0) : undefined,
+      percepcionIIBB:  (() => { const n =  isGasto ? Math.round(parseMoneyAR(percepcionIIBB)) : 0; return n > 0 ? n : undefined; })(),
       medioPago:     medio,
       referencia:    cheqNumero || '',
       fondoReparo:   false,

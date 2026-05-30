@@ -5,7 +5,36 @@ import {
   validarComprobante, getTipoComprobante,
   fingerprintRecibido, buscarDuplicadoRecibido,
   fingerprintEmitido, buscarDuplicadoEmitido,
+  parseMoneyAR,
 } from './afip';
+
+describe('parseMoneyAR', () => {
+  it('parsea enteros simples', () => {
+    expect(parseMoneyAR('1500')).toBe(1500);
+    expect(parseMoneyAR(1500)).toBe(1500);
+  });
+  it('parsea formato AR (punto miles, coma decimal)', () => {
+    expect(parseMoneyAR('1.500,75')).toBe(1500.75);
+    expect(parseMoneyAR('1.500.000,00')).toBe(1500000);
+    expect(parseMoneyAR('1.500')).toBe(1500);
+  });
+  it('parsea formato US (punto decimal)', () => {
+    expect(parseMoneyAR('1500.75')).toBe(1500.75);
+    expect(parseMoneyAR('1.5')).toBe(1.5);
+  });
+  it('tolera símbolo $ y espacios', () => {
+    expect(parseMoneyAR('$ 1.500,75')).toBe(1500.75);
+    expect(parseMoneyAR('$1500')).toBe(1500);
+    expect(parseMoneyAR('  1500  ')).toBe(1500);
+  });
+  it('devuelve 0 para entradas inválidas/vacías', () => {
+    expect(parseMoneyAR('')).toBe(0);
+    expect(parseMoneyAR(null)).toBe(0);
+    expect(parseMoneyAR(undefined)).toBe(0);
+    expect(parseMoneyAR('abc')).toBe(0);
+    expect(parseMoneyAR(NaN)).toBe(0);
+  });
+});
 
 describe('validarCUIT', () => {
   it('acepta el CUIT real del emisor (Conquies SA)', () => {

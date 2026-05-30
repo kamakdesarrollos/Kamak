@@ -43,6 +43,44 @@ export const getCondicionIVA   = (id) => CONDICIONES_IVA.find(c => c.id === id) 
 // Redondeo a 2 decimales (centavos), estable ante errores de float.
 export const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
+// Parser tolerante de montos en formato argentino. Acepta:
+//   "1500"          → 1500
+//   "1500.75"       → 1500.75    (decimal con punto, formato US)
+//   "1.500,75"      → 1500.75    (formato AR: punto miles + coma decimal)
+//   "1.500.000"     → 1500000
+//   "$ 1.500,75"    → 1500.75    (saca símbolo $ y espacios)
+//   ""/null/NaN     → 0
+//   1500 (Number)   → 1500
+//
+// Cuidado con el caso ambiguo "1.500": en AR es mil quinientos, en US es uno coma cinco.
+// Lo resolvemos como miles (porque venimos de form/LLM en contexto argentino) si el
+// punto va seguido de EXACTAMENTE 3 dígitos sin coma decimal después. Sino, decimal.
+export function parseMoneyAR(s) {
+  if (s == null) return 0;
+  if (typeof s === 'number') return Number.isFinite(s) ? s : 0;
+  let str = String(s).trim().replace(/[^\d.,\-]/g, ''); // saca $, espacios, letras
+  if (!str) return 0;
+  const tieneComa = str.includes(',');
+  if (tieneComa) {
+    // Formato AR: los puntos son miles, la coma es decimal.
+    str = str.replace(/\./g, '').replace(',', '.');
+  } else {
+    // Sin coma: si hay puntos, decidir si son miles (1.500) o decimal (1.5).
+    // Regla: si TODOS los puntos están seguidos por exactamente 3 dígitos
+    // (con o sin más puntos después), son miles. Sino, es decimal US.
+    const sinMiles = str.replace(/\.(?=\d{3}(\.|$))/g, '');
+    // Si sigue habiendo más de un punto, dejamos el último como decimal.
+    const partes = sinMiles.split('.');
+    if (partes.length > 2) {
+      str = partes.slice(0, -1).join('') + '.' + partes[partes.length - 1];
+    } else {
+      str = sinMiles;
+    }
+  }
+  const n = parseFloat(str);
+  return Number.isFinite(n) ? n : 0;
+}
+
 // ── Validación de CUIT (dígito verificador mod-11, algoritmo AFIP) ────────────
 // Devuelve true solo si los 11 dígitos y el verificador son correctos.
 export function validarCUIT(cuit) {

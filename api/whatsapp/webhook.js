@@ -1315,7 +1315,7 @@ ORDEN DE PREGUNTAS (nunca más de una a la vez):
 ACCIONES DISPONIBLES:
 1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional), categoriaFiscal(opcional: 'sueldo'|'cs-soc'|'sind'|'iibb'|'alquiler'|'servicios'|'seguro'|'otro'), percepcionIIBB(opcional, número en pesos).
    IMPORTANTE — DATOS FISCALES EN GASTOS CON FOTO DE FACTURA/TICKET: si la imagen MUESTRA un comprobante formal (Factura A/B/C, ticket fiscal con CAE/CAI), agregá TAMBIÉN en datos: tipoFactura ('A'/'B'/'C', leído de la foto), numeroFactura, cuit (del emisor), monto (neto sin IVA si la foto lo discrimina), montoTotal (total con IVA, igual al monto del gasto). El sistema usa esto para el Libro IVA Compras. Es ortogonal a la regla de oro: el gasto sigue cargándose rápido como gasto, NO como factura_compra, pero los datos fiscales viajan dentro del gasto. Si la foto NO discrimina IVA (ticket no fiscal), no completes esos campos.
-   PERCEPCIÓN IIBB DISCRIMINADA EN EL TICKET: muy común en estaciones de servicio (YPF/Shell/Axion), supermercados mayoristas, ferreterías grandes — aparece como "Perc. IIBB", "Percepción IIBB Bs As", "IB Pcia Bs As" o similar, como un renglón EXTRA arriba del total. Si la foto lo discrimina, leé el monto en pesos y ponelo en datos.percepcionIIBB. NO lo confundas con el IVA, ni con el neto. Sumarlo aparte permite que el sistema lo descuente del IIBB del mes. Si no aparece discriminado en el ticket, no completes el campo.
+   PERCEPCIÓN IIBB DISCRIMINADA EN EL TICKET: muy común en estaciones de servicio (YPF/Shell/Axion), supermercados mayoristas, ferreterías grandes — aparece como "Perc. IIBB", "Percepción IIBB Bs As", "IB Pcia Bs As" o similar, como un renglón EXTRA arriba del total. Si la foto lo discrimina, leé el monto en pesos y ponelo en datos.percepcionIIBB. SOLO percepción IIBB: NO confundir con percepciones IVA (suelen decir "Perc. RG 2408", "Perc. IVA RG 3337", "Perc. IVA") — esas son otro impuesto distinto y por ahora no se cargan. NO lo confundas tampoco con el IVA ni con el neto. Sumarlo aparte permite que el sistema lo descuente del IIBB del mes. Si no aparece discriminado en el ticket, no completes el campo.
    RECIBO DE SUELDO / CARGAS / SINDICATO / ALQUILER / SERVICIOS: si el texto o la foto refieren a "recibo de sueldo", "haberes", "liquidación", "sueldo de X", "F.931" (cargas sociales), "boleta UOCRA"/"sindicato", "alquiler", o servicios (luz/gas/internet) — completá el campo categoriaFiscal con la opción que corresponda y NO incluyas tipoFactura/numeroFactura/cuit/montoTotal (estos comprobantes NO generan IVA crédito y no van al Libro IVA Compras; el panel Financiero los suma a su columna por categoría). El gasto sigue siendo un GASTO normal con su monto y su foto.
 2. INGRESO: monto, descripción, obraId, cajaId
 3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(neto sin IVA), montoTotal(con IVA), concepto
@@ -1515,18 +1515,25 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         return `⚠️ *Comprobante duplicado*\nYa hay una factura/ticket igual cargado ${cuandoD}${montoRef ? ` (${fmtD(montoRef)})` : ''}. No lo dupliqué.`;
       }
       const round2 = (n) => Math.round(n * 100) / 100;
+      // Base fiscal del comprobante = monto SIN la percepción IIBB. La percepción
+      // no integra la base imponible del IVA; es crédito a cuenta del IIBB del
+      // mes. Dividir el monto-con-percepción por 1.21 inflaría el IVA crédito.
+      const perc = nuevoMov.percepcionIIBB || 0;
+      const baseFiscal = Math.max(0, monto - perc);
       let neto, iva, alicuota;
       if (tipoLetra === 'C') {
-        neto = monto; iva = 0; alicuota = 0;
+        neto = baseFiscal; iva = 0; alicuota = 0;
       } else if (datos.monto != null && datos.montoTotal != null && datos.montoTotal > datos.monto) {
-        neto = Math.round(datos.monto); iva = Math.round(datos.montoTotal) - neto;
+        // La LLM discriminó neto del ticket. Calculamos IVA contra baseFiscal
+        // (no contra datos.montoTotal) para que la percepción no infle el crédito.
+        neto = Math.round(datos.monto); iva = Math.max(0, baseFiscal - neto);
         const pct = neto > 0 ? (iva / neto) * 100 : 21;
         const known = [21, 10.5, 27, 0];
         alicuota = known.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a);
       } else {
         alicuota = 21;
-        neto = round2(monto / 1.21);
-        iva = round2(monto - neto);
+        neto = round2(baseFiscal / 1.21);
+        iva = round2(baseFiscal - neto);
       }
       nuevoMov.comprobante = 'blanco';
       nuevoMov.comprobanteRecibido = {
@@ -1534,7 +1541,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         numero: datos.numeroFactura || '',
         cuit: datos.cuit || '',
         fecha: nuevoMov.fecha,
-        neto, iva, alicuota, total: monto,
+        neto, iva, alicuota, total: baseFiscal,
       };
     }
 
@@ -1658,19 +1665,24 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A' / 'B' / 'C'
       const total = Math.round(datos.montoTotal);
       const round2 = (n) => Math.round(n * 100) / 100;
+      // Percepción IIBB detectada en el ticket: se excluye de la base fiscal del IVA.
+      const perc = (datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
+                     ? Math.round(Number(datos.percepcionIIBB)) : 0;
+      const baseFiscal = Math.max(0, total - perc);
       let neto, iva, alicuota;
       if (tipoLetra === 'C') {
-        neto = total; iva = 0; alicuota = 0;
+        neto = baseFiscal; iva = 0; alicuota = 0;
       } else if (datos.monto != null && datos.monto > 0 && total > datos.monto) {
-        neto = Math.round(datos.monto); iva = total - neto;
+        // LLM discriminó neto del ticket — usamos esos campos directo.
+        neto = Math.round(datos.monto); iva = baseFiscal - neto;
         const pct = neto > 0 ? (iva / neto) * 100 : 21;
         const known = [21, 10.5, 27, 0];
         alicuota = known.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a);
       } else {
         // Solo tenemos total → asumimos 21% (más común en construcción).
         alicuota = 21;
-        neto = round2(total / 1.21);
-        iva = round2(total - neto);
+        neto = round2(baseFiscal / 1.21);
+        iva = round2(baseFiscal - neto);
       }
       // Caja efectivo del admin (ARS). Sino, primera ARS visible. Si nada → buzón.
       const caja = ctx.cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email && c.moneda === 'ARS')
@@ -1697,18 +1709,18 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
           fondoReparo: false,
           creadoPorWA: true,
           creadoPor: user.user_name,
-          percepcionIIBB: (datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
-                            ? Math.round(Number(datos.percepcionIIBB)) : undefined,
+          percepcionIIBB: perc > 0 ? perc : undefined,
           comprobanteRecibido: {
             tipo: tipoLetra, numero: datos.numeroFactura || '', cuit: datos.cuit || '',
-            fecha: fechaMov, neto, iva, alicuota, total,
+            fecha: fechaMov, neto, iva, alicuota, total: baseFiscal,
           },
         };
         await appendMovimiento(mov);
         const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
+        const lineaPerc = perc > 0 ? `\nPercep. IIBB: ${fmt(perc)} (descuenta del IIBB del mes)` : '';
         return `✅ *Factura ${tipoLetra} cargada* — ${fmt(total)}\n` +
           `Proveedor: *${datos.proveedor || '—'}*${datos.numeroFactura ? ` · N° ${datos.numeroFactura}` : ''}\n` +
-          `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}\n` +
+          `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}${lineaPerc}\n` +
           `Salió de: *${caja.nombre}*\n\n` +
           `Editable desde la app. Cuenta para tu Libro IVA Compras del mes.`;
       }
