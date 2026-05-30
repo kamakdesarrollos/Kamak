@@ -2,6 +2,9 @@ import { createContext, useContext, useState, useCallback, useMemo, useEffect, u
 import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
+import { efectoEnCaja, calcSaldoCaja } from '../lib/caja';
+
+export { calcSaldoCaja }; // re-export para compatibilidad con importadores existentes
 
 const CTX = createContext(null);
 const LS_CAJAS = 'kamak_cajas_v1';
@@ -56,26 +59,8 @@ function persist(key, data) {
 
 // ── Saldo derivado (rediseño "libro único") ─────────────────────────────────
 // El saldo de una caja se CALCULA: saldoInicial + suma del efecto de TODOS sus
-// movimientos. Antes era un número mutado a mano (drift, y el bot lo pisaba).
-// efectoEnCaja replica EXACTAMENTE los signos del viejo applyEfectoEnCajas.
-function efectoEnCaja(m, cajaId) {
-  if (m.tipo === 'ingreso' && m.cajaId === cajaId) return (m.monto || 0);
-  if (m.tipo === 'gasto'   && m.cajaId === cajaId) return -(m.monto || 0);
-  if (m.tipo === 'traspaso') {
-    if (m.cajaId === cajaId)        return -(m.monto || 0);
-    if (m.cajaDestinoId === cajaId) return (m.montoDestino ?? m.monto ?? 0);
-  }
-  // Nota de crédito de proveedor: por defecto es solo un ajuste fiscal (Libro IVA)
-  // y NO mueve caja. Solo suma a la caja si el admin marcó que el proveedor
-  // devolvió plata (afectaCaja) — entra como crédito, igual que un ingreso.
-  if (m.tipo === 'nota_credito_compra' && m.afectaCaja && m.cajaId === cajaId) return (m.monto || 0);
-  return 0; // endoso, NC solo-fiscal y otros tipos no mueven saldo
-}
-
-export function calcSaldoCaja(caja, movimientos) {
-  const efecto = (movimientos || []).reduce((s, m) => s + efectoEnCaja(m, caja.id), 0);
-  return Math.round((caja.saldoInicial || 0) + efecto);
-}
+// movimientos. La lógica pura vive en ../lib/caja.js (testeada). Antes el saldo
+// era un número mutado a mano (drift, y el bot lo pisaba).
 
 // Migración one-time: si una caja todavía no tiene saldoInicial, lo
 // back-calculamos para que (saldoInicial + suma de movs) == saldo actual.

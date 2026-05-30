@@ -46,7 +46,7 @@ async function sbDelete(table, params) {
 //   • Factura C → neto = base, iva = 0.
 //   • montoNeto válido (foto discrimina el neto) → IVA = base − neto, infiere alícuota.
 //   • Sino → default 21%.
-function desglosarCompraBot({ total, tipoLetra, percepcionIIBB = 0, percepcionIVA = 0, montoNeto = null } = {}) {
+export function desglosarCompraBot({ total, tipoLetra, percepcionIIBB = 0, percepcionIVA = 0, montoNeto = null } = {}) {
   const round2 = (n) => Math.round(n * 100) / 100;
   const tot   = Math.round(Number(total) || 0);
   const pIIBB = Math.round(Number(percepcionIIBB) || 0);
@@ -166,7 +166,7 @@ const _normSerialBot = (s) => {
   const parts = String(s || '').split(/[^0-9]+/).filter(Boolean);
   return parts.length ? (parts[parts.length - 1].replace(/^0+/, '') || '0') : '';
 };
-function fingerprintRecibidoBot({ tipo, numero, cuit, total, proveedor, fecha, clase } = {}) {
+export function fingerprintRecibidoBot({ tipo, numero, cuit, total, proveedor, fecha, clase } = {}) {
   const normTotal = Math.round(Number(total) || 0);
   if (!normTotal) return null;
   const normNum  = _normSerialBot(numero);
