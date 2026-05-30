@@ -1313,8 +1313,9 @@ ORDEN DE PREGUNTAS (nunca más de una a la vez):
 8. Con todo completo → mostrá resumen y pedí confirmación
 
 ACCIONES DISPONIBLES:
-1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional).
+1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional), categoriaFiscal(opcional: 'sueldo'|'cs-soc'|'sind'|'alquiler'|'servicios'|'seguro'|'otro').
    IMPORTANTE — DATOS FISCALES EN GASTOS CON FOTO DE FACTURA/TICKET: si la imagen MUESTRA un comprobante formal (Factura A/B/C, ticket fiscal con CAE/CAI), agregá TAMBIÉN en datos: tipoFactura ('A'/'B'/'C', leído de la foto), numeroFactura, cuit (del emisor), monto (neto sin IVA si la foto lo discrimina), montoTotal (total con IVA, igual al monto del gasto). El sistema usa esto para el Libro IVA Compras. Es ortogonal a la regla de oro: el gasto sigue cargándose rápido como gasto, NO como factura_compra, pero los datos fiscales viajan dentro del gasto. Si la foto NO discrimina IVA (ticket no fiscal), no completes esos campos.
+   RECIBO DE SUELDO / CARGAS / SINDICATO / ALQUILER / SERVICIOS: si el texto o la foto refieren a "recibo de sueldo", "haberes", "liquidación", "sueldo de X", "F.931" (cargas sociales), "boleta UOCRA"/"sindicato", "alquiler", o servicios (luz/gas/internet) — completá el campo categoriaFiscal con la opción que corresponda y NO incluyas tipoFactura/numeroFactura/cuit/montoTotal (estos comprobantes NO generan IVA crédito y no van al Libro IVA Compras; el panel Financiero los suma a su columna por categoría). El gasto sigue siendo un GASTO normal con su monto y su foto.
 2. INGRESO: monto, descripción, obraId, cajaId
 3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(neto sin IVA), montoTotal(con IVA), concepto
 4. AVANCE_OBRA: obraId(ID exacto de la lista), rubroId(ID del rubro), tareaId(ID de la tarea), cantidadAvance(unidades completadas, ej:75), unidad(ej:'m²'), porcentajeAvance(% a sumar si no hay cantidad), descripcion
@@ -1474,6 +1475,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       cajaDestinoId:    null,
       proveedor:        datos.proveedorNombre || '',
       categoria:        datos.tipo === 'mano_de_obra' ? 'mano-de-obra' : datos.tipo === 'material' ? 'material' : 'general',
+      categoriaFiscal:  (tipo === 'gasto' && datos.categoriaFiscal) ? datos.categoriaFiscal : undefined,
       medioPago:        datos.medioPago || 'Efectivo',
       comprobante:      datos.comprobante || 'negro',
       comprobanteUrl:   mediaUrl || null,
@@ -1486,7 +1488,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // asumimos B + 21% con el monto como total (combustible/materiales más
     // comunes en construcción). Así una factura cargada como "gasto rápido"
     // igual aporta crédito fiscal.
-    if (tipo === 'gasto' && mediaUrl && monto > 0) {
+    // Categorías que NO generan IVA crédito (recibos, no facturas) — saltean
+    // la autocarga de comprobanteRecibido aunque tengan foto adjunta.
+    const SIN_IVA_CREDITO = new Set(['sueldo', 'cs-soc', 'sind']);
+    if (tipo === 'gasto' && mediaUrl && monto > 0 && !SIN_IVA_CREDITO.has(nuevoMov.categoriaFiscal)) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A'/'B'/'C'
       // Dup check ANTES de persistir: cubre el reenvío del mismo ticket o el
       // cruce con una carga previa (gasto-con-foto, factura_compra o pending).
