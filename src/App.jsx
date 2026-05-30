@@ -8,6 +8,7 @@ import { DolarProvider } from './store/DolarContext';
 import { ProveedoresProvider } from './store/ProveedoresContext';
 import { ClientesProvider } from './store/ClientesContext';
 import { ComprobantesProvider } from './store/ComprobantesContext';
+import { FinancieroProvider } from './store/FinancieroContext';
 import { MovimientosProvider } from './store/MovimientosContext';
 import { ChequesProvider } from './store/ChequesContext';
 import { WhatsappPendingProvider } from './store/WhatsappPendingContext';
@@ -179,6 +180,7 @@ function DataProviders({ children }) {
     <ProveedoresProvider>
     <ClientesProvider>
     <ComprobantesProvider>
+    <FinancieroProvider>
     <MovimientosProvider>
     <ChequesProvider>
     <WhatsappPendingProvider>
@@ -194,6 +196,7 @@ function DataProviders({ children }) {
     </WhatsappPendingProvider>
     </ChequesProvider>
     </MovimientosProvider>
+    </FinancieroProvider>
     </ComprobantesProvider>
     </ClientesProvider>
     </ProveedoresProvider>

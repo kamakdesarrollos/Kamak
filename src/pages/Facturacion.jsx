@@ -11,6 +11,7 @@ import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useProveedores } from '../store/ProveedoresContext';
+import { useFinanciero } from '../store/FinancieroContext';
 import { abrirHTML } from '../lib/html';
 import {
   TIPOS_COMPROBANTE, CONDICIONES_IVA, ALICUOTAS_IVA,
@@ -336,9 +337,10 @@ export default function Facturacion() {
   const { config } = useConfiguracion();
   const { movimientos } = useMovimientos();
   const { proveedores } = useProveedores();
+  const { data: financiero, setMesField } = useFinanciero();
   const empresa = config?.empresa || {};
 
-  const [tab, setTab] = useState('resumen'); // 'resumen' | 'ventas' | 'compras'
+  const [tab, setTab] = useState('resumen'); // 'resumen' | 'ventas' | 'compras' | 'financiero'
   const [mes, setMes] = useState(mesActual());
   const [modal, setModal] = useState(false);
   const [zipping, setZipping] = useState(false);
@@ -547,9 +549,10 @@ export default function Facturacion() {
       {/* Tabs */}
       <Box style={{ padding: 0, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex' }}>
-          <div style={tabSt(tab === 'resumen')} onClick={() => setTab('resumen')}>📊 Resumen</div>
-          <div style={tabSt(tab === 'ventas')}  onClick={() => setTab('ventas')}>📤 Ventas</div>
-          <div style={tabSt(tab === 'compras')} onClick={() => setTab('compras')}>📥 Compras</div>
+          <div style={tabSt(tab === 'resumen')}    onClick={() => setTab('resumen')}>📊 Resumen</div>
+          <div style={tabSt(tab === 'ventas')}     onClick={() => setTab('ventas')}>📤 Ventas</div>
+          <div style={tabSt(tab === 'compras')}    onClick={() => setTab('compras')}>📥 Compras</div>
+          <div style={tabSt(tab === 'financiero')} onClick={() => setTab('financiero')}>💰 Financiero</div>
         </div>
         <div style={{ padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <label style={{ fontSize: 11, color: T.ink2, fontWeight: 700 }}>MES</label>
@@ -730,6 +733,143 @@ export default function Facturacion() {
           )}
         </Box>
       )}
+
+      {/* ── TAB FINANCIERO ──────────────────────────────────────────────────── */}
+      {tab === 'financiero' && (() => {
+        // Meses con cualquier tipo de dato (comprobantes, compras con factura, o cargas).
+        const setM = new Set();
+        comprobantes.forEach(c => { if (c.estado !== 'anulado' && c.fecha) setM.add(String(c.fecha).slice(0, 7)); });
+        (movimientos || []).forEach(m => { if (m.comprobanteRecibido && m.fecha) setM.add(String(m.fecha).slice(0, 7)); });
+        Object.keys(financiero || {}).forEach(k => setM.add(k));
+        setM.add(mesActual());
+        const meses = [...setM].sort();
+        let acum = 0;
+        const filas = meses.map(mk => {
+          const ventas = comprobantes
+            .filter(c => c.estado !== 'anulado' && String(c.fecha || '').slice(0, 7) === mk)
+            .reduce((s, c) => s + (getTipoComprobante(c.tipoId)?.signo ?? 1) * (c.total || 0), 0);
+          const compras = (movimientos || [])
+            .filter(m => m.comprobanteRecibido && String(m.fecha || '').slice(0, 7) === mk)
+            .reduce((s, m) => s + (m.comprobanteRecibido?.total || m.monto || 0), 0);
+          const cargas = financiero[mk] || {};
+          const iibb = Number(cargas.iibb || 0);
+          const sueldos = Number(cargas.sueldos || 0);
+          const csSoc = Number(cargas.csSoc || 0);
+          const sind = Number(cargas.sind || 0);
+          const neto = ventas - compras - iibb - sueldos - csSoc - sind;
+          acum += neto;
+          return { mes: mk, ventas, compras, iibb, sueldos, csSoc, sind, neto, acumulado: acum, _cargas: cargas };
+        });
+        const tot = filas.reduce((t, f) => ({
+          ventas: t.ventas + f.ventas, compras: t.compras + f.compras,
+          iibb: t.iibb + f.iibb, sueldos: t.sueldos + f.sueldos,
+          csSoc: t.csSoc + f.csSoc, sind: t.sind + f.sind, neto: t.neto + f.neto,
+        }), { ventas: 0, compras: 0, iibb: 0, sueldos: 0, csSoc: 0, sind: 0, neto: 0 });
+
+        const exportCSVFinanciero = () => {
+          const head = ['Periodo','Ventas','Compras','IIBB','Sueldos','CS SOC','SIND','Neto mensual','Acumulado'];
+          const rows = filas.map(f => [
+            labelMes(f.mes), f.ventas.toFixed(2), f.compras.toFixed(2), f.iibb.toFixed(2),
+            f.sueldos.toFixed(2), f.csSoc.toFixed(2), f.sind.toFixed(2),
+            f.neto.toFixed(2), f.acumulado.toFixed(2),
+          ]);
+          rows.push(['TOTAL', tot.ventas.toFixed(2), tot.compras.toFixed(2), tot.iibb.toFixed(2),
+            tot.sueldos.toFixed(2), tot.csSoc.toFixed(2), tot.sind.toFixed(2),
+            tot.neto.toFixed(2), '']);
+          downloadCSV(`financiero.csv`, [head, ...rows]);
+        };
+
+        // Celda editable para una carga manual.
+        const CeldaCarga = ({ mes, field, valor }) => (
+          <input
+            type="number" inputMode="decimal" placeholder="—"
+            value={valor == null ? '' : valor}
+            onChange={e => setMesField(mes, field, e.target.value)}
+            style={{
+              width: '100%', padding: '4px 6px', textAlign: 'right',
+              border: `1px solid ${T.faint2}`, borderRadius: 3,
+              fontFamily: T.fontMono, fontSize: 11, background: T.paper, outline: 'none',
+            }}
+          />
+        );
+
+        const cellNum = { padding: '6px 8px', textAlign: 'right', fontFamily: T.fontMono, fontSize: 11.5 };
+        const headSt  = { padding: '8px 8px', background: T.dark, color: '#fff', fontSize: 9.5, fontFamily: T.fontMono, letterSpacing: 1, fontWeight: 700, textAlign: 'right' };
+
+        return (
+          <Box style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 14px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase' }}>◆ Financiero mensual</div>
+                <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
+                  Ventas y Compras se calculan solos desde los comprobantes. <b>IIBB / Sueldos / CS SOC / SIND</b> los carga el contador o vos, mes a mes — clic en la celda y escribís.
+                </div>
+              </div>
+              <Btn sm onClick={exportCSVFinanciero}>⬇ CSV Financiero</Btn>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ ...headSt, textAlign: 'left' }}>PERIODO</th>
+                  <th style={headSt}>VENTAS</th>
+                  <th style={headSt}>COMPRAS</th>
+                  <th style={headSt}>IIBB</th>
+                  <th style={headSt}>SUELDOS</th>
+                  <th style={headSt}>CS SOC</th>
+                  <th style={headSt}>SIND</th>
+                  <th style={headSt}>NETO MENSUAL</th>
+                  <th style={headSt}>ACUMULADO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filas.map(f => (
+                  <tr key={f.mes} style={{ borderTop: `1px solid ${T.faint2}` }}>
+                    <td style={{ padding: '6px 8px', fontWeight: 700, color: T.ink, fontFamily: T.fontMono, fontSize: 11 }}>{labelMes(f.mes)}</td>
+                    <td style={cellNum}>{f.ventas ? fmtMoney(f.ventas) : <span style={{ color: T.ink3 }}>—</span>}</td>
+                    <td style={cellNum}>{f.compras ? fmtMoney(f.compras) : <span style={{ color: T.ink3 }}>—</span>}</td>
+                    <td style={{ padding: '4px 6px', width: 110 }}><CeldaCarga mes={f.mes} field="iibb"    valor={f._cargas.iibb} /></td>
+                    <td style={{ padding: '4px 6px', width: 110 }}><CeldaCarga mes={f.mes} field="sueldos" valor={f._cargas.sueldos} /></td>
+                    <td style={{ padding: '4px 6px', width: 110 }}><CeldaCarga mes={f.mes} field="csSoc"   valor={f._cargas.csSoc} /></td>
+                    <td style={{ padding: '4px 6px', width: 110 }}><CeldaCarga mes={f.mes} field="sind"    valor={f._cargas.sind} /></td>
+                    <td style={{ ...cellNum, fontWeight: 800, color: f.neto < 0 ? '#b91c1c' : '#166534' }}>{f.neto === 0 ? <span style={{ color: T.ink3 }}>—</span> : (f.neto < 0 ? '-' : '') + fmtMoney(Math.abs(f.neto))}</td>
+                    <td style={{ ...cellNum, fontWeight: 800, color: f.acumulado < 0 ? '#b91c1c' : '#166534' }}>{(f.acumulado < 0 ? '-' : '') + fmtMoney(Math.abs(f.acumulado))}</td>
+                  </tr>
+                ))}
+                {/* Totales */}
+                <tr style={{ background: '#fffbe6', borderTop: `2px solid ${T.ink}`, fontWeight: 800 }}>
+                  <td style={{ padding: '8px 8px', fontFamily: T.fontMono, fontSize: 11, letterSpacing: 0.5 }}>TOTAL</td>
+                  <td style={cellNum}>{fmtMoney(tot.ventas)}</td>
+                  <td style={cellNum}>{fmtMoney(tot.compras)}</td>
+                  <td style={cellNum}>{fmtMoney(tot.iibb)}</td>
+                  <td style={cellNum}>{fmtMoney(tot.sueldos)}</td>
+                  <td style={cellNum}>{fmtMoney(tot.csSoc)}</td>
+                  <td style={cellNum}>{fmtMoney(tot.sind)}</td>
+                  <td style={{ ...cellNum, color: tot.neto < 0 ? '#b91c1c' : '#166534' }}>{(tot.neto < 0 ? '-' : '') + fmtMoney(Math.abs(tot.neto))}</td>
+                  <td style={cellNum}></td>
+                </tr>
+              </tbody>
+            </table>
+            </div>
+
+            {filas[filas.length - 1] && (
+              <div style={{
+                padding: '12px 14px',
+                background: filas[filas.length - 1].acumulado < 0 ? '#fee2e2' : '#dcfce7',
+                borderTop: `1.5px solid ${filas[filas.length - 1].acumulado < 0 ? '#fecaca' : '#bbf7d0'}`,
+                fontSize: 12.5,
+              }}>
+                {filas[filas.length - 1].acumulado < 0 ? (
+                  <><b style={{ color: '#b91c1c' }}>⚠️ Acumulado en blanco NEGATIVO: {fmtMoney(Math.abs(filas[filas.length - 1].acumulado))}.</b> Lo declarado da pérdida — conviene revisar qué facturar de más o qué compras dejar fuera del blanco para acercarlo a 0.</>
+                ) : (
+                  <><b style={{ color: '#166534' }}>✅ Acumulado en blanco POSITIVO: {fmtMoney(filas[filas.length - 1].acumulado)}.</b> Lo declarado da ganancia.</>
+                )}
+              </div>
+            )}
+          </Box>
+        );
+      })()}
 
       {modal && (
         <NuevaFacturaModal
