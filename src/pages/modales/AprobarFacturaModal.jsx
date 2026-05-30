@@ -4,7 +4,7 @@ import { T } from '../../theme';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useObras } from '../../store/ObrasContext';
 import { useProveedores } from '../../store/ProveedoresContext';
-import { calcDesdeTotal, ALICUOTAS_IVA, buscarDuplicadoRecibido, parseMoneyAR } from '../../lib/afip';
+import { ALICUOTAS_IVA, buscarDuplicadoRecibido, parseMoneyAR, desglosarCompra } from '../../lib/afip';
 
 // Modal de revisión y aprobación de una factura recibida por WhatsApp.
 // Extraido del antiguo WhatsappBuzon.jsx — la logica es la misma.
@@ -69,20 +69,12 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
 
   const montoNum = Math.round(parseMoneyAR(monto));
   const percIIBBNum = Math.round(parseMoneyAR(percepcionIIBB));
-  // Base fiscal del comprobante = total del ticket SIN la percepción IIBB.
-  // La percepción es un crédito a cuenta del IIBB del mes, no integra la base
-  // imponible del IVA. Si dividieras el monto-con-percepción por 1.21, inflarías
-  // el IVA crédito del Libro Compras (y declararías más de lo que dice la
-  // Factura A real del proveedor → riesgo de impugnación AFIP).
-  const baseFiscal = Math.max(0, montoNum - percIIBBNum);
-  // Si la factura es C (emisor monotributo), no hay IVA discriminado para tomar
-  // crédito → neto = base, iva = 0.
-  // Nota: neto/IVA se derivan de baseFiscal (sin percepción) para no inflar el
-  // crédito IVA. Pero el `total` del comprobante en el Libro IVA Compras incluye
-  // la percepción (es el total del ticket): por eso lo seteamos como montoNum.
-  const fiscal = tipoLetra === 'C'
-    ? { neto: baseFiscal, iva: 0, total: montoNum, alicuota: 0 }
-    : (() => { const r = calcDesdeTotal(baseFiscal, alicuota); return { ...r, total: montoNum, alicuota }; })();
+  // Desglose fiscal centralizado (ver desglosarCompra en afip.js). El neto/IVA
+  // crédito salen de la base = total − percepción IIBB (la percepción no integra
+  // el IVA: es crédito a cuenta del IIBB del mes). El `total` guardado incluye la
+  // percepción (es lo que pagaste). Factura C → sin IVA crédito.
+  const fiscal = desglosarCompra({ total: montoNum, tipoLetra, percepcionIIBB: percIIBBNum, alicuota });
+  const baseFiscal = fiscal.baseFiscal;
   const canSave  = montoNum > 0 && proveedor.trim() && cajaId;
 
   const guardar = () => {

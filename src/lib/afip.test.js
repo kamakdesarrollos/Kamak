@@ -5,7 +5,7 @@ import {
   validarComprobante, getTipoComprobante,
   fingerprintRecibido, buscarDuplicadoRecibido,
   fingerprintEmitido, buscarDuplicadoEmitido,
-  parseMoneyAR,
+  parseMoneyAR, desglosarCompra,
 } from './afip';
 
 describe('parseMoneyAR', () => {
@@ -33,6 +33,83 @@ describe('parseMoneyAR', () => {
     expect(parseMoneyAR(undefined)).toBe(0);
     expect(parseMoneyAR('abc')).toBe(0);
     expect(parseMoneyAR(NaN)).toBe(0);
+  });
+});
+
+describe('desglosarCompra (total → baseFiscal → neto/IVA crédito)', () => {
+  // El TOTAL siempre es lo que sale de caja (con IVA + percepciones). El neto e
+  // IVA crédito se calculan sobre la BASE fiscal = total − percepciones, NUNCA
+  // dividiendo el total-con-percepción por 1.21 (eso inflaría el crédito).
+  it('Factura A sin percepción: 1.210.000 → neto 1.000.000 / IVA 210.000', () => {
+    const r = desglosarCompra({ total: 1210000, tipoLetra: 'A' });
+    expect(r.neto).toBe(1000000);
+    expect(r.iva).toBe(210000);
+    expect(r.alicuota).toBe(21);
+    expect(r.baseFiscal).toBe(1210000);
+    expect(r.total).toBe(1210000);
+  });
+
+  it('Factura C (monotributo): sin IVA crédito, neto = base', () => {
+    const r = desglosarCompra({ total: 50000, tipoLetra: 'C' });
+    expect(r).toMatchObject({ neto: 50000, iva: 0, alicuota: 0, baseFiscal: 50000, total: 50000 });
+  });
+
+  it('resta la percepción IIBB de la base antes de calcular el IVA crédito', () => {
+    // Total 1.210.000 con $10.000 de percepción IIBB → base 1.200.000.
+    const r = desglosarCompra({ total: 1210000, tipoLetra: 'A', percepcionIIBB: 10000 });
+    expect(r.baseFiscal).toBe(1200000);
+    expect(r.neto).toBe(991735.54);
+    expect(r.iva).toBe(208264.46);
+    expect(r.total).toBe(1210000); // el total guardado SIEMPRE es lo que salió de caja
+    expect(r.percepcionIIBB).toBe(10000);
+  });
+
+  it('resta la percepción IVA de la base (pago a cuenta, no integra el IVA crédito)', () => {
+    // Factura con neto 1.000.000 + IVA 210.000 + percepción IVA 30.000 = total 1.240.000.
+    // La percepción IVA NO infla el crédito: base = 1.240.000 − 30.000 = 1.210.000.
+    const r = desglosarCompra({ total: 1240000, tipoLetra: 'A', percepcionIVA: 30000 });
+    expect(r.baseFiscal).toBe(1210000);
+    expect(r.neto).toBe(1000000);
+    expect(r.iva).toBe(210000);
+    expect(r.total).toBe(1240000);
+    expect(r.percepcionIVA).toBe(30000);
+  });
+
+  it('resta ambas percepciones (IIBB + IVA) de la base', () => {
+    const r = desglosarCompra({ total: 1250000, tipoLetra: 'A', percepcionIIBB: 10000, percepcionIVA: 30000 });
+    expect(r.baseFiscal).toBe(1210000);
+    expect(r.neto).toBe(1000000);
+    expect(r.iva).toBe(210000);
+  });
+
+  it('si la foto discrimina el neto, infiere la alícuota real del ticket', () => {
+    // Total 1.105.000, neto discriminado 1.000.000 → IVA 105.000 → alícuota 10,5%.
+    const r = desglosarCompra({ total: 1105000, tipoLetra: 'A', montoNeto: 1000000 });
+    expect(r.neto).toBe(1000000);
+    expect(r.iva).toBe(105000);
+    expect(r.alicuota).toBe(10.5);
+  });
+
+  it('montoNeto se ignora si no es coherente (≥ base) y cae al default 21%', () => {
+    const r = desglosarCompra({ total: 1210000, tipoLetra: 'A', montoNeto: 5000000 });
+    expect(r.neto).toBe(1000000);
+    expect(r.iva).toBe(210000);
+    expect(r.alicuota).toBe(21);
+  });
+
+  it('respeta una alícuota explícita (uso del modal de aprobación)', () => {
+    const r = desglosarCompra({ total: 1105, tipoLetra: 'B', alicuota: 10.5 });
+    expect(r).toMatchObject({ neto: 1000, iva: 105, alicuota: 10.5, total: 1105 });
+  });
+
+  it('total 0 o inválido → todo en cero (no rompe)', () => {
+    expect(desglosarCompra({ total: 0, tipoLetra: 'A' })).toMatchObject({ neto: 0, iva: 0, total: 0 });
+    expect(desglosarCompra({ total: 'abc', tipoLetra: 'A' })).toMatchObject({ neto: 0, iva: 0, total: 0 });
+  });
+
+  it('parsea montos en formato AR string', () => {
+    const r = desglosarCompra({ total: '1.210.000', tipoLetra: 'A', percepcionIIBB: '10.000' });
+    expect(r.baseFiscal).toBe(1200000);
   });
 });
 

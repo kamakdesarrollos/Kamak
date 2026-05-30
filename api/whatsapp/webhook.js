@@ -33,6 +33,40 @@ async function sbDelete(table, params) {
   await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, { method: 'DELETE', headers: sbH() });
 }
 
+// ── Desglose fiscal de una compra recibida ────────────────────────────────────
+// Espejo de desglosarCompra() en src/lib/afip.js. api/ es self-contained (no
+// importa de src/, igual que buscarDuplicadoRecibidoBot duplica el fingerprint):
+// mantené ambas funciones sincronizadas. ÚNICA fuente del cálculo en el bot —
+// antes estaba copiado inline en 3 ramas (de ahí salió el bug que descontaba el
+// neto en vez del total).
+//   • total      = lo que sale de caja (IVA + percepciones + todo).
+//   • baseFiscal = total − percepcionIIBB − percepcionIVA. Las percepciones son
+//     pagos a cuenta de OTROS impuestos, NO integran el IVA crédito: restarlas
+//     antes evita inflar el crédito del Libro Compras (impugnación AFIP).
+//   • Factura C → neto = base, iva = 0.
+//   • montoNeto válido (foto discrimina el neto) → IVA = base − neto, infiere alícuota.
+//   • Sino → default 21%.
+function desglosarCompraBot({ total, tipoLetra, percepcionIIBB = 0, percepcionIVA = 0, montoNeto = null } = {}) {
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const tot   = Math.round(Number(total) || 0);
+  const pIIBB = Math.round(Number(percepcionIIBB) || 0);
+  const pIVA  = Math.round(Number(percepcionIVA) || 0);
+  const baseFiscal = Math.max(0, tot - pIIBB - pIVA);
+  const letra = String(tipoLetra || '').toUpperCase().charAt(0);
+  if (tot <= 0)        return { neto: 0, iva: 0, alicuota: 0, baseFiscal: 0, total: tot };
+  if (letra === 'C')   return { neto: baseFiscal, iva: 0, alicuota: 0, baseFiscal, total: tot };
+  const netoConocido = (montoNeto != null && Number(montoNeto) > 0) ? Math.round(Number(montoNeto)) : null;
+  if (netoConocido != null && netoConocido < baseFiscal) {
+    const iva = Math.max(0, baseFiscal - netoConocido);
+    const pct = netoConocido > 0 ? (iva / netoConocido) * 100 : 21;
+    const known = [21, 10.5, 27, 0];
+    const alicuota = known.reduce((a, b) => (Math.abs(b - pct) < Math.abs(a - pct) ? b : a));
+    return { neto: netoConocido, iva, alicuota, baseFiscal, total: tot };
+  }
+  const neto = round2(baseFiscal / 1.21);
+  return { neto, iva: round2(baseFiscal - neto), alicuota: 21, baseFiscal, total: tot };
+}
+
 // Rediseño "libro único": el bot SOLO entrega el movimiento. Lo agrega de forma
 // ATÓMICA con la función append_movimiento de Postgres (no lee-y-reescribe el
 // bloque entero, así nunca pisa lo que escribió la app). El saldo de la caja lo
@@ -1515,38 +1549,21 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
                       || refD.montoTotal || refD.monto || 0;
         return `⚠️ *Comprobante duplicado*\nYa hay una factura/ticket igual cargado ${cuandoD}${montoRef ? ` (${fmtD(montoRef)})` : ''}. No lo dupliqué.`;
       }
-      const round2 = (n) => Math.round(n * 100) / 100;
-      // Base fiscal del comprobante = monto SIN la percepción IIBB. La percepción
-      // no integra la base imponible del IVA; es crédito a cuenta del IIBB del
-      // mes. Dividir el monto-con-percepción por 1.21 inflaría el IVA crédito.
-      const perc = nuevoMov.percepcionIIBB || 0;
-      const baseFiscal = Math.max(0, monto - perc);
-      let neto, iva, alicuota;
-      if (tipoLetra === 'C') {
-        neto = baseFiscal; iva = 0; alicuota = 0;
-      } else if (datos.montoNeto != null && Number(datos.montoNeto) > 0 && Number(datos.montoNeto) < baseFiscal) {
-        // La LLM discriminó el neto del ticket. IVA = baseFiscal − neto.
-        // La percepción IIBB ya quedó fuera de baseFiscal, así no infla el crédito.
-        neto = Math.round(Number(datos.montoNeto));
-        iva = Math.max(0, baseFiscal - neto);
-        const pct = neto > 0 ? (iva / neto) * 100 : 21;
-        const known = [21, 10.5, 27, 0];
-        alicuota = known.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a);
-      } else {
-        alicuota = 21;
-        neto = round2(baseFiscal / 1.21);
-        iva = round2(baseFiscal - neto);
-      }
+      // Desglose fiscal centralizado (ver desglosarCompraBot). neto/IVA salen de
+      // la base (sin percepciones); el `total` guardado es el del ticket (con
+      // percepción), para que coincida con la caja y con el fingerprint de dup.
+      const fiscal = desglosarCompraBot({
+        total: monto, tipoLetra,
+        percepcionIIBB: nuevoMov.percepcionIIBB || 0,
+        montoNeto: datos.montoNeto,
+      });
       nuevoMov.comprobante = 'blanco';
       nuevoMov.comprobanteRecibido = {
         tipo: tipoLetra,
         numero: datos.numeroFactura || '',
         cuit: datos.cuit || '',
         fecha: nuevoMov.fecha,
-        // neto/IVA salen de baseFiscal (sin percepción) para no inflar IVA crédito.
-        // El `total` es el del ticket (con percepción), para que coincida con la
-        // caja y para que el fingerprint de dup detection sea estable.
-        neto, iva, alicuota, total: monto,
+        neto: fiscal.neto, iva: fiscal.iva, alicuota: fiscal.alicuota, total: monto,
       };
     }
 
@@ -1675,27 +1692,13 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     if (user.user_rol === 'Admin' && totalGastoBot > 0 && !SIN_IVA_CREDITO_FACT.has(datos.categoriaFiscal)) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A' / 'B' / 'C'
       const total = totalGastoBot;
-      const round2 = (n) => Math.round(n * 100) / 100;
       // Percepción IIBB detectada en el ticket: se excluye de la base fiscal del IVA.
       const perc = (datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
                      ? Math.round(Number(datos.percepcionIIBB)) : 0;
-      const baseFiscal = Math.max(0, total - perc);
-      let neto, iva, alicuota;
-      if (tipoLetra === 'C') {
-        neto = baseFiscal; iva = 0; alicuota = 0;
-      } else if (datos.montoNeto != null && Number(datos.montoNeto) > 0 && Number(datos.montoNeto) < baseFiscal) {
-        // LLM discriminó el neto del ticket — usamos ese desglose.
-        neto = Math.round(Number(datos.montoNeto));
-        iva = Math.max(0, baseFiscal - neto);
-        const pct = neto > 0 ? (iva / neto) * 100 : 21;
-        const known = [21, 10.5, 27, 0];
-        alicuota = known.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a);
-      } else {
-        // Solo tenemos total → asumimos 21% (más común en construcción).
-        alicuota = 21;
-        neto = round2(baseFiscal / 1.21);
-        iva = round2(baseFiscal - neto);
-      }
+      // Desglose fiscal centralizado (ver desglosarCompraBot).
+      const { neto, iva, alicuota } = desglosarCompraBot({
+        total, tipoLetra, percepcionIIBB: perc, montoNeto: datos.montoNeto,
+      });
       // Caja efectivo del admin (ARS). Sino, primera ARS visible. Si nada → buzón.
       const caja = ctx.cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email && c.moneda === 'ARS')
                 || ctx.cajas.find(c => c.moneda === 'ARS' && cajaEsVisible(user.cajasVisibles, c.id));
@@ -2600,24 +2603,11 @@ async function ejecutarComando(comando, datos, user, ctx) {
       const tipoLetra = String(item.tipoFactura || 'B').toUpperCase().charAt(0); // 'A'/'B'/'C'
       const perc = (item.percepcionIIBB != null && Number(item.percepcionIIBB) > 0)
                      ? Math.round(Number(item.percepcionIIBB)) : 0;
-      const baseFiscal = Math.max(0, monto - perc);
-      const round2 = (n) => Math.round(n * 100) / 100;
-      let neto = 0, iva = 0, alicuota = 0;
-      if (monto > 0) {
-        if (tipoLetra === 'C') {
-          neto = baseFiscal; iva = 0; alicuota = 0;
-        } else if (item.montoNeto != null && Number(item.montoNeto) > 0 && Number(item.montoNeto) < baseFiscal) {
-          neto = Math.round(Number(item.montoNeto));
-          iva = Math.max(0, baseFiscal - neto);
-          const pct = neto > 0 ? (iva / neto) * 100 : 21;
-          const known = [21, 10.5, 27, 0];
-          alicuota = known.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a);
-        } else {
-          alicuota = 21;
-          neto = round2(baseFiscal / 1.21);
-          iva  = round2(baseFiscal - neto);
-        }
-      }
+      // Desglose fiscal centralizado (mismo cálculo que el modal y las otras ramas
+      // del bot) — aprobar por chat no pierde ni el IVA crédito ni la percepción.
+      const { neto, iva, alicuota } = desglosarCompraBot({
+        total: monto, tipoLetra, percepcionIIBB: perc, montoNeto: item.montoNeto,
+      });
       const mov = {
         id: `mov-${Date.now()}`,
         tipo: 'gasto',

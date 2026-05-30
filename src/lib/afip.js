@@ -121,6 +121,56 @@ export function calcDesdeTotal(total, alicuotaPct) {
   return { neto, iva: round2(t - neto), total: t };
 }
 
+// Alícuotas de IVA conocidas, para inferir la del ticket cuando la foto discrimina
+// el neto pero no la alícuota explícita.
+const _ALICUOTAS_CONOCIDAS = [21, 10.5, 27, 0];
+const _alicuotaMasCercana = (pct) =>
+  _ALICUOTAS_CONOCIDAS.reduce((a, b) => (Math.abs(b - pct) < Math.abs(a - pct) ? b : a));
+
+// ── Desglose fiscal de un comprobante de COMPRA recibido ──────────────────────
+// ÚNICA fuente de verdad del cálculo total → baseFiscal → neto + IVA crédito.
+// Antes estaba duplicado inline en el modal de aprobación y en 3 ramas del bot;
+// centralizarlo evita que diverjan (de ahí salió el bug crítico que descontaba
+// el neto en vez del total).
+//
+// Reglas fiscales:
+//  • El `total` es SIEMPRE lo que sale de caja: IVA + percepciones + todo.
+//  • Las percepciones (IIBB e IVA) son pagos a cuenta de OTROS impuestos, NO
+//    integran la base imponible del IVA del comprobante. Por eso se restan del
+//    total ANTES de desarmar neto + IVA. Dividir el total-con-percepción por
+//    1.21 inflaría el IVA crédito del Libro Compras (riesgo de impugnación AFIP).
+//  • baseFiscal = total − percepcionIIBB − percepcionIVA.
+//  • Factura C (monotributo): no discrimina IVA → neto = base, iva = 0.
+//  • Si la foto discriminó el neto (montoNeto válido < base) → IVA = base − neto
+//    y se infiere la alícuota real del ticket.
+//  • Si se pasa una `alicuota` explícita (modal) → se usa esa.
+//  • Sino → default 21% (lo más común en construcción).
+//
+// El `total` devuelto es el total real (con percepciones), para que coincida con
+// la caja y con el fingerprint de detección de duplicados.
+export function desglosarCompra({
+  total, tipoLetra, percepcionIIBB = 0, percepcionIVA = 0, montoNeto = null, alicuota = null,
+} = {}) {
+  const tot   = Math.round(parseMoneyAR(total));
+  const pIIBB = Math.round(parseMoneyAR(percepcionIIBB));
+  const pIVA  = Math.round(parseMoneyAR(percepcionIVA));
+  const baseFiscal = Math.max(0, tot - pIIBB - pIVA);
+  const letra = String(tipoLetra || '').toUpperCase().charAt(0);
+  const out = { neto: 0, iva: 0, alicuota: 0, baseFiscal, total: tot, percepcionIIBB: pIIBB, percepcionIVA: pIVA };
+  if (tot <= 0) return { ...out, baseFiscal: 0 };
+  if (letra === 'C') return { ...out, neto: baseFiscal, iva: 0, alicuota: 0 };
+
+  const netoConocido = montoNeto != null ? Math.round(parseMoneyAR(montoNeto)) : null;
+  if (netoConocido != null && netoConocido > 0 && netoConocido < baseFiscal) {
+    const iva = Math.max(0, baseFiscal - netoConocido);
+    const pct = netoConocido > 0 ? (iva / netoConocido) * 100 : 21;
+    return { ...out, neto: netoConocido, iva, alicuota: _alicuotaMasCercana(pct) };
+  }
+  const ali = alicuota != null ? (Number(alicuota) || 0) : 21;
+  const r = calcDesdeTotal(baseFiscal, ali);
+  return { ...out, neto: r.neto, iva: r.iva, alicuota: ali };
+}
+
 // ── Tipo de factura sugerido (emisor Responsable Inscripto) ───────────────────
 // A si el receptor es Responsable Inscripto; B en cualquier otro caso.
 export function tipoFacturaSugerido(condReceptorId) {
