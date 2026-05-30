@@ -56,7 +56,7 @@ function downloadCSV(filename, rows) {
 }
 
 // ── Modal: nueva factura (Ventas — emisión) ───────────────────────────────────
-function NuevaFacturaModal({ empresa, clientes, obras, onSave, onClose }) {
+function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onClose }) {
   const [form, setForm] = useState({
     clienteId: '',
     tipoId: 'FB',
@@ -65,6 +65,7 @@ function NuevaFacturaModal({ empresa, clientes, obras, onSave, onClose }) {
     neto: '',
     alicuota: 21,
     fecha: todayISO(),
+    comprobanteAsociadoId: '',
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -75,6 +76,16 @@ function NuevaFacturaModal({ empresa, clientes, obras, onSave, onClose }) {
   const tiposDisponibles = letraPermitida
     ? TIPOS_COMPROBANTE.filter(t => t.letra === letraPermitida)
     : TIPOS_COMPROBANTE;
+
+  // Nota de Crédito/Débito: necesita el "comprobante asociado" (RG 5824/2026).
+  // Ofrecemos las facturas emitidas a ESTE cliente y de la MISMA LETRA.
+  const tipoActual = getTipoComprobante(form.tipoId);
+  const esNota = !!tipoActual && /^(NC|ND)/.test(tipoActual.id);
+  const asociadosPosibles = (esNota && cliente)
+    ? (comprobantes || [])
+        .filter(c => c.clienteId === cliente.id && c.estado !== 'anulado' && (getTipoComprobante(c.tipoId)?.letra === letraPermitida) && /^F/.test(c.tipoId))
+        .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+    : [];
 
   useEffect(() => {
     if (!cliente) return;
@@ -105,7 +116,9 @@ function NuevaFacturaModal({ empresa, clientes, obras, onSave, onClose }) {
     iva: calc.iva,
     total: calc.total,
     fecha: form.fecha,
-  }), [form, cliente, calc.iva, calc.total, netoNum, empresa, obras]);
+    // Referencia al comprobante original (solo NC/ND): cumple RG 5824/2026.
+    comprobanteAsociadoId: esNota ? (form.comprobanteAsociadoId || null) : null,
+  }), [form, cliente, calc.iva, calc.total, netoNum, empresa, obras, esNota]);
 
   const errores = validarComprobante(comprobante);
   const puedeGuardar = !!form.clienteId && errores.length === 0;
@@ -165,6 +178,27 @@ function NuevaFacturaModal({ empresa, clientes, obras, onSave, onClose }) {
               <input type="date" style={inputSt} value={form.fecha} onChange={e => set('fecha', e.target.value)} />
             </div>
           </div>
+
+          {esNota && (
+            <div>
+              <label style={labelSt}>Comprobante asociado * <span style={{ fontWeight: 400, color: T.ink3, textTransform: 'none', letterSpacing: 0 }}>— factura original que ajusta</span></label>
+              <select style={{ ...inputSt, cursor: asociadosPosibles.length ? 'pointer' : 'not-allowed', opacity: asociadosPosibles.length ? 1 : 0.5 }}
+                disabled={!asociadosPosibles.length}
+                value={form.comprobanteAsociadoId}
+                onChange={e => set('comprobanteAsociadoId', e.target.value)}>
+                <option value="">— Elegí la factura original —</option>
+                {asociadosPosibles.map(c => {
+                  const t = getTipoComprobante(c.tipoId);
+                  return <option key={c.id} value={c.id}>{t?.nombre} {c.numero || 'borrador'} · {fmtFecha(c.fecha)} · {fmtMoney(c.total)}</option>;
+                })}
+              </select>
+              {!asociadosPosibles.length && (
+                <div style={{ fontSize: 10, color: '#92400e', marginTop: 3 }}>
+                  No hay facturas previas de este cliente de la misma letra. AFIP exige el comprobante asociado en notas de crédito/débito (RG 5824/2026).
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <label style={labelSt}>Obra (opcional)</label>
@@ -293,6 +327,7 @@ export default function Facturacion() {
   const [tab, setTab] = useState('resumen'); // 'resumen' | 'ventas' | 'compras'
   const [mes, setMes] = useState(mesActual());
   const [modal, setModal] = useState(false);
+  const [zipping, setZipping] = useState(false);
 
   // ── Datos por mes ────────────────────────────────────────────────────────────
   const ventasMes = useMemo(() => comprobantes
@@ -316,6 +351,47 @@ export default function Facturacion() {
 
   const posicion = Math.round((debito - credito) * 100) / 100;
 
+  // ── Comparativa con el mes anterior + saldo a favor arrastrado ───────────────
+  // Helper: posición IVA de un mes (YYYY-MM) cualquiera, mismo cálculo.
+  const compFor = (mesKey) => {
+    const v = comprobantes.filter(c => c.estado !== 'anulado' && (c.fecha || '').slice(0, 7) === mesKey);
+    const c = (movimientos || []).filter(m => m.comprobanteRecibido && (m.fecha || '').slice(0, 7) === mesKey);
+    const deb = v.reduce((s, x) => s + (getTipoComprobante(x.tipoId)?.signo ?? 1) * (x.iva || 0), 0);
+    const cre = c.reduce((s, m) => s + (m.comprobanteRecibido?.iva || 0), 0);
+    return { debito: deb, credito: cre, posicion: Math.round((deb - cre) * 100) / 100 };
+  };
+  // Mes anterior (YYYY-MM): restamos 1 mes al mes seleccionado.
+  const mesAnterior = useMemo(() => {
+    if (!mes || mes.length < 7) return null;
+    const [y, m] = mes.split('-').map(Number);
+    const d = new Date(y, m - 2, 1); // m-1 (cero-base) - 1
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }, [mes]);
+  const datosMesAnt = useMemo(() => mesAnterior ? compFor(mesAnterior) : null, [mesAnterior, comprobantes, movimientos]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Saldo a favor acumulado al inicio del mes seleccionado: caminamos cada mes
+  // anterior en orden. Si un mes dio "a favor" → suma al saldo. Si dio "a pagar"
+  // → consume del saldo (bounded ≥ 0). Es cómo funciona AFIP: el saldo a favor
+  // de un período se traslada al siguiente DDJJ.
+  const saldoAFavorPrevio = useMemo(() => {
+    const set = new Set();
+    comprobantes.forEach(c => { const k = (c.fecha || '').slice(0, 7); if (k && k < mes) set.add(k); });
+    (movimientos || []).forEach(m => { if (m.comprobanteRecibido) { const k = (m.fecha || '').slice(0, 7); if (k && k < mes) set.add(k); } });
+    let saldo = 0;
+    [...set].sort().forEach(mk => {
+      const { posicion: p } = compFor(mk);
+      if (p > 0) saldo = Math.max(0, saldo - p);
+      else if (p < 0) saldo += -p;
+    });
+    return Math.round(saldo * 100) / 100;
+  }, [comprobantes, movimientos, mes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Posición efectiva del mes seleccionado: consume del saldo a favor previo.
+  const efectivaAPagar = posicion > 0 ? Math.max(0, posicion - saldoAFavorPrevio) : 0;
+  const saldoAFavorNuevo = posicion <= 0
+    ? saldoAFavorPrevio + (-posicion)
+    : Math.max(0, saldoAFavorPrevio - posicion);
+
   // ── CRUD ─────────────────────────────────────────────────────────────────────
   const guardar = (c) => { addComprobante(c); setModal(false); };
 
@@ -337,6 +413,38 @@ export default function Facturacion() {
       ];
     });
     downloadCSV(`libro-iva-ventas-${mes}.csv`, [head, ...rows]);
+  };
+
+  // ZIP con todos los comprobantes adjuntos de las compras del mes — útil para
+  // que el contador tenga el respaldo en pdf/foto sin tener que abrir el sistema.
+  const sanitize = (s) => (s || '').replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _-]/g, '').slice(0, 40).trim();
+  const downloadZipComprobantes = async () => {
+    const conAdjunto = comprasMes.filter(m => m.comprobanteUrl);
+    if (!conAdjunto.length) { alert('No hay comprobantes adjuntos para este mes.'); return; }
+    setZipping(true);
+    try {
+      const { default: JSZip } = await import('jszip');
+      const zip = new JSZip();
+      await Promise.all(conAdjunto.map(async m => {
+        try {
+          const res = await fetch(m.comprobanteUrl);
+          if (!res.ok) return;
+          const blob = await res.blob();
+          const ext = m.comprobanteUrl.endsWith('.pdf') ? 'pdf' : 'jpg';
+          const num = m.comprobanteRecibido?.numero || m.referencia || '';
+          const name = `${m.fecha}_${sanitize(m.proveedor)}_${sanitize(num)}_${Math.round(m.monto || 0)}.${ext}`;
+          zip.file(name, blob);
+        } catch { /* omitir si falla */ }
+      }));
+      const content = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(content);
+      a.download = `comprobantes-compras-${mes}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } finally {
+      setZipping(false);
+    }
   };
 
   const exportCSVCompras = () => {
@@ -432,10 +540,52 @@ export default function Facturacion() {
       {tab === 'resumen' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <PosicionCard debito={debito} credito={credito} posicion={posicion} mes={mes} readOnly={isContador} />
+
+          {/* Comparativa + saldo a favor arrastrado */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Box style={{ padding: 14 }}>
+              <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>Mes anterior · {labelMes(mesAnterior)}</div>
+              {datosMesAnt && (datosMesAnt.debito || datosMesAnt.credito) ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6, fontSize: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: T.ink2 }}><span>Débito</span><b style={{ fontFamily: T.fontMono }}>{fmtMoney(datosMesAnt.debito)}</b></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: T.ink2 }}><span>Crédito</span><b style={{ fontFamily: T.fontMono }}>{fmtMoney(datosMesAnt.credito)}</b></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: `1px solid ${T.faint2}`, paddingTop: 3, marginTop: 3, fontSize: 13 }}>
+                    <b>{datosMesAnt.posicion > 0 ? 'A pagar' : datosMesAnt.posicion < 0 ? 'A favor' : 'Neto'}</b>
+                    <b style={{ fontFamily: T.fontMono, color: datosMesAnt.posicion > 0 ? '#b91c1c' : datosMesAnt.posicion < 0 ? '#166534' : T.ink2 }}>{fmtMoney(Math.abs(datosMesAnt.posicion))}</b>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>Sin movimientos fiscales el mes anterior.</div>
+              )}
+            </Box>
+
+            <Box style={{ padding: 14 }}>
+              <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>Saldo a favor arrastrado</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: saldoAFavorPrevio > 0 ? '#166534' : T.ink3, fontFamily: T.fontMono, marginTop: 4 }}>{fmtMoney(saldoAFavorPrevio)}</div>
+              <div style={{ fontSize: 11, color: T.ink2, marginTop: 6, lineHeight: 1.4 }}>
+                {posicion > 0 && saldoAFavorPrevio > 0 ? (
+                  <>El mes da <b>a pagar {fmtMoney(posicion)}</b>, pero usás <b>{fmtMoney(Math.min(posicion, saldoAFavorPrevio))}</b> del saldo a favor.<br />
+                  <b style={{ color: efectivaAPagar > 0 ? '#b91c1c' : '#166534' }}>
+                    {efectivaAPagar > 0 ? `Pagás efectivo: ${fmtMoney(efectivaAPagar)}` : 'Te queda saldo a favor: ' + fmtMoney(saldoAFavorNuevo)}
+                  </b></>
+                ) : posicion < 0 ? (
+                  <>Este mes suma <b style={{ color: '#166534' }}>{fmtMoney(-posicion)}</b> al saldo. Nuevo saldo: <b>{fmtMoney(saldoAFavorNuevo)}</b>.</>
+                ) : saldoAFavorPrevio > 0 ? (
+                  <>Sin movimiento neto este mes. El saldo a favor sigue intacto.</>
+                ) : (
+                  <>Sin saldo arrastrado.</>
+                )}
+              </div>
+            </Box>
+          </div>
+
           <Box style={{ padding: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <Btn sm onClick={imprimirResumen}>🖨 Imprimir / PDF del resumen</Btn>
             <Btn sm onClick={exportCSVVentas} style={{ opacity: ventasMes.length ? 1 : 0.5, pointerEvents: ventasMes.length ? 'auto' : 'none' }}>⬇ CSV Libro IVA Ventas</Btn>
             <Btn sm onClick={exportCSVCompras} style={{ opacity: comprasMes.length ? 1 : 0.5, pointerEvents: comprasMes.length ? 'auto' : 'none' }}>⬇ CSV Libro IVA Compras</Btn>
+            <Btn sm onClick={downloadZipComprobantes} style={{ opacity: comprasMes.some(m => m.comprobanteUrl) && !zipping ? 1 : 0.5, pointerEvents: comprasMes.some(m => m.comprobanteUrl) && !zipping ? 'auto' : 'none' }}>
+              {zipping ? '⏳ Armando ZIP…' : '🗂 ZIP comprobantes del mes'}
+            </Btn>
           </Box>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Box style={{ padding: 14 }}>
@@ -563,6 +713,7 @@ export default function Facturacion() {
           empresa={empresa}
           clientes={clientes}
           obras={obras}
+          comprobantes={comprobantes}
           onSave={guardar}
           onClose={() => setModal(false)}
         />

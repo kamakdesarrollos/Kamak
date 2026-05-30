@@ -110,6 +110,13 @@ export function validarComprobante(c) {
     errores.push('El CUIT del receptor es inválido.');
   }
 
+  // RG 5824/2026: Notas de Crédito/Débito requieren el identificador del
+  // comprobante asociado (la factura original que ajustan).
+  const esNota = tipo && /^(NC|ND)/.test(tipo.id);
+  if (esNota && !c?.comprobanteAsociadoId) {
+    errores.push(`${tipo.nombre}: falta indicar la factura original que ajusta (comprobante asociado).`);
+  }
+
   // Importes
   const neto = Number(c?.neto);
   if (!(neto > 0)) errores.push('El neto debe ser mayor a 0.');
