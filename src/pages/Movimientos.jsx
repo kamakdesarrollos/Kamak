@@ -268,7 +268,9 @@ function MovRow({ m, cajas, onRemove, isAdmin, pendingSolIds, onSolicitar }) {
   const navigate = useNavigate();
   const { proveedores: provsList } = useProveedores();
   const caja = cajas.find(c => c.id === m.cajaId);
-  const isIngreso = m.tipo === 'ingreso';
+  const esNC = m.tipo === 'nota_credito_compra'; // nota de crédito de proveedor
+  // Para el signo/color de la fila: una NC es un crédito a favor (como un ingreso).
+  const isIngreso = m.tipo === 'ingreso' || esNC;
   const cajaIsUSD = caja?.moneda === 'USD';
   const simbolo = cajaIsUSD ? 'USD' : '$';
   const isPendingSol = pendingSolIds?.has(m.id);
@@ -316,6 +318,12 @@ function MovRow({ m, cajas, onRemove, isAdmin, pendingSolIds, onSolicitar }) {
           )}
           {isPendingSol && (
             <span style={{ background: '#fef3c7', color: '#d97706', borderRadius: 2, padding: '0 4px', fontWeight: 700 }}>⏳ solicitud pendiente</span>
+          )}
+          {esNC && (
+            <span style={{ background: '#fff7ed', color: '#b45309', borderRadius: 2, padding: '0 4px', fontWeight: 700 }}
+              title="Nota de crédito de proveedor: reduce el IVA crédito del mes.">
+              NC{m.afectaCaja ? '' : ' · solo fiscal'}
+            </span>
           )}
         </div>
       </div>
@@ -1143,7 +1151,9 @@ export default function Movimientos() {
   }, [movimientos, mes, filtroObra, soloComprobante, isAdmin, cajaIdsMias, currentUser?.cajasVisibles]);
 
   const ingresos   = useMemo(() => filtered.filter(m => m.tipo === 'ingreso'),  [filtered]);
-  const gastos     = useMemo(() => filtered.filter(m => m.tipo === 'gasto'),    [filtered]);
+  // Las notas de crédito de proveedor se listan junto a los gastos (son compra-
+  // relacionadas), pero se muestran como crédito a favor y no suman al total de gastos.
+  const gastos     = useMemo(() => filtered.filter(m => m.tipo === 'gasto' || m.tipo === 'nota_credito_compra'), [filtered]);
   const traspasos  = useMemo(() => filtered.filter(m => m.tipo === 'traspaso'), [filtered]);
 
   const totalIngresos = ingresos.reduce((s, m) => s + m.monto, 0);

@@ -186,6 +186,11 @@ export function desglosarCompra({
   return { ...out, neto: r.neto, iva: r.iva, alicuota: ali };
 }
 
+// Signo fiscal de un comprobante RECIBIDO en el Libro IVA Compras. Una nota de
+// crédito de proveedor (clase 'nota_credito') REVIERTE crédito IVA y compras, así
+// que computa en negativo; cualquier otro comprobante (factura/ticket) suma.
+export const signoComprobanteRecibido = (cr) => (cr?.clase === 'nota_credito' ? -1 : 1);
+
 // ── Tipo de factura sugerido (emisor Responsable Inscripto) ───────────────────
 // A si el receptor es Responsable Inscripto; B en cualquier otro caso.
 export function tipoFacturaSugerido(condReceptorId) {
@@ -214,14 +219,18 @@ const _normSerial = (s) => {
   return parts.length ? (parts[parts.length - 1].replace(/^0+/, '') || '0') : '';
 };
 
-export function fingerprintRecibido({ tipo, numero, cuit, total, proveedor, fecha } = {}) {
+export function fingerprintRecibido({ tipo, numero, cuit, total, proveedor, fecha, clase } = {}) {
   const normTotal = Math.round(Number(total) || 0);
   if (!normTotal) return null;
   const normNum  = _normSerial(numero);
   const normCuit = String(cuit || '').replace(/\D/g, '');
-  const letra    = String(tipo || '').toUpperCase().charAt(0); // 'A'/'B'/'C'/''
+  // Prefijo 'NC' para notas de crédito recibidas: una NC y la factura que ajusta
+  // pueden compartir letra/CUIT/total pero son comprobantes DISTINTOS — sin este
+  // prefijo colisionarían y el sistema rechazaría la NC como "duplicada".
+  const pre      = clase === 'nota_credito' ? 'NC' : '';
+  const letra    = pre + String(tipo || '').toUpperCase().charAt(0); // 'A'/'B'/'C'/'NCA'/…
   if (normNum) return `n:${letra}|${normNum}|${normCuit}|${normTotal}`;
-  const normProv = String(proveedor || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24);
+  const normProv = pre + String(proveedor || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24);
   if (!normProv) return null; // sin proveedor, la huella es muy débil → no chequear
   const normFecha = String(fecha || '').slice(0, 10);
   return `s:${normProv}|${normFecha}|${normTotal}`;
@@ -241,7 +250,7 @@ export function buscarDuplicadoRecibido(candidato, { movimientos, pendings } = {
     if (cr) {
       const fpM = fingerprintRecibido({
         tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total,
-        proveedor: m.proveedor, fecha: m.fecha,
+        proveedor: m.proveedor, fecha: m.fecha, clase: cr.clase,
       });
       if (fpM === fp) return { en: 'movimiento', ref: m };
     }
@@ -252,14 +261,14 @@ export function buscarDuplicadoRecibido(candidato, { movimientos, pendings } = {
       const fpP = fingerprintRecibido({
         tipo: p.tipoFactura, numero: p.numeroFactura, cuit: p.cuit,
         total: p.montoTotal != null ? p.montoTotal : p.monto,
-        proveedor: p.proveedor, fecha: p.fecha,
+        proveedor: p.proveedor, fecha: p.fecha, clase: p.claseComprobante,
       });
       if (fpP === fp) return { en: 'pending', ref: p };
     } else if (p?.tipoPendiente === 'movimiento' && p?.movimiento?.comprobanteRecibido) {
       const cr = p.movimiento.comprobanteRecibido;
       const fpP = fingerprintRecibido({
         tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total,
-        proveedor: p.movimiento.proveedor, fecha: p.movimiento.fecha,
+        proveedor: p.movimiento.proveedor, fecha: p.movimiento.fecha, clase: cr.clase,
       });
       if (fpP === fp) return { en: 'pending', ref: p };
     }

@@ -7,7 +7,38 @@ import {
   fingerprintEmitido, buscarDuplicadoEmitido,
   parseMoneyAR, desglosarCompra,
   esJurisdiccionPBA, nombreJurisdiccion, JURISDICCIONES_IIBB,
+  signoComprobanteRecibido,
 } from './afip';
+
+describe('notas de crédito recibidas', () => {
+  it('una NC y la factura que ajusta NO colisionan como duplicado', () => {
+    const factura = fingerprintRecibido({ tipo: 'A', numero: '0001-12345', cuit: '30-71795385-8', total: 12000 });
+    const nc      = fingerprintRecibido({ tipo: 'A', numero: '0001-12345', cuit: '30-71795385-8', total: 12000, clase: 'nota_credito' });
+    expect(factura).not.toBe(nc);
+  });
+  it('dos NC iguales SÍ colisionan (no se carga dos veces)', () => {
+    const a = fingerprintRecibido({ tipo: 'A', numero: '0001-99', cuit: '30717953858', total: 5000, clase: 'nota_credito' });
+    const b = fingerprintRecibido({ tipo: 'A', numero: '1-99',    cuit: '30-71795385-8', total: 5000, clase: 'nota_credito' });
+    expect(a).toBe(b);
+  });
+  it('NC sin N° tampoco colisiona con su ticket (prefijo en proveedor)', () => {
+    const f  = fingerprintRecibido({ proveedor: 'YPF', fecha: '2026-05-30', total: 8000 });
+    const nc = fingerprintRecibido({ proveedor: 'YPF', fecha: '2026-05-30', total: 8000, clase: 'nota_credito' });
+    expect(f).not.toBe(nc);
+  });
+  it('buscarDuplicadoRecibido distingue NC de factura en movimientos', () => {
+    const movs = [{ id: 'm1', proveedor: 'ACME', fecha: '2026-05-30',
+      comprobanteRecibido: { tipo: 'A', numero: '0001-12345', cuit: '30717953858', total: 12000 } }];
+    const candNC = { tipo: 'A', numero: '0001-12345', cuit: '30717953858', total: 12000, proveedor: 'ACME', fecha: '2026-05-30', clase: 'nota_credito' };
+    expect(buscarDuplicadoRecibido(candNC, { movimientos: movs })).toBe(null); // NC no es dup de la factura
+  });
+  it('signoComprobanteRecibido: NC = -1, resto = +1', () => {
+    expect(signoComprobanteRecibido({ clase: 'nota_credito' })).toBe(-1);
+    expect(signoComprobanteRecibido({ clase: 'factura' })).toBe(1);
+    expect(signoComprobanteRecibido({})).toBe(1);
+    expect(signoComprobanteRecibido(null)).toBe(1);
+  });
+});
 
 describe('jurisdicciones IIBB', () => {
   it('legacy sin jurisdicción o PBA → cuenta como PBA', () => {

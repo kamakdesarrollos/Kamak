@@ -26,6 +26,11 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
 
   const cajasARS   = cajas.filter(c => c.activa && c.moneda === 'ARS');
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
+  // ¿Es una nota de crédito de proveedor? Reduce el IVA crédito y las compras del
+  // mes (Libro IVA). Por defecto NO toca caja (solo ajuste fiscal); el admin puede
+  // marcar que el proveedor devolvió plata a una caja.
+  const esNC = item.claseComprobante === 'nota_credito';
+  const [afectaCaja, setAfectaCaja] = useState(false);
 
   const [proveedor,  setProveedor]  = useState(() => {
     if (item.proveedor) return item.proveedor;
@@ -83,7 +88,9 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
   // guardado incluye las percepciones (es lo que pagaste). Factura C → sin IVA crédito.
   const fiscal = desglosarCompra({ total: montoNum, tipoLetra, percepcionIIBB: percIIBBNum, percepcionIVA: percIVANum, alicuota });
   const baseFiscal = fiscal.baseFiscal;
-  const canSave  = montoNum > 0 && proveedor.trim() && cajaId;
+  // Una NC solo-fiscal no necesita caja; solo la exige si el admin marcó que devolvió plata.
+  const cajaRequerida = !esNC || afectaCaja;
+  const canSave  = montoNum > 0 && proveedor.trim() && (!cajaRequerida || cajaId);
 
   const guardar = () => {
     if (!canSave) return;
@@ -93,13 +100,50 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
     const dup = buscarDuplicadoRecibido({
       tipo: tipoLetra, numero: item.numeroFactura, cuit: item.cuit,
       total: montoNum, proveedor: proveedor.trim(), fecha,
+      clase: esNC ? 'nota_credito' : 'factura',
     }, { movimientos });
     if (dup?.en === 'movimiento') {
       const ref = dup.ref;
-      alert(`⚠️ Ya hay un gasto con esta misma factura cargado el ${ref.fecha} ($${Math.round(ref.monto || ref.comprobanteRecibido?.total || 0).toLocaleString('es-AR')}). No la cargo dos veces.`);
+      alert(`⚠️ Ya hay un ${esNC ? 'una nota de crédito' : 'gasto con esta misma factura'} cargado el ${ref.fecha} ($${Math.round(ref.monto || ref.comprobanteRecibido?.total || 0).toLocaleString('es-AR')}). No lo cargo dos veces.`);
       return;
     }
     const obra    = obrasActivas.find(o => o.id === obraId);
+    // ── Nota de crédito de proveedor: tipo dedicado, no toca caja salvo que el
+    //    admin marque que el proveedor devolvió plata. Reduce el IVA crédito y las
+    //    compras del mes (Libro IVA, signo −1 vía comprobanteRecibido.clase). ──
+    if (esNC) {
+      const descNC = concepto.trim() || `NC ${item.tipoFactura || ''} ${item.numeroFactura || ''} · ${proveedor}`.trim();
+      addMovimiento({
+        tipo:           'nota_credito_compra',
+        descripcion:    descNC,
+        monto:          montoNum,
+        fecha,
+        obraId:         obraId || null,
+        obraNombre:     obra?.nombre || 'General',
+        cajaId:         afectaCaja ? cajaId : null,
+        afectaCaja,
+        proveedor:      proveedor.trim(),
+        categoria:      'factura-proveedor',
+        medioPago:      'Transferencia',
+        referencia:     item.numeroFactura || '',
+        comprobante:    'blanco',
+        comprobanteUrl: item.mediaUrl || null,
+        fondoReparo:    false,
+        comprobanteRecibido: {
+          clase:    'nota_credito',
+          tipo:     tipoLetra,
+          numero:   item.numeroFactura || '',
+          cuit:     item.cuit || '',
+          fecha,
+          neto:     fiscal.neto,
+          iva:      fiscal.iva,
+          alicuota: fiscal.alicuota,
+          total:    fiscal.total,
+        },
+      });
+      onConfirm();
+      return;
+    }
     const descripcion = concepto.trim() || `Factura ${item.tipoFactura || ''} ${item.numeroFactura || ''} · ${proveedor}`.trim();
     addMovimiento({
       tipo:           'gasto',
@@ -165,10 +209,10 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
   return (
     <div className="k-modal-overlay" onClick={onClose}>
       <div className="k-modal" style={{ width: 500 }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '14px 18px', background: '#25803a', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '14px 18px', background: esNC ? '#b45309' : '#25803a', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Confirmar factura</div>
-            <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>Revisá los datos antes de guardar el gasto</div>
+            <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>{esNC ? 'Confirmar nota de crédito' : 'Confirmar factura'}</div>
+            <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>{esNC ? 'Reduce el IVA crédito y las compras del mes' : 'Revisá los datos antes de guardar el gasto'}</div>
           </div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
         </div>
@@ -217,13 +261,32 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
                 {obrasActivas.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
               </select>
             </div>
+            {!esNC ? (
+              <div>
+                <label style={labelSt}>Caja de egreso *</label>
+                <select style={{ ...inputSt, cursor: 'pointer' }} value={cajaId} onChange={e => setCajaId(e.target.value)}>
+                  {cajasARS.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label style={labelSt}>¿Devolvió plata a una caja?</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', padding: '7px 0' }}>
+                  <input type="checkbox" checked={afectaCaja} onChange={e => setAfectaCaja(e.target.checked)} />
+                  {afectaCaja ? 'Sí — entra como crédito a una caja' : 'No — solo ajuste fiscal (no toca caja)'}
+                </label>
+              </div>
+            )}
+          </div>
+
+          {esNC && afectaCaja && (
             <div>
-              <label style={labelSt}>Caja de egreso *</label>
+              <label style={labelSt}>Caja donde entró la devolución *</label>
               <select style={{ ...inputSt, cursor: 'pointer' }} value={cajaId} onChange={e => setCajaId(e.target.value)}>
                 {cajasARS.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </div>
-          </div>
+          )}
 
           {obraId && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', color: T.ink2, userSelect: 'none', marginTop: 2 }}>
@@ -345,8 +408,8 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn sm onClick={onClose}>Cancelar</Btn>
           <Btn sm fill onClick={guardar}
-            style={{ background: canSave ? '#25803a' : T.faint2, color: canSave ? '#fff' : T.ink3, opacity: 1 }}>
-            Guardar como gasto
+            style={{ background: canSave ? (esNC ? '#b45309' : '#25803a') : T.faint2, color: canSave ? '#fff' : T.ink3, opacity: 1 }}>
+            {esNC ? 'Guardar nota de crédito' : 'Guardar como gasto'}
           </Btn>
         </div>
       </div>

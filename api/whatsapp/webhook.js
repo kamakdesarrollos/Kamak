@@ -166,14 +166,17 @@ const _normSerialBot = (s) => {
   const parts = String(s || '').split(/[^0-9]+/).filter(Boolean);
   return parts.length ? (parts[parts.length - 1].replace(/^0+/, '') || '0') : '';
 };
-function fingerprintRecibidoBot({ tipo, numero, cuit, total, proveedor, fecha } = {}) {
+function fingerprintRecibidoBot({ tipo, numero, cuit, total, proveedor, fecha, clase } = {}) {
   const normTotal = Math.round(Number(total) || 0);
   if (!normTotal) return null;
   const normNum  = _normSerialBot(numero);
   const normCuit = String(cuit || '').replace(/\D/g, '');
-  const letra    = String(tipo || '').toUpperCase().charAt(0);
+  // Prefijo 'NC' para notas de crédito (espejo de fingerprintRecibido en afip.js):
+  // una NC no debe colisionar con la factura que ajusta.
+  const pre      = clase === 'nota_credito' ? 'NC' : '';
+  const letra    = pre + String(tipo || '').toUpperCase().charAt(0);
   if (normNum) return `n:${letra}|${normNum}|${normCuit}|${normTotal}`;
-  const normProv = String(proveedor || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24);
+  const normProv = pre + String(proveedor || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24);
   if (!normProv) return null;
   const normFecha = String(fecha || '').slice(0, 10);
   return `s:${normProv}|${normFecha}|${normTotal}`;
@@ -190,17 +193,17 @@ async function buscarDuplicadoRecibidoBot(candidato) {
   for (const m of movs) {
     const cr = m?.comprobanteRecibido;
     if (cr) {
-      const fpM = fingerprintRecibidoBot({ tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total, proveedor: m.proveedor, fecha: m.fecha });
+      const fpM = fingerprintRecibidoBot({ tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total, proveedor: m.proveedor, fecha: m.fecha, clase: cr.clase });
       if (fpM === fp) return { en: 'movimiento', ref: m };
     }
   }
   for (const p of pendings) {
     if (p?.tipoPendiente === 'factura') {
-      const fpP = fingerprintRecibidoBot({ tipo: p.tipoFactura, numero: p.numeroFactura, cuit: p.cuit, total: p.montoTotal != null ? p.montoTotal : p.monto, proveedor: p.proveedor, fecha: p.fecha });
+      const fpP = fingerprintRecibidoBot({ tipo: p.tipoFactura, numero: p.numeroFactura, cuit: p.cuit, total: p.montoTotal != null ? p.montoTotal : p.monto, proveedor: p.proveedor, fecha: p.fecha, clase: p.claseComprobante });
       if (fpP === fp) return { en: 'pending', ref: p };
     } else if (p?.tipoPendiente === 'movimiento' && p?.movimiento?.comprobanteRecibido) {
       const cr = p.movimiento.comprobanteRecibido;
-      const fpP = fingerprintRecibidoBot({ tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total, proveedor: p.movimiento.proveedor, fecha: p.movimiento.fecha });
+      const fpP = fingerprintRecibidoBot({ tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total, proveedor: p.movimiento.proveedor, fecha: p.movimiento.fecha, clase: cr.clase });
       if (fpP === fp) return { en: 'pending', ref: p };
     }
   }
@@ -1356,7 +1359,8 @@ ACCIONES DISPONIBLES:
    Son impuestos DISTINTOS: NO las sumes juntas, NO las confundas entre sí, y NO las confundas con el IVA del comprobante ni con el neto. Si el ticket discrimina las dos, completá AMBOS campos con sus montos en pesos. Si solo aparece una, completá solo esa. Si no aparece ninguna discriminada, no completes ninguno. El total del gasto ya las incluye (son lo que pagaste); el sistema las resta de la base del IVA y las descuenta del impuesto que corresponde (IIBB o IVA del mes).
    RECIBO DE SUELDO / CARGAS / SINDICATO / ALQUILER / SERVICIOS: si el texto o la foto refieren a "recibo de sueldo", "haberes", "liquidación", "sueldo de X", "F.931" (cargas sociales), "boleta UOCRA"/"sindicato", "alquiler", o servicios (luz/gas/internet) — completá el campo categoriaFiscal con la opción que corresponda y NO incluyas tipoFactura/numeroFactura/cuit/montoNeto (estos comprobantes NO generan IVA crédito y no van al Libro IVA Compras; el panel Financiero los suma a su columna por categoría). El gasto sigue siendo un GASTO normal con su monto y su foto.
 2. INGRESO: monto, descripción, obraId, cajaId
-3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(TOTAL del comprobante con IVA y percepciones — lo que paga la empresa, NUNCA el neto), montoNeto(opcional, solo si la foto discrimina el neto sin IVA), percepcionIIBB(opcional), jurisdiccionIIBB(opcional: 'PBA'|'CABA'|'CBA'|'OTRA', default PBA), percepcionIVA(opcional), concepto
+3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(TOTAL del comprobante con IVA y percepciones — lo que paga la empresa, NUNCA el neto), montoNeto(opcional, solo si la foto discrimina el neto sin IVA), percepcionIIBB(opcional), jurisdiccionIIBB(opcional: 'PBA'|'CABA'|'CBA'|'OTRA', default PBA), percepcionIVA(opcional), claseComprobante('factura'|'nota_credito'), concepto
+   NOTA DE CRÉDITO DE PROVEEDOR: si la foto/PDF dice "Nota de Crédito" / "NOTA DE CREDITO A/B/C" / "NC" (no confundir con "Nota de Débito") → poné claseComprobante='nota_credito'. Es un comprobante que el proveedor emite para REVERTIR (total o parcial) una factura anterior — devolución, bonificación, error. El monto sigue siendo el total del comprobante (positivo); el sistema lo registra en negativo en el Libro IVA Compras. Para facturas/tickets normales, claseComprobante='factura' o dejalo vacío.
 4. AVANCE_OBRA: obraId(ID exacto de la lista), rubroId(ID del rubro), tareaId(ID de la tarea), cantidadAvance(unidades completadas, ej:75), unidad(ej:'m²'), porcentajeAvance(% a sumar si no hay cantidad), descripcion
 5. CHEQUE_RECIBIDO: obraId, cajaDestinoId
 6. COMANDOS: ayuda | saldo | pendientes | cheques | resumen [obraId] [fecha YYYY-MM-DD] | como_va_obra (datos.obra=nombre) | cc_proveedor (datos.proveedor=nombre) | contacto_proveedor (datos.proveedor=nombre)
@@ -1657,10 +1661,15 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
   }
 
   if (tipo === 'factura_compra') {
-    // ── Detección de factura duplicada ──────────────────────────────────────
-    // Huella (letra + serial + CUIT + total) cubre: pendings de factura, pendings
-    // de movimiento con comprobanteRecibido, movimientos con comprobanteRecibido,
-    // y como fallback legacy: movs viejos con referencia + proveedor.
+    // ¿Es una Nota de Crédito de proveedor? (revierte una factura: devolución,
+    // bonificación, error). Va SIEMPRE al buzón para que el admin decida en el
+    // modal si además devolvió plata a alguna caja — el ajuste fiscal del Libro
+    // IVA se hace siempre, la caja es opcional.
+    const esNotaCredito = datos.claseComprobante === 'nota_credito';
+    // ── Detección de comprobante duplicado ──────────────────────────────────
+    // Huella (letra + serial + CUIT + total, con prefijo NC para notas de crédito)
+    // cubre: pendings de factura, pendings de movimiento con comprobanteRecibido,
+    // movimientos con comprobanteRecibido, y fallback legacy por referencia.
     const dup = await buscarDuplicadoRecibidoBot({
       tipo: datos.tipoFactura,
       numero: datos.numeroFactura,
@@ -1668,6 +1677,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       total: datos.montoTotal != null ? datos.montoTotal : datos.monto,
       proveedor: datos.proveedor,
       fecha: datos.fecha,
+      clase: esNotaCredito ? 'nota_credito' : 'factura',
     });
     if (dup) {
       const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
@@ -1699,7 +1709,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     const totalGastoBot = datos.monto != null && Number(datos.monto) > 0
       ? Math.round(Number(datos.monto))
       : (datos.montoTotal != null ? Math.round(Number(datos.montoTotal)) : 0);
-    if (user.user_rol === 'Admin' && totalGastoBot > 0 && !SIN_IVA_CREDITO_FACT.has(datos.categoriaFiscal)) {
+    if (user.user_rol === 'Admin' && totalGastoBot > 0 && !SIN_IVA_CREDITO_FACT.has(datos.categoriaFiscal) && !esNotaCredito) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A' / 'B' / 'C'
       const total = totalGastoBot;
       // Percepciones detectadas en el ticket: se excluyen de la base fiscal del IVA.
@@ -1780,6 +1790,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       jurisdiccionIIBB: (Number(datos.percepcionIIBB) > 0 && datos.jurisdiccionIIBB) ? datos.jurisdiccionIIBB : null,
       percepcionIVA:  (datos.percepcionIVA != null && Number(datos.percepcionIVA) > 0)
                         ? Math.round(Number(datos.percepcionIVA)) : null,
+      // Clase del comprobante: 'nota_credito' → el modal lo aprueba como NC.
+      claseComprobante: esNotaCredito ? 'nota_credito' : 'factura',
       obraId:        datos.obraId        || null,  // si el texto mencionó obra
       mediaType:     mediaUrl?.endsWith('.pdf') ? 'pdf' : 'image',
       mediaUrl:      mediaUrl || null,
@@ -1794,10 +1806,11 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
                               ? Math.round(Number(datos.monto))
                               : (datos.montoTotal != null ? Math.round(Number(datos.montoTotal)) : null);
     const montoStr = montoTotalAviso != null ? `$${montoTotalAviso.toLocaleString('es-AR')}` : '—';
+    const docLabel = esNotaCredito ? 'Nota de Crédito' : 'factura';
     for (const admin of admins) {
       await sendWA(admin.phone,
-        `📄 *Nueva factura recibida*\n\n` +
-        `*${user.user_name}* envió una factura${datos.tipoFactura ? ` ${datos.tipoFactura}` : ''}:\n` +
+        `📄 *Nueva ${docLabel} recibida*\n\n` +
+        `*${user.user_name}* envió una ${docLabel}${datos.tipoFactura ? ` ${datos.tipoFactura}` : ''}:\n` +
         `• Proveedor: ${datos.proveedor || '—'}\n` +
         `• Monto: ${montoStr}\n` +
         `• N°: ${datos.numeroFactura || '—'}\n\n` +
@@ -1805,7 +1818,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       );
     }
 
-    return `✅ Factura${datos.tipoFactura ? ` ${datos.tipoFactura}` : ''} de *${datos.proveedor || 'proveedor'}* recibida.\n${montoTotalAviso != null ? `Monto: *${montoStr}*\n` : ''}Los administradores la revisarán para aprobarla.`;
+    return `✅ ${esNotaCredito ? 'Nota de Crédito' : 'Factura'}${datos.tipoFactura ? ` ${datos.tipoFactura}` : ''} de *${datos.proveedor || 'proveedor'}* recibida.\n${montoTotalAviso != null ? `Monto: *${montoStr}*\n` : ''}Los administradores la revisarán para aprobarla.`;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2600,6 +2613,47 @@ async function ejecutarComando(comando, datos, user, ctx) {
     // (la app la pide), pero desde WA usamos la caja efectivo del usuario y
     // la obra del pending si la tiene. Si falta caja, avisamos.
     if (accion === 'confirmed' && item.tipoPendiente === 'factura') {
+      // ── Nota de crédito de proveedor ──────────────────────────────────────
+      // Por chat la aprobamos como ajuste fiscal puro: reduce IVA crédito y
+      // compras del mes (Libro IVA), pero NO toca caja. Si el proveedor devolvió
+      // plata, el admin marca la caja abriéndola en la app.
+      if (item.claseComprobante === 'nota_credito') {
+        const montoNC = (item.monto != null && Number(item.monto) > 0)
+          ? Math.round(Number(item.monto))
+          : (item.montoTotal != null ? Math.round(Number(item.montoTotal)) : 0);
+        const fechaNC = item.fecha || new Date().toISOString().split('T')[0];
+        const letraNC = String(item.tipoFactura || 'B').toUpperCase().charAt(0);
+        const obraNC  = item.obraId ? ctx.obras.find(o => o.id === item.obraId) : null;
+        const { neto, iva, alicuota } = desglosarCompraBot({ total: montoNC, tipoLetra: letraNC, montoNeto: item.montoNeto });
+        const movNC = {
+          id: `mov-${Date.now()}`,
+          tipo: 'nota_credito_compra',
+          descripcion: item.concepto || `NC ${item.tipoFactura || ''} ${item.numeroFactura || ''} · ${item.proveedor || ''}`.trim(),
+          monto: montoNC,
+          fecha: fechaNC,
+          obraId: item.obraId || null,
+          obraNombre: obraNC?.nombre || 'General',
+          cajaId: null,
+          afectaCaja: false,
+          proveedor: item.proveedor || '',
+          categoria: 'factura-proveedor',
+          referencia: item.numeroFactura || '',
+          comprobante: 'blanco',
+          comprobanteUrl: item.mediaUrl || null,
+          creadoPorWA: true,
+          creadoPor: user.user_name,
+          ...(montoNC > 0 ? {
+            comprobanteRecibido: {
+              clase: 'nota_credito',
+              tipo: letraNC, numero: item.numeroFactura || '', cuit: item.cuit || '',
+              fecha: fechaNC, neto, iva, alicuota, total: montoNC,
+            },
+          } : {}),
+        };
+        await appendMovimiento(movNC);
+        const fmtN = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+        return `✅ Nota de crédito aprobada: ${fmtN(montoNC)} de *${item.proveedor || 'proveedor'}*.\nReduce el IVA crédito y las compras del mes en el Libro IVA. *No tocó ninguna caja* — si el proveedor devolvió plata, marcalo abriéndola en la app → Movimientos.`;
+      }
       const movData = await loadSharedData('movimientos');
       const movs  = movData?.movimientos || [];
       const cajas = movData?.cajas || ctx.cajas;

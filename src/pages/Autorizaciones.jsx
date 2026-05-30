@@ -105,7 +105,9 @@ function FacturaCard({ item, isPendiente, onReview, onReject }) {
         </div>
 
         <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11, color: T.ink2 }}>
-          {item.tipoFactura   && <span style={{ background: T.faint2, borderRadius: 3, padding: '1px 6px', fontWeight: 700 }}>Factura {item.tipoFactura}</span>}
+          {item.claseComprobante === 'nota_credito'
+            ? <span style={{ background: '#fff7ed', color: '#b45309', borderRadius: 3, padding: '1px 6px', fontWeight: 700 }}>Nota de crédito {item.tipoFactura || ''}</span>
+            : item.tipoFactura && <span style={{ background: T.faint2, borderRadius: 3, padding: '1px 6px', fontWeight: 700 }}>Factura {item.tipoFactura}</span>}
           {item.numeroFactura && <span>{item.numeroFactura}</span>}
           {item.fecha         && <span>{fmtFecha(item.fecha)}</span>}
           {item.concepto      && <span style={{ color: T.ink3 }}>{item.concepto}</span>}

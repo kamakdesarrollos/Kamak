@@ -65,7 +65,11 @@ function efectoEnCaja(m, cajaId) {
     if (m.cajaId === cajaId)        return -(m.monto || 0);
     if (m.cajaDestinoId === cajaId) return (m.montoDestino ?? m.monto ?? 0);
   }
-  return 0; // endoso y otros tipos no mueven saldo (igual que antes)
+  // Nota de crédito de proveedor: por defecto es solo un ajuste fiscal (Libro IVA)
+  // y NO mueve caja. Solo suma a la caja si el admin marcó que el proveedor
+  // devolvió plata (afectaCaja) — entra como crédito, igual que un ingreso.
+  if (m.tipo === 'nota_credito_compra' && m.afectaCaja && m.cajaId === cajaId) return (m.monto || 0);
+  return 0; // endoso, NC solo-fiscal y otros tipos no mueven saldo
 }
 
 export function calcSaldoCaja(caja, movimientos) {

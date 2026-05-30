@@ -18,6 +18,7 @@ import {
   calcDesdeNeto, tipoFacturaSugerido, validarComprobante,
   formatCUIT, getTipoComprobante, getCondicionIVA, validarCUIT,
   buscarDuplicadoEmitido, buscarDuplicadoRecibido, esJurisdiccionPBA,
+  signoComprobanteRecibido,
 } from '../lib/afip';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
@@ -381,7 +382,9 @@ export default function Facturacion() {
   }, 0), [ventasMes]);
 
   // ── IVA Crédito (compras) ────────────────────────────────────────────────────
-  const credito = useMemo(() => comprasMes.reduce((s, m) => s + (m.comprobanteRecibido?.iva || 0), 0), [comprasMes]);
+  // Las notas de crédito recibidas (clase 'nota_credito') REVIERTEN crédito → signo −1.
+  const credito = useMemo(() => comprasMes.reduce((s, m) =>
+    s + signoComprobanteRecibido(m.comprobanteRecibido) * (m.comprobanteRecibido?.iva || 0), 0), [comprasMes]);
 
   // ── Percepción IVA sufrida (RG 2408/3337) ────────────────────────────────────
   // Pago a cuenta del IVA: NO es crédito técnico (no integra el IVA del
@@ -401,7 +404,7 @@ export default function Facturacion() {
     const v = comprobantes.filter(c => c.estado !== 'anulado' && (c.fecha || '').slice(0, 7) === mesKey);
     const c = (movimientos || []).filter(m => m.comprobanteRecibido && (m.fecha || '').slice(0, 7) === mesKey);
     const deb = v.reduce((s, x) => s + (getTipoComprobante(x.tipoId)?.signo ?? 1) * (x.iva || 0), 0);
-    const cre = c.reduce((s, m) => s + (m.comprobanteRecibido?.iva || 0), 0);
+    const cre = c.reduce((s, m) => s + signoComprobanteRecibido(m.comprobanteRecibido) * (m.comprobanteRecibido?.iva || 0), 0);
     // Percepción IVA del mes: pago a cuenta que reduce la posición (ver arriba).
     const pIVA = (movimientos || [])
       .filter(m => m.tipo === 'gasto' && Number(m.percepcionIVA) > 0 && (m.fecha || '').slice(0, 7) === mesKey)
@@ -508,10 +511,12 @@ export default function Facturacion() {
     const head = ['Fecha','Tipo','Numero','Proveedor','CUIT','Neto','Alicuota','IVA','Total','Concepto','Obra'];
     const rows = comprasMes.map(m => {
       const cr = m.comprobanteRecibido || {};
+      const sg = signoComprobanteRecibido(cr); // NC → importes en negativo
+      const etiqueta = cr.clase === 'nota_credito' ? `Nota de Crédito ${cr.tipo || ''}` : `Factura ${cr.tipo || ''}`;
       return [
-        fmtFecha(m.fecha), `Factura ${cr.tipo || ''}`, cr.numero || m.referencia || '',
+        fmtFecha(m.fecha), etiqueta.trim(), cr.numero || m.referencia || '',
         m.proveedor || '', cuitProveedor(m),
-        (cr.neto || 0).toFixed(2), `${cr.alicuota ?? 0}%`, (cr.iva || 0).toFixed(2), (cr.total || m.monto || 0).toFixed(2),
+        (sg * (cr.neto || 0)).toFixed(2), `${cr.alicuota ?? 0}%`, (sg * (cr.iva || 0)).toFixed(2), (sg * (cr.total || m.monto || 0)).toFixed(2),
         m.descripcion || '', m.obraNombre || '',
       ];
     });
@@ -526,7 +531,9 @@ export default function Facturacion() {
     }).join('') || '<tr><td colspan="6" style="text-align:center;color:#888;padding:14px">— sin ventas en el mes —</td></tr>';
     const tablaC = comprasMes.map(m => {
       const cr = m.comprobanteRecibido || {};
-      return `<tr><td>${fmtFecha(m.fecha)}</td><td>${cr.tipo || '?'}</td><td>${m.proveedor || '-'}</td><td style="text-align:right;font-family:monospace">${fmtMoney(cr.neto)}</td><td style="text-align:right;font-family:monospace">${fmtMoney(cr.iva)}</td><td style="text-align:right;font-family:monospace">${fmtMoney(cr.total || m.monto)}</td></tr>`;
+      const sg = signoComprobanteRecibido(cr);
+      const et = cr.clase === 'nota_credito' ? `NC ${cr.tipo || ''}`.trim() : (cr.tipo || '?');
+      return `<tr><td>${fmtFecha(m.fecha)}</td><td>${et}</td><td>${m.proveedor || '-'}</td><td style="text-align:right;font-family:monospace">${fmtMoney(sg * (cr.neto || 0))}</td><td style="text-align:right;font-family:monospace">${fmtMoney(sg * (cr.iva || 0))}</td><td style="text-align:right;font-family:monospace">${fmtMoney(sg * (cr.total || m.monto || 0))}</td></tr>`;
     }).join('') || '<tr><td colspan="6" style="text-align:center;color:#888;padding:14px">— sin compras en el mes —</td></tr>';
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Resumen IVA ${labelMes(mes)}</title>
       <style>body{font-family:system-ui,sans-serif;color:#1a1a1e;padding:24px;max-width:900px;margin:0 auto}
@@ -740,10 +747,12 @@ export default function Facturacion() {
               </div>
               {comprasMes.map((m, i) => {
                 const cr = m.comprobanteRecibido || {};
+                const esNC = cr.clase === 'nota_credito'; // nota de crédito → resta
+                const sg = esNC ? -1 : 1;
                 return (
-                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderTop: i > 0 ? `1px solid ${T.faint2}` : 'none', fontSize: 12.5 }}>
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderTop: i > 0 ? `1px solid ${T.faint2}` : 'none', fontSize: 12.5, background: esNC ? 'rgba(180,83,9,.05)' : 'transparent' }}>
                     <div style={{ width: 60, flexShrink: 0 }}>
-                      <span style={{ background: cr.tipo === 'A' ? '#1e3a8a' : cr.tipo === 'C' ? '#7c2d12' : '#0e7490', color: '#fff', borderRadius: 3, padding: '2px 8px', fontWeight: 800, fontSize: 12 }}>{cr.tipo || '?'}</span>
+                      <span style={{ background: esNC ? '#b45309' : cr.tipo === 'A' ? '#1e3a8a' : cr.tipo === 'C' ? '#7c2d12' : '#0e7490', color: '#fff', borderRadius: 3, padding: '2px 8px', fontWeight: 800, fontSize: 12 }}>{esNC ? `NC ${cr.tipo || ''}`.trim() : (cr.tipo || '?')}</span>
                       {cr.numero && <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>N° {cr.numero}</div>}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -751,9 +760,9 @@ export default function Facturacion() {
                       {m.descripcion && <div style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.descripcion}</div>}
                     </div>
                     <div style={{ width: 90, textAlign: 'right', fontFamily: T.fontMono, fontSize: 11, color: T.ink2 }}>{fmtFecha(m.fecha)}</div>
-                    <div style={{ width: 120, textAlign: 'right', fontFamily: T.fontMono }}>{fmtMoney(cr.neto)}</div>
-                    <div style={{ width: 110, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>{fmtMoney(cr.iva)} <span style={{ fontSize: 9 }}>({cr.alicuota}%)</span></div>
-                    <div style={{ width: 130, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700 }}>{fmtMoney(cr.total || m.monto)}</div>
+                    <div style={{ width: 120, textAlign: 'right', fontFamily: T.fontMono }}>{fmtMoney(sg * (cr.neto || 0))}</div>
+                    <div style={{ width: 110, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>{fmtMoney(sg * (cr.iva || 0))} <span style={{ fontSize: 9 }}>({cr.alicuota}%)</span></div>
+                    <div style={{ width: 130, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700 }}>{fmtMoney(sg * (cr.total || m.monto || 0))}</div>
                     <div style={{ width: 80, textAlign: 'center' }}>
                       {m.comprobanteUrl ? (
                         <a href={m.comprobanteUrl} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: T.accent, fontWeight: 700, textDecoration: 'underline' }}>Ver</a>
@@ -795,7 +804,7 @@ export default function Facturacion() {
             .reduce((s, c) => s + (getTipoComprobante(c.tipoId)?.signo ?? 1) * (c.total || 0), 0);
           const compras = (movimientos || [])
             .filter(m => m.comprobanteRecibido && !SIN_IVA_CREDITO.has(m.categoriaFiscal) && String(m.fecha || '').slice(0, 7) === mk)
-            .reduce((s, m) => s + (m.comprobanteRecibido?.total || m.monto || 0), 0);
+            .reduce((s, m) => s + signoComprobanteRecibido(m.comprobanteRecibido) * (m.comprobanteRecibido?.total || m.monto || 0), 0);
           const cargas      = financiero[mk] || {};
           // Retenciones (sufridas en cobros) + percepciones (sufridas en gastos,
           // típico de estaciones de servicio) de IIBB del mes — ambas son pagos
