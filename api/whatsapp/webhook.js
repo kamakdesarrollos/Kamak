@@ -124,6 +124,72 @@ async function sbPatchDetalleObra(obraId, patch) {
   await broadcastChange('obras');
 }
 
+// ── Detección de comprobantes RECIBIDOS duplicados (mismo criterio que la app)
+// Huella: con N° → letra + serial(último segmento) + CUIT + total redondeado.
+//         sin N° → proveedor + fecha + total (heurística para tickets sin formal).
+// Se usa para no cargar dos veces la misma factura (cubre el doble crédito IVA).
+const _normSerialBot = (s) => {
+  const parts = String(s || '').split(/[^0-9]+/).filter(Boolean);
+  return parts.length ? (parts[parts.length - 1].replace(/^0+/, '') || '0') : '';
+};
+function fingerprintRecibidoBot({ tipo, numero, cuit, total, proveedor, fecha } = {}) {
+  const normTotal = Math.round(Number(total) || 0);
+  if (!normTotal) return null;
+  const normNum  = _normSerialBot(numero);
+  const normCuit = String(cuit || '').replace(/\D/g, '');
+  const letra    = String(tipo || '').toUpperCase().charAt(0);
+  if (normNum) return `n:${letra}|${normNum}|${normCuit}|${normTotal}`;
+  const normProv = String(proveedor || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24);
+  if (!normProv) return null;
+  const normFecha = String(fecha || '').slice(0, 10);
+  return `s:${normProv}|${normFecha}|${normTotal}`;
+}
+async function buscarDuplicadoRecibidoBot(candidato) {
+  const fp = fingerprintRecibidoBot(candidato);
+  if (!fp) return null;
+  const [movData, pendingRows] = await Promise.all([
+    loadSharedData('movimientos'),
+    sbGet('shared_data', '?key=eq.whatsapp_pending&select=data'),
+  ]);
+  const movs = movData?.movimientos || [];
+  const pendings = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
+  for (const m of movs) {
+    const cr = m?.comprobanteRecibido;
+    if (cr) {
+      const fpM = fingerprintRecibidoBot({ tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total, proveedor: m.proveedor, fecha: m.fecha });
+      if (fpM === fp) return { en: 'movimiento', ref: m };
+    }
+  }
+  for (const p of pendings) {
+    if (p?.tipoPendiente === 'factura') {
+      const fpP = fingerprintRecibidoBot({ tipo: p.tipoFactura, numero: p.numeroFactura, cuit: p.cuit, total: p.montoTotal != null ? p.montoTotal : p.monto, proveedor: p.proveedor, fecha: p.fecha });
+      if (fpP === fp) return { en: 'pending', ref: p };
+    } else if (p?.tipoPendiente === 'movimiento' && p?.movimiento?.comprobanteRecibido) {
+      const cr = p.movimiento.comprobanteRecibido;
+      const fpP = fingerprintRecibidoBot({ tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total, proveedor: p.movimiento.proveedor, fecha: p.movimiento.fecha });
+      if (fpP === fp) return { en: 'pending', ref: p };
+    }
+  }
+  // Legacy: movs viejos con referencia + proveedor (sin comprobanteRecibido).
+  if (candidato?.numero) {
+    const numCand = _normSerialBot(candidato.numero);
+    const provN = (s) => String(s || '').toLowerCase().trim();
+    const provCand = provN(candidato.proveedor);
+    for (const m of movs) {
+      if (m?.comprobanteRecibido) continue;
+      if (!m?.referencia) continue;
+      const refClean = _normSerialBot(m.referencia);
+      if (!refClean || refClean !== numCand) continue;
+      const provMov = provN(m.proveedor);
+      if (!provMov || !provCand) continue;
+      if (provMov.includes(provCand) || provCand.includes(provMov)) {
+        return { en: 'movimiento', ref: m };
+      }
+    }
+  }
+  return null;
+}
+
 // Saldo EN VIVO de una caja (igual que la app): saldoInicial + suma de sus
 // movimientos. Así el comando `saldo` refleja un movimiento recién agregado
 // aunque la app todavía no haya recalculado/persistido. Si la caja aún no tiene
@@ -1422,6 +1488,22 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // igual aporta crédito fiscal.
     if (tipo === 'gasto' && mediaUrl && monto > 0) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A'/'B'/'C'
+      // Dup check ANTES de persistir: cubre el reenvío del mismo ticket o el
+      // cruce con una carga previa (gasto-con-foto, factura_compra o pending).
+      // Sin esto, doble carga = doble crédito IVA.
+      const dupGasto = await buscarDuplicadoRecibidoBot({
+        tipo: tipoLetra, numero: datos.numeroFactura, cuit: datos.cuit,
+        total: monto, proveedor: datos.proveedorNombre, fecha: nuevoMov.fecha,
+      });
+      if (dupGasto) {
+        const fmtD = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
+        const refD = dupGasto.ref;
+        const cuandoD = dupGasto.en === 'movimiento' ? `el ${refD.fecha}` : `pendiente de aprobar`;
+        const montoRef = refD.comprobanteRecibido?.total
+                      || (refD.movimiento && (refD.movimiento.comprobanteRecibido?.total || refD.movimiento.monto))
+                      || refD.montoTotal || refD.monto || 0;
+        return `⚠️ *Comprobante duplicado*\nYa hay una factura/ticket igual cargado ${cuandoD}${montoRef ? ` (${fmtD(montoRef)})` : ''}. No lo dupliqué.`;
+      }
       const round2 = (n) => Math.round(n * 100) / 100;
       let neto, iva, alicuota;
       if (tipoLetra === 'C') {
@@ -1526,39 +1608,30 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
   }
 
   if (tipo === 'factura_compra') {
-    const pendingRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
-    const existing = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
-
     // ── Detección de factura duplicada ──────────────────────────────────────
-    // Si ya hay un pending o un movimiento con el mismo N° de factura + mismo
-    // proveedor/CUIT, avisamos y NO la cargamos de nuevo.
-    const numF = (datos.numeroFactura || '').replace(/[\s\-.]/g, '').toLowerCase();
-    if (numF) {
-      const mismoProv = (a, b) => {
-        const na = (a || '').toLowerCase().trim(), nb = (b || '').toLowerCase().trim();
-        return na && nb && (na.includes(nb) || nb.includes(na));
-      };
-      const cuitClean = (datos.cuit || '').replace(/\D/g, '');
-      // 1) ¿Ya está en pendings?
-      const dupPending = existing.find(p =>
-        p.tipoPendiente === 'factura' &&
-        (p.numeroFactura || '').replace(/[\s\-.]/g, '').toLowerCase() === numF &&
-        (mismoProv(p.proveedor, datos.proveedor) || (cuitClean && (p.cuit || '').replace(/\D/g, '') === cuitClean))
-      );
-      // 2) ¿Ya se cargó como movimiento (factura aprobada)?
-      const movData = await loadSharedData('movimientos');
-      const dupMov = (movData?.movimientos || []).find(m =>
-        m.referencia && m.referencia.replace(/[\s\-.]/g, '').toLowerCase() === numF &&
-        mismoProv(m.proveedor, datos.proveedor)
-      );
-      if (dupPending || dupMov) {
-        const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
-        const ref = dupMov || dupPending;
-        const cuando = dupMov ? `ya está cargada como gasto el ${dupMov.fecha}` : `ya está en el buzón pendiente de aprobar`;
-        return `⚠️ *Factura duplicada*\nLa factura N° *${datos.numeroFactura}* de *${datos.proveedor || 'ese proveedor'}* ${cuando}` +
-          (ref.monto || ref.montoTotal ? ` (${fmt(ref.montoTotal || ref.monto)})` : '') +
-          `.\n\nNo la cargué de nuevo. Si es otra factura distinta, verificá el número.`;
-      }
+    // Huella (letra + serial + CUIT + total) cubre: pendings de factura, pendings
+    // de movimiento con comprobanteRecibido, movimientos con comprobanteRecibido,
+    // y como fallback legacy: movs viejos con referencia + proveedor.
+    const dup = await buscarDuplicadoRecibidoBot({
+      tipo: datos.tipoFactura,
+      numero: datos.numeroFactura,
+      cuit: datos.cuit,
+      total: datos.montoTotal != null ? datos.montoTotal : datos.monto,
+      proveedor: datos.proveedor,
+      fecha: datos.fecha,
+    });
+    if (dup) {
+      const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
+      const ref = dup.ref;
+      const cuando = dup.en === 'movimiento'
+        ? `ya está cargada como gasto el ${ref.fecha}`
+        : `ya está en el buzón pendiente de aprobar`;
+      const montoRef = ref.comprobanteRecibido?.total
+                    || (ref.movimiento && (ref.movimiento.comprobanteRecibido?.total || ref.movimiento.monto))
+                    || ref.montoTotal || ref.monto || 0;
+      return `⚠️ *Factura duplicada*\nLa factura${datos.numeroFactura ? ` N° *${datos.numeroFactura}*` : ''} de *${datos.proveedor || 'ese proveedor'}* ${cuando}` +
+        (montoRef ? ` (${fmt(montoRef)})` : '') +
+        `.\n\nNo la cargué de nuevo. Si es otra distinta, verificá los datos.`;
     }
 
     // ── Auto-carga para Admin (sin pasar por buzón) ───────────────────────────

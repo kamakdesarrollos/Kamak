@@ -4,7 +4,7 @@ import { T } from '../../theme';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useObras } from '../../store/ObrasContext';
 import { useProveedores } from '../../store/ProveedoresContext';
-import { calcDesdeTotal, ALICUOTAS_IVA } from '../../lib/afip';
+import { calcDesdeTotal, ALICUOTAS_IVA, buscarDuplicadoRecibido } from '../../lib/afip';
 
 // Modal de revisión y aprobación de una factura recibida por WhatsApp.
 // Extraido del antiguo WhatsappBuzon.jsx — la logica es la misma.
@@ -20,7 +20,7 @@ const fmtFecha = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.split(
 const newAdicId = () => `adic-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 
 export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
-  const { cajas, addMovimiento } = useMovimientos();
+  const { cajas, addMovimiento, movimientos } = useMovimientos();
   const { obras, patchDetalle }  = useObras();
   const { proveedores }          = useProveedores();
 
@@ -60,6 +60,18 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
 
   const guardar = () => {
     if (!canSave) return;
+    // Defensa anti-duplicado: si ya hay un movimiento con la misma huella
+    // (mismo CUIT + N° factura + total, o sin N° → mismo proveedor+fecha+total),
+    // no aprobamos para evitar doble crédito IVA.
+    const dup = buscarDuplicadoRecibido({
+      tipo: tipoLetra, numero: item.numeroFactura, cuit: item.cuit,
+      total: montoNum, proveedor: proveedor.trim(), fecha,
+    }, { movimientos });
+    if (dup?.en === 'movimiento') {
+      const ref = dup.ref;
+      alert(`⚠️ Ya hay un gasto con esta misma factura cargado el ${ref.fecha} ($${Math.round(ref.monto || ref.comprobanteRecibido?.total || 0).toLocaleString('es-AR')}). No la cargo dos veces.`);
+      return;
+    }
     const obra    = obrasActivas.find(o => o.id === obraId);
     const descripcion = concepto.trim() || `Factura ${item.tipoFactura || ''} ${item.numeroFactura || ''} · ${proveedor}`.trim();
     addMovimiento({

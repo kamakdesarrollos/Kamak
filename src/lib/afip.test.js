@@ -3,6 +3,8 @@ import {
   validarCUIT, formatCUIT, round2,
   calcDesdeNeto, calcDesdeTotal, tipoFacturaSugerido,
   validarComprobante, getTipoComprobante,
+  fingerprintRecibido, buscarDuplicadoRecibido,
+  fingerprintEmitido, buscarDuplicadoEmitido,
 } from './afip';
 
 describe('validarCUIT', () => {
@@ -124,5 +126,96 @@ describe('validarComprobante', () => {
   });
   it('emisor con CUIT inválido → error', () => {
     expect(validarComprobante({ ...base, emisorCuit: '30-00000000-0' }).some(e => /emisor/.test(e))).toBe(true);
+  });
+});
+
+describe('fingerprintRecibido', () => {
+  it('con N°: misma factura → misma huella (normaliza guiones y ceros)', () => {
+    const a = fingerprintRecibido({ tipo: 'A', numero: '0001-00012345', cuit: '30-71795385-8', total: 12000 });
+    const b = fingerprintRecibido({ tipo: 'A', numero: '1-12345',       cuit: '30717953858',   total: 12000.00 });
+    expect(a).toBe(b);
+  });
+  it('CUIT distinto → huella distinta', () => {
+    const a = fingerprintRecibido({ tipo: 'A', numero: '1', cuit: '30-71795385-8', total: 100 });
+    const b = fingerprintRecibido({ tipo: 'A', numero: '1', cuit: '20-12345678-6', total: 100 });
+    expect(a).not.toBe(b);
+  });
+  it('Total distinto → huella distinta', () => {
+    expect(fingerprintRecibido({ tipo: 'A', numero: '1', cuit: 'x', total: 100 }))
+      .not.toBe(fingerprintRecibido({ tipo: 'A', numero: '1', cuit: 'x', total: 200 }));
+  });
+  it('Sin N°: usa proveedor + fecha + total (case-insensitive)', () => {
+    const a = fingerprintRecibido({ proveedor: 'YPF El Cruce', fecha: '2026-05-30', total: 120050 });
+    const b = fingerprintRecibido({ proveedor: 'YPF EL CRUCE', fecha: '2026-05-30', total: 120050 });
+    expect(a).toBe(b);
+  });
+  it('Sin N° y sin proveedor → null (huella no confiable)', () => {
+    expect(fingerprintRecibido({ fecha: '2026-05-30', total: 100 })).toBe(null);
+  });
+  it('Total 0 → null', () => {
+    expect(fingerprintRecibido({ tipo: 'A', numero: '1', cuit: 'x', total: 0 })).toBe(null);
+  });
+});
+
+describe('buscarDuplicadoRecibido', () => {
+  const cand = { tipo: 'B', numero: '0001-00012345', cuit: '30-71795385-8', total: 12000, proveedor: 'YPF', fecha: '2026-05-30' };
+  it('encuentra match en movimientos por comprobanteRecibido', () => {
+    const movs = [{
+      id: 'm1', proveedor: 'YPF SA', fecha: '2026-05-30',
+      comprobanteRecibido: { tipo: 'B', numero: '1-12345', cuit: '30717953858', total: 12000 },
+    }];
+    expect(buscarDuplicadoRecibido(cand, { movimientos: movs })?.en).toBe('movimiento');
+  });
+  it('no encuentra si el N° es distinto', () => {
+    const movs = [{
+      comprobanteRecibido: { tipo: 'B', numero: '1-99999', cuit: '30717953858', total: 12000 },
+    }];
+    expect(buscarDuplicadoRecibido(cand, { movimientos: movs })).toBe(null);
+  });
+  it('encuentra match en pendings (factura en buzón)', () => {
+    const pendings = [{
+      tipoPendiente: 'factura', tipoFactura: 'B', numeroFactura: '1-12345',
+      cuit: '30717953858', montoTotal: 12000,
+    }];
+    expect(buscarDuplicadoRecibido(cand, { pendings })?.en).toBe('pending');
+  });
+  it('encuentra match en pendings de movimiento con comprobanteRecibido', () => {
+    const pendings = [{
+      tipoPendiente: 'movimiento',
+      movimiento: { proveedor: 'YPF', fecha: '2026-05-30', comprobanteRecibido: { tipo: 'B', numero: '12345', cuit: '30717953858', total: 12000 } },
+    }];
+    expect(buscarDuplicadoRecibido(cand, { pendings })?.en).toBe('pending');
+  });
+  it('legacy fallback: mov viejo con referencia + proveedor parecido → match', () => {
+    const movs = [{ id: 'mLegacy', referencia: '0001-12345', proveedor: 'YPF SA', monto: 12000, fecha: '2026-05-29' }];
+    expect(buscarDuplicadoRecibido(cand, { movimientos: movs })?.en).toBe('movimiento');
+  });
+  it('sin huella confiable → null (no rompe)', () => {
+    expect(buscarDuplicadoRecibido({ total: 0 }, { movimientos: [] })).toBe(null);
+  });
+});
+
+describe('fingerprintEmitido / buscarDuplicadoEmitido', () => {
+  it('postemisión: mismo tipo+PV+número → misma huella', () => {
+    expect(fingerprintEmitido({ tipoId: 'FA', puntoVenta: 1, numero: '00012345' }))
+      .toBe(fingerprintEmitido({ tipoId: 'FA', puntoVenta: 1, numero: '12345' }));
+  });
+  it('borrador: mismo tipo+cliente+fecha+total → misma huella', () => {
+    expect(fingerprintEmitido({ tipoId: 'FB', clienteId: 'cl-1', fecha: '2026-05-30', total: 12000 }))
+      .toBe(fingerprintEmitido({ tipoId: 'FB', clienteId: 'cl-1', fecha: '2026-05-30', total: 12000 }));
+  });
+  it('borrador con cliente distinto → distinta huella', () => {
+    expect(fingerprintEmitido({ tipoId: 'FB', clienteId: 'cl-1', fecha: '2026-05-30', total: 12000 }))
+      .not.toBe(fingerprintEmitido({ tipoId: 'FB', clienteId: 'cl-2', fecha: '2026-05-30', total: 12000 }));
+  });
+  it('buscarDuplicadoEmitido: encuentra borrador parecido (ignora anulado y el propio)', () => {
+    const lista = [
+      { id: 'c1', tipoId: 'FB', clienteId: 'cl-1', fecha: '2026-05-30', total: 12000, estado: 'borrador' },
+      { id: 'c2', tipoId: 'FB', clienteId: 'cl-1', fecha: '2026-05-30', total: 12000, estado: 'anulado' },
+    ];
+    const dup = buscarDuplicadoEmitido({ id: 'nuevo', tipoId: 'FB', clienteId: 'cl-1', fecha: '2026-05-30', total: 12000 }, lista);
+    expect(dup?.id).toBe('c1');
+    // Si lo busco contra sí mismo no hay match
+    expect(buscarDuplicadoEmitido(lista[0], lista)).toBe(null);
   });
 });

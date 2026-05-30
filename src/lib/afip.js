@@ -89,6 +89,123 @@ export function tipoFacturaSugerido(condReceptorId) {
   return condReceptorId === 'RI' ? 'FA' : 'FB';
 }
 
+// ── "Huella" de un comprobante RECIBIDO (factura/ticket de proveedor) ────────
+// Sirve para detectar duplicados al cargarlo (foto del bot, manual, etc.).
+//
+// Con N° de factura formal: huella = letra + número + CUIT + total redondeado.
+//   Cubre Factura A/B/C identificadas por sus datos formales.
+// Sin N° (ticket no fiscal): heurística = proveedor + fecha + total redondeado.
+//   Cubre tickets de combustible/comida sin numeración formal.
+//
+// Si el total es 0 o no hay forma de identificarlo confiablemente (sin N° y sin
+// proveedor) → devuelve null, y el caller debería saltear la detección.
+// Normaliza el "serial" de un N° de factura. Toma solo el ÚLTIMO segmento
+// numérico (el correlativo), sin ceros a la izquierda. Así "0001-00012345",
+// "1-12345" y "12345" se reducen al mismo "12345". Combinado con CUIT + total
+// en la huella, dos facturas con mismo correlativo de distinto Pto. de Venta
+// solo colisionarían si además coincide CUIT y total — caso prácticamente
+// imposible. Esto es más robusto que comparar el formato literal, que sufre
+// inconsistencias de extracción (el bot a veces lee el PV, a veces no).
+const _normSerial = (s) => {
+  const parts = String(s || '').split(/[^0-9]+/).filter(Boolean);
+  return parts.length ? (parts[parts.length - 1].replace(/^0+/, '') || '0') : '';
+};
+
+export function fingerprintRecibido({ tipo, numero, cuit, total, proveedor, fecha } = {}) {
+  const normTotal = Math.round(Number(total) || 0);
+  if (!normTotal) return null;
+  const normNum  = _normSerial(numero);
+  const normCuit = String(cuit || '').replace(/\D/g, '');
+  const letra    = String(tipo || '').toUpperCase().charAt(0); // 'A'/'B'/'C'/''
+  if (normNum) return `n:${letra}|${normNum}|${normCuit}|${normTotal}`;
+  const normProv = String(proveedor || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24);
+  if (!normProv) return null; // sin proveedor, la huella es muy débil → no chequear
+  const normFecha = String(fecha || '').slice(0, 10);
+  return `s:${normProv}|${normFecha}|${normTotal}`;
+}
+
+// Busca un comprobante RECIBIDO con la misma huella en movimientos y pendings.
+// Acepta el candidato (datos del comprobante a cargar) y devuelve
+// { en: 'movimiento'|'pending', ref } o null. Incluye un fallback "legacy" por
+// si hay movimientos viejos sin `comprobanteRecibido` pero con `referencia` y
+// `proveedor` (carga previa al rediseño del libro IVA).
+export function buscarDuplicadoRecibido(candidato, { movimientos, pendings } = {}) {
+  const fp = fingerprintRecibido(candidato);
+  if (!fp) return null;
+  // 1) Movimientos con comprobanteRecibido (fingerprint match).
+  for (const m of (movimientos || [])) {
+    const cr = m?.comprobanteRecibido;
+    if (cr) {
+      const fpM = fingerprintRecibido({
+        tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total,
+        proveedor: m.proveedor, fecha: m.fecha,
+      });
+      if (fpM === fp) return { en: 'movimiento', ref: m };
+    }
+  }
+  // 2) Pendings: facturas en buzón Y movimientos pendientes con comprobanteRecibido.
+  for (const p of (pendings || [])) {
+    if (p?.tipoPendiente === 'factura') {
+      const fpP = fingerprintRecibido({
+        tipo: p.tipoFactura, numero: p.numeroFactura, cuit: p.cuit,
+        total: p.montoTotal != null ? p.montoTotal : p.monto,
+        proveedor: p.proveedor, fecha: p.fecha,
+      });
+      if (fpP === fp) return { en: 'pending', ref: p };
+    } else if (p?.tipoPendiente === 'movimiento' && p?.movimiento?.comprobanteRecibido) {
+      const cr = p.movimiento.comprobanteRecibido;
+      const fpP = fingerprintRecibido({
+        tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total,
+        proveedor: p.movimiento.proveedor, fecha: p.movimiento.fecha,
+      });
+      if (fpP === fp) return { en: 'pending', ref: p };
+    }
+  }
+  // 3) Legacy fallback (movs viejos sin comprobanteRecibido) — match por
+  //    referencia (= N° factura) + proveedor parecido. Cubre data antes del fix.
+  if (candidato?.numero) {
+    const numCand = _normSerial(candidato.numero);
+    const provN = (s) => String(s || '').toLowerCase().trim();
+    const provCand = provN(candidato.proveedor);
+    for (const m of (movimientos || [])) {
+      if (m?.comprobanteRecibido) continue; // ya cubierto arriba
+      if (!m?.referencia) continue;
+      const refClean = _normSerial(m.referencia);
+      if (!refClean || refClean !== numCand) continue;
+      const provMov = provN(m.proveedor);
+      if (!provMov || !provCand) continue;
+      if (provMov.includes(provCand) || provCand.includes(provMov)) {
+        return { en: 'movimiento', ref: m };
+      }
+    }
+  }
+  return null;
+}
+
+// ── "Huella" de un comprobante EMITIDO (factura emitida por nosotros) ────────
+// Postemisión: identidad oficial AFIP = tipo + Pto. de venta + número.
+// Pre-emisión (borrador, sin número): heurística = tipo + cliente + fecha + total.
+// Sirve para detectar duplicados al cargar una factura nueva en el panel.
+export function fingerprintEmitido(c = {}) {
+  if (c.numero) {
+    return `e:${c.tipoId || ''}|${c.puntoVenta || 0}|${_normSerial(c.numero)}`;
+  }
+  if (c.clienteId && c.fecha && (c.total || 0) > 0) {
+    return `eb:${c.tipoId || ''}|${c.clienteId}|${String(c.fecha).slice(0, 10)}|${Math.round(c.total)}`;
+  }
+  return null;
+}
+
+// Busca un comprobante emitido potencialmente duplicado en la lista actual.
+// Ignora el propio (por id) y los anulados.
+export function buscarDuplicadoEmitido(c, comprobantes = []) {
+  const fp = fingerprintEmitido(c);
+  if (!fp) return null;
+  return (comprobantes || []).find(x =>
+    x && x.estado !== 'anulado' && x.id !== c.id && fingerprintEmitido(x) === fp
+  ) || null;
+}
+
 // ── Validación de un comprobante ANTES de emitirlo ────────────────────────────
 // Devuelve un array de mensajes de error (vacío = listo para emitir). NO emite
 // ni envía nada: es la última barrera antes de dar un comprobante por válido.

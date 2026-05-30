@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback, useMemo } from 'react';
 import useSyncedSharedData from '../lib/useSyncedSharedData';
 import { newId } from '../lib/id';
+import { buscarDuplicadoEmitido } from '../lib/afip';
 
 // Comprobantes de facturación (AFIP/ARCA). Se guardan del lado app en
 // shared_data 'comprobantes' con el mismo sync robusto que el resto (hook
@@ -22,17 +23,29 @@ export function ComprobantesProvider({ children }) {
   });
 
   const addComprobante = useCallback((data) => {
-    const nuevo = {
-      estado: 'borrador',
-      numero: null,        // lo asigna AFIP al emitir
-      cae: null,           // idem
-      caeVto: null,
-      ...data,
-      id: newId('cbte'),
-      creadoAt: new Date().toISOString(),
-    };
-    setComprobantes(prev => [nuevo, ...prev]);
-    return nuevo.id;
+    // Defensa en profundidad: si ya hay un comprobante NO anulado con la misma
+    // huella (postemisión: tipo+PV+N°; borrador: tipo+cliente+fecha+total), NO
+    // lo agregamos. La UI debería pre-validar y avisar; esto es la última red.
+    let creado = null;
+    setComprobantes(prev => {
+      const dup = buscarDuplicadoEmitido({ ...data, id: '_nuevo' }, prev);
+      if (dup) {
+        console.warn('[ComprobantesContext] Duplicado bloqueado:', { nuevo: data, existente: dup });
+        return prev;
+      }
+      const nuevo = {
+        estado: 'borrador',
+        numero: null,        // lo asigna AFIP al emitir
+        cae: null,           // idem
+        caeVto: null,
+        ...data,
+        id: newId('cbte'),
+        creadoAt: new Date().toISOString(),
+      };
+      creado = nuevo;
+      return [nuevo, ...prev];
+    });
+    return creado?.id || null;
   }, [setComprobantes]);
 
   const updateComprobante = useCallback((id, changes) => {

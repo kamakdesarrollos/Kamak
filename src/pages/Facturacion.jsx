@@ -16,6 +16,7 @@ import {
   TIPOS_COMPROBANTE, CONDICIONES_IVA, ALICUOTAS_IVA,
   calcDesdeNeto, tipoFacturaSugerido, validarComprobante,
   formatCUIT, getTipoComprobante, getCondicionIVA, validarCUIT,
+  buscarDuplicadoEmitido, buscarDuplicadoRecibido,
 } from '../lib/afip';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
@@ -121,7 +122,13 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
   }), [form, cliente, calc.iva, calc.total, netoNum, empresa, obras, esNota]);
 
   const errores = validarComprobante(comprobante);
-  const puedeGuardar = !!form.clienteId && errores.length === 0;
+  // Anti-duplicado: si ya hay un comprobante NO anulado con la misma huella
+  // (mismo cliente + tipo + fecha + total entre borradores; o mismo PV+N° entre
+  // postemitidos), lo avisamos en rojo y NO dejamos guardar.
+  const duplicado = (form.clienteId && comprobante.total > 0)
+    ? buscarDuplicadoEmitido({ ...comprobante, id: '_nuevo' }, comprobantes || [])
+    : null;
+  const puedeGuardar = !!form.clienteId && errores.length === 0 && !duplicado;
   const letra = getTipoComprobante(form.tipoId)?.letra;
 
   return (
@@ -252,6 +259,13 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
               <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
                 {errores.map((e, i) => <li key={i}>{e}</li>)}
               </ul>
+            </div>
+          )}
+          {duplicado && (
+            <div style={{ background: '#fee2e2', border: `1.5px solid #b91c1c`, borderRadius: 4, padding: '8px 12px', fontSize: 11, color: '#7f1d1d' }}>
+              <b>⚠️ Posible duplicado</b><br />
+              Ya hay un comprobante {duplicado.numero ? `N° ${duplicado.numero}` : 'borrador'} para este cliente con el mismo tipo, fecha y total ({fmtMoney(duplicado.total)}).<br />
+              No te dejo guardar para evitar facturar dos veces lo mismo. Si es a propósito, cambiá algo (fecha, tipo o monto).
             </div>
           )}
         </div>
@@ -393,7 +407,16 @@ export default function Facturacion() {
     : Math.max(0, saldoAFavorPrevio - posicion);
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
-  const guardar = (c) => { addComprobante(c); setModal(false); };
+  const guardar = (c) => {
+    const id = addComprobante(c);
+    if (!id) {
+      // Última defensa: el context bloqueó por duplicado (el modal ya debería
+      // haber avisado antes). Avisamos por las dudas y mantenemos el modal abierto.
+      alert('No pude guardar: ya hay un comprobante con los mismos datos. Cambiá algo (fecha, tipo o monto) o cancelá.');
+      return;
+    }
+    setModal(false);
+  };
 
   // ── Helpers de export ────────────────────────────────────────────────────────
   const cuitCliente = (c) => c.receptorCuit || '';
