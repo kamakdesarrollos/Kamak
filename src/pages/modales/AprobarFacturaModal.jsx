@@ -36,7 +36,14 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
     }
     return '';
   });
-  const [monto,      setMonto]      = useState(item.montoTotal != null ? String(item.montoTotal) : item.monto != null ? String(item.monto) : '');
+  // Item del buzón: `monto` ya viene como el TOTAL del comprobante (con IVA y
+  // percepciones, lo que sale de caja). El `montoTotal` legacy queda como
+  // fallback para items viejos del buzón.
+  const [monto,      setMonto]      = useState(
+    item.monto != null && Number(item.monto) > 0 ? String(item.monto)
+    : item.montoTotal != null ? String(item.montoTotal)
+    : ''
+  );
   const [fecha,      setFecha]      = useState(item.fecha      || new Date().toISOString().split('T')[0]);
   const [concepto,   setConcepto]   = useState(item.concepto   || '');
   const [obraId,      setObraId]     = useState('');
@@ -70,9 +77,12 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
   const baseFiscal = Math.max(0, montoNum - percIIBBNum);
   // Si la factura es C (emisor monotributo), no hay IVA discriminado para tomar
   // crédito → neto = base, iva = 0.
+  // Nota: neto/IVA se derivan de baseFiscal (sin percepción) para no inflar el
+  // crédito IVA. Pero el `total` del comprobante en el Libro IVA Compras incluye
+  // la percepción (es el total del ticket): por eso lo seteamos como montoNum.
   const fiscal = tipoLetra === 'C'
-    ? { neto: baseFiscal, iva: 0, total: baseFiscal, alicuota: 0 }
-    : (() => { const r = calcDesdeTotal(baseFiscal, alicuota); return { ...r, alicuota }; })();
+    ? { neto: baseFiscal, iva: 0, total: montoNum, alicuota: 0 }
+    : (() => { const r = calcDesdeTotal(baseFiscal, alicuota); return { ...r, total: montoNum, alicuota }; })();
   const canSave  = montoNum > 0 && proveedor.trim() && cajaId;
 
   const guardar = () => {
@@ -163,8 +173,8 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
           {item.tipoFactura && <span><b>Factura {item.tipoFactura}</b> {item.numeroFactura}</span>}
           {item.cuit        && <span>CUIT: {item.cuit}</span>}
           {item.fecha       && <span>Emitida: {fmtFecha(item.fecha)}</span>}
-          {item.monto != null && item.montoTotal != null && item.monto !== item.montoTotal && (
-            <span style={{ color: T.ink3 }}>Neto: $ {fmtN(item.monto)} · IVA incluido: $ {fmtN(item.montoTotal)}</span>
+          {item.montoNeto != null && item.monto != null && item.montoNeto < item.monto && (
+            <span style={{ color: T.ink3 }}>Neto: $ {fmtN(item.montoNeto)} · Total con IVA: $ {fmtN(item.monto)}</span>
           )}
         </div>
 

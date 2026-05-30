@@ -1314,11 +1314,12 @@ ORDEN DE PREGUNTAS (nunca más de una a la vez):
 
 ACCIONES DISPONIBLES:
 1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional), categoriaFiscal(opcional: 'sueldo'|'cs-soc'|'sind'|'iibb'|'alquiler'|'servicios'|'seguro'|'otro'), percepcionIIBB(opcional, número en pesos).
-   IMPORTANTE — DATOS FISCALES EN GASTOS CON FOTO DE FACTURA/TICKET: si la imagen MUESTRA un comprobante formal (Factura A/B/C, ticket fiscal con CAE/CAI), agregá TAMBIÉN en datos: tipoFactura ('A'/'B'/'C', leído de la foto), numeroFactura, cuit (del emisor), monto (neto sin IVA si la foto lo discrimina), montoTotal (total con IVA, igual al monto del gasto). El sistema usa esto para el Libro IVA Compras. Es ortogonal a la regla de oro: el gasto sigue cargándose rápido como gasto, NO como factura_compra, pero los datos fiscales viajan dentro del gasto. Si la foto NO discrimina IVA (ticket no fiscal), no completes esos campos.
+   IMPORTANTÍSIMO — el campo "monto" es SIEMPRE el TOTAL del gasto (lo que sale de la caja), con IVA, percepciones y todo incluido. NUNCA pongas el neto en "monto". Si una Factura A discrimina neto $1.000.000 e IVA $210.000, el monto del gasto es $1.210.000 (no $1.000.000) — eso es lo que pagó el usuario.
+   IMPORTANTE — DATOS FISCALES EN GASTOS CON FOTO DE FACTURA/TICKET: si la imagen MUESTRA un comprobante formal (Factura A/B/C, ticket fiscal con CAE/CAI), agregá TAMBIÉN en datos: tipoFactura ('A'/'B'/'C', leído de la foto), numeroFactura, cuit (del emisor), montoNeto (opcional, solo si la foto discrimina explícitamente el neto sin IVA — sirve para registrar el desglose con la alícuota real del ticket). El sistema usa esto para el Libro IVA Compras. Es ortogonal a la regla de oro: el gasto sigue cargándose rápido como gasto, NO como factura_compra, pero los datos fiscales viajan dentro del gasto. Si la foto NO discrimina IVA (ticket no fiscal), no completes esos campos.
    PERCEPCIÓN IIBB DISCRIMINADA EN EL TICKET: muy común en estaciones de servicio (YPF/Shell/Axion), supermercados mayoristas, ferreterías grandes — aparece como "Perc. IIBB", "Percepción IIBB Bs As", "IB Pcia Bs As" o similar, como un renglón EXTRA arriba del total. Si la foto lo discrimina, leé el monto en pesos y ponelo en datos.percepcionIIBB. SOLO percepción IIBB: NO confundir con percepciones IVA (suelen decir "Perc. RG 2408", "Perc. IVA RG 3337", "Perc. IVA") — esas son otro impuesto distinto y por ahora no se cargan. NO lo confundas tampoco con el IVA ni con el neto. Sumarlo aparte permite que el sistema lo descuente del IIBB del mes. Si no aparece discriminado en el ticket, no completes el campo.
-   RECIBO DE SUELDO / CARGAS / SINDICATO / ALQUILER / SERVICIOS: si el texto o la foto refieren a "recibo de sueldo", "haberes", "liquidación", "sueldo de X", "F.931" (cargas sociales), "boleta UOCRA"/"sindicato", "alquiler", o servicios (luz/gas/internet) — completá el campo categoriaFiscal con la opción que corresponda y NO incluyas tipoFactura/numeroFactura/cuit/montoTotal (estos comprobantes NO generan IVA crédito y no van al Libro IVA Compras; el panel Financiero los suma a su columna por categoría). El gasto sigue siendo un GASTO normal con su monto y su foto.
+   RECIBO DE SUELDO / CARGAS / SINDICATO / ALQUILER / SERVICIOS: si el texto o la foto refieren a "recibo de sueldo", "haberes", "liquidación", "sueldo de X", "F.931" (cargas sociales), "boleta UOCRA"/"sindicato", "alquiler", o servicios (luz/gas/internet) — completá el campo categoriaFiscal con la opción que corresponda y NO incluyas tipoFactura/numeroFactura/cuit/montoNeto (estos comprobantes NO generan IVA crédito y no van al Libro IVA Compras; el panel Financiero los suma a su columna por categoría). El gasto sigue siendo un GASTO normal con su monto y su foto.
 2. INGRESO: monto, descripción, obraId, cajaId
-3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(neto sin IVA), montoTotal(con IVA), concepto
+3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(TOTAL del comprobante con IVA y percepciones — lo que paga la empresa, NUNCA el neto), montoNeto(opcional, solo si la foto discrimina el neto sin IVA), percepcionIIBB(opcional), concepto
 4. AVANCE_OBRA: obraId(ID exacto de la lista), rubroId(ID del rubro), tareaId(ID de la tarea), cantidadAvance(unidades completadas, ej:75), unidad(ej:'m²'), porcentajeAvance(% a sumar si no hay cantidad), descripcion
 5. CHEQUE_RECIBIDO: obraId, cajaDestinoId
 6. COMANDOS: ayuda | saldo | pendientes | cheques | resumen [obraId] [fecha YYYY-MM-DD] | como_va_obra (datos.obra=nombre) | cc_proveedor (datos.proveedor=nombre) | contacto_proveedor (datos.proveedor=nombre)
@@ -1523,10 +1524,11 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       let neto, iva, alicuota;
       if (tipoLetra === 'C') {
         neto = baseFiscal; iva = 0; alicuota = 0;
-      } else if (datos.monto != null && datos.montoTotal != null && datos.montoTotal > datos.monto) {
-        // La LLM discriminó neto del ticket. Calculamos IVA contra baseFiscal
-        // (no contra datos.montoTotal) para que la percepción no infle el crédito.
-        neto = Math.round(datos.monto); iva = Math.max(0, baseFiscal - neto);
+      } else if (datos.montoNeto != null && Number(datos.montoNeto) > 0 && Number(datos.montoNeto) < baseFiscal) {
+        // La LLM discriminó el neto del ticket. IVA = baseFiscal − neto.
+        // La percepción IIBB ya quedó fuera de baseFiscal, así no infla el crédito.
+        neto = Math.round(Number(datos.montoNeto));
+        iva = Math.max(0, baseFiscal - neto);
         const pct = neto > 0 ? (iva / neto) * 100 : 21;
         const known = [21, 10.5, 27, 0];
         alicuota = known.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a);
@@ -1541,7 +1543,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         numero: datos.numeroFactura || '',
         cuit: datos.cuit || '',
         fecha: nuevoMov.fecha,
-        neto, iva, alicuota, total: baseFiscal,
+        // neto/IVA salen de baseFiscal (sin percepción) para no inflar IVA crédito.
+        // El `total` es el del ticket (con percepción), para que coincida con la
+        // caja y para que el fingerprint de dup detection sea estable.
+        neto, iva, alicuota, total: monto,
       };
     }
 
@@ -1661,9 +1666,15 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // como factura comercial con IVA crédito. Sería raro porque factura_compra
     // implica factura formal, pero por las dudas.
     const SIN_IVA_CREDITO_FACT = new Set(['sueldo', 'cs-soc', 'sind', 'iibb']);
-    if (user.user_rol === 'Admin' && datos.montoTotal != null && !SIN_IVA_CREDITO_FACT.has(datos.categoriaFiscal)) {
+    // Guard: el monto representa el TOTAL del comprobante (lo que sale de caja, con
+    // IVA y percepciones). Acepta tanto el nuevo `monto` como el viejo `montoTotal`
+    // por si algún flujo aún manda con la nomenclatura anterior.
+    const totalGastoBot = datos.monto != null && Number(datos.monto) > 0
+      ? Math.round(Number(datos.monto))
+      : (datos.montoTotal != null ? Math.round(Number(datos.montoTotal)) : 0);
+    if (user.user_rol === 'Admin' && totalGastoBot > 0 && !SIN_IVA_CREDITO_FACT.has(datos.categoriaFiscal)) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A' / 'B' / 'C'
-      const total = Math.round(datos.montoTotal);
+      const total = totalGastoBot;
       const round2 = (n) => Math.round(n * 100) / 100;
       // Percepción IIBB detectada en el ticket: se excluye de la base fiscal del IVA.
       const perc = (datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
@@ -1672,9 +1683,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       let neto, iva, alicuota;
       if (tipoLetra === 'C') {
         neto = baseFiscal; iva = 0; alicuota = 0;
-      } else if (datos.monto != null && datos.monto > 0 && total > datos.monto) {
-        // LLM discriminó neto del ticket — usamos esos campos directo.
-        neto = Math.round(datos.monto); iva = baseFiscal - neto;
+      } else if (datos.montoNeto != null && Number(datos.montoNeto) > 0 && Number(datos.montoNeto) < baseFiscal) {
+        // LLM discriminó el neto del ticket — usamos ese desglose.
+        neto = Math.round(Number(datos.montoNeto));
+        iva = Math.max(0, baseFiscal - neto);
         const pct = neto > 0 ? (iva / neto) * 100 : 21;
         const known = [21, 10.5, 27, 0];
         alicuota = known.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a);
@@ -1712,7 +1724,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
           percepcionIIBB: perc > 0 ? perc : undefined,
           comprobanteRecibido: {
             tipo: tipoLetra, numero: datos.numeroFactura || '', cuit: datos.cuit || '',
-            fecha: fechaMov, neto, iva, alicuota, total: baseFiscal,
+            // total = total del ticket (con percepción), para fingerprint estable.
+            fecha: fechaMov, neto, iva, alicuota, total,
           },
         };
         await appendMovimiento(mov);
@@ -1736,8 +1749,14 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       cuit:          datos.cuit          || '',
       fecha:         datos.fecha         || new Date().toISOString().split('T')[0],
       concepto:      datos.concepto      || '',
-      monto:         datos.monto         != null ? Math.round(datos.monto) : null,
-      montoTotal:    datos.montoTotal    != null ? Math.round(datos.montoTotal) : null,
+      // monto = total del gasto (sale de caja, con IVA y percepciones).
+      // montoNeto (opcional) = neto sin IVA si el ticket lo discrimina.
+      // Aceptamos `datos.montoTotal` legacy por si algún flujo viejo lo manda.
+      monto:         (datos.monto != null && Number(datos.monto) > 0)
+                      ? Math.round(Number(datos.monto))
+                      : (datos.montoTotal != null ? Math.round(Number(datos.montoTotal)) : null),
+      montoNeto:     (datos.montoNeto != null && Number(datos.montoNeto) > 0)
+                      ? Math.round(Number(datos.montoNeto)) : null,
       percepcionIIBB: (datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
                         ? Math.round(Number(datos.percepcionIIBB)) : null,
       obraId:        datos.obraId        || null,  // si el texto mencionó obra
@@ -1750,7 +1769,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     });
 
     const admins = await getAllAdmins();
-    const montoStr = datos.montoTotal != null ? `$${Math.round(datos.montoTotal).toLocaleString('es-AR')}` : '—';
+    const montoTotalAviso = (datos.monto != null && Number(datos.monto) > 0)
+                              ? Math.round(Number(datos.monto))
+                              : (datos.montoTotal != null ? Math.round(Number(datos.montoTotal)) : null);
+    const montoStr = montoTotalAviso != null ? `$${montoTotalAviso.toLocaleString('es-AR')}` : '—';
     for (const admin of admins) {
       await sendWA(admin.phone,
         `📄 *Nueva factura recibida*\n\n` +
@@ -1762,7 +1784,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       );
     }
 
-    return `✅ Factura${datos.tipoFactura ? ` ${datos.tipoFactura}` : ''} de *${datos.proveedor || 'proveedor'}* recibida.\n${datos.montoTotal != null ? `Monto: *${montoStr}*\n` : ''}Los administradores la revisarán para aprobarla.`;
+    return `✅ Factura${datos.tipoFactura ? ` ${datos.tipoFactura}` : ''} de *${datos.proveedor || 'proveedor'}* recibida.\n${montoTotalAviso != null ? `Monto: *${montoStr}*\n` : ''}Los administradores la revisarán para aprobarla.`;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2510,7 +2532,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
     const lineas = activos.slice(0, 10).map((p, i) => {
       const num = `*${i + 1}.*`;
       if (p.tipoPendiente === 'factura') {
-        return `${num} 🧾 Factura ${p.proveedor || '—'} · $${Math.round(p.montoTotal || 0).toLocaleString('es-AR')}`;
+        return `${num} 🧾 Factura ${p.proveedor || '—'} · $${Math.round(p.monto || p.montoTotal || 0).toLocaleString('es-AR')}`;
       }
       const mov = p.movimiento || {};
       const icono = mov.tipo === 'ingreso' ? '🔺' : '🔻';
@@ -2565,7 +2587,11 @@ async function ejecutarComando(comando, datos, user, ctx) {
       if (!cajaId) {
         return `⚠️ Aprobé la factura pero no pude cargar el gasto: no tenés una caja efectivo configurada. Cargala desde la app → Autorizaciones, o pedile a un admin que te enlace una caja.`;
       }
-      const monto = item.montoTotal != null ? item.montoTotal : (item.monto || 0);
+      // item.monto = total del comprobante (con IVA y percepciones). El fallback
+      // a montoTotal cubre items legacy del buzón. Es lo que sale de caja.
+      const monto = (item.monto != null && Number(item.monto) > 0)
+                      ? Math.round(Number(item.monto))
+                      : (item.montoTotal != null ? Math.round(Number(item.montoTotal)) : 0);
       const obra  = item.obraId ? ctx.obras.find(o => o.id === item.obraId) : null;
       const mov = {
         id: `mov-${Date.now()}`,
