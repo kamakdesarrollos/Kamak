@@ -1529,6 +1529,70 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       }
     }
 
+    // ── Auto-carga para Admin (sin pasar por buzón) ───────────────────────────
+    // Si el que envió es Admin y el bot extrajo el monto total, lo cargamos
+    // DIRECTO como gasto con todos los datos fiscales (tipo, CUIT, neto, IVA,
+    // alícuota) en comprobanteRecibido — listos para el Libro IVA Compras.
+    // Casos sin monto o de usuarios no-admin siguen al buzón (admin revisa).
+    if (user.user_rol === 'Admin' && datos.montoTotal != null) {
+      const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A' / 'B' / 'C'
+      const total = Math.round(datos.montoTotal);
+      const round2 = (n) => Math.round(n * 100) / 100;
+      let neto, iva, alicuota;
+      if (tipoLetra === 'C') {
+        neto = total; iva = 0; alicuota = 0;
+      } else if (datos.monto != null && datos.monto > 0 && total > datos.monto) {
+        neto = Math.round(datos.monto); iva = total - neto;
+        const pct = neto > 0 ? (iva / neto) * 100 : 21;
+        const known = [21, 10.5, 27, 0];
+        alicuota = known.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a);
+      } else {
+        // Solo tenemos total → asumimos 21% (más común en construcción).
+        alicuota = 21;
+        neto = round2(total / 1.21);
+        iva = round2(total - neto);
+      }
+      // Caja efectivo del admin (ARS). Sino, primera ARS visible. Si nada → buzón.
+      const caja = ctx.cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email && c.moneda === 'ARS')
+                || ctx.cajas.find(c => c.moneda === 'ARS' && cajaEsVisible(user.cajasVisibles, c.id));
+      if (caja) {
+        const concepto = datos.concepto || `Factura ${tipoLetra}${datos.numeroFactura ? ` ${datos.numeroFactura}` : ''}${datos.proveedor ? ` · ${datos.proveedor}` : ''}`.trim();
+        const fechaMov = datos.fecha || new Date().toISOString().split('T')[0];
+        const mov = {
+          id: `mov-${Date.now()}`,
+          tipo: 'gasto',
+          descripcion: concepto,
+          monto: total,
+          fecha: fechaMov,
+          obraId: datos.obraId || null,
+          obraNombre: datos.obraId ? (ctx.obras.find(o => o.id === datos.obraId)?.nombre || '') : 'General',
+          cajaId: caja.id,
+          cajaDestinoId: null,
+          proveedor: datos.proveedor || '',
+          categoria: 'factura-proveedor',
+          medioPago: 'Transferencia',
+          referencia: datos.numeroFactura || '',
+          comprobante: 'blanco',
+          comprobanteUrl: mediaUrl || null,
+          fondoReparo: false,
+          creadoPorWA: true,
+          creadoPor: user.user_name,
+          comprobanteRecibido: {
+            tipo: tipoLetra, numero: datos.numeroFactura || '', cuit: datos.cuit || '',
+            fecha: fechaMov, neto, iva, alicuota, total,
+          },
+        };
+        await appendMovimiento(mov);
+        const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
+        return `✅ *Factura ${tipoLetra} cargada* — ${fmt(total)}\n` +
+          `Proveedor: *${datos.proveedor || '—'}*${datos.numeroFactura ? ` · N° ${datos.numeroFactura}` : ''}\n` +
+          `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}\n` +
+          `Salió de: *${caja.nombre}*\n\n` +
+          `Editable desde la app. Cuenta para tu Libro IVA Compras del mes.`;
+      }
+      // Sin caja → cae al buzón normal abajo.
+    }
+
     await sbAppendArray('whatsapp_pending', { // atómico
       id:            `wp-${Date.now()}`,
       tipoPendiente: 'factura',

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ObrasProvider } from './store/ObrasContext';
 import { CatalogProvider } from './store/CatalogContext';
 import { PlantillasProvider } from './store/PlantillasContext';
@@ -76,6 +76,16 @@ function AuthGate({ children }) {
   useEffect(() => {
     if (user) loginByEmail(user.email);
   }, [user, loginByEmail]);
+
+  // Rol Contador: solo puede ver /facturacion. Si entra a cualquier otra ruta
+  // (o aterriza en "/" después del login), lo mandamos directo a su panel.
+  const location = useLocation();
+  const navigateRR = useNavigate();
+  useEffect(() => {
+    if (currentUser?.rol === 'Contador' && location.pathname !== '/facturacion') {
+      navigateRR('/facturacion', { replace: true });
+    }
+  }, [currentUser?.rol, location.pathname, navigateRR]);
 
   // Si la tabla app_users está vacía, insertar al usuario actual como Admin
   useEffect(() => {

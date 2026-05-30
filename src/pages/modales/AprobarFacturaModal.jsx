@@ -4,6 +4,7 @@ import { T } from '../../theme';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useObras } from '../../store/ObrasContext';
 import { useProveedores } from '../../store/ProveedoresContext';
+import { calcDesdeTotal, ALICUOTAS_IVA } from '../../lib/afip';
 
 // Modal de revisión y aprobación de una factura recibida por WhatsApp.
 // Extraido del antiguo WhatsappBuzon.jsx — la logica es la misma.
@@ -42,7 +43,19 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
   const [cajaId,      setCajaId]     = useState(cajasARS[0]?.id || '');
   const [esAdicional, setEsAdicional] = useState(false);
 
+  // Datos fiscales para Libro IVA Compras. Se persisten en el movimiento como
+  // `comprobanteRecibido` para que el Resumen IVA pueda calcular el crédito fiscal.
+  // Tipo: A/B/C (default desde lo que extrajo el bot, sino B).
+  const [tipoLetra, setTipoLetra] = useState(item.tipoFactura || 'B');
+  // Alícuota: si la factura es C (monotributo) no tiene IVA. Default 21.
+  const [alicuota, setAlicuota] = useState(21);
+
   const montoNum = Math.round(parseFloat(String(monto).replace(/[^0-9.]/g, '')) || 0);
+  // Si la factura es C (emisor monotributo), no hay IVA discriminado para tomar
+  // crédito → neto = total, iva = 0.
+  const fiscal = tipoLetra === 'C'
+    ? { neto: montoNum, iva: 0, total: montoNum, alicuota: 0 }
+    : (() => { const r = calcDesdeTotal(montoNum, alicuota); return { ...r, alicuota }; })();
   const canSave  = montoNum > 0 && proveedor.trim() && cajaId;
 
   const guardar = () => {
@@ -65,6 +78,17 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
       comprobante:    'blanco',
       comprobanteUrl: item.mediaUrl || null,
       fondoReparo:    false,
+      // Datos fiscales del comprobante recibido (para Libro IVA Compras).
+      comprobanteRecibido: {
+        tipo:      tipoLetra,                  // 'A' | 'B' | 'C'
+        numero:    item.numeroFactura || '',
+        cuit:      item.cuit || '',
+        fecha:     fecha,
+        neto:      fiscal.neto,
+        iva:       fiscal.iva,
+        alicuota:  fiscal.alicuota,
+        total:     fiscal.total,
+      },
     });
     if (esAdicional && obraId) {
       patchDetalle(obraId, d => ({
@@ -154,6 +178,46 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
               Registrar también como <b style={{ color: T.accent }}>adicional pendiente</b> de {obrasActivas.find(o => o.id === obraId)?.nombre || 'la obra'}
             </label>
           )}
+
+          {/* ── Datos fiscales (para Libro IVA Compras) ─────────────────────── */}
+          <div style={{ borderTop: `1px dashed ${T.faint2}`, paddingTop: 10, marginTop: 4 }}>
+            <div style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 6 }}>
+              Datos fiscales (Libro IVA Compras)
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={labelSt}>Tipo</label>
+                <select style={{ ...inputSt, cursor: 'pointer' }} value={tipoLetra} onChange={e => setTipoLetra(e.target.value)}>
+                  <option value="A">Factura A (con IVA discriminado)</option>
+                  <option value="B">Factura B</option>
+                  <option value="C">Factura C (sin IVA)</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelSt}>Alícuota IVA</label>
+                <select
+                  style={{ ...inputSt, cursor: tipoLetra === 'C' ? 'not-allowed' : 'pointer', opacity: tipoLetra === 'C' ? 0.5 : 1 }}
+                  disabled={tipoLetra === 'C'}
+                  value={alicuota}
+                  onChange={e => setAlicuota(Number(e.target.value))}
+                >
+                  {ALICUOTAS_IVA.map(a => <option key={a.pct} value={a.pct}>{a.pct}%</option>)}
+                </select>
+              </div>
+            </div>
+            {tipoLetra !== 'C' && montoNum > 0 && (
+              <div style={{ marginTop: 6, fontSize: 11, color: T.ink2, background: T.faint, padding: '6px 10px', borderRadius: 3, display: 'flex', gap: 14, flexWrap: 'wrap', fontFamily: T.fontMono }}>
+                <span>Neto: <b style={{ color: T.ink }}>$ {fmtN(fiscal.neto)}</b></span>
+                <span>IVA {alicuota}%: <b style={{ color: T.accent }}>$ {fmtN(fiscal.iva)}</b></span>
+                <span>Total: <b style={{ color: T.ink }}>$ {fmtN(fiscal.total)}</b></span>
+              </div>
+            )}
+            {alicuota === 10.5 && tipoLetra !== 'C' && (
+              <div style={{ marginTop: 5, fontSize: 10.5, color: '#92400e', background: '#fffbeb', border: `1px solid #fde68a`, borderRadius: 3, padding: '5px 8px' }}>
+                ⓘ 10,5% aplica solo a <b>obras destinadas a vivienda</b> (Ley 23905). NO aplica a materiales de terminación.
+              </div>
+            )}
+          </div>
         </div>
 
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
