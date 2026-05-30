@@ -3007,6 +3007,13 @@ function EstadoDeCuenta({ obra, detalle, tc }) {
   const fmtUSD = (n) => `U$S ${fmtN(n)}`;
   const hoyStr = new Date().toISOString().slice(0, 10);
 
+  // Libro único: derivamos cobrado/estado/fechaPagada de los movimientos de
+  // ingreso de la obra. Sombreamos cuotaCobrado/cuotaEstadoCalc localmente con
+  // las versiones derivadas — sin esto, cuotaFechaPagada quedaba sin definir y
+  // la cuenta corriente tiraba "cuotaFechaPagada is not defined".
+  const { movimientos: _movsEC, cajas: _cajasEC } = useMovimientos();
+  const { cuotaCobrado, cuotaEstadoCalc, cuotaFechaPagada } = buildCuotaDerivados(cuotas, _movsEC, _cajasEC, obra.id, obraMon, tc);
+
   // Conteo para banner de alerta arriba.
   const cuotasUrgentes = cuotas.map(c => ({ c, estado: cuotaEstadoCalc(c, obraMon, tc) }))
     .filter(({ estado }) => estado !== 'pagado')
