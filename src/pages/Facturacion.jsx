@@ -776,13 +776,18 @@ export default function Facturacion() {
             .filter(m => m.comprobanteRecibido && !SIN_IVA_CREDITO.has(m.categoriaFiscal) && String(m.fecha || '').slice(0, 7) === mk)
             .reduce((s, m) => s + (m.comprobanteRecibido?.total || m.monto || 0), 0);
           const cargas      = financiero[mk] || {};
-          // Retenciones IIBB sufridas en cobros del mes — descuentan del IIBB
-          // devengado (lo que ya nos retuvo el cliente, no lo volvemos a pagar).
+          // Retenciones (sufridas en cobros) + percepciones (sufridas en gastos,
+          // típico de estaciones de servicio) de IIBB del mes — ambas son pagos
+          // a cuenta del IIBB y se descuentan del devengado.
           const retIIBB = (movimientos || [])
             .filter(m => m.tipo === 'ingreso' && Number(m.retencionIIBB) > 0 && String(m.fecha || '').slice(0, 7) === mk)
             .reduce((s, m) => s + Number(m.retencionIIBB || 0), 0);
+          const percIIBB = (movimientos || [])
+            .filter(m => m.tipo === 'gasto' && Number(m.percepcionIIBB) > 0 && String(m.fecha || '').slice(0, 7) === mk)
+            .reduce((s, m) => s + Number(m.percepcionIIBB || 0), 0);
+          const descuentoIIBB = retIIBB + percIIBB;
           const iibbDevengado = Math.round(ventas * iibbAli) / 100;
-          const iibbAuto    = Math.max(0, iibbDevengado - retIIBB);
+          const iibbAuto    = Math.max(0, iibbDevengado - descuentoIIBB);
           const sueldosAuto = sumPorCatFiscal(mk, 'sueldo');
           const csSocAuto   = sumPorCatFiscal(mk, 'cs-soc');
           const sindAuto    = sumPorCatFiscal(mk, 'sind');
@@ -798,6 +803,7 @@ export default function Facturacion() {
             _auto: { iibb: iibbAuto, sueldos: sueldosAuto, csSoc: csSocAuto, sind: sindAuto },
             _iibbDevengado: iibbDevengado,
             _retIIBB: retIIBB,
+            _percIIBB: percIIBB,
           };
         });
         const tot = filas.reduce((t, f) => ({
@@ -855,7 +861,7 @@ export default function Facturacion() {
               <div>
                 <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase' }}>◆ Financiero mensual</div>
                 <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
-                  Ventas y Compras se calculan solos desde los comprobantes. <b>IIBB</b> sale como % de Ventas (config: {iibbAli}%) <b>menos las retenciones de IIBB sufridas</b> en los cobros del mes. <b>Sueldos / CS SOC / SIND</b> suman los gastos del mes con esa categoría fiscal (cargás el recibo en Movimientos y elegís la categoría). Cada celda se puede <b>overridear a mano</b> si el contador calcula distinto.
+                  Ventas y Compras se calculan solos desde los comprobantes. <b>IIBB</b> sale como % de Ventas (config: {iibbAli}%) <b>menos las retenciones IIBB sufridas en cobros y las percepciones IIBB sufridas en gastos</b> del mes (típico: estaciones de servicio). <b>Sueldos / CS SOC / SIND</b> suman los gastos del mes con esa categoría fiscal (cargás el recibo en Movimientos y elegís la categoría). Cada celda se puede <b>overridear a mano</b> si el contador calcula distinto.
                 </div>
               </div>
               <Btn sm onClick={exportCSVFinanciero}>⬇ CSV Financiero</Btn>
@@ -885,7 +891,9 @@ export default function Facturacion() {
                     <td style={{ padding: '4px 6px', width: 120 }}>
                       <CeldaCarga
                         mes={f.mes} field="iibb" manual={f._cargas.iibb} auto={f._auto.iibb}
-                        hint={f._retIIBB > 0 ? `(deveng ${fmtMoney(f._iibbDevengado)} − ret ${fmtMoney(f._retIIBB)})` : null}
+                        hint={(f._retIIBB + f._percIIBB) > 0
+                          ? `(deveng ${fmtMoney(f._iibbDevengado)}${f._retIIBB > 0 ? ` − ret ${fmtMoney(f._retIIBB)}` : ''}${f._percIIBB > 0 ? ` − perc ${fmtMoney(f._percIIBB)}` : ''})`
+                          : null}
                       />
                     </td>
                     <td style={{ padding: '4px 6px', width: 120 }}><CeldaCarga mes={f.mes} field="sueldos" manual={f._cargas.sueldos} auto={f._auto.sueldos} /></td>

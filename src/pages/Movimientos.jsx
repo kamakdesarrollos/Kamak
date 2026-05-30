@@ -383,6 +383,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const [esAdicional,    setEsAdicional]    = useState(false);
   const [categoriaFiscal,setCategoriaFiscal]= useState(''); // sueldo|cs-soc|sind|iibb|alquiler|servicios|seguro|otro (vacío = no fiscal)
   const [retencionIIBB,  setRetencionIIBB]  = useState(''); // Retención de IIBB que sufrió este cobro (descuenta del IIBB a pagar del mes)
+  const [percepcionIIBB, setPercepcionIIBB] = useState(''); // Percepción de IIBB sufrida en este gasto (estación de servicio, etc.) — también descuenta del IIBB a pagar
   const [cuotaId,        setCuotaId]        = useState('');
   const [fotoFile,       setFotoFile]       = useState(null);
   const [fotoUploading,  setFotoUploading]  = useState(false);
@@ -549,6 +550,8 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       categoriaFiscal: isGasto && categoriaFiscal ? categoriaFiscal : undefined,
       // Retención IIBB sufrida en un cobro — se descuenta del IIBB del mes en el Financiero.
       retencionIIBB:   !isGasto && retencionIIBB ? Math.round(parseFloat(retencionIIBB.replace(',', '.')) || 0) : undefined,
+      // Percepción IIBB sufrida en un gasto (estaciones de servicio, etc.) — también descuenta.
+      percepcionIIBB:  isGasto && percepcionIIBB ? Math.round(parseFloat(percepcionIIBB.replace(',', '.')) || 0) : undefined,
       medioPago:     medio,
       referencia:    cheqNumero || '',
       fondoReparo:   false,
@@ -601,7 +604,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       });
     }
 
-    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false); setCategoriaFiscal(''); setRetencionIIBB('');
+    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false); setCategoriaFiscal(''); setRetencionIIBB(''); setPercepcionIIBB('');
     setCheqNumero(''); setCheqBanco(''); setCheqTitular(''); setCheqVencimiento('');
     setCuotaId(''); setFotoFile(null); if (fotoRef.current) fotoRef.current.value = '';
   };
@@ -802,6 +805,18 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Retención IIBB sufrida $ (opcional):</span>
           <input type="text" inputMode="decimal" placeholder="0"
             value={retencionIIBB} onChange={e => setRetencionIIBB(e.target.value)}
+            style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
+        </div>
+      )}
+
+      {/* Percepción IIBB sufrida (solo en gastos) — típico de estaciones de
+          servicio: te suman un % de IIBB al pagar. Es pago a cuenta del IIBB
+          tuyo del mes → se descuenta igual que una retención. */}
+      {isGasto && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Percepción IIBB sufrida $ (opcional):</span>
+          <input type="text" inputMode="decimal" placeholder="0"
+            value={percepcionIIBB} onChange={e => setPercepcionIIBB(e.target.value)}
             style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
         </div>
       )}
