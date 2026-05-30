@@ -1247,7 +1247,8 @@ ORDEN DE PREGUNTAS (nunca más de una a la vez):
 8. Con todo completo → mostrá resumen y pedí confirmación
 
 ACCIONES DISPONIBLES:
-1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional)
+1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional).
+   IMPORTANTE — DATOS FISCALES EN GASTOS CON FOTO DE FACTURA/TICKET: si la imagen MUESTRA un comprobante formal (Factura A/B/C, ticket fiscal con CAE/CAI), agregá TAMBIÉN en datos: tipoFactura ('A'/'B'/'C', leído de la foto), numeroFactura, cuit (del emisor), monto (neto sin IVA si la foto lo discrimina), montoTotal (total con IVA, igual al monto del gasto). El sistema usa esto para el Libro IVA Compras. Es ortogonal a la regla de oro: el gasto sigue cargándose rápido como gasto, NO como factura_compra, pero los datos fiscales viajan dentro del gasto. Si la foto NO discrimina IVA (ticket no fiscal), no completes esos campos.
 2. INGRESO: monto, descripción, obraId, cajaId
 3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(neto sin IVA), montoTotal(con IVA), concepto
 4. AVANCE_OBRA: obraId(ID exacto de la lista), rubroId(ID del rubro), tareaId(ID de la tarea), cantidadAvance(unidades completadas, ej:75), unidad(ej:'m²'), porcentajeAvance(% a sumar si no hay cantidad), descripcion
@@ -1413,6 +1414,37 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       creadoPorWA:      true,
       creadoPor:        user.user_name,
     };
+
+    // Gasto con foto/PDF de comprobante → poblamos datos fiscales para el
+    // Libro IVA Compras. Si la LLM extrajo tipo/neto/total los usamos; sino
+    // asumimos B + 21% con el monto como total (combustible/materiales más
+    // comunes en construcción). Así una factura cargada como "gasto rápido"
+    // igual aporta crédito fiscal.
+    if (tipo === 'gasto' && mediaUrl && monto > 0) {
+      const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A'/'B'/'C'
+      const round2 = (n) => Math.round(n * 100) / 100;
+      let neto, iva, alicuota;
+      if (tipoLetra === 'C') {
+        neto = monto; iva = 0; alicuota = 0;
+      } else if (datos.monto != null && datos.montoTotal != null && datos.montoTotal > datos.monto) {
+        neto = Math.round(datos.monto); iva = Math.round(datos.montoTotal) - neto;
+        const pct = neto > 0 ? (iva / neto) * 100 : 21;
+        const known = [21, 10.5, 27, 0];
+        alicuota = known.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a);
+      } else {
+        alicuota = 21;
+        neto = round2(monto / 1.21);
+        iva = round2(monto - neto);
+      }
+      nuevoMov.comprobante = 'blanco';
+      nuevoMov.comprobanteRecibido = {
+        tipo: tipoLetra,
+        numero: datos.numeroFactura || '',
+        cuit: datos.cuit || '',
+        fecha: nuevoMov.fecha,
+        neto, iva, alicuota, total: monto,
+      };
+    }
 
     // ── Rama Admin: auto-aplicar (sin pasar por Autorizaciones) ───────────────
     if (user.user_rol === 'Admin') {
