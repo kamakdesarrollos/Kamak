@@ -12,12 +12,33 @@
 
 // ── Condiciones frente al IVA (incluye el código AFIP del RECEPTOR, que AFIP
 //    exige declarar en el comprobante electrónico). ────────────────────────────
+// `codAfip` = código de "Condición frente al IVA del receptor" que AFIP exige en
+// el comprobante electrónico (RG 5616). Solo las domésticas que aplican a clientes
+// de Conquies — no incluimos Proveedor/Cliente del Exterior (serían Factura E,
+// fuera de alcance) ni IVA Liberado Ley 19.640.
 export const CONDICIONES_IVA = [
-  { id: 'RI', nombre: 'Responsable Inscripto', codAfip: 1 },
-  { id: 'MT', nombre: 'Monotributo',           codAfip: 6 },
-  { id: 'EX', nombre: 'Exento',                codAfip: 4 },
-  { id: 'CF', nombre: 'Consumidor Final',      codAfip: 5 },
+  { id: 'RI',  nombre: 'Responsable Inscripto',                    codAfip: 1 },
+  { id: 'MT',  nombre: 'Monotributo',                             codAfip: 6 },
+  { id: 'MTS', nombre: 'Monotributo Social',                      codAfip: 13 },
+  { id: 'MTP', nombre: 'Monotributo Trab. Independiente Promovido', codAfip: 16 },
+  { id: 'EX',  nombre: 'IVA Sujeto Exento',                       codAfip: 4 },
+  { id: 'NA',  nombre: 'IVA No Alcanzado',                        codAfip: 15 },
+  { id: 'SNC', nombre: 'Sujeto No Categorizado',                  codAfip: 7 },
+  { id: 'CF',  nombre: 'Consumidor Final',                        codAfip: 5 },
 ];
+
+// ── Concepto del comprobante (código AFIP para WSFE). ─────────────────────────
+// AFIP exige declarar si la operación es de productos, servicios o ambos. Para
+// servicios y "ambos", WSFE además pide el período del servicio (FchServDesde/
+// Hasta) — eso se completará cuando se conecte el web service. Construcción suele
+// ser servicios, por eso es el default.
+export const CONCEPTOS_AFIP = [
+  { id: 2, nombre: 'Servicios' },
+  { id: 1, nombre: 'Productos' },
+  { id: 3, nombre: 'Productos y Servicios' },
+];
+export const getConceptoAfip = (id) => CONCEPTOS_AFIP.find(c => c.id === Number(id)) || null;
+export const CONCEPTO_AFIP_DEFAULT = 2; // Servicios
 
 // ── Alícuotas de IVA habilitadas (con código AFIP de cada una). ───────────────
 export const ALICUOTAS_IVA = [
@@ -316,6 +337,29 @@ export function buscarDuplicadoEmitido(c, comprobantes = []) {
   return (comprobantes || []).find(x =>
     x && x.estado !== 'anulado' && x.id !== c.id && fingerprintEmitido(x) === fp
   ) || null;
+}
+
+// ── Resolución del comprobante asociado de una NC/ND ──────────────────────────
+// El comprobante guarda `comprobanteAsociadoId` = id INTERNO de la factura
+// original que ajusta. WSFE, en cambio, identifica el asociado por Tipo (código
+// AFIP) + Punto de Venta + Número. Esta función hace ese puente: busca la factura
+// original y devuelve su referencia estructurada, lista para el web service.
+// `emitido` indica si la original ya tiene número de AFIP — WSFE RECHAZA una NC/ND
+// contra un comprobante todavía no autorizado, así que es la precondición clave.
+export function resolverComprobanteAsociado(comprobanteAsociadoId, comprobantes = []) {
+  if (!comprobanteAsociadoId) return null;
+  const orig = (comprobantes || []).find(c => c && c.id === comprobanteAsociadoId);
+  if (!orig) return null;
+  const t = getTipoComprobante(orig.tipoId);
+  return {
+    id:         orig.id,
+    tipoId:     orig.tipoId,
+    codAfip:    t?.codAfip ?? null,   // CbteTipo del asociado para WSFE
+    letra:      t?.letra ?? null,
+    puntoVenta: orig.puntoVenta ?? null,
+    numero:     orig.numero ?? null,
+    emitido:    !!orig.numero,        // ¿ya tiene número de AFIP?
+  };
 }
 
 // ── Validación de un comprobante ANTES de emitirlo ────────────────────────────

@@ -18,7 +18,8 @@ import {
   calcDesdeNeto, tipoFacturaSugerido, validarComprobante,
   formatCUIT, getTipoComprobante, getCondicionIVA, validarCUIT,
   buscarDuplicadoEmitido, buscarDuplicadoRecibido, esJurisdiccionPBA,
-  signoComprobanteRecibido,
+  signoComprobanteRecibido, CONCEPTOS_AFIP, CONCEPTO_AFIP_DEFAULT, getConceptoAfip,
+  resolverComprobanteAsociado,
 } from '../lib/afip';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
@@ -70,6 +71,7 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
     tipoId: 'FB',
     obraId: '',
     concepto: '',
+    conceptoAfip: CONCEPTO_AFIP_DEFAULT, // 1=productos, 2=servicios, 3=ambos (AFIP)
     neto: '',
     alicuota: 21,
     fecha: todayISO(),
@@ -94,6 +96,9 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
         .filter(c => c.clienteId === cliente.id && c.estado !== 'anulado' && (getTipoComprobante(c.tipoId)?.letra === letraPermitida) && /^F/.test(c.tipoId))
         .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
     : [];
+  // Referencia estructurada del asociado (tipo+PV+N° para WSFE). emitido=false
+  // significa que la factura original todavía es borrador (sin número de AFIP).
+  const asociadoRef = esNota ? resolverComprobanteAsociado(form.comprobanteAsociadoId, comprobantes) : null;
 
   useEffect(() => {
     if (!cliente) return;
@@ -119,6 +124,7 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
     obraId: form.obraId || null,
     obraNombre: obras.find(o => o.id === form.obraId)?.nombre || '',
     concepto: form.concepto.trim(),
+    conceptoAfip: Number(form.conceptoAfip) || CONCEPTO_AFIP_DEFAULT,
     neto: netoNum,
     alicuota: Number(form.alicuota),
     iva: calc.iva,
@@ -211,6 +217,17 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
                   No hay facturas previas de este cliente de la misma letra. AFIP exige el comprobante asociado en notas de crédito/débito (RG 5824/2026).
                 </div>
               )}
+              {asociadoRef && (
+                asociadoRef.emitido ? (
+                  <div style={{ fontSize: 10, color: T.ink3, marginTop: 3, fontFamily: T.fontMono }}>
+                    Asociado AFIP: tipo {asociadoRef.codAfip} · PV {asociadoRef.puntoVenta} · N° {asociadoRef.numero}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 10, color: '#b45309', marginTop: 3 }}>
+                    ⚠ La factura original todavía es un borrador (sin número de AFIP). Para enviar esta nota a AFIP, primero hay que emitir la factura original.
+                  </div>
+                )
+              )}
             </div>
           )}
 
@@ -227,9 +244,17 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
             </select>
           </div>
 
-          <div>
-            <label style={labelSt}>Concepto / detalle</label>
-            <input style={inputSt} value={form.concepto} onChange={e => set('concepto', e.target.value)} placeholder="Ej: Trabajos de obra — abril 2026" />
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <label style={labelSt}>Concepto / detalle</label>
+              <input style={inputSt} value={form.concepto} onChange={e => set('concepto', e.target.value)} placeholder="Ej: Trabajos de obra — abril 2026" />
+            </div>
+            <div style={{ width: 180 }}>
+              <label style={labelSt}>Concepto AFIP</label>
+              <select style={{ ...inputSt, cursor: 'pointer' }} value={form.conceptoAfip} onChange={e => set('conceptoAfip', Number(e.target.value))}>
+                {CONCEPTOS_AFIP.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
           </div>
 
           <div style={{ display: 'flex', gap: 10 }}>
@@ -460,7 +485,7 @@ export default function Facturacion() {
   const cuitProveedor = (m) => m.comprobanteRecibido?.cuit || (proveedores.find(p => p.nombre === m.proveedor)?.cuit) || '';
 
   const exportCSVVentas = () => {
-    const head = ['Fecha','Tipo','Letra','Pto.Venta','Numero','Receptor','CUIT','Cond.IVA','Neto','Alicuota','IVA','Total','Concepto'];
+    const head = ['Fecha','Tipo','Letra','Pto.Venta','Numero','Receptor','CUIT','Cond.IVA','Concepto AFIP','Neto','Alicuota','IVA','Total','Detalle'];
     const rows = ventasMes.map(c => {
       const t = getTipoComprobante(c.tipoId);
       return [
@@ -468,6 +493,7 @@ export default function Facturacion() {
         c.puntoVenta || '', c.numero || 'borrador',
         c.receptorNombre || '', cuitCliente(c),
         getCondicionIVA(c.receptorCondicion)?.nombre || '',
+        getConceptoAfip(c.conceptoAfip)?.nombre || '',
         (c.neto || 0).toFixed(2), `${c.alicuota || 0}%`, (c.iva || 0).toFixed(2), (c.total || 0).toFixed(2),
         c.concepto || '',
       ];

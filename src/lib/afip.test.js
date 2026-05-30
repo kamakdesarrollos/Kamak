@@ -8,7 +8,62 @@ import {
   parseMoneyAR, desglosarCompra,
   esJurisdiccionPBA, nombreJurisdiccion, JURISDICCIONES_IIBB,
   signoComprobanteRecibido,
+  CONDICIONES_IVA, getCondicionIVA, CONCEPTOS_AFIP, getConceptoAfip,
+  resolverComprobanteAsociado,
 } from './afip';
+
+describe('condiciones IVA receptor (códigos AFIP RG 5616)', () => {
+  it('incluye las condiciones nuevas con su código AFIP correcto', () => {
+    const byId = Object.fromEntries(CONDICIONES_IVA.map(c => [c.id, c.codAfip]));
+    expect(byId.RI).toBe(1);
+    expect(byId.MT).toBe(6);
+    expect(byId.MTS).toBe(13);   // Monotributo Social
+    expect(byId.MTP).toBe(16);   // Mono Trab. Indep. Promovido
+    expect(byId.EX).toBe(4);
+    expect(byId.NA).toBe(15);    // IVA No Alcanzado
+    expect(byId.SNC).toBe(7);    // Sujeto No Categorizado
+    expect(byId.CF).toBe(5);
+  });
+  it('los códigos AFIP no se repiten', () => {
+    const cods = CONDICIONES_IVA.map(c => c.codAfip);
+    expect(new Set(cods).size).toBe(cods.length);
+  });
+  it('getCondicionIVA resuelve por id', () => {
+    expect(getCondicionIVA('MTS')?.nombre).toMatch(/Social/);
+    expect(getCondicionIVA('xx')).toBe(null);
+  });
+});
+
+describe('concepto AFIP', () => {
+  it('mapea 1=Productos, 2=Servicios, 3=ambos', () => {
+    expect(getConceptoAfip(1)?.nombre).toBe('Productos');
+    expect(getConceptoAfip(2)?.nombre).toBe('Servicios');
+    expect(getConceptoAfip(3)?.nombre).toMatch(/Productos y Servicios/);
+    expect(getConceptoAfip(99)).toBe(null);
+  });
+  it('acepta el id como string o número', () => {
+    expect(getConceptoAfip('2')?.id).toBe(2);
+  });
+});
+
+describe('resolverComprobanteAsociado (NC/ND → tipo+PV+N° para WSFE)', () => {
+  const comprobantes = [
+    { id: 'cbte-1', tipoId: 'FA', puntoVenta: 3, numero: '00012345', estado: 'emitido' },
+    { id: 'cbte-2', tipoId: 'FB', puntoVenta: 1, numero: null, estado: 'borrador' },
+  ];
+  it('resuelve una factura emitida a su referencia AFIP', () => {
+    const r = resolverComprobanteAsociado('cbte-1', comprobantes);
+    expect(r).toMatchObject({ codAfip: 1, puntoVenta: 3, numero: '00012345', emitido: true, letra: 'A' });
+  });
+  it('marca emitido=false si la original es borrador (sin número)', () => {
+    expect(resolverComprobanteAsociado('cbte-2', comprobantes).emitido).toBe(false);
+  });
+  it('devuelve null si no existe o no hay id', () => {
+    expect(resolverComprobanteAsociado('nope', comprobantes)).toBe(null);
+    expect(resolverComprobanteAsociado(null, comprobantes)).toBe(null);
+    expect(resolverComprobanteAsociado('cbte-1', [])).toBe(null);
+  });
+});
 
 describe('notas de crédito recibidas', () => {
   it('una NC y la factura que ajusta NO colisionan como duplicado', () => {
