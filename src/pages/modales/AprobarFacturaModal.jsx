@@ -45,10 +45,15 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
 
   // Datos fiscales para Libro IVA Compras. Se persisten en el movimiento como
   // `comprobanteRecibido` para que el Resumen IVA pueda calcular el crédito fiscal.
-  // Tipo: A/B/C (default desde lo que extrajo el bot, sino B).
-  const [tipoLetra, setTipoLetra] = useState(item.tipoFactura || 'B');
+  // Tipo: A/B/C (default desde lo que extrajo el bot, sino B). Normaliza a mayúscula.
+  const [tipoLetra, setTipoLetra] = useState(String(item.tipoFactura || 'B').toUpperCase().charAt(0) || 'B');
   // Alícuota: si la factura es C (monotributo) no tiene IVA. Default 21.
   const [alicuota, setAlicuota] = useState(21);
+  // Categoría fiscal: si el admin reconoce que es un recibo de sueldo/cargas
+  // (que pasó a buzón por error), lo marca acá y NO se genera IVA crédito.
+  const [categoriaFiscal, setCategoriaFiscal] = useState('');
+  const SIN_IVA_CREDITO = new Set(['sueldo', 'cs-soc', 'sind', 'iibb']);
+  const esNoIvaCredito = SIN_IVA_CREDITO.has(categoriaFiscal);
 
   const montoNum = Math.round(parseFloat(String(monto).replace(/[^0-9.]/g, '')) || 0);
   // Si la factura es C (emisor monotributo), no hay IVA discriminado para tomar
@@ -84,23 +89,28 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
       cajaId,
       cajaDestinoId:  null,
       proveedor:      proveedor.trim(),
-      categoria:      'factura-proveedor',
+      categoria:      esNoIvaCredito ? 'general' : 'factura-proveedor',
+      categoriaFiscal: categoriaFiscal || undefined,
       medioPago:      'Transferencia',
       referencia:     item.numeroFactura || '',
-      comprobante:    'blanco',
+      comprobante:    esNoIvaCredito ? 'negro' : 'blanco',
       comprobanteUrl: item.mediaUrl || null,
       fondoReparo:    false,
       // Datos fiscales del comprobante recibido (para Libro IVA Compras).
-      comprobanteRecibido: {
-        tipo:      tipoLetra,                  // 'A' | 'B' | 'C'
-        numero:    item.numeroFactura || '',
-        cuit:      item.cuit || '',
-        fecha:     fecha,
-        neto:      fiscal.neto,
-        iva:       fiscal.iva,
-        alicuota:  fiscal.alicuota,
-        total:     fiscal.total,
-      },
+      // Si es un recibo NO comercial (sueldo/cargas/sind/iibb), NO se genera
+      // comprobanteRecibido para no inflar el crédito IVA.
+      ...(esNoIvaCredito ? {} : {
+        comprobanteRecibido: {
+          tipo:      tipoLetra,                  // 'A' | 'B' | 'C'
+          numero:    item.numeroFactura || '',
+          cuit:      item.cuit || '',
+          fecha:     fecha,
+          neto:      fiscal.neto,
+          iva:       fiscal.iva,
+          alicuota:  fiscal.alicuota,
+          total:     fiscal.total,
+        },
+      }),
     });
     if (esAdicional && obraId) {
       patchDetalle(obraId, d => ({
@@ -196,6 +206,24 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
             <div style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 6 }}>
               Datos fiscales (Libro IVA Compras)
             </div>
+            {/* Categoría fiscal: si es recibo de sueldo/cargas/sind/iibb, marcalo
+                acá y NO se genera IVA crédito (no es una factura comercial). */}
+            <div style={{ marginBottom: 8 }}>
+              <label style={labelSt}>¿Es un comprobante NO comercial?</label>
+              <select style={{ ...inputSt, cursor: 'pointer' }} value={categoriaFiscal} onChange={e => setCategoriaFiscal(e.target.value)}>
+                <option value="">— Es una factura comercial (genera IVA crédito) —</option>
+                <option value="sueldo">Recibo de sueldo</option>
+                <option value="cs-soc">Cargas sociales (F.931)</option>
+                <option value="sind">Sindicato (UOCRA)</option>
+                <option value="iibb">IIBB (pago/boleta)</option>
+              </select>
+            </div>
+            {esNoIvaCredito && (
+              <div style={{ background: '#fffbeb', border: `1px solid #fde68a`, borderRadius: 3, padding: '6px 10px', fontSize: 10.5, color: '#92400e', marginBottom: 8 }}>
+                ⓘ Este comprobante NO genera IVA crédito. Se carga como gasto y suma al Financiero en la columna correspondiente.
+              </div>
+            )}
+            {!esNoIvaCredito && (<>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
                 <label style={labelSt}>Tipo</label>
@@ -229,6 +257,7 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
                 ⓘ 10,5% aplica solo a <b>obras destinadas a vivienda</b> (Ley 23905). NO aplica a materiales de terminación.
               </div>
             )}
+            </>)}
           </div>
         </div>
 

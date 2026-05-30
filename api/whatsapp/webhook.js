@@ -1490,7 +1490,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // igual aporta crédito fiscal.
     // Categorías que NO generan IVA crédito (recibos, no facturas) — saltean
     // la autocarga de comprobanteRecibido aunque tengan foto adjunta.
-    const SIN_IVA_CREDITO = new Set(['sueldo', 'cs-soc', 'sind']);
+    const SIN_IVA_CREDITO = new Set(['sueldo', 'cs-soc', 'sind', 'iibb']);
     if (tipo === 'gasto' && mediaUrl && monto > 0 && !SIN_IVA_CREDITO.has(nuevoMov.categoriaFiscal)) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A'/'B'/'C'
       // Dup check ANTES de persistir: cubre el reenvío del mismo ticket o el
@@ -1644,7 +1644,12 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // DIRECTO como gasto con todos los datos fiscales (tipo, CUIT, neto, IVA,
     // alícuota) en comprobanteRecibido — listos para el Libro IVA Compras.
     // Casos sin monto o de usuarios no-admin siguen al buzón (admin revisa).
-    if (user.user_rol === 'Admin' && datos.montoTotal != null) {
+    // Si la LLM marcó esto con categoriaFiscal de un comprobante NO comercial
+    // (recibo de sueldo, cargas, sindicato, IIBB) — defensa: no lo procesamos
+    // como factura comercial con IVA crédito. Sería raro porque factura_compra
+    // implica factura formal, pero por las dudas.
+    const SIN_IVA_CREDITO_FACT = new Set(['sueldo', 'cs-soc', 'sind', 'iibb']);
+    if (user.user_rol === 'Admin' && datos.montoTotal != null && !SIN_IVA_CREDITO_FACT.has(datos.categoriaFiscal)) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A' / 'B' / 'C'
       const total = Math.round(datos.montoTotal);
       const round2 = (n) => Math.round(n * 100) / 100;

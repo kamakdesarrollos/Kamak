@@ -25,8 +25,13 @@ const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', lette
 
 const fmtMoney = (n) => `$ ${Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtFecha = (iso) => !iso ? '—' : String(iso).slice(0, 10).split('-').reverse().join('/');
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const mesActual = () => new Date().toISOString().slice(0, 7); // YYYY-MM
+// Fecha LOCAL (no UTC) — entre 21:00 y 23:59 hora ARG, toISOString() ya da el
+// día siguiente UTC. Usamos componentes locales para que el "hoy" sea el de acá.
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const mesActual = () => todayISO().slice(0, 7);
 
 const ESTADO_CHIP = {
   borrador: { bg: '#f5f0e0', color: '#92400e', label: 'Borrador' },
@@ -351,10 +356,17 @@ export default function Facturacion() {
     .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
     [comprobantes, mes]);
 
+  // Categorías que NO generan IVA crédito (sueldos, cargas, IIBB). Defensa
+  // app-side por si llegó un movimiento con comprobanteRecibido cargado por
+  // error a una categoría que no es factura comercial — no lo contamos en
+  // Compras del Libro IVA, sí lo suma su columna del Financiero.
+  const SIN_IVA_CREDITO = new Set(['sueldo', 'cs-soc', 'sind', 'iibb']);
   const comprasMes = useMemo(() => (movimientos || [])
-    .filter(m => m.comprobanteRecibido && (m.fecha || '').slice(0, 7) === mes)
+    .filter(m => m.comprobanteRecibido
+              && !SIN_IVA_CREDITO.has(m.categoriaFiscal)
+              && (m.fecha || '').slice(0, 7) === mes)
     .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
-    [movimientos, mes]);
+    [movimientos, mes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── IVA Débito (ventas, restando notas de crédito) ───────────────────────────
   const debito = useMemo(() => ventasMes.reduce((s, c) => {
@@ -761,7 +773,7 @@ export default function Facturacion() {
             .filter(c => c.estado !== 'anulado' && String(c.fecha || '').slice(0, 7) === mk)
             .reduce((s, c) => s + (getTipoComprobante(c.tipoId)?.signo ?? 1) * (c.total || 0), 0);
           const compras = (movimientos || [])
-            .filter(m => m.comprobanteRecibido && String(m.fecha || '').slice(0, 7) === mk)
+            .filter(m => m.comprobanteRecibido && !SIN_IVA_CREDITO.has(m.categoriaFiscal) && String(m.fecha || '').slice(0, 7) === mk)
             .reduce((s, m) => s + (m.comprobanteRecibido?.total || m.monto || 0), 0);
           const cargas      = financiero[mk] || {};
           const iibbAuto    = Math.round(ventas * iibbAli) / 100;
@@ -796,7 +808,8 @@ export default function Facturacion() {
           rows.push(['TOTAL', tot.ventas.toFixed(2), tot.compras.toFixed(2), tot.iibb.toFixed(2),
             tot.sueldos.toFixed(2), tot.csSoc.toFixed(2), tot.sind.toFixed(2),
             tot.neto.toFixed(2), '']);
-          downloadCSV(`financiero.csv`, [head, ...rows]);
+          // Nombre con el mes seleccionado + año actual para no pisar bajadas previas.
+          downloadCSV(`financiero-${mes}.csv`, [head, ...rows]);
         };
 
         // Celda editable con valor auto-calculado. Si el manual está vacío, se usa

@@ -782,6 +782,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
             <option value="sueldo">Sueldo</option>
             <option value="cs-soc">Cargas sociales</option>
             <option value="sind">Sindicato (UOCRA)</option>
+            <option value="iibb">IIBB (pago / boleta)</option>
             <option value="alquiler">Alquiler</option>
             <option value="servicios">Servicios (luz/gas/internet)</option>
             <option value="seguro">Seguro</option>
