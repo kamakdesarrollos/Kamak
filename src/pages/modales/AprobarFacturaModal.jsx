@@ -66,14 +66,20 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
   const [percepcionIIBB, setPercepcionIIBB] = useState(
     item.percepcionIIBB != null ? String(item.percepcionIIBB) : ''
   );
+  // Percepción IVA sufrida (RG 2408/3337, mayoristas): si el bot la leyó del ticket,
+  // viene en item.percepcionIVA. Es un pago a cuenta que descuenta del IVA del mes.
+  const [percepcionIVA, setPercepcionIVA] = useState(
+    item.percepcionIVA != null ? String(item.percepcionIVA) : ''
+  );
 
   const montoNum = Math.round(parseMoneyAR(monto));
   const percIIBBNum = Math.round(parseMoneyAR(percepcionIIBB));
+  const percIVANum = Math.round(parseMoneyAR(percepcionIVA));
   // Desglose fiscal centralizado (ver desglosarCompra en afip.js). El neto/IVA
-  // crédito salen de la base = total − percepción IIBB (la percepción no integra
-  // el IVA: es crédito a cuenta del IIBB del mes). El `total` guardado incluye la
-  // percepción (es lo que pagaste). Factura C → sin IVA crédito.
-  const fiscal = desglosarCompra({ total: montoNum, tipoLetra, percepcionIIBB: percIIBBNum, alicuota });
+  // crédito salen de la base = total − percepciones (no integran el IVA del
+  // comprobante: son pagos a cuenta de IIBB e IVA respectivamente). El `total`
+  // guardado incluye las percepciones (es lo que pagaste). Factura C → sin IVA crédito.
+  const fiscal = desglosarCompra({ total: montoNum, tipoLetra, percepcionIIBB: percIIBBNum, percepcionIVA: percIVANum, alicuota });
   const baseFiscal = fiscal.baseFiscal;
   const canSave  = montoNum > 0 && proveedor.trim() && cajaId;
 
@@ -110,6 +116,8 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
       // (no aplica). Evita data huérfana si el admin recategoriza algo que
       // venía con percepción auto-detectada.
       percepcionIIBB: (!esNoIvaCredito && percIIBBNum > 0) ? percIIBBNum : undefined,
+      // Percepción IVA sufrida — pago a cuenta del IVA del mes. Mismo guard que IIBB.
+      percepcionIVA:  (!esNoIvaCredito && percIVANum > 0) ? percIVANum : undefined,
       medioPago:      'Transferencia',
       referencia:     item.numeroFactura || '',
       comprobante:    esNoIvaCredito ? 'negro' : 'blanco',
@@ -290,10 +298,25 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
                   : 'Si el ticket la discrimina, cargala — se descuenta del IIBB del mes.'}
                 {' '}El monto total de arriba debe incluirla (es lo que pagaste).
               </div>
-              {percIIBBNum > 0 && tipoLetra !== 'C' && (
+              <label style={{ ...labelSt, marginTop: 10 }}>Percepción IVA sufrida $ (opcional)</label>
+              <input
+                type="text" inputMode="decimal" placeholder="0"
+                style={{ ...inputSt, fontFamily: T.fontMono, textAlign: 'right' }}
+                value={percepcionIVA}
+                onChange={e => setPercepcionIVA(e.target.value)}
+              />
+              <div style={{ fontSize: 10, color: T.ink3, marginTop: 4 }}>
+                Típica en mayoristas (RG 2408/3337). {item.percepcionIVA != null
+                  ? <b style={{ color: '#25803a' }}>El bot la leyó del ticket.</b>
+                  : 'Si el ticket la discrimina, cargala — es pago a cuenta del IVA del mes.'}
+                {' '}El monto total de arriba debe incluirla.
+              </div>
+              {(percIIBBNum > 0 || percIVANum > 0) && tipoLetra !== 'C' && (
                 <div style={{ marginTop: 6, fontSize: 10.5, color: T.ink2, background: T.faint, padding: '5px 8px', borderRadius: 3, fontFamily: T.fontMono }}>
                   Base fiscal IVA: <b style={{ color: T.ink }}>$ {fmtN(baseFiscal)}</b>
-                  <span style={{ color: T.ink3 }}> (= total $ {fmtN(montoNum)} − percep $ {fmtN(percIIBBNum)})</span>
+                  <span style={{ color: T.ink3 }}> (= total $ {fmtN(montoNum)}
+                    {percIIBBNum > 0 && ` − IIBB $ ${fmtN(percIIBBNum)}`}
+                    {percIVANum > 0 && ` − IVA $ ${fmtN(percIVANum)}`})</span>
                 </div>
               )}
             </div>

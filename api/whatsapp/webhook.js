@@ -1347,13 +1347,16 @@ ORDEN DE PREGUNTAS (nunca más de una a la vez):
 8. Con todo completo → mostrá resumen y pedí confirmación
 
 ACCIONES DISPONIBLES:
-1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional), categoriaFiscal(opcional: 'sueldo'|'cs-soc'|'sind'|'iibb'|'alquiler'|'servicios'|'seguro'|'otro'), percepcionIIBB(opcional, número en pesos).
+1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional), categoriaFiscal(opcional: 'sueldo'|'cs-soc'|'sind'|'iibb'|'alquiler'|'servicios'|'seguro'|'otro'), percepcionIIBB(opcional, número en pesos), percepcionIVA(opcional, número en pesos).
    IMPORTANTÍSIMO — el campo "monto" es SIEMPRE el TOTAL del gasto (lo que sale de la caja), con IVA, percepciones y todo incluido. NUNCA pongas el neto en "monto". Si una Factura A discrimina neto $1.000.000 e IVA $210.000, el monto del gasto es $1.210.000 (no $1.000.000) — eso es lo que pagó el usuario.
    IMPORTANTE — DATOS FISCALES EN GASTOS CON FOTO DE FACTURA/TICKET: si la imagen MUESTRA un comprobante formal (Factura A/B/C, ticket fiscal con CAE/CAI), agregá TAMBIÉN en datos: tipoFactura ('A'/'B'/'C', leído de la foto), numeroFactura, cuit (del emisor), montoNeto (opcional, solo si la foto discrimina explícitamente el neto sin IVA — sirve para registrar el desglose con la alícuota real del ticket). El sistema usa esto para el Libro IVA Compras. Es ortogonal a la regla de oro: el gasto sigue cargándose rápido como gasto, NO como factura_compra, pero los datos fiscales viajan dentro del gasto. Si la foto NO discrimina IVA (ticket no fiscal), no completes esos campos.
-   PERCEPCIÓN IIBB DISCRIMINADA EN EL TICKET: muy común en estaciones de servicio (YPF/Shell/Axion), supermercados mayoristas, ferreterías grandes — aparece como "Perc. IIBB", "Percepción IIBB Bs As", "IB Pcia Bs As" o similar, como un renglón EXTRA arriba del total. Si la foto lo discrimina, leé el monto en pesos y ponelo en datos.percepcionIIBB. SOLO percepción IIBB: NO confundir con percepciones IVA (suelen decir "Perc. RG 2408", "Perc. IVA RG 3337", "Perc. IVA") — esas son otro impuesto distinto y por ahora no se cargan. NO lo confundas tampoco con el IVA ni con el neto. Sumarlo aparte permite que el sistema lo descuente del IIBB del mes. Si no aparece discriminado en el ticket, no completes el campo.
+   PERCEPCIONES DISCRIMINADAS EN EL TICKET (hay DOS, distintas — leelas por separado): aparecen como renglones EXTRA arriba del total, muy común en estaciones de servicio (YPF/Shell/Axion), supermercados mayoristas y ferreterías grandes.
+   (a) PERCEPCIÓN IIBB → "Perc. IIBB", "Percepción IIBB Bs As", "IB Pcia Bs As", "Ingresos Brutos". Ponela en datos.percepcionIIBB. Es pago a cuenta de Ingresos Brutos.
+   (b) PERCEPCIÓN IVA → "Perc. IVA", "Percep. IVA RG 2408", "Perc. RG 3337", "IVA Percepción". Ponela en datos.percepcionIVA. Es pago a cuenta del IVA.
+   Son impuestos DISTINTOS: NO las sumes juntas, NO las confundas entre sí, y NO las confundas con el IVA del comprobante ni con el neto. Si el ticket discrimina las dos, completá AMBOS campos con sus montos en pesos. Si solo aparece una, completá solo esa. Si no aparece ninguna discriminada, no completes ninguno. El total del gasto ya las incluye (son lo que pagaste); el sistema las resta de la base del IVA y las descuenta del impuesto que corresponde (IIBB o IVA del mes).
    RECIBO DE SUELDO / CARGAS / SINDICATO / ALQUILER / SERVICIOS: si el texto o la foto refieren a "recibo de sueldo", "haberes", "liquidación", "sueldo de X", "F.931" (cargas sociales), "boleta UOCRA"/"sindicato", "alquiler", o servicios (luz/gas/internet) — completá el campo categoriaFiscal con la opción que corresponda y NO incluyas tipoFactura/numeroFactura/cuit/montoNeto (estos comprobantes NO generan IVA crédito y no van al Libro IVA Compras; el panel Financiero los suma a su columna por categoría). El gasto sigue siendo un GASTO normal con su monto y su foto.
 2. INGRESO: monto, descripción, obraId, cajaId
-3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(TOTAL del comprobante con IVA y percepciones — lo que paga la empresa, NUNCA el neto), montoNeto(opcional, solo si la foto discrimina el neto sin IVA), percepcionIIBB(opcional), concepto
+3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(TOTAL del comprobante con IVA y percepciones — lo que paga la empresa, NUNCA el neto), montoNeto(opcional, solo si la foto discrimina el neto sin IVA), percepcionIIBB(opcional), percepcionIVA(opcional), concepto
 4. AVANCE_OBRA: obraId(ID exacto de la lista), rubroId(ID del rubro), tareaId(ID de la tarea), cantidadAvance(unidades completadas, ej:75), unidad(ej:'m²'), porcentajeAvance(% a sumar si no hay cantidad), descripcion
 5. CHEQUE_RECIBIDO: obraId, cajaDestinoId
 6. COMANDOS: ayuda | saldo | pendientes | cheques | resumen [obraId] [fecha YYYY-MM-DD] | como_va_obra (datos.obra=nombre) | cc_proveedor (datos.proveedor=nombre) | contacto_proveedor (datos.proveedor=nombre)
@@ -1516,6 +1519,9 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       // del IIBB del mes en el panel Financiero. Típica de estaciones de servicio.
       percepcionIIBB:   (tipo === 'gasto' && datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
                           ? Math.round(Number(datos.percepcionIIBB)) : undefined,
+      // Percepción IVA sufrida (RG 2408/3337). Pago a cuenta del IVA del mes.
+      percepcionIVA:    (tipo === 'gasto' && datos.percepcionIVA != null && Number(datos.percepcionIVA) > 0)
+                          ? Math.round(Number(datos.percepcionIVA)) : undefined,
       medioPago:        datos.medioPago || 'Efectivo',
       comprobante:      datos.comprobante || 'negro',
       comprobanteUrl:   mediaUrl || null,
@@ -1555,6 +1561,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       const fiscal = desglosarCompraBot({
         total: monto, tipoLetra,
         percepcionIIBB: nuevoMov.percepcionIIBB || 0,
+        percepcionIVA: nuevoMov.percepcionIVA || 0,
         montoNeto: datos.montoNeto,
       });
       nuevoMov.comprobante = 'blanco';
@@ -1692,12 +1699,14 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     if (user.user_rol === 'Admin' && totalGastoBot > 0 && !SIN_IVA_CREDITO_FACT.has(datos.categoriaFiscal)) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A' / 'B' / 'C'
       const total = totalGastoBot;
-      // Percepción IIBB detectada en el ticket: se excluye de la base fiscal del IVA.
+      // Percepciones detectadas en el ticket: se excluyen de la base fiscal del IVA.
       const perc = (datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
                      ? Math.round(Number(datos.percepcionIIBB)) : 0;
+      const percIVA = (datos.percepcionIVA != null && Number(datos.percepcionIVA) > 0)
+                     ? Math.round(Number(datos.percepcionIVA)) : 0;
       // Desglose fiscal centralizado (ver desglosarCompraBot).
       const { neto, iva, alicuota } = desglosarCompraBot({
-        total, tipoLetra, percepcionIIBB: perc, montoNeto: datos.montoNeto,
+        total, tipoLetra, percepcionIIBB: perc, percepcionIVA: percIVA, montoNeto: datos.montoNeto,
       });
       // Caja efectivo del admin (ARS). Sino, primera ARS visible. Si nada → buzón.
       const caja = ctx.cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email && c.moneda === 'ARS')
@@ -1725,18 +1734,20 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
           creadoPorWA: true,
           creadoPor: user.user_name,
           percepcionIIBB: perc > 0 ? perc : undefined,
+          percepcionIVA: percIVA > 0 ? percIVA : undefined,
           comprobanteRecibido: {
             tipo: tipoLetra, numero: datos.numeroFactura || '', cuit: datos.cuit || '',
-            // total = total del ticket (con percepción), para fingerprint estable.
+            // total = total del ticket (con percepciones), para fingerprint estable.
             fecha: fechaMov, neto, iva, alicuota, total,
           },
         };
         await appendMovimiento(mov);
         const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
         const lineaPerc = perc > 0 ? `\nPercep. IIBB: ${fmt(perc)} (descuenta del IIBB del mes)` : '';
+        const lineaPercIVA = percIVA > 0 ? `\nPercep. IVA: ${fmt(percIVA)} (pago a cuenta del IVA del mes)` : '';
         return `✅ *Factura ${tipoLetra} cargada* — ${fmt(total)}\n` +
           `Proveedor: *${datos.proveedor || '—'}*${datos.numeroFactura ? ` · N° ${datos.numeroFactura}` : ''}\n` +
-          `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}${lineaPerc}\n` +
+          `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}${lineaPerc}${lineaPercIVA}\n` +
           `Salió de: *${caja.nombre}*\n\n` +
           `Editable desde la app. Cuenta para tu Libro IVA Compras del mes.`;
       }
@@ -1762,6 +1773,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
                       ? Math.round(Number(datos.montoNeto)) : null,
       percepcionIIBB: (datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
                         ? Math.round(Number(datos.percepcionIIBB)) : null,
+      percepcionIVA:  (datos.percepcionIVA != null && Number(datos.percepcionIVA) > 0)
+                        ? Math.round(Number(datos.percepcionIVA)) : null,
       obraId:        datos.obraId        || null,  // si el texto mencionó obra
       mediaType:     mediaUrl?.endsWith('.pdf') ? 'pdf' : 'image',
       mediaUrl:      mediaUrl || null,
@@ -2603,10 +2616,12 @@ async function ejecutarComando(comando, datos, user, ctx) {
       const tipoLetra = String(item.tipoFactura || 'B').toUpperCase().charAt(0); // 'A'/'B'/'C'
       const perc = (item.percepcionIIBB != null && Number(item.percepcionIIBB) > 0)
                      ? Math.round(Number(item.percepcionIIBB)) : 0;
+      const percIVA = (item.percepcionIVA != null && Number(item.percepcionIVA) > 0)
+                     ? Math.round(Number(item.percepcionIVA)) : 0;
       // Desglose fiscal centralizado (mismo cálculo que el modal y las otras ramas
-      // del bot) — aprobar por chat no pierde ni el IVA crédito ni la percepción.
+      // del bot) — aprobar por chat no pierde ni el IVA crédito ni las percepciones.
       const { neto, iva, alicuota } = desglosarCompraBot({
-        total: monto, tipoLetra, percepcionIIBB: perc, montoNeto: item.montoNeto,
+        total: monto, tipoLetra, percepcionIIBB: perc, percepcionIVA: percIVA, montoNeto: item.montoNeto,
       });
       const mov = {
         id: `mov-${Date.now()}`,
@@ -2627,6 +2642,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
         creadoPorWA: true,
         creadoPor: user.user_name,
         percepcionIIBB: perc > 0 ? perc : undefined,
+        percepcionIVA: percIVA > 0 ? percIVA : undefined,
         ...(monto > 0 ? {
           comprobanteRecibido: {
             tipo: tipoLetra,
@@ -2641,8 +2657,9 @@ async function ejecutarComando(comando, datos, user, ctx) {
       await appendMovimiento(mov);
       const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
       const linePerc = perc > 0 ? `\nPercep. IIBB: ${fmt(perc)} (descuenta del IIBB del mes)` : '';
+      const linePercIVA = percIVA > 0 ? `\nPercep. IVA: ${fmt(percIVA)} (pago a cuenta del IVA del mes)` : '';
       const lineIva  = (monto > 0 && iva > 0) ? `\nNeto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}` : '';
-      return `✅ Factura aprobada y cargada como gasto: ${fmt(mov.monto)}${obra ? ` en ${obra.nombre}` : ' (General)'}.${lineIva}${linePerc}${!item.obraId ? '\n_Quedó en General — si era de una obra, editala desde Movimientos._' : ''}`;
+      return `✅ Factura aprobada y cargada como gasto: ${fmt(mov.monto)}${obra ? ` en ${obra.nombre}` : ' (General)'}.${lineIva}${linePerc}${linePercIVA}${!item.obraId ? '\n_Quedó en General — si era de una obra, editala desde Movimientos._' : ''}`;
     }
 
     const verbo = accion === 'confirmed' ? '✅ Aprobado' : '❌ Rechazado';

@@ -288,12 +288,13 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
 }
 
 // ── KPI grande ─────────────────────────────────────────────────────────────────
-function PosicionCard({ debito, credito, posicion, mes, readOnly }) {
+function PosicionCard({ debito, credito, percepcionIVA = 0, posicion, mes, readOnly }) {
   const aPagar  = posicion > 0;
   const aFavor  = posicion < 0;
   const color   = aPagar ? '#b91c1c' : aFavor ? '#166534' : T.ink2;
   const label   = aPagar ? 'A pagar' : aFavor ? 'A favor' : 'Sin movimiento neto';
   const monto   = Math.abs(posicion);
+  const tienePercIVA = percepcionIVA > 0;
   return (
     <Box style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
@@ -302,7 +303,7 @@ function PosicionCard({ debito, credito, posicion, mes, readOnly }) {
             ◆ Posición de IVA · {labelMes(mes)}
           </div>
           <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
-            Débito (Ventas) − Crédito (Compras){readOnly ? ' · vista del contador' : ''}
+            Débito (Ventas) − Crédito (Compras){tienePercIVA ? ' − Percep. IVA' : ''}{readOnly ? ' · vista del contador' : ''}
           </div>
         </div>
       </div>
@@ -321,6 +322,11 @@ function PosicionCard({ debito, credito, posicion, mes, readOnly }) {
           <div style={{ fontSize: 10, color: T.ink3, marginTop: 4 }}>
             {aPagar ? 'Resta IVA débito sobre crédito.' : aFavor ? 'Tenés saldo a favor: aplicará al próximo período.' : 'Compras y ventas se compensaron.'}
           </div>
+          {tienePercIVA && (
+            <div style={{ fontSize: 9.5, color: T.ink3, marginTop: 3, fontFamily: T.fontMono }}>
+              incl. − {fmtMoney(percepcionIVA)} percep. IVA (pago a cuenta)
+            </div>
+          )}
         </div>
       </div>
     </Box>
@@ -377,7 +383,17 @@ export default function Facturacion() {
   // ── IVA Crédito (compras) ────────────────────────────────────────────────────
   const credito = useMemo(() => comprasMes.reduce((s, m) => s + (m.comprobanteRecibido?.iva || 0), 0), [comprasMes]);
 
-  const posicion = Math.round((debito - credito) * 100) / 100;
+  // ── Percepción IVA sufrida (RG 2408/3337) ────────────────────────────────────
+  // Pago a cuenta del IVA: NO es crédito técnico (no integra el IVA del
+  // comprobante), es un "ingreso directo" que reduce el saldo a pagar. Se suma
+  // sobre los gastos del mes que la tengan cargada (igual que la percepción IIBB
+  // en su sección). Si supera la posición técnica, el excedente engrosa el saldo
+  // a favor — por eso entra en la posición.
+  const percepcionIVAMes = useMemo(() => (movimientos || [])
+    .filter(m => m.tipo === 'gasto' && Number(m.percepcionIVA) > 0 && (m.fecha || '').slice(0, 7) === mes)
+    .reduce((s, m) => s + Number(m.percepcionIVA || 0), 0), [movimientos, mes]);
+
+  const posicion = Math.round((debito - credito - percepcionIVAMes) * 100) / 100;
 
   // ── Comparativa con el mes anterior + saldo a favor arrastrado ───────────────
   // Helper: posición IVA de un mes (YYYY-MM) cualquiera, mismo cálculo.
@@ -386,7 +402,11 @@ export default function Facturacion() {
     const c = (movimientos || []).filter(m => m.comprobanteRecibido && (m.fecha || '').slice(0, 7) === mesKey);
     const deb = v.reduce((s, x) => s + (getTipoComprobante(x.tipoId)?.signo ?? 1) * (x.iva || 0), 0);
     const cre = c.reduce((s, m) => s + (m.comprobanteRecibido?.iva || 0), 0);
-    return { debito: deb, credito: cre, posicion: Math.round((deb - cre) * 100) / 100 };
+    // Percepción IVA del mes: pago a cuenta que reduce la posición (ver arriba).
+    const pIVA = (movimientos || [])
+      .filter(m => m.tipo === 'gasto' && Number(m.percepcionIVA) > 0 && (m.fecha || '').slice(0, 7) === mesKey)
+      .reduce((s, m) => s + Number(m.percepcionIVA || 0), 0);
+    return { debito: deb, credito: cre, percepcionIVA: pIVA, posicion: Math.round((deb - cre - pIVA) * 100) / 100 };
   };
   // Mes anterior (YYYY-MM): restamos 1 mes al mes seleccionado.
   const mesAnterior = useMemo(() => {
@@ -404,7 +424,7 @@ export default function Facturacion() {
   const saldoAFavorPrevio = useMemo(() => {
     const set = new Set();
     comprobantes.forEach(c => { const k = (c.fecha || '').slice(0, 7); if (k && k < mes) set.add(k); });
-    (movimientos || []).forEach(m => { if (m.comprobanteRecibido) { const k = (m.fecha || '').slice(0, 7); if (k && k < mes) set.add(k); } });
+    (movimientos || []).forEach(m => { if (m.comprobanteRecibido || Number(m.percepcionIVA) > 0) { const k = (m.fecha || '').slice(0, 7); if (k && k < mes) set.add(k); } });
     let saldo = 0;
     [...set].sort().forEach(mk => {
       const { posicion: p } = compFor(mk);
@@ -522,6 +542,7 @@ export default function Facturacion() {
       <div class="sumario">
         <div class="box"><div class="l">Débito (Ventas)</div><div class="v">${fmtMoney(debito)}</div></div>
         <div class="box"><div class="l">Crédito (Compras)</div><div class="v">${fmtMoney(credito)}</div></div>
+        ${percepcionIVAMes > 0 ? `<div class="box"><div class="l">Percep. IVA (pago a cta.)</div><div class="v">${fmtMoney(percepcionIVAMes)}</div></div>` : ''}
         <div class="box pos"><div class="l">${posicion>0?'A pagar':posicion<0?'A favor':'Neto'}</div><div class="v">${fmtMoney(Math.abs(posicion))}</div></div>
       </div>
       <h2>Ventas · Libro IVA Débito</h2>
@@ -577,7 +598,7 @@ export default function Facturacion() {
       {/* ── TAB RESUMEN ─────────────────────────────────────────────────────── */}
       {tab === 'resumen' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <PosicionCard debito={debito} credito={credito} posicion={posicion} mes={mes} readOnly={isContador} />
+          <PosicionCard debito={debito} credito={credito} percepcionIVA={percepcionIVAMes} posicion={posicion} mes={mes} readOnly={isContador} />
 
           {/* Comparativa + saldo a favor arrastrado */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

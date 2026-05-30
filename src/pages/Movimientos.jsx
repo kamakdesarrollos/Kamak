@@ -385,6 +385,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const [categoriaFiscal,setCategoriaFiscal]= useState(''); // sueldo|cs-soc|sind|iibb|alquiler|servicios|seguro|otro (vacío = no fiscal)
   const [retencionIIBB,  setRetencionIIBB]  = useState(''); // Retención de IIBB que sufrió este cobro (descuenta del IIBB a pagar del mes)
   const [percepcionIIBB, setPercepcionIIBB] = useState(''); // Percepción de IIBB sufrida en este gasto (estación de servicio, etc.) — también descuenta del IIBB a pagar
+  const [percepcionIVA,  setPercepcionIVA]  = useState(''); // Percepción de IVA sufrida (RG 2408/3337, mayoristas) — pago a cuenta que descuenta del IVA a pagar del mes
   const [cuotaId,        setCuotaId]        = useState('');
   const [fotoFile,       setFotoFile]       = useState(null);
   const [fotoUploading,  setFotoUploading]  = useState(false);
@@ -553,6 +554,8 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       retencionIIBB:   (() => { const n = !isGasto ? Math.round(parseMoneyAR(retencionIIBB)) : 0; return n > 0 ? n : undefined; })(),
       // Percepción IIBB sufrida en un gasto (estaciones de servicio, etc.) — también descuenta.
       percepcionIIBB:  (() => { const n =  isGasto ? Math.round(parseMoneyAR(percepcionIIBB)) : 0; return n > 0 ? n : undefined; })(),
+      // Percepción IVA sufrida en un gasto (mayoristas, RG 2408/3337) — pago a cuenta del IVA del mes.
+      percepcionIVA:   (() => { const n =  isGasto ? Math.round(parseMoneyAR(percepcionIVA)) : 0; return n > 0 ? n : undefined; })(),
       medioPago:     medio,
       referencia:    cheqNumero || '',
       fondoReparo:   false,
@@ -605,7 +608,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       });
     }
 
-    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false); setCategoriaFiscal(''); setRetencionIIBB(''); setPercepcionIIBB('');
+    setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false); setCategoriaFiscal(''); setRetencionIIBB(''); setPercepcionIIBB(''); setPercepcionIVA('');
     setCheqNumero(''); setCheqBanco(''); setCheqTitular(''); setCheqVencimiento('');
     setCuotaId(''); setFotoFile(null); if (fotoRef.current) fotoRef.current.value = '';
   };
@@ -818,6 +821,16 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Percepción IIBB sufrida $ (opcional):</span>
           <input type="text" inputMode="decimal" placeholder="0"
             value={percepcionIIBB} onChange={e => setPercepcionIIBB(e.target.value)}
+            style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
+        </div>
+      )}
+      {/* Percepción IVA sufrida (RG 2408/3337): típica en mayoristas. Es un pago a
+          cuenta del IVA del mes → se descuenta de la posición IVA en el Financiero. */}
+      {isGasto && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Percepción IVA sufrida $ (opcional):</span>
+          <input type="text" inputMode="decimal" placeholder="0"
+            value={percepcionIVA} onChange={e => setPercepcionIVA(e.target.value)}
             style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
         </div>
       )}
