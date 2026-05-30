@@ -2593,12 +2593,37 @@ async function ejecutarComando(comando, datos, user, ctx) {
                       ? Math.round(Number(item.monto))
                       : (item.montoTotal != null ? Math.round(Number(item.montoTotal)) : 0);
       const obra  = item.obraId ? ctx.obras.find(o => o.id === item.obraId) : null;
+      const fechaMov = item.fecha || new Date().toISOString().split('T')[0];
+      // Desglose fiscal: mismo cálculo que AprobarFacturaModal y que el path
+      // auto-load Admin del bot, para que aprobar por chat NO pierda el IVA
+      // crédito ni la percepción IIBB.
+      const tipoLetra = String(item.tipoFactura || 'B').toUpperCase().charAt(0); // 'A'/'B'/'C'
+      const perc = (item.percepcionIIBB != null && Number(item.percepcionIIBB) > 0)
+                     ? Math.round(Number(item.percepcionIIBB)) : 0;
+      const baseFiscal = Math.max(0, monto - perc);
+      const round2 = (n) => Math.round(n * 100) / 100;
+      let neto = 0, iva = 0, alicuota = 0;
+      if (monto > 0) {
+        if (tipoLetra === 'C') {
+          neto = baseFiscal; iva = 0; alicuota = 0;
+        } else if (item.montoNeto != null && Number(item.montoNeto) > 0 && Number(item.montoNeto) < baseFiscal) {
+          neto = Math.round(Number(item.montoNeto));
+          iva = Math.max(0, baseFiscal - neto);
+          const pct = neto > 0 ? (iva / neto) * 100 : 21;
+          const known = [21, 10.5, 27, 0];
+          alicuota = known.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a);
+        } else {
+          alicuota = 21;
+          neto = round2(baseFiscal / 1.21);
+          iva  = round2(baseFiscal - neto);
+        }
+      }
       const mov = {
         id: `mov-${Date.now()}`,
         tipo: 'gasto',
         descripcion: item.concepto || `Factura ${item.tipoFactura || ''} ${item.numeroFactura || ''} · ${item.proveedor || ''}`.trim(),
         monto: Math.round(monto),
-        fecha: item.fecha || new Date().toISOString().split('T')[0],
+        fecha: fechaMov,
         obraId: item.obraId || null,
         obraNombre: obra?.nombre || 'General',
         cajaId,
@@ -2611,10 +2636,23 @@ async function ejecutarComando(comando, datos, user, ctx) {
         comprobanteUrl: item.mediaUrl || null,
         creadoPorWA: true,
         creadoPor: user.user_name,
+        percepcionIIBB: perc > 0 ? perc : undefined,
+        ...(monto > 0 ? {
+          comprobanteRecibido: {
+            tipo: tipoLetra,
+            numero: item.numeroFactura || '',
+            cuit: item.cuit || '',
+            fecha: fechaMov,
+            neto, iva, alicuota,
+            total: monto,
+          },
+        } : {}),
       };
       await appendMovimiento(mov);
       const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
-      return `✅ Factura aprobada y cargada como gasto: ${fmt(mov.monto)}${obra ? ` en ${obra.nombre}` : ' (General)'}.${!item.obraId ? '\n_Quedó en General — si era de una obra, editala desde Movimientos._' : ''}`;
+      const linePerc = perc > 0 ? `\nPercep. IIBB: ${fmt(perc)} (descuenta del IIBB del mes)` : '';
+      const lineIva  = (monto > 0 && iva > 0) ? `\nNeto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}` : '';
+      return `✅ Factura aprobada y cargada como gasto: ${fmt(mov.monto)}${obra ? ` en ${obra.nombre}` : ' (General)'}.${lineIva}${linePerc}${!item.obraId ? '\n_Quedó en General — si era de una obra, editala desde Movimientos._' : ''}`;
     }
 
     const verbo = accion === 'confirmed' ? '✅ Aprobado' : '❌ Rechazado';
