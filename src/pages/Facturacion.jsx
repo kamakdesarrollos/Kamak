@@ -43,9 +43,23 @@ function NuevaFacturaModal({ empresa, clientes, obras, onSave, onClose }) {
 
   const cliente = clientes.find(c => c.id === form.clienteId) || null;
 
-  // Al elegir cliente: sugerir el tipo de comprobante según su condición IVA.
+  // La letra del comprobante la decide la condición IVA del cliente:
+  //   Responsable Inscripto → solo A (FA / NDA / NCA)
+  //   Resto (Consumidor Final / Monotributo / Exento) → solo B (FB / NDB / NCB)
+  // No se ofrecen las otras opciones para evitar emitir un comprobante incorrecto.
+  const letraPermitida = cliente ? (cliente.condicionIVA === 'RI' ? 'A' : 'B') : null;
+  const tiposDisponibles = letraPermitida
+    ? TIPOS_COMPROBANTE.filter(t => t.letra === letraPermitida)
+    : TIPOS_COMPROBANTE;
+
+  // Al elegir cliente: setear el tipo a Factura de la letra correcta (FA o FB).
+  // Si el tipo actual ya no es válido para ese cliente, lo corregimos.
   useEffect(() => {
-    if (cliente) set('tipoId', tipoFacturaSugerido(cliente.condicionIVA || 'CF'));
+    if (!cliente) return;
+    const tipoActual = getTipoComprobante(form.tipoId);
+    if (!tipoActual || tipoActual.letra !== letraPermitida) {
+      set('tipoId', tipoFacturaSugerido(cliente.condicionIVA || 'CF'));
+    }
   }, [form.clienteId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const netoNum = parseFloat(String(form.neto).replace(',', '.')) || 0;
@@ -113,9 +127,22 @@ function NuevaFacturaModal({ empresa, clientes, obras, onSave, onClose }) {
           <div style={{ display: 'flex', gap: 10 }}>
             <div style={{ flex: 1 }}>
               <label style={labelSt}>Tipo de comprobante *</label>
-              <select style={{ ...inputSt, cursor: 'pointer' }} value={form.tipoId} onChange={e => set('tipoId', e.target.value)}>
-                {TIPOS_COMPROBANTE.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+              <select
+                style={{ ...inputSt, cursor: cliente ? 'pointer' : 'not-allowed', opacity: cliente ? 1 : 0.5 }}
+                disabled={!cliente}
+                value={form.tipoId}
+                onChange={e => set('tipoId', e.target.value)}
+              >
+                {tiposDisponibles.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
               </select>
+              {cliente && (
+                <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>
+                  Solo letra <b>{letraPermitida}</b> — el cliente es {getCondicionIVA(cliente.condicionIVA)?.nombre || 'Consumidor Final'}.
+                </div>
+              )}
+              {!cliente && (
+                <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>Elegí primero el cliente.</div>
+              )}
             </div>
             <div style={{ width: 150 }}>
               <label style={labelSt}>Fecha *</label>
