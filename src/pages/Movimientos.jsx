@@ -159,6 +159,9 @@ function TraspasoForm({ cajas, dolarVenta, onSave, onCancel }) {
       cajaOrigenId:  origenId,
       cajaDestinoId: destinoId,
       monto:         montoNum,
+      // CRÍTICO: en traspasos cross-moneda hay que mandar el monto convertido,
+      // sino el context acredita el mismo número en la otra moneda (~1000x).
+      montoDestino:  isCross && montoDestino ? Math.round(montoDestino) : null,
       fecha,
       concepto:      concepto.trim() || `Traspaso: ${origen?.nombre} → ${destino?.nombre}`,
       tcAplicado:    isCross ? tcNum : null,

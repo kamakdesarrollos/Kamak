@@ -1,11 +1,42 @@
-// Meta WhatsApp Cloud API — sin dependencias externas
+// Meta WhatsApp Cloud API — solo dependencias built-in de Node
 
+import crypto from 'node:crypto';
 import { extractSlots, mergeSlots, slotsCompletosPara, parseDictado } from './extractors.js';
 
 const META_TOKEN      = process.env.META_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
 const VERIFY_TOKEN    = process.env.META_VERIFY_TOKEN;
 const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY;
+// App Secret de la app de Meta — para validar la firma X-Hub-Signature-256 del
+// webhook. Si no está seteado, la validación se omite (no rompe el bot) hasta
+// que se configure en Vercel.
+const META_APP_SECRET = process.env.META_APP_SECRET;
+
+// Desactivamos el body parser de Vercel para poder leer el cuerpo RAW y validar
+// la firma HMAC de Meta sobre los bytes exactos (un re-stringify no coincidiría).
+export const config = { api: { bodyParser: false } };
+
+// Lee el cuerpo crudo del request. Si el runtime ya consumió/parseó el stream
+// (bodyParser no respetado), devuelve raw=null y el body ya parseado, y en ese
+// caso la firma NO se puede validar (degradamos sin romper).
+async function leerBodyCrudo(req) {
+  if (req.readableEnded || req.body !== undefined) {
+    return { raw: null, parsed: req.body };
+  }
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return { raw: Buffer.concat(chunks), parsed: null };
+}
+
+// Valida la firma del webhook de Meta (HMAC-SHA256 del raw body con el App Secret).
+// Comparación timing-safe. Devuelve false ante cualquier discrepancia.
+function firmaMetaValida(header, raw, secret) {
+  if (!header || !raw || !secret) return false;
+  const esperado = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');
+  const a = Buffer.from(String(header));
+  const b = Buffer.from(esperado);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 const SUPABASE_URL    = process.env.SUPABASE_URL;
 const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY;
 
@@ -2964,13 +2995,64 @@ async function ejecutarComando(comando, datos, user, ctx) {
     const cheques = Array.isArray(chequesData) ? chequesData : (chequesData?.cheques || []);
     const chq = cheques.find(c => (c.numero || '').toString().replace(/\D/g, '') === numero.replace(/\D/g, ''));
     if (!chq) return `❌ No encontré un cheque N° ${numero}.`;
-    await sbPatchItem('cheques', chq.id, { // atómico
-      estado: nuevoEstado,
-      ...(nuevoEstado === 'depositado' ? { fechaDeposito: new Date().toISOString().split('T')[0] } : {}),
-    });
     const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
-    const label = { depositado: 'depositado', cobrado: 'cobrado', rechazado: 'rechazado', anulado: 'anulado' }[nuevoEstado] || nuevoEstado;
-    return `✅ Cheque N° *${chq.numero}* (${chq.banco || ''} · ${fmt(chq.monto)}) marcado como *${label}*.`;
+    const fechaHoy = new Date().toISOString().split('T')[0];
+    const esTercero = chq.tipo === 'tercero' || chq.tipo === 'echeq_tercero';
+    const esEcheq = chq.tipo === 'echeq_tercero' || chq.tipo === 'echeq_propio';
+    const newMovId = () => `mov-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    // El cambio de estado del cheque DEBE ajustar la caja igual que la app, sino
+    // un depósito no llega al banco y un rechazo deja "plata fantasma" sumando.
+    const movBase = (tipo, motivo, cajaId) => ({
+      id: newMovId(), tipo, descripcion: `${motivo}${chq.numero ? ` #${chq.numero}` : ''}`,
+      monto: chq.monto, fecha: fechaHoy, cajaId, cajaDestinoId: null,
+      obraId: chq.obraId || null, obraNombre: chq.obraNombre || 'General',
+      proveedor: chq.clienteNombre || chq.titular || chq.proveedorNombre || '',
+      categoria: 'cheque', medioPago: esEcheq ? 'E-cheq' : 'Cheque',
+      referencia: chq.numero || '', fondoReparo: false, creadoPorWA: true, creadoPor: user.user_name,
+    });
+
+    // RECHAZO / ANULACIÓN → revertir el movimiento original (tercero entró como
+    // ingreso → se revierte con gasto; propio salió como gasto → se revierte con ingreso).
+    if (nuevoEstado === 'rechazado' || nuevoEstado === 'anulado') {
+      let revirtio = false;
+      if (chq.cajaId && chq.monto > 0) {
+        await appendMovimiento(movBase(esTercero ? 'gasto' : 'ingreso', nuevoEstado === 'rechazado' ? 'Cheque rechazado' : 'Cheque anulado', chq.cajaId));
+        revirtio = true;
+      }
+      await sbPatchItem('cheques', chq.id, { estado: nuevoEstado, ...(nuevoEstado === 'rechazado' ? { fechaRechazo: fechaHoy } : {}) });
+      return `✅ Cheque N° *${chq.numero}* (${fmt(chq.monto)}) marcado como *${nuevoEstado}*.` +
+        (revirtio ? `\nRevertí el efecto en la caja${chq.cajaId ? '' : ''}.` : '');
+    }
+
+    // CHEQUE PROPIO cobrado/acreditado → solo estado, SIN movimiento (la caja ya
+    // se descontó al emitirlo). Antes el bot lo dejaba como gasto fantasma o sin tocar nada.
+    if (!esTercero) {
+      await sbPatchItem('cheques', chq.id, { estado: 'acreditado', fechaDeposito: fechaHoy });
+      return `✅ Cheque propio N° *${chq.numero}* (${fmt(chq.monto)}) marcado como *acreditado*.\nNo genera movimiento: la plata ya se descontó al emitirlo.`;
+    }
+
+    // CHEQUE DE TERCERO depositado/cobrado → traspaso de la caja de origen al banco.
+    if (chq.cajaId) {
+      const banco = ctx.cajas.find(c => c.tipo === 'banco' && (c.moneda || 'ARS') === (chq.moneda || 'ARS') && c.id !== chq.cajaId && cajaEsVisible(user.cajasVisibles, c.id))
+                 || ctx.cajas.find(c => c.tipo === 'banco' && (c.moneda || 'ARS') === (chq.moneda || 'ARS') && c.id !== chq.cajaId);
+      if (banco) {
+        await appendMovimiento({
+          ...movBase('traspaso', `Depósito cheque`, chq.cajaId),
+          descripcion: `Depósito cheque${chq.numero ? ` #${chq.numero}` : ''} en ${banco.nombre}`,
+          cajaDestinoId: banco.id, montoDestino: chq.monto, categoria: 'traspaso', medioPago: 'Interno',
+        });
+        await sbPatchItem('cheques', chq.id, { estado: 'depositado', cajaDestinoId: banco.id, cajaDestinoNombre: banco.nombre, fechaDeposito: fechaHoy });
+        const cajaOrig = ctx.cajas.find(c => c.id === chq.cajaId);
+        return `✅ Cheque N° *${chq.numero}* (${fmt(chq.monto)}) depositado en *${banco.nombre}*.\nTraspasé la plata de ${cajaOrig?.nombre || 'la caja'} al banco.`;
+      }
+      // No pude resolver la caja banco → marco estado pero aviso que falta el traspaso.
+      await sbPatchItem('cheques', chq.id, { estado: 'depositado', fechaDeposito: fechaHoy });
+      return `✅ Cheque N° *${chq.numero}* (${fmt(chq.monto)}) marcado como *depositado*.\n⚠️ No identifiqué la caja banco destino: completá el traspaso desde la app para que la plata figure en el banco.`;
+    }
+
+    // Tercero sin caja de origen (legacy, nunca contado) → solo estado.
+    await sbPatchItem('cheques', chq.id, { estado: 'depositado', fechaDeposito: fechaHoy });
+    return `✅ Cheque N° *${chq.numero}* (${fmt(chq.monto)}) marcado como *depositado*.`;
   }
 
   // "Teléfono/contacto de [proveedor]"
@@ -3628,6 +3710,7 @@ export default async function handler(req, res) {
         meta:           !!META_TOKEN,
         phoneId:        !!PHONE_NUMBER_ID,
         verifyToken:    !!VERIFY_TOKEN,
+        appSecret:      !!META_APP_SECRET,
         anthropic:      !!ANTHROPIC_KEY,
         supabase:       !!SUPABASE_URL,
         // META_PHONE_NUMBER es el numero humano del bot (no sensible).
@@ -3642,7 +3725,22 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = req.body;
+    // Leer el cuerpo crudo y validar la firma de Meta antes de procesar nada.
+    const { raw, parsed } = await leerBodyCrudo(req);
+    if (META_APP_SECRET && raw) {
+      if (!firmaMetaValida(req.headers['x-hub-signature-256'], raw, META_APP_SECRET)) {
+        console.warn('[webhook] X-Hub-Signature-256 inválida — request rechazado');
+        return res.status(403).json({ error: 'invalid signature' });
+      }
+    } else if (META_APP_SECRET && !raw) {
+      console.warn('[webhook] no pude leer el body crudo — firma NO validada (revisar bodyParser)');
+    }
+    let body = parsed;
+    if (raw) {
+      try { body = JSON.parse(raw.toString('utf8') || '{}'); }
+      catch { return res.status(400).json({ error: 'bad json' }); }
+    }
+    body = body || {};
     if (body?.object !== 'whatsapp_business_account') return res.status(200).json({ ok: true });
 
     const entry   = body.entry?.[0];

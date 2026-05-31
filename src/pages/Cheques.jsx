@@ -36,6 +36,7 @@ const TIPO_BADGE = {
 const ESTADO_BADGE = {
   cartera:    { label: 'En cartera',  bg: '#e8f4f0', color: '#1a9b9c' },
   depositado: { label: 'Depositado',  bg: '#e8f4e8', color: '#2d7a2d' },
+  acreditado: { label: 'Acreditado',  bg: '#e8f4e8', color: '#2d7a2d' },
   endosado:   { label: 'Endosado',    bg: '#fff3e0', color: '#d97706' },
   rechazado:  { label: 'Rechazado',   bg: '#fde8e8', color: '#dc2626' },
   anulado:    { label: 'Anulado',     bg: T.faint2,  color: T.ink3 },
@@ -653,7 +654,7 @@ export default function Cheques() {
     if (currentUser && !isAdmin) navigate('/', { replace: true });
   }, [currentUser, isAdmin, navigate]);
 
-  const { cheques, addCheque, updateCheque, removeCheque, depositarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque } = useCheques();
+  const { cheques, addCheque, updateCheque, removeCheque, depositarCheque, acreditarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque } = useCheques();
   const { cajas, addMovimiento, removeMovimiento, traspasar } = useMovimientos();
   const { obras } = useObras();
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
@@ -747,6 +748,15 @@ export default function Cheques() {
       // Anula: revierte el efecto en la caja (tercero sale, propio se devuelve).
       ajustarCajaCheque(cheque, 'salida', 'Cheque anulado');
       anularCheque(cheque.id);
+      return;
+    }
+    if (action === 'acreditar') {
+      // Cheque PROPIO cobrado por el recipiente: NO genera movimiento (la caja ya
+      // se descontó al emitirlo). Solo cambia el estado. Antes reusaba el flujo de
+      // depósito → doble egreso de la caja de origen.
+      if (window.confirm(`¿Marcar el cheque #${cheque.numero || cheque.id} como acreditado?\n\nNo genera movimiento de caja: la plata ya se descontó cuando se emitió el cheque.`)) {
+        acreditarCheque(cheque.id, {});
+      }
       return;
     }
     setModal({ action, cheque });
@@ -960,9 +970,6 @@ export default function Cheques() {
         <ChequeModal cheque={modal.cheque} obras={obrasActivas} cajas={cajas} onSave={handleEditar} onClose={closeModal} />
       )}
       {modal?.action === 'depositar' && (
-        <DepositarModal cheque={modal.cheque} cajas={cajas} onConfirm={handleDepositar} onClose={closeModal} />
-      )}
-      {modal?.action === 'acreditar' && (
         <DepositarModal cheque={modal.cheque} cajas={cajas} onConfirm={handleDepositar} onClose={closeModal} />
       )}
       {modal?.action === 'endosar' && (

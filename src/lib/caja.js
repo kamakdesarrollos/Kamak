@@ -26,3 +26,16 @@ export function calcSaldoCaja(caja, movimientos) {
   const efecto = (movimientos || []).reduce((s, m) => s + efectoEnCaja(m, caja.id), 0);
   return Math.round((caja.saldoInicial || 0) + efecto);
 }
+
+// Convierte el monto de un movimiento a ARS según la moneda de SU caja. Para KPIs
+// y reportes consolidados que NO deben sumar pesos y dólares como si fueran la
+// misma moneda. Si el movimiento guardó su equivalente en pesos (montoARS) lo usa;
+// sino convierte los de caja USD con el tipo de cambio. Los de caja ARS van tal cual.
+export function montoEnARS(m, cajas, tc) {
+  if (!m) return 0;
+  const caja = (cajas || []).find(c => c.id === m.cajaId);
+  if (caja && caja.moneda === 'USD') {
+    return Math.round(m.montoARS != null ? m.montoARS : (m.monto || 0) * (tc || 1));
+  }
+  return Math.round(m.monto || 0);
+}

@@ -48,6 +48,14 @@ export function ChequesProvider({ children }) {
     updateCheque(id, { estado: 'depositado', cajaDestinoId, cajaDestinoNombre, fechaDeposito, movimientoId: movimientoId || null });
   }, [updateCheque]);
 
+  // Acreditar un cheque PROPIO (emitido): el recipiente lo cobró. NO genera
+  // movimiento de caja porque al emitirlo ya se registró el gasto desde la caja.
+  // Es solo un cambio de estado terminal (a diferencia de depositar un cheque de
+  // tercero, que sí mueve plata de la caja al banco).
+  const acreditarCheque = useCallback((id, { fechaAcreditacion } = {}) => {
+    updateCheque(id, { estado: 'acreditado', fechaDeposito: fechaAcreditacion || today() });
+  }, [updateCheque]);
+
   const endosarCheque = useCallback((id, { endosadoA, fechaEndoso }) => {
     updateCheque(id, { estado: 'endosado', endosadoA, fechaEndoso });
   }, [updateCheque]);
@@ -70,8 +78,8 @@ export function ChequesProvider({ children }) {
 
   const value = useMemo(() => ({
     cheques, addCheque, updateCheque, removeCheque,
-    depositarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque,
-  }), [cheques, addCheque, updateCheque, removeCheque, depositarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque]);
+    depositarCheque, acreditarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque,
+  }), [cheques, addCheque, updateCheque, removeCheque, depositarCheque, acreditarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque]);
 
   return (
     <CTX.Provider value={value}>

@@ -1,5 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { efectoEnCaja, calcSaldoCaja } from './caja';
+import { efectoEnCaja, calcSaldoCaja, montoEnARS } from './caja';
+
+describe('montoEnARS — consolidación de monedas', () => {
+  const cajas = [
+    { id: 'ars', moneda: 'ARS' },
+    { id: 'usd', moneda: 'USD' },
+  ];
+  it('movimiento en caja ARS va tal cual', () => {
+    expect(montoEnARS({ cajaId: 'ars', monto: 100000 }, cajas, 1000)).toBe(100000);
+  });
+  it('movimiento en caja USD se convierte con el tipo de cambio', () => {
+    expect(montoEnARS({ cajaId: 'usd', monto: 5000 }, cajas, 1000)).toBe(5000000);
+  });
+  it('si guardó montoARS, lo usa en vez de convertir', () => {
+    expect(montoEnARS({ cajaId: 'usd', monto: 5000, montoARS: 4800000 }, cajas, 1000)).toBe(4800000);
+  });
+  it('caja inexistente o movimiento nulo → no rompe', () => {
+    expect(montoEnARS({ cajaId: 'xxx', monto: 100 }, cajas, 1000)).toBe(100);
+    expect(montoEnARS(null, cajas, 1000)).toBe(0);
+  });
+});
 
 describe('efectoEnCaja — invariante de caja', () => {
   const cajaId = 'cj-1';

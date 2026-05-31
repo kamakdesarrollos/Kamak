@@ -10,6 +10,7 @@ import { useAlertas } from '../store/AlertasContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado } from './obra/helpers';
+import { montoEnARS } from '../lib/caja';
 
 const fmtN = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
 const currMes = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; };
@@ -73,16 +74,18 @@ export default function Dashboard() {
   const movsMes         = useMemo(() => movimientos.filter(m => m.fecha.startsWith(mes)), [movimientos, mes]);
   const ingresosMes     = useMemo(() => movsMes.filter(m => m.tipo === 'ingreso'), [movsMes]);
   const gastosMes       = useMemo(() => movsMes.filter(m => m.tipo === 'gasto'),   [movsMes]);
-  const totalIngresosMes = ingresosMes.reduce((s, m) => s + m.monto, 0);
-  const totalGastosMes   = gastosMes.reduce((s, m) => s + m.monto, 0);
+  // KPIs consolidados en ARS: un movimiento en caja USD NO se suma como pesos
+  // (antes inflaba/invertía el neto). montoEnARS convierte según la moneda de la caja.
+  const totalIngresosMes = ingresosMes.reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
+  const totalGastosMes   = gastosMes.reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
   const netoMes          = totalIngresosMes - totalGastosMes;
 
-  // ── Top proveedores este mes ──
+  // ── Top proveedores este mes (en ARS) ──
   const topProvs = useMemo(() => {
     const map = {};
-    gastosMes.forEach(m => { if (m.proveedor) map[m.proveedor] = (map[m.proveedor] || 0) + m.monto; });
+    gastosMes.forEach(m => { if (m.proveedor) map[m.proveedor] = (map[m.proveedor] || 0) + montoEnARS(m, cajas, tc); });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [gastosMes]);
+  }, [gastosMes, cajas, tc]);
   const maxProvMonto = topProvs.length > 0 ? topProvs[0][1] : 1;
 
   // ── Cash flow últimos 6 meses ──
@@ -91,12 +94,12 @@ export default function Dashboard() {
     for (let i = 5; i >= 0; i--) {
       const d = new Date(y, mo - 1 - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-      const inp = movimientos.filter(m => m.tipo === 'ingreso' && m.fecha.startsWith(key)).reduce((s, m) => s + m.monto, 0);
-      const out = movimientos.filter(m => m.tipo === 'gasto'   && m.fecha.startsWith(key)).reduce((s, m) => s + m.monto, 0);
+      const inp = movimientos.filter(m => m.tipo === 'ingreso' && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
+      const out = movimientos.filter(m => m.tipo === 'gasto'   && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
       result.push({ label: MESES_N[d.getMonth()], inp, out });
     }
     return result;
-  }, [movimientos, y, mo]);
+  }, [movimientos, y, mo, cajas, tc]);
   const maxCF = Math.max(...cashFlowData.flatMap(d => [d.inp, d.out]), 1);
 
   // ── Obras ──
