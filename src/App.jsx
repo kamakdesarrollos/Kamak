@@ -5,6 +5,7 @@ import { CatalogProvider } from './store/CatalogContext';
 import { PlantillasProvider } from './store/PlantillasContext';
 import { GastosFijosProvider } from './store/GastosFijosContext';
 import { DolarProvider } from './store/DolarContext';
+import { IndicesProvider } from './store/IndicesContext';
 import { ProveedoresProvider } from './store/ProveedoresContext';
 import { ClientesProvider } from './store/ClientesContext';
 import { ComprobantesProvider } from './store/ComprobantesContext';
@@ -173,6 +174,7 @@ function DataProviders({ children }) {
     <AppLoadingProvider>
     <ConfiguracionProvider>
     <DolarProvider>
+    <IndicesProvider>
     <ObrasProvider>
     <CatalogProvider>
     <PlantillasProvider>
@@ -204,6 +206,7 @@ function DataProviders({ children }) {
     </PlantillasProvider>
     </CatalogProvider>
     </ObrasProvider>
+    </IndicesProvider>
     </DolarProvider>
     </ConfiguracionProvider>
     </AppLoadingProvider>
