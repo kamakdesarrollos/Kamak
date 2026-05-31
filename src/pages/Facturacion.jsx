@@ -22,6 +22,7 @@ import {
   resolverComprobanteAsociado,
 } from '../lib/afip';
 import { generarLibroIvaDigital, NOMBRES_ARCHIVO_LIBRO_IVA } from '../lib/libroIvaDigital';
+import { feCaeSolicitarPayload } from '../lib/wsfe';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -765,7 +766,18 @@ export default function Facturacion() {
                     <div style={{ width: 90, textAlign: 'center' }}>
                       <span style={{ background: chip.bg, color: chip.color, borderRadius: 3, padding: '2px 8px', fontSize: 10, fontWeight: 700 }}>{chip.label}</span>
                     </div>
-                    <div style={{ width: 24, flexShrink: 0, textAlign: 'center' }}>
+                    <div style={{ width: 90, flexShrink: 0, textAlign: 'center', display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                      {isAdmin && c.estado === 'borrador' && (
+                        <span title="Emitir en AFIP (WSFE)" style={{ cursor: 'pointer', color: T.accent, fontSize: 10, fontWeight: 700, border: `1px solid ${T.accent}`, borderRadius: 3, padding: '1px 5px' }}
+                          onClick={async () => {
+                            try {
+                              const payload = feCaeSolicitarPayload(c, { numero: c.numero || 0, comprobantes });
+                              const res = await fetch('/api/afip/emitir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comprobante: c, payload }) });
+                              const j = await res.json().catch(() => ({}));
+                              alert(j.cae ? `✅ CAE ${j.cae}` : `AFIP (${res.status}): ${j.detalle || j.error || 'no se pudo emitir'}`);
+                            } catch (e) { alert(`Error al emitir: ${e.message}`); }
+                          }}>AFIP</span>
+                      )}
                       {isAdmin && c.estado === 'borrador' && (
                         <span title="Eliminar borrador" style={{ cursor: 'pointer', color: T.ink3, fontSize: 13 }}
                           onClick={() => { if (window.confirm('¿Eliminar este borrador?')) removeComprobante(c.id); }}>✕</span>
