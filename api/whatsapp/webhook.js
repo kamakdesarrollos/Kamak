@@ -3021,27 +3021,39 @@ async function ejecutarComando(comando, datos, user, ctx) {
       referencia: chq.numero || '', fondoReparo: false, creadoPorWA: true, creadoPor: user.user_name,
     });
 
-    // RECHAZO / ANULACIÓN → revertir el movimiento original (tercero entró como
-    // ingreso → se revierte con gasto; propio salió como gasto → se revierte con ingreso).
+    // RECHAZO / ANULACIÓN → revertir el movimiento (tercero entró como ingreso →
+    // se revierte con gasto; propio salió como gasto → se revierte con ingreso).
     if (nuevoEstado === 'rechazado' || nuevoEstado === 'anulado') {
+      // Idempotencia: si ya está resuelto, no volver a mover la caja.
+      if (chq.estado === 'rechazado' || chq.estado === 'anulado') {
+        return `ℹ️ El cheque N° *${chq.numero}* ya estaba *${chq.estado}*. No volví a tocar la caja.`;
+      }
+      // Si ya estaba depositado, la plata está en el BANCO (cajaDestinoId): hay que
+      // revertir contra esa caja, no contra la de origen (que ya quedó en cero).
+      const cajaRev = (chq.estado === 'depositado' && chq.cajaDestinoId) ? chq.cajaDestinoId : chq.cajaId;
       let revirtio = false;
-      if (chq.cajaId && chq.monto > 0) {
-        await appendMovimiento(movBase(esTercero ? 'gasto' : 'ingreso', nuevoEstado === 'rechazado' ? 'Cheque rechazado' : 'Cheque anulado', chq.cajaId));
+      if (cajaRev && chq.monto > 0) {
+        await appendMovimiento(movBase(esTercero ? 'gasto' : 'ingreso', nuevoEstado === 'rechazado' ? 'Cheque rechazado' : 'Cheque anulado', cajaRev));
         revirtio = true;
       }
       await sbPatchItem('cheques', chq.id, { estado: nuevoEstado, ...(nuevoEstado === 'rechazado' ? { fechaRechazo: fechaHoy } : {}) });
       return `✅ Cheque N° *${chq.numero}* (${fmt(chq.monto)}) marcado como *${nuevoEstado}*.` +
-        (revirtio ? `\nRevertí el efecto en la caja${chq.cajaId ? '' : ''}.` : '');
+        (revirtio ? `\nRevertí el efecto en la caja.` : '');
     }
 
     // CHEQUE PROPIO cobrado/acreditado → solo estado, SIN movimiento (la caja ya
     // se descontó al emitirlo). Antes el bot lo dejaba como gasto fantasma o sin tocar nada.
     if (!esTercero) {
+      if (chq.estado === 'acreditado') return `ℹ️ El cheque propio N° *${chq.numero}* ya estaba acreditado.`;
+      if (chq.estado !== 'cartera') return `⚠️ El cheque N° *${chq.numero}* está *${chq.estado}*, no en cartera — no lo acredité. Revisalo en la app.`;
       await sbPatchItem('cheques', chq.id, { estado: 'acreditado', fechaDeposito: fechaHoy });
       return `✅ Cheque propio N° *${chq.numero}* (${fmt(chq.monto)}) marcado como *acreditado*.\nNo genera movimiento: la plata ya se descontó al emitirlo.`;
     }
 
     // CHEQUE DE TERCERO depositado/cobrado → traspaso de la caja de origen al banco.
+    // Solo desde cartera (idempotencia: no depositar dos veces).
+    if (chq.estado === 'depositado') return `ℹ️ El cheque N° *${chq.numero}* ya estaba depositado${chq.cajaDestinoNombre ? ` en ${chq.cajaDestinoNombre}` : ''}.`;
+    if (chq.estado !== 'cartera') return `⚠️ El cheque N° *${chq.numero}* está *${chq.estado}*, no en cartera — no lo deposité.`;
     if (chq.cajaId) {
       const banco = ctx.cajas.find(c => c.tipo === 'banco' && (c.moneda || 'ARS') === (chq.moneda || 'ARS') && c.id !== chq.cajaId && cajaEsVisible(user.cajasVisibles, c.id))
                  || ctx.cajas.find(c => c.tipo === 'banco' && (c.moneda || 'ARS') === (chq.moneda || 'ARS') && c.id !== chq.cajaId);

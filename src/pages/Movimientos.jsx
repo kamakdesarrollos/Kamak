@@ -413,6 +413,10 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
     return catalog.rubros || [];
   })();
 
+  // Al cambiar de obra, limpiar el rubro elegido: los rubros son del presupuesto
+  // de cada obra, uno de otra obra no aplica (evita imputar a un rubro fantasma).
+  useEffect(() => { setRubroNombre(''); }, [obraId]);
+
   // Moneda: 'ARS', 'USD' (directo a caja USD), 'USD_ARS' (pesos recibidos con ref USD, solo ingresos)
   const [monedaIngreso, setMonedaIngreso] = useState('ARS');
   const [monedaGasto,   setMonedaGasto]   = useState('ARS');
@@ -539,11 +543,15 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       contraparteName = prov?.nombre || '';
       extra.proveedorId = contraparteId || null;
       if (rubroNombre) {
-        extra.rubroNombre = rubroNombre;
-        // Guardar también el id del rubro del presupuesto (si matchea) para una
-        // imputación robusta ante renombres.
+        // Solo imputar si el rubro existe en la obra/catálogo actual. Si quedó un
+        // rubroNombre viejo (p.ej. se cambió de obra), NO lo persistimos → el gasto
+        // queda "sin rubro" en vez de imputarse a un rubro fantasma que después
+        // desaparece del desvío presupuesto-vs-real.
         const r = rubrosImputables.find(x => x.nombre === rubroNombre);
-        if (r && r.id) extra.rubroId = r.id;
+        if (r) {
+          extra.rubroNombre = rubroNombre;
+          if (r.id) extra.rubroId = r.id; // id del rubro del presupuesto (robusto ante renombres)
+        }
       }
     } else {
       const cli = clientes.find(c => c.id === contraparteId);
