@@ -1,7 +1,17 @@
 # Configuración de RLS en Supabase — Kamak
 
+> ⚠️ **Fuente de verdad: `supabase/migrations/0001_rls.sql`** (versionado en el repo).
+> Aplicá ESE archivo (pegándolo en el SQL Editor). Es la versión endurecida y
+> corregida: usa `is_admin()` SECURITY DEFINER para evitar recursión de RLS, y
+> maneja `shared_data` de forma genérica (cualquier key operativa, incluidas las
+> nuevas como `indices_cac`; solo `portal_tokens` queda admin-only).
+>
+> Este documento queda como **explicación/contexto**; los SQL de abajo son la
+> versión anterior (enumeraban keys y tenían riesgo de recursión) — preferí el
+> archivo de migración.
+>
 > Guía paso a paso para endurecer la seguridad de las tablas de Supabase.
-> Fecha: 2026-05-26.
+> Fecha: 2026-05-26 (migración versionada: 2026-05-31).
 > **Importante:** Estos cambios NO se hacen desde el código de la app, se hacen en el panel de Supabase Studio. Aplican al instante (no requieren deploy).
 
 ---
