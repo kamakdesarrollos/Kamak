@@ -8,8 +8,12 @@ import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex } from '../lib/apuPriceResolver';
 import TareasEstandarEditor from './modales/TareasEstandarEditor';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useIndices } from '../store/IndicesContext';
+import { calcularPreviewCAC } from '../lib/cacUpdate';
+import { getIndiceTipo } from '../lib/indices';
 
 const newId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+const fmtPrecio = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-AR')}`;
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 const today = () => new Date().toISOString().split('T')[0];
 const inputSt = { padding: '5px 8px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
@@ -453,6 +457,98 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
 }
 
 // ── Importar APU desde Excel ──────────────────────────────────────────────────
+// Modal: actualizar masivamente los precios del catálogo por índice CAC.
+function ActualizarCACModal({ catalog, indices, onAplicar, onRestore, onClose }) {
+  const meses = Object.keys(indices || {}).sort();
+  const [mesBase, setMesBase] = useState(meses[0] || '');
+  const [mesActual, setMesActual] = useState(meses[meses.length - 1] || '');
+  const [incluirMOLegacy, setIncluirMOLegacy] = useState(false);
+  let hayBackup = false;
+  try { hayBackup = !!JSON.parse(localStorage.getItem('kamak_catalog_cac_backup') || 'null'); } catch { hayBackup = false; }
+
+  const opts = { mesBase, mesActual, indices, incluirMOLegacy };
+  const sinMeses = meses.length < 2;
+  const mismoMes = mesBase === mesActual;
+  const preview = sinMeses ? { porColeccion: {}, omitidos: 0, sinIndice: 0, totalActualizados: 0 } : calcularPreviewCAC(catalog, opts);
+  const puedeAplicar = !sinMeses && !mismoMes && preview.totalActualizados > 0;
+
+  const COLS = [['materiales', 'Materiales'], ['subcontratos', 'Mano de obra'], ['generales', 'Generales']]
+    .concat(incluirMOLegacy ? [['mo', 'MO legacy (hora)']] : []);
+  const lbl = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
+  const sel = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontSize: 12, background: T.paper, cursor: 'pointer' };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
+      <div style={{ background: T.paper, borderRadius: 8, width: 580, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <b style={{ fontSize: 15 }}>⟳ Actualizar precios por CAC</b>
+          <span style={{ cursor: 'pointer', color: T.ink3, fontSize: 18 }} onClick={onClose}>✕</span>
+        </div>
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {sinMeses ? (
+            <div style={{ color: T.warn, fontSize: 13 }}>Cargá al menos dos meses de índice CAC en <b>Configuración → Índices de redeterminación</b> para poder actualizar precios.</div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div><label style={lbl}>Mes base</label>
+                  <select style={sel} value={mesBase} onChange={e => setMesBase(e.target.value)}>{meses.map(m => <option key={m}>{m}</option>)}</select></div>
+                <div style={{ paddingBottom: 6, color: T.ink3 }}>→</div>
+                <div><label style={lbl}>Mes actual</label>
+                  <select style={sel} value={mesActual} onChange={e => setMesActual(e.target.value)}>{meses.map(m => <option key={m}>{m}</option>)}</select></div>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                <input type="checkbox" checked={incluirMOLegacy} onChange={e => setIncluirMOLegacy(e.target.checked)} />
+                Incluir MO legacy por hora (catalog.mo, deprecada)
+              </label>
+
+              <div style={{ border: `1px solid ${T.faint2}`, borderRadius: 6, overflow: 'hidden' }}>
+                {COLS.map(([k, label], i) => {
+                  const c = preview.porColeccion[k] || { total: 0, actualizados: 0, variacionPct: null, ejemplos: [] };
+                  return (
+                    <div key={k} style={{ padding: '8px 12px', borderTop: i > 0 ? `1px solid ${T.faint2}` : 'none', fontSize: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span><b>{label}</b> <span style={{ color: T.ink3 }}>({getIndiceTipo(c.tipo)?.nombre || c.tipo})</span></span>
+                        <span style={{ fontFamily: T.fontMono }}>
+                          {c.actualizados}/{c.total} ítems
+                          {c.variacionPct != null && <b style={{ marginLeft: 6, color: c.variacionPct >= 0 ? T.warn : T.ok }}>{c.variacionPct >= 0 ? '+' : ''}{c.variacionPct}%</b>}
+                        </span>
+                      </div>
+                      {c.ejemplos.slice(0, 2).map((e, j) => (
+                        <div key={j} style={{ fontSize: 10.5, color: T.ink3, fontFamily: T.fontMono }}>{e.nombre}: {fmtPrecio(e.antes)} → {fmtPrecio(e.despues)}</div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {(preview.omitidos > 0 || preview.sinIndice > 0) && (
+                <div style={{ fontSize: 10.5, color: T.ink3 }}>
+                  {preview.omitidos > 0 && <div>· {preview.omitidos} ítem(s) sin precio → omitidos.</div>}
+                  {preview.sinIndice > 0 && <div>· {preview.sinIndice} ítem(s) sin índice para esos meses → sin cambio.</div>}
+                </div>
+              )}
+              {mismoMes && <div style={{ color: T.warn, fontSize: 11.5 }}>El mes base y el actual son el mismo: no hay nada que actualizar.</div>}
+
+              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#b45309', borderRadius: 6, padding: '8px 12px', fontSize: 11.5 }}>
+                ⚠️ Esto actualiza <b>solo el catálogo base</b>. Los presupuestos de obras ya cargadas <b>no cambian</b> (sus costos quedaron congelados al presupuestar). Los precios nuevos aplican a presupuestos que cargues a partir de ahora.
+              </div>
+            </>
+          )}
+        </div>
+        <div style={{ padding: '10px 18px', borderTop: `1px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+          <span>{hayBackup && <Btn sm onClick={onRestore} style={{ color: T.ink3 }}>↶ Deshacer última</Btn>}</span>
+          <span style={{ display: 'flex', gap: 8 }}>
+            <Btn sm onClick={onClose}>Cancelar</Btn>
+            <Btn sm fill onClick={() => onAplicar(opts)} style={{ opacity: puedeAplicar ? 1 : 0.4, pointerEvents: puedeAplicar ? 'auto' : 'none' }}>
+              Aplicar ({preview.totalActualizados})
+            </Btn>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ImportarAPUModal({ rubros, onImport, onClose }) {
   const [text, setText] = useState('');
   const [nombre, setNombre] = useState('');
@@ -1102,7 +1198,10 @@ export default function Catalogos() {
   }, [currentUser, isAdmin, navigate]);
 
   const [tab, setTab] = useState(4);
-  const { catalog, catalogIndex, add, update, remove } = useCatalog();
+  const { catalog, catalogIndex, add, update, remove, bulkUpdatePreciosCAC, restoreCatalogCACBackup } = useCatalog();
+  const { indices } = useIndices();
+  const [cacModal, setCacModal] = useState(false);
+  const [cacFlash, setCacFlash] = useState('');
 
   // KPIs = tabs (clickeables). Reemplaza la fila de tabs duplicada que había
   // abajo del banner — single source of truth para la navegación.
@@ -1123,10 +1222,14 @@ export default function Catalogos() {
         title="Catálogos"
         subtitle="Insumos, mano de obra, tareas y rubros base del presupuesto"
         actions={
-          <Btn sm onClick={() => {
-            const data = JSON.stringify(catalog, null, 2);
-            const a = document.createElement('a'); a.href = 'data:text/json,' + encodeURIComponent(data); a.download = 'kamak_catalog.json'; a.click();
-          }}>↓ Exportar JSON</Btn>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {cacFlash && <Chip ok style={{ fontSize: 11 }}>{cacFlash}</Chip>}
+            <Btn sm onClick={() => setCacModal(true)} title="Actualizar precios del catálogo por índice CAC">⟳ Actualizar por CAC</Btn>
+            <Btn sm onClick={() => {
+              const data = JSON.stringify(catalog, null, 2);
+              const a = document.createElement('a'); a.href = 'data:text/json,' + encodeURIComponent(data); a.download = 'kamak_catalog.json'; a.click();
+            }}>↓ Exportar JSON</Btn>
+          </div>
         }
         kpis={TABS.map((label, i) => ({
           label,
@@ -1265,6 +1368,27 @@ export default function Catalogos() {
           />
         )}
       </div>
+
+      {cacModal && (
+        <ActualizarCACModal
+          catalog={catalog}
+          indices={indices}
+          onClose={() => setCacModal(false)}
+          onAplicar={(opts) => {
+            bulkUpdatePreciosCAC(opts);
+            setCacModal(false);
+            setCacFlash('✓ Precios actualizados');
+            setTimeout(() => setCacFlash(''), 2500);
+          }}
+          onRestore={() => {
+            if (restoreCatalogCACBackup()) {
+              setCacModal(false);
+              setCacFlash('↶ Catálogo restaurado');
+              setTimeout(() => setCacFlash(''), 2500);
+            }
+          }}
+        />
+      )}
     </PageLayout>
   );
 }

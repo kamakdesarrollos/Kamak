@@ -4,6 +4,7 @@ import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogIndex } from '../lib/apuPriceResolver';
 import { loadSismatCostMap, migrarCatalogoConSismat } from '../lib/sismatCostFallback';
+import { aplicarCACalCatalogo } from '../lib/cacUpdate';
 
 // Versión de la migración SISMAT → catálogo APU. Bumpeala si querés re-correr
 // la migración (p.ej. si actualizamos las reglas de conversión).
@@ -172,6 +173,32 @@ export function CatalogProvider({ children }) {
     });
   }, []);
 
+  // Actualización masiva de precios por índice CAC (un solo setCatalog + save).
+  // Antes de aplicar, guarda un backup para poder deshacer (restoreCatalog).
+  const bulkUpdatePreciosCAC = useCallback(({ mesBase, mesActual, indices, incluirMOLegacy }) => {
+    setCatalog(prev => {
+      try { localStorage.setItem('kamak_catalog_cac_backup', JSON.stringify({ at: new Date().toISOString(), catalog: prev })); } catch (e) { console.warn('[CAC] no pude guardar el backup del catálogo:', e?.message); }
+      const next = aplicarCACalCatalogo(prev, { mesBase, mesActual, indices, incluirMOLegacy });
+      localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
+      saveSharedData('catalog', next, { silent: true });
+      return next;
+    });
+  }, []);
+
+  // Restaura el catálogo desde el backup de la última actualización CAC.
+  // Devuelve true si había backup para restaurar.
+  const restoreCatalogCACBackup = useCallback(() => {
+    let bk;
+    try { bk = JSON.parse(localStorage.getItem('kamak_catalog_cac_backup') || 'null'); } catch { bk = null; }
+    if (!bk || !bk.catalog) return false;
+    setCatalog(() => {
+      localStorage.setItem('kamak_catalog_v4', JSON.stringify(bk.catalog));
+      saveSharedData('catalog', bk.catalog, { silent: true });
+      return bk.catalog;
+    });
+    return true;
+  }, []);
+
   // Index Map por nombre normalizado — lookup O(1) para calcTarea.
   // Sin esto, resolver precios en presupuestos con muchos APUs y materiales
   // se volvía O(N×M) con string normalization → render lentísimo.
@@ -206,8 +233,8 @@ export function CatalogProvider({ children }) {
   }, [sismatCostMap, catalog]);
 
   const value = useMemo(
-    () => ({ catalog, catalogIndex, sismatCostMap, add, update, remove, bulkSeed }),
-    [catalog, catalogIndex, sismatCostMap, add, update, remove, bulkSeed]
+    () => ({ catalog, catalogIndex, sismatCostMap, add, update, remove, bulkSeed, bulkUpdatePreciosCAC, restoreCatalogCACBackup }),
+    [catalog, catalogIndex, sismatCostMap, add, update, remove, bulkSeed, bulkUpdatePreciosCAC, restoreCatalogCACBackup]
   );
 
   return (
