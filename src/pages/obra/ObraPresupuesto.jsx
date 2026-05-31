@@ -5,6 +5,7 @@ import { Box, Btn, Chip, Stat, Label, Bar, Divider } from '../../components/ui';
 import { T } from '../../theme';
 import { useObras, EMPTY_DETALLE } from '../../store/ObrasContext';
 import { usePlantillas } from '../../store/PlantillasContext';
+import { resolverCostosTareaPlantilla } from '../Plantillas';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useProveedores } from '../../store/ProveedoresContext';
 import { useClientes } from '../../store/ClientesContext';
@@ -474,7 +475,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const [savePlantillaForm, setSavePlantillaForm] = useState({ nombre: '', tipo: 'Comercial', descripcion: '' });
   const { obras: todasObras, detalles } = useObras();
   const { totalMensual: gfMensual } = useGastosFijos();
-  const { catalog, catalogIndex } = useCatalog();
+  const { catalog, catalogIndex, sismatCostMap } = useCatalog();
   const { dolarVenta } = useDolar();
   const tc = dolarVenta || 1070;
   const [viewUSD, setViewUSD] = useState(true);
@@ -574,9 +575,14 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
     const nuevos = (plt.rubros || []).map((r, idx) => ({
       id: newId(), nombre: r.nombre, proveedor: '', margenMat: r.margenMat || 20, margenMO: r.margenMO || 35,
       orden: n + idx, abierto: true,
-      tareas: (r.tareas || []).map(t => t.tipo === 'seccion'
-        ? { id: newId(), tipo: 'seccion', nombre: t.nombre, nivel: t.nivel || 1 }
-        : { id: newId(), codigo: t.codigo || '', nombre: t.nombre, unidad: t.unidad || 'u', cantidad: t.cantidad || 1, costoMat: t.costoMat || 0, costoSub: t.costoSub || 0, receta: t.receta ? { materiales: (t.receta.materiales || []).map(m => ({ ...m, id: newId() })) } : { materiales: [] }, avance: 0 }),
+      tareas: (r.tareas || []).map(t => {
+        if (t.tipo === 'seccion') return { id: newId(), tipo: 'seccion', nombre: t.nombre, nivel: t.nivel || 1 };
+        // Resolver el costo igual que la página Plantillas (hardcoded → catálogo
+        // APU por nombre → SISMAT). Antes copiaba t.costoMat||0, por eso las
+        // plantillas prediseñadas (sin costo guardado) entraban en cero.
+        const { costoMat, costoSub } = resolverCostosTareaPlantilla(t, catalogIndex, sismatCostMap);
+        return { id: newId(), codigo: t.codigo || '', nombre: t.nombre, unidad: t.unidad || 'u', cantidad: t.cantidad || 1, costoMat, costoSub, receta: t.receta ? { materiales: (t.receta.materiales || []).map(m => ({ ...m, id: newId() })) } : { materiales: [] }, avance: 0 };
+      }),
     }));
     patch(d => ({ ...d, rubros: [...d.rubros, ...nuevos] }));
     incrementUso(plt.id);
