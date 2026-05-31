@@ -370,7 +370,7 @@ export default function Facturacion() {
   const puede      = isAdmin || isContador;
   useEffect(() => { if (currentUser && !puede) navigate('/', { replace: true }); }, [currentUser, puede, navigate]);
 
-  const { comprobantes, addComprobante, removeComprobante } = useComprobantes();
+  const { comprobantes, addComprobante, updateComprobante, removeComprobante } = useComprobantes();
   const { clientes } = useClientes();
   const { obras } = useObras();
   const { config } = useConfiguracion();
@@ -774,7 +774,12 @@ export default function Facturacion() {
                               const payload = feCaeSolicitarPayload(c, { numero: c.numero || 0, comprobantes });
                               const res = await fetch('/api/afip/emitir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comprobante: c, payload }) });
                               const j = await res.json().catch(() => ({}));
-                              alert(j.cae ? `✅ CAE ${j.cae}` : `AFIP (${res.status}): ${j.detalle || j.error || 'no se pudo emitir'}`);
+                              if (j.ok && j.cae) {
+                                updateComprobante(c.id, { numero: j.numero, puntoVenta: j.puntoVenta ?? c.puntoVenta, cae: j.cae, caeVto: j.caeVto, estado: 'emitido' });
+                                alert(`✅ CAE ${j.cae}\nComprobante N° ${j.numero} · vence ${j.caeVto}`);
+                              } else {
+                                alert(`AFIP (${res.status}): ${j.detalle || j.error || 'no se pudo emitir'}`);
+                              }
                             } catch (e) { alert(`Error al emitir: ${e.message}`); }
                           }}>AFIP</span>
                       )}

@@ -10,7 +10,7 @@
 import {
   getTipoComprobante, ALICUOTAS_IVA, getCondicionIVA,
   CONCEPTO_AFIP_DEFAULT, resolverComprobanteAsociado, round2,
-} from './afip';
+} from './afip.js';
 
 // Fecha YYYYMMDD (formato AFIP) desde ISO 'YYYY-MM-DD'.
 export const fechaAfip = (iso) => String(iso || '').slice(0, 10).replace(/-/g, '');
