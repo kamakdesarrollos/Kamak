@@ -1388,7 +1388,7 @@ ORDEN DE PREGUNTAS (nunca más de una a la vez):
 8. Con todo completo → mostrá resumen y pedí confirmación
 
 ACCIONES DISPONIBLES:
-1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional), categoriaFiscal(opcional: 'sueldo'|'cs-soc'|'sind'|'iibb'|'alquiler'|'servicios'|'seguro'|'otro'), percepcionIIBB(opcional, número en pesos), jurisdiccionIIBB(opcional: 'PBA'|'CABA'|'CBA'|'OTRA', default PBA), percepcionIVA(opcional, número en pesos).
+1. GASTO: monto, descripción, obraId(opcional), cajaId, proveedorNombre(opcional), tipo(material/mano_de_obra/general), comprobante(blanco/negro), rubroId(opcional), rubroNombre(opcional, nombre EXACTO del rubro del presupuesto de la obra al que se imputa el gasto — sirve para el desvío presupuesto vs real), categoriaFiscal(opcional: 'sueldo'|'cs-soc'|'sind'|'iibb'|'alquiler'|'servicios'|'seguro'|'otro'), percepcionIIBB(opcional, número en pesos), jurisdiccionIIBB(opcional: 'PBA'|'CABA'|'CBA'|'OTRA', default PBA), percepcionIVA(opcional, número en pesos).
    IMPORTANTÍSIMO — el campo "monto" es SIEMPRE el TOTAL del gasto (lo que sale de la caja), con IVA, percepciones y todo incluido. NUNCA pongas el neto en "monto". Si una Factura A discrimina neto $1.000.000 e IVA $210.000, el monto del gasto es $1.210.000 (no $1.000.000) — eso es lo que pagó el usuario.
    IMPORTANTE — DATOS FISCALES EN GASTOS CON FOTO DE FACTURA/TICKET: si la imagen MUESTRA un comprobante formal (Factura A/B/C, ticket fiscal con CAE/CAI), agregá TAMBIÉN en datos: tipoFactura ('A'/'B'/'C', leído de la foto), numeroFactura, cuit (del emisor), montoNeto (opcional, solo si la foto discrimina explícitamente el neto sin IVA — sirve para registrar el desglose con la alícuota real del ticket). El sistema usa esto para el Libro IVA Compras. Es ortogonal a la regla de oro: el gasto sigue cargándose rápido como gasto, NO como factura_compra, pero los datos fiscales viajan dentro del gasto. Si la foto NO discrimina IVA (ticket no fiscal), no completes esos campos.
    PERCEPCIONES DISCRIMINADAS EN EL TICKET (hay DOS, distintas — leelas por separado): aparecen como renglones EXTRA arriba del total, muy común en estaciones de servicio (YPF/Shell/Axion), supermercados mayoristas y ferreterías grandes.
@@ -1556,6 +1556,9 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       cajaDestinoId:    null,
       proveedor:        datos.proveedorNombre || '',
       categoria:        datos.tipo === 'mano_de_obra' ? 'mano-de-obra' : datos.tipo === 'material' ? 'material' : 'general',
+      // Imputación al rubro del presupuesto (habilita el desvío presupuesto-vs-real).
+      rubroId:          (tipo === 'gasto' && datos.rubroId) ? datos.rubroId : undefined,
+      rubroNombre:      (tipo === 'gasto' && datos.rubroNombre) ? datos.rubroNombre : undefined,
       categoriaFiscal:  (tipo === 'gasto' && datos.categoriaFiscal) ? datos.categoriaFiscal : undefined,
       // Percepción IIBB sufrida (leída del ticket si la LLM la detectó). Se descuenta
       // del IIBB del mes en el panel Financiero. Típica de estaciones de servicio.

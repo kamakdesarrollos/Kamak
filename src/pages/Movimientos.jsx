@@ -402,6 +402,17 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const [fotoFile,       setFotoFile]       = useState(null);
   const [fotoUploading,  setFotoUploading]  = useState(false);
 
+  // Rubros para imputar el gasto: si hay obra seleccionada, los del PRESUPUESTO
+  // de esa obra (para que el desvío presupuesto-vs-real matchee por rubro); sino,
+  // el catálogo global. Imputar a rubro habilita el control de margen por rubro.
+  const rubrosImputables = (() => {
+    if (obraId) {
+      const rr = (getDetalle(obraId)?.rubros || []).filter(r => r.tipo !== 'seccion' && r.nombre);
+      if (rr.length) return rr;
+    }
+    return catalog.rubros || [];
+  })();
+
   // Moneda: 'ARS', 'USD' (directo a caja USD), 'USD_ARS' (pesos recibidos con ref USD, solo ingresos)
   const [monedaIngreso, setMonedaIngreso] = useState('ARS');
   const [monedaGasto,   setMonedaGasto]   = useState('ARS');
@@ -527,7 +538,13 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       const prov = proveedores.find(p => p.id === contraparteId);
       contraparteName = prov?.nombre || '';
       extra.proveedorId = contraparteId || null;
-      if (rubroNombre) extra.rubroNombre = rubroNombre;
+      if (rubroNombre) {
+        extra.rubroNombre = rubroNombre;
+        // Guardar también el id del rubro del presupuesto (si matchea) para una
+        // imputación robusta ante renombres.
+        const r = rubrosImputables.find(x => x.nombre === rubroNombre);
+        if (r && r.id) extra.rubroId = r.id;
+      }
     } else {
       const cli = clientes.find(c => c.id === contraparteId);
       contraparteName = cli?.nombre || '';
@@ -721,11 +738,13 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
 
         {isGasto && (
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
-            <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Rubro</span>
+            <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Rubro{obraId && rubrosImputables.length ? ' (del presupuesto)' : ''}
+            </span>
             <select style={{ ...inputSt, cursor: 'pointer', width: '100%' }}
               value={rubroNombre} onChange={e => setRubroNombre(e.target.value)}>
               <option value="">— Sin rubro —</option>
-              {(catalog.rubros || []).map(r => <option key={r.id} value={r.nombre}>{r.nombre}</option>)}
+              {rubrosImputables.map(r => <option key={r.id} value={r.nombre}>{r.nombre}</option>)}
             </select>
           </div>
         )}

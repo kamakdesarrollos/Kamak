@@ -223,6 +223,43 @@ export const calcObra = (rubros) => {
 };
 
 /**
+ * Gasto real de la obra agrupado por rubro. Matchea cada gasto por rubroId si lo
+ * tiene (más robusto ante renombres), sino por rubroNombre. Lo no imputado a
+ * ningún rubro se acumula en `sinRubro`. Devuelve { porRubroId, porNombre, sinRubro }.
+ */
+export const gastadoPorRubro = (movsObra) => {
+  const porRubroId = {}, porNombre = {};
+  let sinRubro = 0;
+  for (const m of (movsObra || [])) {
+    if (m.tipo !== 'gasto') continue;
+    const monto = m.monto || 0;
+    if (m.rubroId) porRubroId[m.rubroId] = (porRubroId[m.rubroId] || 0) + monto;
+    else if (m.rubroNombre) porNombre[m.rubroNombre] = (porNombre[m.rubroNombre] || 0) + monto;
+    else sinRubro += monto;
+  }
+  return { porRubroId, porNombre, sinRubro };
+};
+
+/**
+ * Gasto real imputado a UN rubro del presupuesto (suma los gastos vinculados por
+ * id y por nombre a ese rubro). `mapa` es el resultado de gastadoPorRubro().
+ */
+export const gastadoDeRubro = (rubro, mapa) =>
+  (mapa.porRubroId[rubro.id] || 0) + (mapa.porNombre[rubro.nombre] || 0);
+
+/**
+ * Desvío presupuesto-vs-real de un rubro: costo presupuestado (calcRubro) contra
+ * el gastado real imputado. desvio>0 = sobrecosto. `pct` = % del presupuesto consumido.
+ */
+export const desvioRubro = (rubro, mapa) => {
+  const { costo } = calcRubro(rubro);
+  const gastado = gastadoDeRubro(rubro, mapa);
+  const desvio = gastado - costo;
+  const pct = costo > 0 ? Math.round((gastado / costo) * 100) : (gastado > 0 ? null : 0);
+  return { costo, gastado, desvio, pct };
+};
+
+/**
  * Suma la cantidad ya contratada de una tarea, sumando los contratos
  * activos que la incluyen.
  */

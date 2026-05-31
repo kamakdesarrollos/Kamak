@@ -26,6 +26,7 @@ import {
   tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
   cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado,
   ingresosObraUSD, detallePagosCuotas,
+  gastadoPorRubro, desvioRubro,
 } from './helpers';
 
 // Rediseño "libro único": lo cobrado de cada cuota se DERIVA de los movimientos
@@ -167,6 +168,50 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
                 </Box>
               </div>
             )}
+
+            {/* EJECUCIÓN POR RUBRO — presupuesto vs gastado real, por rubro */}
+            {verCostos && (() => {
+              const gmap = gastadoPorRubro(movsObra);
+              const hayImputado = Object.keys(gmap.porRubroId).length + Object.keys(gmap.porNombre).length > 0;
+              if (!hayImputado) return null;
+              const filas = rr
+                .map(r => ({ nombre: r.nombre, ...desvioRubro(r, gmap) }))
+                .filter(f => f.costo > 0 || f.gastado > 0);
+              return (
+                <div>
+                  <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
+                    ◆ Ejecución por rubro · presupuesto vs real
+                  </div>
+                  <Box style={{ padding: '4px 0' }}>
+                    {filas.map((f, i) => {
+                      const sobre = f.desvio > 0;
+                      const pctBar = f.pct != null ? Math.min(100, f.pct) : (f.gastado > 0 ? 100 : 0);
+                      return (
+                        <div key={f.nombre} style={{ padding: '7px 14px', borderTop: i > 0 ? `1px solid ${T.faint2}` : 'none' }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 3 }}>
+                            <span style={{ fontWeight: 600, fontSize: 12 }}>{f.nombre}</span>
+                            <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink2 }}>
+                              {fmtPesos(f.gastado)} / {fmtPesos(f.costo)}
+                              {f.pct != null && <b style={{ marginLeft: 6, color: sobre ? T.accent : f.pct >= 85 ? T.warn : T.ok }}>{f.pct}%</b>}
+                              {sobre && <b style={{ marginLeft: 6, color: T.accent }}>+{fmtPesos(f.desvio)}</b>}
+                            </span>
+                          </div>
+                          <div style={{ height: 5, background: T.faint2, borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ width: `${pctBar}%`, height: '100%', background: sobre ? T.accent : f.pct >= 85 ? T.warn : T.ok }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {gmap.sinRubro > 0 && (
+                      <div style={{ padding: '7px 14px', borderTop: `1px solid ${T.faint2}`, fontSize: 11, color: T.ink3, display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Gastos sin rubro asignado</span>
+                        <span style={{ fontFamily: T.fontMono }}>{fmtPesos(gmap.sinRubro)}</span>
+                      </div>
+                    )}
+                  </Box>
+                </div>
+              );
+            })()}
 
             {/* ESTADO */}
             <div>
