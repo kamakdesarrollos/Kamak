@@ -380,6 +380,14 @@ export default function Facturacion() {
   const empresa = config?.empresa || {};
 
   const [tab, setTab] = useState('resumen'); // 'resumen' | 'ventas' | 'compras' | 'financiero'
+  // Estado de la conexión con AFIP (sin configurar / homologación / producción) para
+  // el cartel informativo — se consulta al endpoint, así el banner nunca queda viejo.
+  const [afipEstado, setAfipEstado] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    fetch('/api/afip/emitir').then(r => r.json()).then(d => { if (vivo) setAfipEstado(d); }).catch(() => {});
+    return () => { vivo = false; };
+  }, []);
   const [mes, setMes] = useState(mesActual());
   const [modal, setModal] = useState(false);
   const [zipping, setZipping] = useState(false);
@@ -631,13 +639,34 @@ export default function Facturacion() {
         actions={isAdmin ? <Btn fill onClick={() => setModal(true)}>+ Nueva factura</Btn> : null}
       />
 
-      <Box style={{ padding: '10px 14px', marginBottom: 12, background: '#fff7e0', border: `1.5px solid ${T.warn}`, display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
-        <span style={{ fontSize: 16 }}>⚠️</span>
-        <div style={{ color: T.ink2 }}>
-          Los comprobantes se guardan como <b>borrador</b> con todos los datos fiscales calculados.
-          La <b>emisión real ante AFIP</b> (número oficial + CAE) se conecta en una etapa posterior — por ahora <b>no</b> se envía nada a AFIP.
-        </div>
-      </Box>
+      {(() => {
+        const env = afipEstado?.configurado ? afipEstado.env : null;
+        if (env === 'produccion') return (
+          <Box style={{ padding: '10px 14px', marginBottom: 12, background: '#ecfdf5', border: '1.5px solid #10b981', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
+            <span style={{ fontSize: 16 }}>✅</span>
+            <div style={{ color: T.ink2 }}>
+              <b>Emisión REAL ante AFIP activa.</b> Al tocar <b>AFIP</b> en un borrador se obtiene el <b>número oficial + CAE</b>.
+            </div>
+          </Box>
+        );
+        if (env === 'homologacion') return (
+          <Box style={{ padding: '10px 14px', marginBottom: 12, background: '#fff7e0', border: `1.5px solid ${T.warn}`, display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
+            <span style={{ fontSize: 16 }}>🧪</span>
+            <div style={{ color: T.ink2 }}>
+              <b>Modo PRUEBA (homologación).</b> Al tocar <b>AFIP</b> en un borrador se emite contra el entorno de pruebas y se obtiene un <b>CAE de prueba</b> — <b>no</b> es una factura fiscal real todavía.
+            </div>
+          </Box>
+        );
+        return (
+          <Box style={{ padding: '10px 14px', marginBottom: 12, background: '#fff7e0', border: `1.5px solid ${T.warn}`, display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
+            <span style={{ fontSize: 16 }}>⚠️</span>
+            <div style={{ color: T.ink2 }}>
+              Los comprobantes se guardan como <b>borrador</b> con todos los datos fiscales calculados.
+              La <b>emisión ante AFIP</b> (número oficial + CAE) todavía no está configurada en este entorno.
+            </div>
+          </Box>
+        );
+      })()}
 
       {/* Tabs */}
       <Box style={{ padding: 0, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
