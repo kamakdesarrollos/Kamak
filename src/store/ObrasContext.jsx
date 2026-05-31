@@ -285,7 +285,7 @@ export function ObrasProvider({ children }) {
   const addObra = useCallback((obra) => {
     markUserEdit();
     const id = `obra-${Date.now()}`;
-    setObras(prev => [...prev, { id, nombre: obra.nombre, cliente: obra.cliente, direccion: obra.direccion || '', tipo: obra.tipo || 'Otro', estado: 'en-presupuesto', moneda: obra.moneda || 'ARS', presupuesto: Number(obra.presupuesto) || 0, gastado: 0, avance: 0, margen: 0, fechaInicio: obra.fechaInicio || '', fechaFinEstim: obra.fechaFinEstim || '', fechaFin: '', notas: obra.notas || '', createdAt: new Date().toISOString() }]);
+    setObras(prev => [...prev, { id, nombre: obra.nombre, cliente: obra.cliente, clienteId: obra.clienteId || null, direccion: obra.direccion || '', tipo: obra.tipo || 'Otro', estado: 'en-presupuesto', moneda: obra.moneda || 'ARS', presupuesto: Number(obra.presupuesto) || 0, gastado: 0, avance: 0, margen: 0, fechaInicio: obra.fechaInicio || '', fechaFinEstim: obra.fechaFinEstim || '', fechaFin: '', notas: obra.notas || '', createdAt: new Date().toISOString() }]);
     return id;
   }, []);
 

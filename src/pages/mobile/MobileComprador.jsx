@@ -18,6 +18,9 @@ const COLA = [
 function Screen({ title, children, onBack }) {
   return (
     <div style={{ maxWidth: 390, margin: '0 auto', background: T.paper, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: T.font }}>
+      <div style={{ background: '#fff7ed', color: '#b45309', padding: '7px 14px', fontSize: 11, fontWeight: 600, textAlign: 'center' }}>
+        🚧 Maqueta — no persiste datos reales
+      </div>
       <div style={{ background: T.dark, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
         {onBack && <span style={{ color: T.paper, cursor: 'pointer', fontSize: 20 }} onClick={onBack}>←</span>}
         <div style={{ color: T.paper, fontWeight: 800, fontSize: 17 }}>{title}</div>

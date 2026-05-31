@@ -20,6 +20,9 @@ export default function PortalProveedor() {
 
   return (
     <div style={{ fontFamily: T.font, background: T.paper, minHeight: '100vh' }}>
+      <div style={{ background: '#fff7ed', color: '#b45309', padding: '8px 16px', fontSize: 12, fontWeight: 600, textAlign: 'center' }}>
+        🚧 En construcción — maqueta de demostración. No muestra datos reales del proveedor.
+      </div>
       {/* Header */}
       <div style={{ background: T.dark, padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

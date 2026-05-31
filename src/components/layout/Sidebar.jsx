@@ -17,7 +17,7 @@ const ALL_ITEMS = [
   { icon: '⇄', label: 'Movimientos',    path: '/movimientos',  perm: 'verCaja' },
   { icon: '$', label: 'Cajas',          path: '/cajas',        perm: 'verCaja' },
   { icon: '✓', label: 'Cheques',        path: '/cheques',      adminOnly: true },
-  { icon: '🧾', label: 'Facturación',    path: '/facturacion',  allowedRoles: ['Admin', 'Contador'] },
+  { icon: '🧾', label: 'Facturación',    path: '/facturacion',  allowedRoles: ['Admin', 'Contador externo'] },
   { icon: '⌗', label: 'Gastos Fijos',   path: '/prorrateo',    allowedRoles: ['Admin', 'Administración'] },
   { section: 'Datos' },
   { icon: '▤', label: 'Catálogos',      path: '/catalogos',   adminOnly: true },
@@ -63,7 +63,7 @@ export default function Sidebar({ active }) {
 
   // El rol Contador SOLO ve Facturación — escondemos todo lo demás (incluso
   // los encabezados de sección, así no le queda una sección vacía).
-  const isContador = currentUser?.rol === 'Contador';
+  const isContador = currentUser?.rol === 'Contador externo';
   const items = ALL_ITEMS.filter(it => {
     if (isContador) return it.label === 'Facturación';
     if (it.section) return true;

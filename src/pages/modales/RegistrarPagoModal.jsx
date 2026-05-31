@@ -28,7 +28,7 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
   const [cajaId, setCajaId] = useState(cajasARS[0]?.id || '');
   const [medio, setMedio] = useState('Transferencia');
   const [referencia, setReferencia] = useState('');
-  const [fondoReparo, setFondoReparo] = useState(false);
+  const [fondoReparo] = useState(false); // retención fondo de reparo: aún no implementada (ver checkbox deshabilitado)
   const [concepto, setConcepto] = useState('');
 
   const obraNombre = obras.find(o => o.id === obraId)?.nombre || '';
@@ -144,11 +144,14 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
             <input style={inputSt} value={referencia} onChange={e => setReferencia(e.target.value)} placeholder="Ej: TRF-20260502-00412" />
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', padding: '7px 10px', background: T.faint, borderRadius: 4 }}>
-            <input type="checkbox" checked={fondoReparo} onChange={e => setFondoReparo(e.target.checked)} style={{ accentColor: T.accent }} />
+          {/* La retención del fondo de reparo todavía NO está implementada: el pago
+              se registra completo. Se deshabilita para no hacer creer que retiene el
+              5% (antes guardaba fondoReparo:true pero descontaba el 100%). */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'not-allowed', padding: '7px 10px', background: T.faint, borderRadius: 4, opacity: 0.55 }}>
+            <input type="checkbox" checked={false} disabled style={{ accentColor: T.accent }} />
             <div>
-              <div style={{ fontWeight: 700 }}>Aplicar retención fondo de reparo (5%)</div>
-              <div style={{ fontSize: 10, color: T.ink2 }}>Retenido hasta recepción definitiva</div>
+              <div style={{ fontWeight: 700 }}>Aplicar retención fondo de reparo (5%) <span style={{ fontWeight: 400, color: T.ink3 }}>· próximamente</span></div>
+              <div style={{ fontSize: 10, color: T.ink2 }}>Aún no retiene: el pago se registra completo</div>
             </div>
           </label>
 

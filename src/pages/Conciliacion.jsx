@@ -37,6 +37,9 @@ export default function Conciliacion() {
 
   return (
     <PageLayout breadcrumb={[{ label: 'Cajas', to: '/cajas' }, 'Banco Galicia ARS', 'Conciliación']} active="Cajas">
+      <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#b45309', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 12, fontWeight: 600 }}>
+        🚧 En construcción — esta pantalla es una maqueta de demostración. Los datos no son reales y no se guardan.
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
         <div>
           <div className="k-h" style={{ fontSize: 28 }}>Conciliación bancaria</div>

@@ -612,7 +612,10 @@ function nombreMatch(a, b) {
 async function generarPortalLink(obraId, obraNombre, clienteNombre, phone) {
   const baseUrl = process.env.PORTAL_BASE_URL || 'https://kamak.com.ar';
   const token = `pt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  // Expiración acotada: un token de portal da acceso de lectura a datos de la obra.
+  // 90 días (antes 1 año) reduce la ventana si el link se filtra; se renueva solo
+  // cada vez que el cliente vuelve a pedir el acceso por WhatsApp.
+  const expires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
   const tokens = (await loadSharedData('portal_tokens')) || {};
   tokens[token] = {
     obraId, obraNombre, cliente: clienteNombre,
@@ -967,8 +970,12 @@ async function getLinkedUser(phone) {
 // que con '*' (string) daba length 1 e includes false → el usuario quedaba SIN
 // ninguna caja (bug que rompía 'saldo' y la carga de gastos para admins).
 function cajaEsVisible(cajasVisibles, cajaId) {
+  // Contrato unificado con la app (Cajas.jsx / Dashboard): '*' = todas las cajas;
+  // un array lista las visibles; [] o sin setear = NINGUNA. Antes el bot trataba
+  // [] como "todas" → bypass de la segregación de acceso a cajas (un usuario sin
+  // cajas asignadas las veía todas por WhatsApp). Ahora hay que asignarle cajas.
   if (cajasVisibles === '*') return true;
-  if (!Array.isArray(cajasVisibles) || cajasVisibles.length === 0) return true;
+  if (!Array.isArray(cajasVisibles)) return false;
   return cajasVisibles.includes(cajaId);
 }
 

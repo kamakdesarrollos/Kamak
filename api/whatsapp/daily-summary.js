@@ -185,7 +185,7 @@ export default async function handler(req, res) {
     const ctx = {
       obras:    obrasData?.obras || [],
       detalles: obrasData?.detalles || {},
-      cheques:  chequesData?.cheques || [],
+      cheques:  Array.isArray(chequesData) ? chequesData : (chequesData?.cheques || []),
       tareas:   Array.isArray(tareas) ? tareas : [],
       movimientos: movData?.movimientos || [],
     };

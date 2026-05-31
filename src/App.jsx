@@ -83,7 +83,7 @@ function AuthGate({ children }) {
   const location = useLocation();
   const navigateRR = useNavigate();
   useEffect(() => {
-    if (currentUser?.rol === 'Contador' && location.pathname !== '/facturacion') {
+    if (currentUser?.rol === 'Contador externo' && location.pathname !== '/facturacion') {
       navigateRR('/facturacion', { replace: true });
     }
   }, [currentUser?.rol, location.pathname, navigateRR]);

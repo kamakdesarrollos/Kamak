@@ -867,7 +867,9 @@ export default function Plantillas() {
   };
 
   const handleCrearObra = (datos) => {
-    const obraId = addObra(datos);
+    // Heredar el tipo de la plantilla si el form no lo trae: sin tipo no se
+    // generan las tareas base de ese tipo de obra al aprobar el presupuesto.
+    const obraId = addObra({ ...datos, tipo: datos.tipo || usarPlt?.tipo || 'Otro' });
     patchDetalle(obraId, d => ({ ...d, rubros: JSON.parse(JSON.stringify(usarPlt.rubros || [])) }));
     incrementUso(usarPlt.id);
     setUsarPlt(null);

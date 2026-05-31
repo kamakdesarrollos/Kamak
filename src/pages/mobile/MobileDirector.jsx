@@ -14,6 +14,9 @@ const TAREAS = [
 function Screen({ title, sub, children, onBack }) {
   return (
     <div style={{ maxWidth: 390, margin: '0 auto', background: T.paper, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: T.font }}>
+      <div style={{ background: '#fff7ed', color: '#b45309', padding: '7px 14px', fontSize: 11, fontWeight: 600, textAlign: 'center' }}>
+        🚧 Maqueta — no persiste datos reales
+      </div>
       <div style={{ background: T.dark, padding: '14px 16px 10px' }}>
         {onBack && <span style={{ color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 13 }} onClick={onBack}>← Volver</span>}
         <div style={{ color: T.paper, fontWeight: 800, fontSize: 17, marginTop: onBack ? 4 : 0 }}>{title}</div>

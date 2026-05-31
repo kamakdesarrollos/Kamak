@@ -2,9 +2,15 @@
 import { MS_PER_DAY } from './constants';
 
 /**
- * Devuelve la fecha de hoy en formato ISO 'YYYY-MM-DD'.
+ * Devuelve la fecha de hoy en formato ISO 'YYYY-MM-DD', usando los componentes
+ * de fecha LOCALES (no UTC). Con toISOString() un movimiento/cheque/tarea cargado
+ * a las 22:00 en Argentina (UTC-3) quedaba fechado al día siguiente → saltaba de
+ * mes y descuadraba cierres y Libro IVA. Acá tomamos el día local real.
  */
-export const today = () => new Date().toISOString().split('T')[0];
+export const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 /**
  * Cantidad de dias desde hoy hasta una fecha ISO.
