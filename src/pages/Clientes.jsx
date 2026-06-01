@@ -83,6 +83,10 @@ export default function Clientes() {
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const isAdmin = currentUser?.rol === 'Admin';
+  // Grilla de la tabla: el no-admin no ve la columna "Facturado" (monto general).
+  const gridCols = isAdmin
+    ? '2.5fr 1.5fr 1fr 1.5fr 0.6fr 1fr 0.8fr'
+    : '2.5fr 1.5fr 1fr 1.5fr 0.6fr 0.8fr';
   // Guard: Admin y Administración pueden entrar a esta página.
   const puedeClientes = isAdmin || currentUser?.rol === 'Administración';
   useEffect(() => {
@@ -197,7 +201,8 @@ export default function Clientes() {
             active: filtroKPI === 'sinObras',
             onClick: () => setFiltroKPI(prev => prev === 'sinObras' ? null : 'sinObras'),
           },
-          { label: 'Total facturado', value: `$ ${Math.round(Object.values(totalFacturado).reduce((s, v) => s + v, 0)).toLocaleString('es-AR')}`, color: T.ok },
+          // "Total facturado" es un monto general (cuánto pagan los clientes): solo Admin.
+          ...(isAdmin ? [{ label: 'Total facturado', value: `$ ${Math.round(Object.values(totalFacturado).reduce((s, v) => s + v, 0)).toLocaleString('es-AR')}`, color: T.ok }] : []),
         ]}
       />
 
@@ -212,20 +217,20 @@ export default function Clientes() {
         </Box>
       ) : (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1.5fr 0.6fr 1fr 0.8fr', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: gridCols, padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             <span>Cliente</span>
             <span>Empresa</span>
             <span>CUIT</span>
             <span>Contacto</span>
             <span style={{ textAlign: 'center' }}>Obras</span>
-            <span style={{ textAlign: 'right' }}>Facturado</span>
+            {isAdmin && <span style={{ textAlign: 'right' }}>Facturado</span>}
             <span>Acciones</span>
           </div>
           {filtered.map(c => {
             const phone = (c.telefono || '').replace(/\s/g, '').replace('+', '');
             return (
               <div key={c.id}
-                style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1.5fr 0.6fr 1fr 0.8fr', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
+                style={{ display: 'grid', gridTemplateColumns: gridCols, padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
                 onMouseEnter={e => e.currentTarget.style.background = T.faint}
                 onMouseLeave={e => e.currentTarget.style.background = ''}
                 onClick={() => setEditCliente(c)}>
@@ -259,9 +264,11 @@ export default function Clientes() {
                     </span>
                   ) : <span style={{ color: T.ink3, fontFamily: T.fontMono }}>0</span>}
                 </span>
-                <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontSize: 11, color: totalFacturado[c.id] > 0 ? T.ok : T.ink3 }}>
-                  {totalFacturado[c.id] > 0 ? `$ ${Math.round(totalFacturado[c.id]).toLocaleString('es-AR')}` : '—'}
-                </span>
+                {isAdmin && (
+                  <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontSize: 11, color: totalFacturado[c.id] > 0 ? T.ok : T.ink3 }}>
+                    {totalFacturado[c.id] > 0 ? `$ ${Math.round(totalFacturado[c.id]).toLocaleString('es-AR')}` : '—'}
+                  </span>
+                )}
                 <span style={{ display: 'flex', gap: 5, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
                   {obrasCount[c.id] > 0 && (
                     <Btn sm onClick={() => navigate(`/obras?q=${encodeURIComponent(c.nombre)}`)}>🏗</Btn>

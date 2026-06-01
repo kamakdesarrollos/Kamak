@@ -141,6 +141,21 @@ export function UsuariosProvider({ children }) {
         const u = data.map(rowToUser);
         setUsuarios(u);
         saveUsuariosCache(u);
+        // Reconciliar la sesión del usuario logueado con sus datos ACTUALES de la
+        // DB. currentUser se arma en login (buildSession → localStorage) y nunca se
+        // refrescaba: si un Admin le cambiaba el rol, los permisos o las
+        // cajasVisibles, el usuario seguía con la sesión vieja hasta cerrar sesión
+        // (ej: "le asigné una caja y no le aparece"). Acá lo refrescamos en cada carga.
+        setCurrentUser(prev => {
+          if (!prev) return prev;
+          const fresh = u.find(x => x.id === prev.id)
+            || u.find(x => (x.email || '').toLowerCase() === (prev.email || '').toLowerCase());
+          if (!fresh) return prev; // no encontrado: mantener sesión (no forzar logout por un fetch raro)
+          const next = buildSession(fresh);
+          if (JSON.stringify(next) === JSON.stringify(prev)) return prev;
+          saveSession(next);
+          return next;
+        });
       }
       setLoading(false);
       markReady();
