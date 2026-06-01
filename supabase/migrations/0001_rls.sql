@@ -100,14 +100,15 @@ drop policy if exists "shared_data_select_authenticated" on public.shared_data;
 drop policy if exists "shared_data_insert_authenticated" on public.shared_data;
 drop policy if exists "shared_data_update_authenticated" on public.shared_data;
 
--- Keys operativas = todas menos portal_tokens y el TA de AFIP (afip_ta_*, server-only).
--- (key !~ '^afip_ta_' = NO matchea la regex → excluye afip_ta_homologacion/produccion.)
+-- Keys operativas = todas menos portal_tokens y las keys server-only de AFIP (afip_*:
+-- el TA token+sign y el libro de emisión afip_emit_*). (key !~ '^afip_' = NO matchea
+-- la regex → excluye toda key que empiece con afip_; el server las usa con service key.)
 create policy "shared_data_select_operativas"
-  on public.shared_data for select to authenticated using (key <> 'portal_tokens' and key !~ '^afip_ta_');
+  on public.shared_data for select to authenticated using (key <> 'portal_tokens' and key !~ '^afip_');
 create policy "shared_data_insert_operativas"
-  on public.shared_data for insert to authenticated with check (key <> 'portal_tokens' and key !~ '^afip_ta_');
+  on public.shared_data for insert to authenticated with check (key <> 'portal_tokens' and key !~ '^afip_');
 create policy "shared_data_update_operativas"
-  on public.shared_data for update to authenticated using (key <> 'portal_tokens' and key !~ '^afip_ta_') with check (key <> 'portal_tokens' and key !~ '^afip_ta_');
+  on public.shared_data for update to authenticated using (key <> 'portal_tokens' and key !~ '^afip_') with check (key <> 'portal_tokens' and key !~ '^afip_');
 
 -- portal_tokens: solo Admin (contiene datos de clientes + acceso a portales).
 create policy "shared_data_select_admin_keys"
@@ -182,7 +183,7 @@ end $$;
 --  Como no-Admin (desde la app / DevTools):
 --                update app_users set rol='Admin' where id=...;    -> ERROR RLS
 --                select * from shared_data where key='portal_tokens'; -> 0 rows
---                select * from shared_data where key like 'afip_ta_%'; -> 0 rows (TA AFIP)
+--                select * from shared_data where key like 'afip_%'; -> 0 rows (TA + libro emisión)
 --                select * from shared_data where key='obras';      -> ok
 --
 -- ROLLBACK (si algo se rompe):

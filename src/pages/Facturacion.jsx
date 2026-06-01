@@ -392,6 +392,7 @@ export default function Facturacion() {
   const [mes, setMes] = useState(mesActual());
   const [modal, setModal] = useState(false);
   const [zipping, setZipping] = useState(false);
+  const [emitiendo, setEmitiendo] = useState(null); // id del comprobante que se está emitiendo (bloquea doble-click)
 
   // ── Datos por mes ────────────────────────────────────────────────────────────
   const ventasMes = useMemo(() => comprobantes
@@ -798,8 +799,11 @@ export default function Facturacion() {
                     </div>
                     <div style={{ width: 90, flexShrink: 0, textAlign: 'center', display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                       {isAdmin && c.estado === 'borrador' && (
-                        <span title="Emitir en AFIP (WSFE)" style={{ cursor: 'pointer', color: T.accent, fontSize: 10, fontWeight: 700, border: `1px solid ${T.accent}`, borderRadius: 3, padding: '1px 5px' }}
+                        <span title={emitiendo ? 'Emitiendo…' : 'Emitir en AFIP (WSFE)'}
+                          style={{ cursor: emitiendo ? 'wait' : 'pointer', opacity: emitiendo ? 0.5 : 1, pointerEvents: emitiendo ? 'none' : 'auto', color: T.accent, fontSize: 10, fontWeight: 700, border: `1px solid ${T.accent}`, borderRadius: 3, padding: '1px 5px' }}
                           onClick={async () => {
+                            if (emitiendo) return;            // guarda anti doble-click
+                            setEmitiendo(c.id);
                             try {
                               const payload = feCaeSolicitarPayload(c, { numero: c.numero || 0, comprobantes });
                               // El endpoint exige sesión + rol Admin: mandamos el access_token de Supabase.
@@ -808,12 +812,13 @@ export default function Facturacion() {
                               const j = await res.json().catch(() => ({}));
                               if (j.ok && j.cae) {
                                 updateComprobante(c.id, { numero: j.numero, puntoVenta: j.puntoVenta ?? c.puntoVenta, cae: j.cae, caeVto: j.caeVto, estado: 'emitido' });
-                                alert(`✅ CAE ${j.cae}\nComprobante N° ${j.numero} · vence ${j.caeVto}`);
+                                alert(`✅ CAE ${j.cae}\nComprobante N° ${j.numero} · vence ${j.caeVto}${j.replay ? '\n(ya estaba emitido: se recuperó el CAE existente)' : ''}`);
                               } else {
                                 alert(`AFIP (${res.status}): ${j.detalle || j.error || 'no se pudo emitir'}`);
                               }
                             } catch (e) { alert(`Error al emitir: ${e.message}`); }
-                          }}>AFIP</span>
+                            finally { setEmitiendo(null); }
+                          }}>{emitiendo === c.id ? '…' : 'AFIP'}</span>
                       )}
                       {isAdmin && c.estado === 'borrador' && (
                         <span title="Eliminar borrador" style={{ cursor: 'pointer', color: T.ink3, fontSize: 13 }}

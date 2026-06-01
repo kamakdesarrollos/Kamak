@@ -68,6 +68,34 @@ async function getTA() {
   }
 }
 
+// ── Libro de emisión (idempotencia + anti-huérfano) ──────────────────────────
+// Una key por comprobante en shared_data: afip_emit_<env>_<comprobanteId>. ANTES de
+// emitir consultamos si ese comprobante YA tiene CAE → lo devolvemos sin pedir otro
+// (un reintento o un doble-click NO generan una 2ª factura fiscal). DESPUÉS de emitir
+// guardamos el CAE acá (server) antes de responder: si la respuesta HTTP se pierde, el
+// CAE no queda huérfano y el reintento lo "replayea". Server-only (RLS excluye afip_*).
+const EMITIDOS_KEY = (id) => `afip_emit_${AFIP_ENV}_${id}`;
+
+async function emisionGet(id) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/shared_data?key=eq.${encodeURIComponent(EMITIDOS_KEY(id))}&select=data`, { headers: sbH() });
+    const rows = await r.json();
+    return Array.isArray(rows) && rows[0] ? rows[0].data : null;
+  } catch { return null; }
+}
+async function emisionSet(id, rec) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return false;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/shared_data`, {
+      method: 'POST',
+      headers: { ...sbH(), Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify({ key: EMITIDOS_KEY(id), data: rec }),
+    });
+    return r.ok;
+  } catch { return false; }
+}
+
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
@@ -102,6 +130,18 @@ export default async function handler(req, res) {
   const det = payload?.FeDetReq?.[0];
   if (!cab || !det) return res.status(400).json({ error: 'Payload inválido', detalle: 'Falta FeCabReq / FeDetReq.' });
 
+  // El comprobante trae un id estable: es la CLAVE DE IDEMPOTENCIA. Sin él no podemos
+  // garantizar que un reintento no duplique la factura → lo exigimos.
+  const comprobanteId = body?.comprobante?.id;
+  if (!comprobanteId) {
+    return res.status(400).json({ error: 'Falta comprobante.id', detalle: 'Necesario para evitar emisiones duplicadas.' });
+  }
+  // ¿Ya emitido? Devolvemos el CAE existente sin volver a pedirlo a AFIP.
+  const previo = await emisionGet(comprobanteId);
+  if (previo?.cae) {
+    return res.status(200).json({ ok: true, ...previo, replay: true });
+  }
+
   try {
     const ta = await getTA();
     const auth = { token: ta.token, sign: ta.sign, cuit: AFIP_CUIT };
@@ -115,13 +155,16 @@ export default async function handler(req, res) {
     const r = await feCAESolicitar(AFIP_ENV, auth, payload);
 
     if (r.resultado === 'A' && r.cae) {
-      return res.status(200).json({
-        ok: true,
+      // Registrar el CAE del lado servidor ANTES de responder (idempotencia +
+      // anti-huérfano). Si el guardado falla, igual devolvemos el CAE (la factura
+      // ES válida) pero avisamos con registrado=false.
+      const record = {
         cae: r.cae, caeVto: r.caeVto,
         numero, puntoVenta: cab.PtoVta, cbteTipo: cab.CbteTipo,
-        env: AFIP_ENV,
-        obs: r.obs?.length ? r.obs : undefined,
-      });
+        env: AFIP_ENV, emitidoAt: new Date().toISOString(),
+      };
+      const registrado = await emisionSet(comprobanteId, record);
+      return res.status(200).json({ ok: true, ...record, registrado, obs: r.obs?.length ? r.obs : undefined });
     }
 
     // Rechazado (R) o parcial (P): devolvemos las observaciones/errores de AFIP.
