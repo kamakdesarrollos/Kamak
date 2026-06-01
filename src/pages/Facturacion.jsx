@@ -24,6 +24,9 @@ import {
 import { generarLibroIvaDigital, NOMBRES_ARCHIVO_LIBRO_IVA } from '../lib/libroIvaDigital';
 import { feCaeSolicitarPayload } from '../lib/wsfe';
 import { supabase } from '../lib/supabase';
+import { afipQrUrlFromComprobante } from '../lib/afipQr';
+import { generarFacturaHTML } from '../lib/facturaHTML';
+import { generateQrDataUrl } from '../lib/clienteAcceso';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -823,6 +826,15 @@ export default function Facturacion() {
                       {isAdmin && c.estado === 'borrador' && (
                         <span title="Eliminar borrador" style={{ cursor: 'pointer', color: T.ink3, fontSize: 13 }}
                           onClick={() => { if (window.confirm('¿Eliminar este borrador?')) removeComprobante(c.id); }}>✕</span>
+                      )}
+                      {c.estado === 'emitido' && c.cae && (
+                        <span title="Imprimir / PDF de la factura (con CAE + QR)" style={{ cursor: 'pointer', color: T.ink2, fontSize: 13 }}
+                          onClick={async () => {
+                            try {
+                              const qrDataUrl = await generateQrDataUrl(afipQrUrlFromComprobante(c, empresa.cuit), 220);
+                              abrirHTML(generarFacturaHTML(c, { empresa, qrDataUrl }));
+                            } catch (e) { alert(`No se pudo generar la factura: ${e.message}`); }
+                          }}>🖨</span>
                       )}
                     </div>
                   </div>
