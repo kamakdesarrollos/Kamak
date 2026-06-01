@@ -23,6 +23,7 @@ import {
 } from '../lib/afip';
 import { generarLibroIvaDigital, NOMBRES_ARCHIVO_LIBRO_IVA } from '../lib/libroIvaDigital';
 import { feCaeSolicitarPayload } from '../lib/wsfe';
+import { supabase } from '../lib/supabase';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -801,7 +802,9 @@ export default function Facturacion() {
                           onClick={async () => {
                             try {
                               const payload = feCaeSolicitarPayload(c, { numero: c.numero || 0, comprobantes });
-                              const res = await fetch('/api/afip/emitir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comprobante: c, payload }) });
+                              // El endpoint exige sesión + rol Admin: mandamos el access_token de Supabase.
+                              const { data: { session } } = await supabase.auth.getSession();
+                              const res = await fetch('/api/afip/emitir', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }) }, body: JSON.stringify({ comprobante: c, payload }) });
                               const j = await res.json().catch(() => ({}));
                               if (j.ok && j.cae) {
                                 updateComprobante(c.id, { numero: j.numero, puntoVenta: j.puntoVenta ?? c.puntoVenta, cae: j.cae, caeVto: j.caeVto, estado: 'emitido' });

@@ -15,6 +15,7 @@
 
 import { loginWSAA } from '../../lib/afip/wsaa.js';
 import { feCompUltimoAutorizado, feCAESolicitar } from '../../lib/afip/wsfe-client.js';
+import { requireAdmin } from '../../lib/auth/requireAdmin.js';
 
 const AFIP_CUIT = process.env.AFIP_CUIT;
 const AFIP_CERT = process.env.AFIP_CERT;   // certificado .crt (PEM; admite base64 o \n escapados)
@@ -78,6 +79,12 @@ export default async function handler(req, res) {
     });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Autorización: SOLO un Admin autenticado puede emitir. El gate `isAdmin` del front
+  // es cosmético; sin esta verificación server-side el endpoint quedaría abierto y
+  // cualquiera con la URL podría emitir facturas fiscales reales con el CUIT del emisor.
+  const admin = await requireAdmin(req, res, { supabaseUrl: SUPABASE_URL, serviceKey: SUPABASE_KEY });
+  if (!admin) return; // requireAdmin ya respondió 401/403.
 
   if (!AFIP_CUIT || !AFIP_CERT || !AFIP_KEY) {
     return res.status(501).json({

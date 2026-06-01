@@ -76,8 +76,12 @@ create policy "app_users_delete_admin_only"
 
 -- ============================================================================
 -- 2. shared_data  — store key/value del estado de la app
--- Genérico: cualquier key operativa la leen/escriben los autenticados. Solo
--- 'portal_tokens' (datos de clientes + acceso a portales) queda admin-only.
+-- Genérico: cualquier key operativa la leen/escriben los autenticados. Excepciones:
+--   • 'portal_tokens'  → admin-only (datos de clientes + acceso a portales).
+--   • 'afip_ta_*'      → SERVER-ONLY: es el Ticket de Acceso de AFIP (token+sign).
+--     Sin policy que lo habilite → RLS deniega todo acceso del cliente; solo la
+--     service key (emitir.js) lo lee/escribe. CRÍTICO: si el front pudiera leerlo,
+--     un autenticado cualquiera podría llamar a WSFE y emitir suplantando al emisor.
 -- DELETE no se permite desde el cliente (sin policy → denegado; el server usa
 -- la service key, que bypasea).
 -- ============================================================================
@@ -96,13 +100,14 @@ drop policy if exists "shared_data_select_authenticated" on public.shared_data;
 drop policy if exists "shared_data_insert_authenticated" on public.shared_data;
 drop policy if exists "shared_data_update_authenticated" on public.shared_data;
 
--- Keys operativas = todas menos portal_tokens (futuras keys quedan cubiertas).
+-- Keys operativas = todas menos portal_tokens y el TA de AFIP (afip_ta_*, server-only).
+-- (key !~ '^afip_ta_' = NO matchea la regex → excluye afip_ta_homologacion/produccion.)
 create policy "shared_data_select_operativas"
-  on public.shared_data for select to authenticated using (key <> 'portal_tokens');
+  on public.shared_data for select to authenticated using (key <> 'portal_tokens' and key !~ '^afip_ta_');
 create policy "shared_data_insert_operativas"
-  on public.shared_data for insert to authenticated with check (key <> 'portal_tokens');
+  on public.shared_data for insert to authenticated with check (key <> 'portal_tokens' and key !~ '^afip_ta_');
 create policy "shared_data_update_operativas"
-  on public.shared_data for update to authenticated using (key <> 'portal_tokens') with check (key <> 'portal_tokens');
+  on public.shared_data for update to authenticated using (key <> 'portal_tokens' and key !~ '^afip_ta_') with check (key <> 'portal_tokens' and key !~ '^afip_ta_');
 
 -- portal_tokens: solo Admin (contiene datos de clientes + acceso a portales).
 create policy "shared_data_select_admin_keys"
@@ -177,6 +182,7 @@ end $$;
 --  Como no-Admin (desde la app / DevTools):
 --                update app_users set rol='Admin' where id=...;    -> ERROR RLS
 --                select * from shared_data where key='portal_tokens'; -> 0 rows
+--                select * from shared_data where key like 'afip_ta_%'; -> 0 rows (TA AFIP)
 --                select * from shared_data where key='obras';      -> ok
 --
 -- ROLLBACK (si algo se rompe):

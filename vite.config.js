@@ -8,7 +8,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.{test,spec}.{js,jsx}'],
+    // src/ (front) + lib/ (módulos compartidos que importan los endpoints de /api).
+    include: ['src/**/*.{test,spec}.{js,jsx}', 'lib/**/*.{test,spec}.{js,jsx}'],
   },
   build: {
     // Source maps ocultos: se generan pero no se sirven al cliente

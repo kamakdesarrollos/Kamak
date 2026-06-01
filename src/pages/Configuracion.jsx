@@ -315,6 +315,10 @@ export default function Configuracion() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             <FField label="Razón social" value={config.empresa.razonSocial} onChange={v => save(patchEmpresa, { razonSocial: v })} />
             <FField label="CUIT" value={config.empresa.cuit} onChange={v => save(patchEmpresa, { cuit: v })} />
+            {/* Punto de venta AFIP usado en la emisión electrónica (WSFE). Debe ser un
+                punto de venta de tipo "Web Services" dado de alta en AFIP. */}
+            <FField label="Punto de venta AFIP" type="number" value={config.empresa.puntoVenta ?? ''}
+              onChange={v => save(patchEmpresa, { puntoVenta: v === '' ? '' : Number(v) })} />
             <FField label="Dirección" value={config.empresa.direccion} onChange={v => save(patchEmpresa, { direccion: v })} />
             <FField label="Email" value={config.empresa.email} type="email" onChange={v => save(patchEmpresa, { email: v })} />
             <FField label="Teléfono" value={config.empresa.telefono} onChange={v => save(patchEmpresa, { telefono: v })} />
