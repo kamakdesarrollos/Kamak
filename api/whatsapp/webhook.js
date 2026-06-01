@@ -701,7 +701,7 @@ function cuotaEstadoCalc(c, moneda, tc) {
 }
 
 async function handleClienteFlow(phone, cliente, text) {
-  const t = (text || '').toLowerCase().trim();
+  const t = (text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
   // Cargar la(s) obra(s) del cliente.
   const obrasData = await loadSharedData('obras');
@@ -808,7 +808,7 @@ async function handleClienteFlow(phone, cliente, text) {
     return;
   }
 
-  if (/(saldo|cuanto\s+debo|cuanto\s+falta|deuda)/.test(t)) {
+  if (/(saldo|cuanto\s+debo|cuanto\s+falta|te\s+debo|\bdebo\b|deuda)/.test(t)) {
     await sendWA(phone,
       `💰 *Saldo de tu obra ${obra.nombre}*\n\n` +
       `Total acordado: ${fmtMonto(totalAcordado, 'USD')}\n` +
@@ -3875,7 +3875,7 @@ export default async function handler(req, res) {
         // Detectar comandos tipicos de cliente. Si escribe "saldo", "avance",
         // "hola", etc. NO mandar al flujo de vinculacion de admin — ese flujo
         // pide nombre/email de empleado y confunde al cliente.
-        const t = (text || '').toLowerCase().trim();
+        const t = (text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
         const esComandoCliente = /^(hola|buen[ao]s|hi|hey|saludos|saldo|cuanto|deuda|avance|como\s+va|estado|proximo|cuota|portal|link|acceso|pago|ayuda|help|\?)/.test(t);
         if (esComandoCliente) {
           await sendWA(phone,
