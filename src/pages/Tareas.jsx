@@ -58,7 +58,7 @@ function ProgressBar({ completos, total }) {
   );
 }
 
-function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem }) {
+function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, solapaUserId }) {
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
   const obra = obras.find(o => o.id === tarea.obraId);
   const totalItems = (tarea.checklist || []).length;
@@ -67,6 +67,11 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
   const esNueva = currentUser
     && (tarea.asignadoA || []).includes(currentUser.id)
     && !(tarea.vistaPor || []).includes(currentUser.id);
+  // En la solapa de un usuario, una tarea "agregada por otro" = la creó alguien
+  // distinto al dueño de la solapa (ej. el Admin se la asignó). Se pinta distinto.
+  const agregadaPorOtro = !!solapaUserId && !!tarea.creadoPor && tarea.creadoPor !== solapaUserId;
+  const creador = agregadaPorOtro ? (usuarios.find(u => u.id === tarea.creadoPor)?.nombre || 'otro') : null;
+  const baseBg = esNueva ? '#fff7ed' : agregadaPorOtro ? '#eef4ff' : 'transparent';
   const [nuevoItem, setNuevoItem] = useState('');
 
   const handleAddItem = () => {
@@ -86,11 +91,12 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
           gap: 12,
           padding: '10px 14px',
           cursor: 'pointer',
-          background: expanded ? '#f3eedf' : esNueva ? '#fff7ed' : 'transparent',
+          background: expanded ? '#f3eedf' : baseBg,
+          borderLeft: agregadaPorOtro ? '3px solid #6366f1' : '3px solid transparent',
           transition: 'background 0.1s',
         }}
         onMouseEnter={e => { if (!expanded) e.currentTarget.style.background = '#f7f3e5'; }}
-        onMouseLeave={e => { if (!expanded) e.currentTarget.style.background = esNueva ? '#fff7ed' : 'transparent'; }}
+        onMouseLeave={e => { if (!expanded) e.currentTarget.style.background = baseBg; }}
       >
         {/* Indicador prioridad */}
         <div style={{
@@ -121,6 +127,11 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
             {esNueva && (
               <span style={{ background: '#dc2626', color: '#fff', fontSize: 8.5, padding: '1px 5px', borderRadius: 8, fontWeight: 700, letterSpacing: 0.5 }}>
                 NUEVA
+              </span>
+            )}
+            {agregadaPorOtro && (
+              <span style={{ background: '#6366f1', color: '#fff', fontSize: 8.5, padding: '1px 5px', borderRadius: 8, fontWeight: 700, letterSpacing: 0.3, flexShrink: 0 }} title={`Asignada por ${creador}`}>
+                ↦ {creador}
               </span>
             )}
           </div>
@@ -268,12 +279,22 @@ export default function Tareas() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const isAdmin = currentUser?.rol === 'Admin';
-  const [tab, setTab] = useState('mias');           // mias | creadas | completadas | todas
-  const [filtroPrio, setFiltroPrio] = useState(''); // '' | baja | media | alta
-  const [filtroObra, setFiltroObra] = useState(''); // '' | obraId | 'sin-obra'
-  const [filtroEstado, setFiltroEstado] = useState(''); // '' | 'en_progreso' | 'vencidas'
+  // Solapa activa: id de usuario (sus tareas) o 'completadas'. No-admin solo ve la suya.
+  const [tab, setTab] = useState('');
+  const [filtroPrio, setFiltroPrio] = useState('');
+  const [filtroObra, setFiltroObra] = useState('');
   const [editingId, setEditingId] = useState(null); // null | 'nueva' | tareaId
+  const [nuevaParaUser, setNuevaParaUser] = useState(null); // preasignar al crear desde una solapa
   const [expandedId, setExpandedId] = useState(null); // tarea expandida inline
+
+  // Default = mi solapa; si un no-admin tuviera seleccionada una ajena, lo reseteo.
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!tab) { setTab(currentUser.id); return; }
+    if (!isAdmin && tab !== 'completadas' && tab !== currentUser.id) setTab(currentUser.id);
+  }, [currentUser, isAdmin, tab]);
+
+  const activa = (t) => t.estado !== 'completada' && t.estado !== 'cancelada';
 
   // Abrir tarea desde notificacion in-app: /tareas?id=tarea-xyz
   useEffect(() => {
@@ -296,35 +317,17 @@ export default function Tareas() {
   // Filtros por tab
   const tareasVisibles = useMemo(() => {
     if (!currentUser) return [];
-    let base = tareas;
-    if (tab === 'mias') {
-      base = base.filter(t =>
-        (t.asignadoA || []).includes(currentUser.id) &&
-        t.estado !== 'completada' &&
-        t.estado !== 'cancelada'
-      );
-    } else if (tab === 'creadas') {
-      base = base.filter(t =>
-        t.creadoPor === currentUser.id &&
-        t.estado !== 'completada' &&
-        t.estado !== 'cancelada'
-      );
-    } else if (tab === 'completadas') {
-      base = base.filter(t => t.estado === 'completada' || t.estado === 'cancelada');
-      if (!isAdmin) {
-        base = base.filter(t =>
-          (t.asignadoA || []).includes(currentUser.id) || t.creadoPor === currentUser.id
-        );
-      }
-    } else if (tab === 'todas') {
-      // Solo admin ve todas las activas
-      base = base.filter(t => t.estado !== 'completada' && t.estado !== 'cancelada');
+    let base;
+    if (tab === 'completadas') {
+      base = tareas.filter(t => !activa(t));
+      if (!isAdmin) base = base.filter(t => (t.asignadoA || []).includes(currentUser.id) || t.creadoPor === currentUser.id);
+    } else {
+      // Solapa de un usuario: sus tareas activas (asignadas a él).
+      base = tareas.filter(t => (t.asignadoA || []).includes(tab) && activa(t));
     }
     if (filtroPrio) base = base.filter(t => t.prioridad === filtroPrio);
     if (filtroObra === 'sin-obra') base = base.filter(t => !t.obraId);
     else if (filtroObra) base = base.filter(t => t.obraId === filtroObra);
-    if (filtroEstado === 'en_progreso') base = base.filter(t => t.estado === 'en_progreso');
-    else if (filtroEstado === 'vencidas') base = base.filter(t => isVencida(t.fechaLimite, t.estado));
 
     // Orden: vencidas primero, luego por fecha limite (las que tienen),
     // luego por prioridad (alta > media > baja), luego por creacion desc.
@@ -344,109 +347,60 @@ export default function Tareas() {
     });
   }, [tareas, tab, filtroPrio, filtroObra, currentUser, isAdmin]);
 
-  // KPIs
+  // KPIs del usuario de la solapa activa (en 'Completadas', del usuario actual).
+  const kpiUserId = tab === 'completadas' ? currentUser?.id : tab;
   const kpis = useMemo(() => {
     if (!currentUser) return [];
-    const mias = tareas.filter(t =>
-      (t.asignadoA || []).includes(currentUser.id) &&
-      t.estado !== 'completada' &&
-      t.estado !== 'cancelada'
-    );
-    const vencidas = mias.filter(t => isVencida(t.fechaLimite, t.estado));
-    const enProgreso = mias.filter(t => t.estado === 'en_progreso');
-    const completadasMias = tareas.filter(t =>
-      (t.asignadoA || []).includes(currentUser.id) && t.estado === 'completada'
-    );
-    const enMiasSinFiltro = tab === 'mias' && !filtroEstado;
+    const suyas = tareas.filter(t => (t.asignadoA || []).includes(kpiUserId) && activa(t));
+    const vencidas = suyas.filter(t => isVencida(t.fechaLimite, t.estado));
+    const enProgreso = suyas.filter(t => t.estado === 'en_progreso');
+    const completadas = tareas.filter(t => (t.asignadoA || []).includes(kpiUserId) && t.estado === 'completada');
     return [
-      {
-        label: 'Mis pendientes', value: mias.length,
-        color: enMiasSinFiltro ? T.accent : T.ink,
-        active: enMiasSinFiltro,
-        onClick: () => { setTab('mias'); setFiltroEstado(''); setFiltroPrio(''); setFiltroObra(''); },
-      },
-      {
-        label: 'En progreso', value: enProgreso.length,
-        color: tab === 'mias' && filtroEstado === 'en_progreso' ? T.accent : '#d97706',
-        active: tab === 'mias' && filtroEstado === 'en_progreso',
-        onClick: () => filtrarPorKPI('en_progreso'),
-      },
-      {
-        label: 'Vencidas', value: vencidas.length,
-        color: tab === 'mias' && filtroEstado === 'vencidas' ? T.accent : (vencidas.length > 0 ? '#dc2626' : T.ink),
-        active: tab === 'mias' && filtroEstado === 'vencidas',
-        onClick: () => filtrarPorKPI('vencidas'),
-      },
-      {
-        label: 'Completadas (mias)', value: completadasMias.length,
-        color: tab === 'completadas' ? T.accent : T.ok,
-        active: tab === 'completadas',
-        onClick: () => cambiarTab('completadas'),
-      },
+      { label: 'Pendientes',  value: suyas.length,      color: T.accent },
+      { label: 'En progreso', value: enProgreso.length, color: '#d97706' },
+      { label: 'Vencidas',    value: vencidas.length,   color: vencidas.length > 0 ? '#dc2626' : T.ink },
+      { label: 'Completadas', value: completadas.length, color: T.ok },
     ];
-  }, [tareas, currentUser, tab, filtroEstado]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tareas, currentUser, kpiUserId]);
 
-  // Conteos por tab (sin filtros aplicados, para que el contador siempre
-  // refleje el total real y el user no piense que está vacío por un filtro).
-  const conteos = useMemo(() => {
-    if (!currentUser) return { mias: 0, creadas: 0, completadas: 0, todas: 0 };
-    const mias = tareas.filter(t =>
-      (t.asignadoA || []).includes(currentUser.id) &&
-      t.estado !== 'completada' && t.estado !== 'cancelada'
-    ).length;
-    const creadas = tareas.filter(t =>
-      t.creadoPor === currentUser.id &&
-      t.estado !== 'completada' && t.estado !== 'cancelada'
-    ).length;
-    const completadasBase = tareas.filter(t => t.estado === 'completada' || t.estado === 'cancelada');
-    const completadas = isAdmin
-      ? completadasBase.length
-      : completadasBase.filter(t => (t.asignadoA || []).includes(currentUser.id) || t.creadoPor === currentUser.id).length;
-    const todas = tareas.filter(t => t.estado !== 'completada' && t.estado !== 'cancelada').length;
-    return { mias, creadas, completadas, todas };
-  }, [tareas, currentUser, isAdmin]);
-
+  // Solapas: admin = una por usuario + Completadas; no-admin = solo la suya + Completadas.
   const tabs = useMemo(() => {
-    const base = [
-      { key: 'mias', label: 'Mis tareas', count: conteos.mias },
-      { key: 'creadas', label: 'Creadas por mí', count: conteos.creadas },
-      { key: 'completadas', label: 'Completadas', count: conteos.completadas },
-    ];
-    if (isAdmin) base.splice(2, 0, { key: 'todas', label: 'Todas', count: conteos.todas });
-    return base;
-  }, [isAdmin, conteos]);
+    const usuariosSolapa = isAdmin ? usuarios : (currentUser ? [currentUser] : []);
+    const userTabs = usuariosSolapa.map(u => ({
+      key: u.id,
+      label: u.id === currentUser?.id ? 'Mis tareas' : u.nombre,
+      count: tareas.filter(t => (t.asignadoA || []).includes(u.id) && activa(t)).length,
+    }));
+    const completadasCount = tareas.filter(t => {
+      if (activa(t)) return false;
+      return isAdmin || (t.asignadoA || []).includes(currentUser?.id) || t.creadoPor === currentUser?.id;
+    }).length;
+    return [...userTabs, { key: 'completadas', label: 'Completadas', count: completadasCount }];
+  }, [tareas, usuarios, isAdmin, currentUser]);
 
-  // Al cambiar de tab, limpiar filtros para que no oculten resultados de la
-  // nueva vista (típico: filtraste una obra en "Mis tareas", saltás a
-  // "Completadas" y parece vacío porque el filtro sigue activo).
-  const cambiarTab = (newTab) => {
-    setTab(newTab);
-    setFiltroPrio('');
-    setFiltroObra('');
-    setFiltroEstado('');
-  };
+  // Al cambiar de solapa, limpiar filtros.
+  const cambiarTab = (newTab) => { setTab(newTab); setFiltroPrio(''); setFiltroObra(''); };
 
-  // Toggle de filtros desde los KPIs del banner.
-  const filtrarPorKPI = (estadoFiltro) => {
-    setTab('mias');
-    setFiltroPrio('');
-    setFiltroObra('');
-    setFiltroEstado(prev => prev === estadoFiltro ? '' : estadoFiltro);
+  // "+ Nueva tarea" desde la solapa actual → queda asignada a ese usuario.
+  const crearEnSolapa = () => {
+    setNuevaParaUser(tab === 'completadas' ? (currentUser?.id || null) : tab);
+    setEditingId('nueva');
   };
+  const solapaEsUsuario = tab !== 'completadas';
 
   return (
     <PageLayout active="Tareas">
       <PageHero
         label="GESTIÓN DE TAREAS"
         title="Tareas"
-        subtitle="Asignación y seguimiento de pendientes operativos y administrativos"
+        subtitle={isAdmin ? 'Una solapa por usuario — entrá a una y cargá tareas (quedan asignadas a esa persona)' : 'Tus tareas asignadas'}
         kpis={kpis}
-        actions={<Btn sm accent onClick={() => setEditingId('nueva')}>+ Nueva tarea</Btn>}
+        actions={solapaEsUsuario ? <Btn sm accent onClick={crearEnSolapa}>+ Nueva tarea{isAdmin && tab !== currentUser?.id ? ` · ${usuarios.find(u => u.id === tab)?.nombre || ''}` : ''}</Btn> : null}
       />
 
       <Box style={{ padding: 0, overflow: 'hidden' }}>
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: `1.5px solid ${T.faint2}`, padding: '0 14px', gap: 0 }}>
+        {/* Solapas por usuario */}
+        <div style={{ display: 'flex', borderBottom: `1.5px solid ${T.faint2}`, padding: '0 14px', gap: 0, overflowX: 'auto' }}>
           {tabs.map(t => (
             <div
               key={t.key}
@@ -526,6 +480,7 @@ export default function Tareas() {
               currentUser={currentUser}
               usuarios={usuarios}
               obras={obras}
+              solapaUserId={solapaEsUsuario ? tab : null}
               expanded={expandedId === t.id}
               onToggleExpand={() => setExpandedId(expandedId === t.id ? null : t.id)}
               onEdit={() => setEditingId(t.id)}
@@ -539,7 +494,8 @@ export default function Tareas() {
       {editingId && (
         <TareaModal
           tareaId={editingId === 'nueva' ? null : editingId}
-          onClose={() => setEditingId(null)}
+          presetAsignado={editingId === 'nueva' && nuevaParaUser ? [nuevaParaUser] : null}
+          onClose={() => { setEditingId(null); setNuevaParaUser(null); }}
         />
       )}
     </PageLayout>

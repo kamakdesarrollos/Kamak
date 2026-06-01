@@ -34,7 +34,7 @@ const fmtDatetime = (iso) => {
     d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 };
 
-export default function TareaModal({ tareaId, onClose }) {
+export default function TareaModal({ tareaId, presetAsignado, onClose }) {
   const { currentUser, usuarios } = useUsuarios();
   const { obras } = useObras();
   const {
@@ -61,7 +61,8 @@ export default function TareaModal({ tareaId, onClose }) {
   const [titulo, setTitulo] = useState(tareaActual?.titulo || '');
   const [descripcion, setDescripcion] = useState(tareaActual?.descripcion || '');
   const [asignadoA, setAsignadoA] = useState(
-    tareaActual?.asignadoA?.length ? tareaActual.asignadoA : (currentUser ? [currentUser.id] : [])
+    tareaActual?.asignadoA?.length ? tareaActual.asignadoA
+      : (presetAsignado?.length ? presetAsignado : (currentUser ? [currentUser.id] : []))
   );
   const [obraId, setObraId] = useState(tareaActual?.obraId || '');
   const [prioridad, setPrioridad] = useState(tareaActual?.prioridad || 'media');
