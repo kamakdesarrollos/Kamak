@@ -38,9 +38,15 @@ describe('generarFacturaHTML', () => {
     expect(html).toContain('IVA 21%');
   });
 
-  it('usa la identidad visual compartida (logo KAMAK + acento teal)', () => {
-    expect(html).toContain('KAMAK');
+  it('usa la identidad visual compartida (acento teal) y membrete con logo', () => {
     expect(html).toContain('#1a9b9c');
+    expect(html).toContain('class="fz-logo"');
+    expect(html).toContain('/assets/kamak-logo.png');     // logo por defecto
+  });
+
+  it('permite override del logo (origin tras el deploy)', () => {
+    const h = generarFacturaHTML(c, { empresa, qrDataUrl, logoUrl: 'https://app.kamak.com.ar/assets/kamak-logo.png' });
+    expect(h).toContain('src="https://app.kamak.com.ar/assets/kamak-logo.png"');
   });
 
   it('comprobante exento (sin IVA) muestra Op. Exentas en vez de IVA', () => {

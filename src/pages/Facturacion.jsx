@@ -832,7 +832,7 @@ export default function Facturacion() {
                           onClick={async () => {
                             try {
                               const qrDataUrl = await generateQrDataUrl(afipQrUrlFromComprobante(c, empresa.cuit), 220);
-                              abrirHTML(generarFacturaHTML(c, { empresa, qrDataUrl }));
+                              abrirHTML(generarFacturaHTML(c, { empresa, qrDataUrl, logoUrl: `${window.location.origin}/assets/kamak-logo.png` }));
                             } catch (e) { alert(`No se pudo generar la factura: ${e.message}`); }
                           }}>🖨</span>
                       )}

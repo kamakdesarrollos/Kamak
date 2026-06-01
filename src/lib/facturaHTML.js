@@ -36,6 +36,7 @@ function docReceptorLabel(cuit) {
 const FACTURA_CSS = `
 .fz-top{display:flex;align-items:stretch;border-bottom:3px solid #1a9b9c;margin-bottom:14px;padding-bottom:10px}
 .fz-emisor{flex:1.2;padding-right:14px}
+.fz-logo{height:42px;object-fit:contain;display:block;margin-bottom:8px}
 .fz-emisor .razon{font-weight:800;font-size:13px;color:#1f2024;margin-top:6px}
 .fz-emisor .dato{font-size:9.5px;color:#5a5a58;margin-top:2px}
 .fz-letra{width:64px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;border-left:1px solid #e8e4d8;border-right:1px solid #e8e4d8;padding:0 8px}
@@ -58,7 +59,7 @@ const FACTURA_CSS = `
 
 // Genera el HTML A4 de la factura. `opts.empresa` = config.empresa (emisor),
 // `opts.qrDataUrl` = imagen del QR (data URL) ya generada.
-export function generarFacturaHTML(c, { empresa = {}, qrDataUrl = '' } = {}) {
+export function generarFacturaHTML(c, { empresa = {}, qrDataUrl = '', logoUrl = '/assets/kamak-logo.png' } = {}) {
   const tipo = getTipoComprobante(c.tipoId);
   const letra = tipo?.letra || 'X';
   const cod = String(tipo?.codAfip ?? 0).padStart(2, '0');
@@ -90,11 +91,12 @@ export function generarFacturaHTML(c, { empresa = {}, qrDataUrl = '' } = {}) {
 
 <div class="fz-top">
   <div class="fz-emisor">
-    <div class="logo">KAMAK</div>
+    <img class="fz-logo" src="${logoUrl}" alt="KAMAK Desarrollos" />
     <div class="razon">${esc(empresa.razonSocial || 'KAMAK')}</div>
     <div class="dato">CUIT ${formatCUIT(empresa.cuit)} · IVA Responsable Inscripto</div>
     ${empresa.direccion ? `<div class="dato">${esc(empresa.direccion)}</div>` : ''}
     ${empresa.iibbAlicuota != null ? `<div class="dato">IIBB ${esc(empresa.iibbAlicuota)}%</div>` : ''}
+    <div class="dato">KAMAKDESARROLLOS@GMAIL.COM</div>
   </div>
   <div class="fz-letra">
     <div class="L">${esc(letra)}</div>
