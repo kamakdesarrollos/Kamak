@@ -34,6 +34,25 @@ export const cuotaMontoUSD = (c, obraMoneda, tc) => {
 export const arsToUSD = (montoARS, tc) => Math.round((montoARS || 0) / (tc || 1));
 
 /**
+ * Total al cliente en USD (la DEUDA del cliente).
+ *
+ * En Kamak la venta SIEMPRE es en dólares: el cliente debe y paga en USD, así que
+ * su deuda es un número FIJO en dólares y NO debe moverse con el tipo de cambio.
+ * Si la obra tiene cargado un precio de venta fijo (`detalle.precioVentaUSD`), se
+ * usa tal cual. Si no, se cae al cálculo histórico: presupuesto en pesos
+ * (venta + adicionales + interés) ÷ tc — que SÍ varía con el dólar, por eso es solo
+ * el fallback para obras viejas sin precio fijo cargado.
+ */
+export const calcTotalClienteUSD = (detalle, ventaBaseARS, adicionalARS, interes, tc) => {
+  const fijo = detalle && detalle.precioVentaUSD;
+  if (fijo != null && fijo !== '' && Number.isFinite(Number(fijo)) && Number(fijo) > 0) {
+    return Math.round(Number(fijo));
+  }
+  const totalARS = Math.round(((ventaBaseARS || 0) + (adicionalARS || 0)) * (1 + (interes || 0) / 100));
+  return arsToUSD(totalARS, tc);
+};
+
+/**
  * Suma todos los pagos de una cuota, convertidos a la moneda activa.
  * Cada pago puede estar en moneda distinta (ARS/USD) — usa su propio TC si lo
  * tiene, sino el TC vigente.

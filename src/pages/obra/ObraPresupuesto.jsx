@@ -24,7 +24,7 @@ import { esc, abrirHTML } from '../../lib/html';
 import { BASE_CSS } from '../../lib/printTheme';
 import {
   cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
-  cuotaMontoUSD, arsToUSD,
+  cuotaMontoUSD, arsToUSD, calcTotalClienteUSD,
   tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
   cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado,
   ingresosObraUSD, detallePagosCuotas,
@@ -123,7 +123,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
   // venta y adicionales en ARS (vienen de costos en pesos). Total en ARS,
   // convertido a USD para display.
   const totalClienteARS = Math.round((venta + adicionalCliente) * (1 + interesFin / 100));
-  const totalClienteUSD = arsToUSD(totalClienteARS, tc);
+  const totalClienteUSD = calcTotalClienteUSD(detalle, venta, adicionalCliente, interesFin, tc);
   const adicionalClienteUSD = arsToUSD(adicionalCliente, tc);
   const cuotasPlan = detalle.cuotas || [];
   // Cobrado por cuota DERIVADO de los movimientos (libro único).
@@ -1455,6 +1455,8 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, l
   const totalAdic = adic.reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
   const interes = parseFloat(fin.interes) || 0;
   const totalCliente = Math.round((ventaBase + totalAdic) * (1 + interes / 100));
+  // Precio fijo en USD si la obra lo tiene cargado (deuda del cliente en dólares).
+  const totalClienteUSDpdf = calcTotalClienteUSD(detalle, ventaBase, totalAdic, interes, tc);
 
   const cuotaRows = incluirPagos && cuotas.length > 0 ? cuotas.map((c, i) => {
     const m = cuotaMonto(c); // already USD
@@ -1463,7 +1465,7 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, l
     return `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${c.n || i+1}</td><td>${c.descripcion}</td><td class="r">${fmtDE(c.fecha)}</td><td class="r">${fmtUSD(m)}</td><td><span class="pill ${pagadaC ? 'ok' : 'warn'}">${estadoC}</span></td></tr>`;
   }).join('') : '';
   const pagado = Math.round(cobradoUSD);
-  const saldo = Math.round(totalCliente / tc) - pagado;
+  const saldo = totalClienteUSDpdf - pagado;
 
   const logoHtml = logoLight
     ? `<img src="${logoLight}" style="height:26px;object-fit:contain;display:block" />`
@@ -1561,7 +1563,7 @@ tr.total td{background:#1f2024;color:#fff;font-weight:900;font-family:'JetBrains
     <div><div class="rsm-cl">CLIENTE</div><div class="rsm-cv">${obra?.cliente || '—'}</div></div>
     <div><div class="rsm-cl">TIPO DE OBRA</div><div class="rsm-cv">${obra?.tipo || '—'}</div></div>
     <div><div class="rsm-cl">FECHA DE EMISIÓN</div><div class="rsm-cv">${fechaE()}</div></div>
-    <div><div class="rsm-cl">TOTAL (U$S + IVA)</div><div class="rsm-cv-lg">${toUSD(totalCliente)}</div><div class="rsm-cv-sub">TC BNA $${fmtNE(tc)}</div></div>
+    <div><div class="rsm-cl">TOTAL (U$S + IVA)</div><div class="rsm-cv-lg">U$S ${fmtNE(totalClienteUSDpdf)}</div><div class="rsm-cv-sub">TC BNA $${fmtNE(tc)}</div></div>
   </div>
 </div>
 
@@ -1591,7 +1593,7 @@ tr.total td{background:#1f2024;color:#fff;font-weight:900;font-family:'JetBrains
     ${adic.length > 0 ? `<tr class="rubro"><td colspan="4">▸ ADICIONALES APROBADOS</td></tr>${adicRows}
     <tr class="subtot"><td colspan="3">SUBTOTAL ADICIONALES</td><td class="r" style="color:#1a9b9c">${toUSD(totalAdic)}</td></tr>` : ''}
     ${interes > 0 ? `<tr><td colspan="3" style="font-style:italic;color:#9a9892">Interés financiero (${interes}%)</td><td class="r">${toUSD(Math.round((ventaBase + totalAdic) * interes / 100))}</td></tr>` : ''}
-    <tr class="total"><td colspan="3">TOTAL CLIENTE</td><td class="r" style="font-size:14px">${toUSD(totalCliente)}</td></tr>
+    <tr class="total"><td colspan="3">TOTAL CLIENTE</td><td class="r" style="font-size:14px">U$S ${fmtNE(totalClienteUSDpdf)}</td></tr>
   </tbody>
 </table>
 
@@ -1941,7 +1943,9 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const interesLive = interesEdit === '' ? 0 : (parseFloat(interesEdit) || 0);
   // Total cliente se calcula con interesLive (live preview del input).
   const totalConInteres = Math.round(baseTotal * (1 + interesLive / 100));
-  const totalUSD = Math.round(totalConInteres / tc);
+  // Precio fijo en USD si está cargado (la deuda del cliente es en dólares y no
+  // se mueve con el tc); sino, el cálculo viejo (presupuesto en pesos ÷ tc).
+  const totalUSD = calcTotalClienteUSD(detalle, baseTotal, 0, interesLive, tc);
   const fmtUSD = n => `U$S ${fmtN(n)}`;
   // cuotas antiguas en obras moneda:USD tenían monto en ARS; _usd:true marca las nuevas
   const cuotaMonto = c => (c._usd || moneda !== 'USD') ? c.monto : Math.round(c.monto / tc);
@@ -2110,6 +2114,16 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
           <div style={{ paddingLeft: 14, borderLeft: `3px solid ${T.accent}` }}>
             <div style={kSt}>Total cliente</div>
             <div style={{ ...vSt, color: T.accent, fontSize: 22 }}>{fmtUSD(totalUSD)}</div>
+            {!locked && (
+              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 10, color: T.ink2, whiteSpace: 'nowrap' }}>Precio fijo U$S</span>
+                <input type="number" min="0" placeholder="auto (s/dólar)"
+                  value={detalle.precioVentaUSD ?? ''}
+                  onChange={e => { const v = e.target.value; patch(d => ({ ...d, precioVentaUSD: v === '' ? null : Number(v) })); }}
+                  title="Si lo cargás, la deuda del cliente queda fija en dólares y no se mueve con el tipo de cambio."
+                  style={{ width: 120, padding: '3px 6px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.fontMono, fontSize: 12, textAlign: 'right', outline: 'none', background: T.paper }} />
+              </div>
+            )}
           </div>
         </div>
 
@@ -2656,7 +2670,7 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
     .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
   const interes = parseFloat((detalle.financiacion || {}).interes) || 0;
   const totalARS = Math.round((ventaBaseARS + adicionalClienteARS) * (1 + interes / 100));
-  const total = arsToUSD(totalARS, tc);
+  const total = calcTotalClienteUSD(detalle, ventaBaseARS, adicionalClienteARS, interes, tc);
   const ventaDisplay = arsToUSD(ventaBaseARS, tc);
   const adicDisplay  = arsToUSD(adicionalClienteARS, tc);
 
@@ -2863,7 +2877,7 @@ function TabCuentaCorriente({ obra, detalle, patch, moneda, onExport }) {
     .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
   const interes = parseFloat((detalle.financiacion || {}).interes) || 0;
   const totalARS = Math.round((ventaBaseARS + adicionalARS) * (1 + interes / 100));
-  const totalUSD = arsToUSD(totalARS, tc);
+  const totalUSD = calcTotalClienteUSD(detalle, ventaBaseARS, adicionalARS, interes, tc);
   const adicionalUSD = arsToUSD(adicionalARS, tc);
   const cuotas = detalle.cuotas || [];
   // Lo cobrado de cada cuota se DERIVA de los movimientos de ingreso de la obra

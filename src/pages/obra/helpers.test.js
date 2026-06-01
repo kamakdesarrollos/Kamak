@@ -3,7 +3,27 @@ import {
   cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
   tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
   ingresosObraUSD, detallePagosCuotas, repartirCobroEnCuotas, cobradoObraUSD,
+  calcTotalClienteUSD,
 } from './helpers';
+
+describe('calcTotalClienteUSD (deuda del cliente en USD)', () => {
+  it('usa el precio fijo USD si está cargado y NO depende del tipo de cambio', () => {
+    expect(calcTotalClienteUSD({ precioVentaUSD: 59634 }, 85000000, 0, 0, 1430)).toBe(59634);
+    expect(calcTotalClienteUSD({ precioVentaUSD: 59634 }, 85000000, 0, 0, 9999)).toBe(59634); // tc distinto, mismo total
+  });
+  it('cae al cálculo viejo (pesos ÷ tc) si no hay precio fijo', () => {
+    expect(calcTotalClienteUSD({}, 1430000, 0, 0, 1430)).toBe(1000);
+    expect(calcTotalClienteUSD(null, 1430000, 0, 0, 1430)).toBe(1000);
+  });
+  it('aplica interés y adicionales en el fallback', () => {
+    expect(calcTotalClienteUSD({}, 1000000, 430000, 10, 1430)).toBe(1100); // (1.430.000*1,1)/1430
+  });
+  it('ignora precio fijo vacío / cero / no numérico', () => {
+    expect(calcTotalClienteUSD({ precioVentaUSD: '' }, 1430000, 0, 0, 1430)).toBe(1000);
+    expect(calcTotalClienteUSD({ precioVentaUSD: 0 }, 1430000, 0, 0, 1430)).toBe(1000);
+    expect(calcTotalClienteUSD({ precioVentaUSD: null }, 1430000, 0, 0, 1430)).toBe(1000);
+  });
+});
 
 describe('cuotaMontoFn', () => {
   it('respeta el monto si la cuota es _usd', () => {
