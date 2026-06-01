@@ -1166,6 +1166,10 @@ export default function Movimientos() {
     const cv = currentUser?.cajasVisibles ?? '*';
     return movimientos
       .filter(m => {
+        // Cobros de "cuenta corriente previa" (arrastre, sin caja): no son
+        // movimientos de caja → no se listan acá ni cuentan en los totales.
+        // Siguen alimentando la cuenta corriente de la obra (que lee el libro completo).
+        if (m.ccPrevia) return false;
         if (!m.fecha.startsWith(mes)) return false;
         if (filtroObra && m.obraId !== filtroObra) return false;
         if (soloComprobante && !m.comprobanteUrl) return false;

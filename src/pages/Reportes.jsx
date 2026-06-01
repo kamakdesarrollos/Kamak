@@ -54,7 +54,7 @@ export default function Reportes() {
   // en vez de los movs semilla en detalles[obraId].movimientos. Antes los
   // numeros de Reportes no coincidian con los de /movimientos.
   const allMovsYTD = useMemo(() =>
-    movimientos.filter(m => (m.fecha || '').startsWith(String(CY))),
+    movimientos.filter(m => (m.fecha || '').startsWith(String(CY)) && !m.ccPrevia),
     [movimientos]);
 
   const facturacionYTD = allMovsYTD.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0);

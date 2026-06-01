@@ -2576,6 +2576,7 @@ function TabMovimientos({ obra, moneda }) {
   const movsObra = useMemo(() =>
     movimientos.filter(m => {
       if (m.obraId !== obra.id) return false;
+      if (m.ccPrevia) return false; // arrastre de cuenta corriente: no es movimiento de caja
       // Fail-closed: si no-admin tiene cajas restringidas, exigir cajaId valido.
       if (!isAdmin && cv !== '*' && (!m.cajaId || !cajaIdsMias.includes(m.cajaId))) return false;
       return true;

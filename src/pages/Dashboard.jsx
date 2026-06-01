@@ -71,7 +71,7 @@ export default function Dashboard() {
   const posicionARS = Math.round(totalARS + totalUSD * tc);
 
   // ── KPIs del mes ──
-  const movsMes         = useMemo(() => movimientos.filter(m => m.fecha.startsWith(mes)), [movimientos, mes]);
+  const movsMes         = useMemo(() => movimientos.filter(m => m.fecha.startsWith(mes) && !m.ccPrevia), [movimientos, mes]);
   const ingresosMes     = useMemo(() => movsMes.filter(m => m.tipo === 'ingreso'), [movsMes]);
   const gastosMes       = useMemo(() => movsMes.filter(m => m.tipo === 'gasto'),   [movsMes]);
   // KPIs consolidados en ARS: un movimiento en caja USD NO se suma como pesos
@@ -94,7 +94,7 @@ export default function Dashboard() {
     for (let i = 5; i >= 0; i--) {
       const d = new Date(y, mo - 1 - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-      const inp = movimientos.filter(m => m.tipo === 'ingreso' && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
+      const inp = movimientos.filter(m => m.tipo === 'ingreso' && !m.ccPrevia && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
       const out = movimientos.filter(m => m.tipo === 'gasto'   && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
       result.push({ label: MESES_N[d.getMonth()], inp, out });
     }
