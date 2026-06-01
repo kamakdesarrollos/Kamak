@@ -204,13 +204,21 @@ export function UsuariosProvider({ children }) {
     if ('obrasVisibles' in changes) patch.obras_visibles = changes.obrasVisibles;
     if ('cajasVisibles' in changes) patch.cajas_visibles = changes.cajasVisibles;
     if ('tabsOcultos'   in changes) patch.tabs_ocultos = changes.tabsOcultos;
-    const { error } = await supabase.from('app_users').update(patch).eq('id', id);
+    // .select() para saber CUÁNTAS filas se actualizaron. Clave: con RLS, un UPDATE
+    // cuyo `using` (is_admin()) da false NO devuelve error — actualiza 0 filas y
+    // "tiene éxito". Sin esto el fallo era invisible (el modal cerraba como si nada).
+    const { data, error } = await supabase.from('app_users').update(patch).eq('id', id).select();
     if (error) {
-      // Antes el error se tragaba en silencio: el modal cerraba como si hubiera
-      // guardado, pero app_users no cambiaba (ej: RLS o columna faltante) y el
-      // cambio nunca llegaba al otro usuario. Ahora lo devolvemos para mostrarlo.
       console.error('[updateUsuario] update app_users falló:', error, 'patch:', patch);
       return { error };
+    }
+    if (!data || data.length === 0) {
+      // 0 filas sin error = RLS bloqueó el cambio (tu usuario no figura como Admin
+      // en app_users) o el id no existe. Lo hacemos visible.
+      console.error('[updateUsuario] 0 filas actualizadas (RLS is_admin() o id inexistente). patch:', patch, 'id:', id);
+      return { error: { message:
+        'No se actualizó ninguna fila (0 filas) y la base no devolvió error: casi seguro RLS no te reconoce como Admin.\n\n' +
+        'Verificá en Supabase que tu fila en app_users tenga rol = "Admin" (con A mayúscula) y que su email sea EXACTAMENTE el de tu login.\n\nid del usuario editado: ' + id } };
     }
     setUsuarios(prev => prev.map(u => u.id === id ? merged : u));
     setCurrentUser(prev => {
