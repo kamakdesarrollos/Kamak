@@ -2974,6 +2974,28 @@ function TabCuentaCorriente({ obra, detalle, patch, moneda, onExport }) {
         </div>
       </div>
 
+      {/* ── Pagos recibidos (detalle, independiente del plan de cuotas) ────── */}
+      {(() => {
+        const pagos = ingresosObraUSD(_movs, _cajas, obra.id, tc);
+        if (pagos.length === 0) return null;
+        const totalPagos = pagos.reduce((s, p) => s + p.monto, 0);
+        return (
+          <Box style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '9px 14px', background: T.dark, color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, fontWeight: 700 }}>
+              <span>◆ Pagos recibidos ({pagos.length})</span>
+              <span style={{ fontFamily: T.fontMono, color: '#7ee0b8' }}>{fmtMon(usdToMon(totalPagos))}</span>
+            </div>
+            {pagos.map((p, i) => (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px', borderTop: i > 0 ? `1px solid ${T.faint2}` : 'none', fontSize: 12.5 }}>
+                <span style={{ width: 84, flexShrink: 0, fontFamily: T.fontMono, color: T.ink2 }}>{fmtD(p.fecha)}</span>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.concepto}</span>
+                <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.ok, flexShrink: 0 }}>+ {fmtMon(usdToMon(p.monto))}</span>
+              </div>
+            ))}
+          </Box>
+        );
+      })()}
+
       {/* ── Acordeón Adicionales ──────────────────────────────────────────── */}
       <div>
         <AccordionHeader

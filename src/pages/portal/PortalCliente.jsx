@@ -8,7 +8,7 @@ import { useClientes } from '../../store/ClientesContext';
 import { Box, Btn, Chip, Stat, Bar } from '../../components/ui';
 import { T } from '../../theme';
 import { fmtN, fmtFecha } from '../../lib/format';
-import { cuotaEstadoCalc, cuotaCobrado, calcObra, cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, ingresosObraUSD, detallePagosCuotas } from '../obra/helpers';
+import { cuotaEstadoCalc, cuotaCobrado, calcObra, cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, ingresosObraUSD, detallePagosCuotas, calcTotalClienteUSD } from '../obra/helpers';
 import { useMovimientos } from '../../store/MovimientosContext';
 
 const fmtD = fmtFecha;
@@ -275,7 +275,9 @@ export default function PortalCliente() {
     .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
   const interes = parseFloat(fin.interes) || 0;
   const totalClienteARS = Math.round((ventaBaseARS + adicionalClienteARS) * (1 + interes / 100));
-  const totalClienteUSD = toUSD(totalClienteARS, false);
+  // Precio fijo en USD si la obra lo tiene cargado (deuda del cliente en dólares,
+  // no se mueve con el tc); sino, el cálculo viejo (presupuesto en pesos ÷ tc).
+  const totalClienteUSD = calcTotalClienteUSD(detalle, ventaBaseARS, adicionalClienteARS, interes, tc);
   const adicionalClienteUSD = toUSD(adicionalClienteARS, false);
 
   const diasRestantes = obra.fechaFinEstim
@@ -642,6 +644,22 @@ export default function PortalCliente() {
                     </div>
                   );
                 })}
+              </Box>
+            )}
+
+            {/* Pagos recibidos — historial de cobros (siempre visible, sin depender de cuotas) */}
+            {ingresosPortal.length > 0 && (
+              <Box style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '10px 16px', background: T.dark, color: '#fff', fontSize: 11, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Pagos recibidos · {ingresosPortal.length}</span>
+                  <span style={{ color: '#7ee0b8' }}>{fmt(ingresosPortal.reduce((s, p) => s + (p.monto || 0), 0))}</span>
+                </div>
+                {ingresosPortal.map((p, i) => (
+                  <div key={p.id || i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: i < ingresosPortal.length - 1 ? `1px solid ${T.faint2}` : 'none' }}>
+                    <span style={{ fontSize: 13, color: T.ink2, fontFamily: T.fontMono }}>{fmtD(p.fecha)}</span>
+                    <span style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14, color: T.ok }}>+ {fmt(p.monto)}</span>
+                  </div>
+                ))}
               </Box>
             )}
 
