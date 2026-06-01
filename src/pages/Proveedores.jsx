@@ -146,7 +146,9 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
 export default function Proveedores() {
   const navigate = useNavigate();
   const { currentUser } = useUsuarios();
-  const isAdmin = currentUser?.rol === 'Admin';
+  // En Proveedores, "Administración" tiene el mismo acceso que Admin: gestiona pagos
+  // y cuenta corriente de proveedores (de mano de obra y de materiales).
+  const isAdmin = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
   const { proveedores, addProveedor, updateProveedor, removeProveedor, getObrasProveedor, ccEntries: ccRaw } = useProveedores();
   const { movimientos } = useMovimientos();
   // Saldo DERIVADO: lo que debemos (debe de ccEntries) − lo que pagamos (gastos

@@ -180,14 +180,13 @@ export default function Dashboard() {
 
   const fechaStr = today.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-  const cajasVisibles = isAdmin || cv === '*' ? cajas : cajas.filter(c => Array.isArray(cv) && cv.includes(c.id));
+  // No-admin: SOLO sus cajas asignadas. cv='*' (o sin asignar) → ninguna (no ve la plata de otros).
+  const cajasVisibles = isAdmin ? cajas : (Array.isArray(cv) ? cajas.filter(c => cv.includes(c.id)) : []);
 
   if (!isAdmin) {
     const misCajas = cajasVisibles.filter(c => c.activa);
-    const misAlertas = alertas.filter(a => {
-      if (!a.obraId) return misCajas.some(c => a.texto.includes(c.nombre));
-      return true;
-    });
+    // No-admin solo ve alertas de SUS cajas — nada de montos/estado de obras.
+    const misAlertas = alertas.filter(a => !a.obraId && misCajas.some(c => a.texto.includes(c.nombre)));
     return (
       <PageLayout breadcrumb={['Inicio']} active="Dashboard">
         <div style={{ marginBottom: 16 }}>

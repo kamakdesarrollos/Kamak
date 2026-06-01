@@ -699,6 +699,14 @@ export default function Cheques() {
     const idsEn7 = new Set(en7Dias.map(c => c.id));
     visibles = visibles.filter(c => idsEn7.has(c.id));
   }
+  // No-admin (ej. Administración): SOLO los cheques "en su poder" = los asignados a
+  // su(s) caja(s). Un cheque sin caja asignada no es de su poder. (Para un control
+  // más fino se podría agregar un campo de tenedor al cheque.)
+  if (!isAdmin) {
+    const cv = currentUser?.cajasVisibles;
+    const misCajas = Array.isArray(cv) ? cv : [];
+    visibles = visibles.filter(c => c.cajaId && misCajas.includes(c.cajaId));
+  }
 
   // ── Acciones ──────────────────────────────────────────────────────────────
   // Ajusta la caja cuando un cheque "sale" (anular/rechazar/endosar) o
