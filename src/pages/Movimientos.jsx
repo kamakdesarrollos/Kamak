@@ -1123,8 +1123,10 @@ export default function Movimientos() {
   const { solicitudes, addSolicitud } = useSolicitudes();
   const { cheques, removeCheque } = useCheques();
   const cv = currentUser?.cajasVisibles ?? '*';
-  const cajas = cv === '*' ? allCajas : allCajas.filter(c => Array.isArray(cv) && cv.includes(c.id));
   const isAdmin = currentUser?.rol === 'Admin';
+  // No-admin: SOLO sus cajas asignadas (cv='*' o sin asignar → ninguna). Evita que
+  // vea los saldos de otras cajas, incluido el selector del modal de traspaso.
+  const cajas = isAdmin ? allCajas : (Array.isArray(cv) ? allCajas.filter(c => cv.includes(c.id)) : []);
   const pendingSolIds = useMemo(() =>
     new Set(solicitudes.filter(s => s.estado === 'pendiente').map(s => s.movimientoId)),
     [solicitudes]);

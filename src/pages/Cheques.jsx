@@ -656,7 +656,11 @@ export default function Cheques() {
     if (currentUser && !puedeCheques) navigate('/', { replace: true });
   }, [currentUser, puedeCheques, navigate]);
 
-  const { cheques, addCheque, updateCheque, removeCheque, depositarCheque, acreditarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque } = useCheques();
+  const { cheques: chequesAll, addCheque, updateCheque, removeCheque, depositarCheque, acreditarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque } = useCheques();
+  // No-admin (ej. Administración): solo ve cheques "en su poder" = los de su(s) caja(s).
+  // Filtra TODA la base (lista, totales y resumen por vencimiento), no solo la lista.
+  const _cvCheq = Array.isArray(currentUser?.cajasVisibles) ? currentUser.cajasVisibles : [];
+  const cheques = isAdmin ? chequesAll : chequesAll.filter(c => c.cajaId && _cvCheq.includes(c.cajaId));
   const { cajas, addMovimiento, removeMovimiento, traspasar } = useMovimientos();
   const { obras } = useObras();
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
