@@ -42,6 +42,7 @@ describe('generarFacturaHTML', () => {
     expect(html).toContain('#1a9b9c');
     expect(html).toContain('class="fz-logo"');
     expect(html).toContain('/assets/kamak-logo.png');     // logo por defecto
+    expect(html).toContain('class="fz-frame"');           // documento encuadrado
   });
 
   it('permite override del logo (origin tras el deploy)', () => {

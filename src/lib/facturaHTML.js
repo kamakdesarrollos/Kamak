@@ -34,6 +34,7 @@ function docReceptorLabel(cuit) {
 
 // Estilos propios de la factura, encima de BASE_CSS (sin pisar la identidad).
 const FACTURA_CSS = `
+.fz-frame{border:1.6px solid #1f2024;border-radius:10px;padding:22px 24px}
 .fz-top{display:flex;align-items:stretch;border-bottom:3px solid #1a9b9c;margin-bottom:14px;padding-bottom:10px}
 .fz-emisor{flex:1.2;padding-right:14px}
 .fz-logo{height:42px;object-fit:contain;display:block;margin-bottom:8px}
@@ -88,6 +89,8 @@ export function generarFacturaHTML(c, { empresa = {}, qrDataUrl = '', logoUrl = 
   return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
 <title>${nombreCmp} ${letra} ${ptoVta}-${numero}</title>
 <style>${BASE_CSS}${FACTURA_CSS}</style></head><body>
+
+<div class="fz-frame">
 
 <div class="fz-top">
   <div class="fz-emisor">
@@ -147,5 +150,7 @@ export function generarFacturaHTML(c, { empresa = {}, qrDataUrl = '', logoUrl = 
 </div>
 
 <div class="ftr"><span>KAMAK DESARROLLOS</span><span>${nombreCmp} ${esc(letra)} ${ptoVta}-${numero}</span><span>${fmtFecha(c.fecha)}</span></div>
+
+</div>
 </body></html>`;
 }
