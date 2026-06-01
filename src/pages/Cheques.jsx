@@ -650,9 +650,11 @@ export default function Cheques() {
   const navigate = useNavigate();
   const isAdmin = currentUser?.rol === 'Admin';
 
+  // Admin y Administración entran; Administración ve solo los cheques en su poder (filtro abajo).
+  const puedeCheques = isAdmin || currentUser?.rol === 'Administración';
   useEffect(() => {
-    if (currentUser && !isAdmin) navigate('/', { replace: true });
-  }, [currentUser, isAdmin, navigate]);
+    if (currentUser && !puedeCheques) navigate('/', { replace: true });
+  }, [currentUser, puedeCheques, navigate]);
 
   const { cheques, addCheque, updateCheque, removeCheque, depositarCheque, acreditarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque } = useCheques();
   const { cajas, addMovimiento, removeMovimiento, traspasar } = useMovimientos();

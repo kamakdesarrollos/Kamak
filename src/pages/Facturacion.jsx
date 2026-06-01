@@ -371,7 +371,7 @@ export default function Facturacion() {
   const navigate = useNavigate();
   const isAdmin    = currentUser?.rol === 'Admin';
   const isContador = currentUser?.rol === 'Contador externo';
-  const puede      = isAdmin || isContador;
+  const puede      = isAdmin || isContador || currentUser?.rol === 'Administración';
   useEffect(() => { if (currentUser && !puede) navigate('/', { replace: true }); }, [currentUser, puede, navigate]);
 
   const { comprobantes, addComprobante, updateComprobante, removeComprobante } = useComprobantes();

@@ -4,7 +4,7 @@ import PageLayout from '../../components/layout/PageLayout';
 import { Btn } from '../../components/ui';
 import { T } from '../../theme';
 import { useObras } from '../../store/ObrasContext';
-import { useUsuarios } from '../../store/UsuariosContext';
+import { useUsuarios, ROL_TABS_OCULTAS, ROL_TABS_OCULTAS_DEFAULT } from '../../store/UsuariosContext';
 
 // ── Fixed constants ────────────────────────────────────────────────────────────
 const TOT_WEEKS  = 60;
@@ -132,15 +132,13 @@ export default function ObraGantt() {
   const { obras, getDetalle, patchDetalle } = useObras();
   const { currentUser } = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
-  const canSeeGantt = isAdmin || ['Comprador', 'Director de obra'].includes(currentUser?.rol);
+  // Mapa único de pestañas ocultas por rol (compartido con ObraPresupuesto).
+  const rolHiddenTabs = isAdmin ? [] : (ROL_TABS_OCULTAS[currentUser?.rol] ?? ROL_TABS_OCULTAS_DEFAULT);
+  const canSeeGantt = isAdmin || !rolHiddenTabs.includes('Gantt');
   // Guard: si el rol no puede ver Gantt, redirigir a /obras (antes el codigo seguia ejecutando).
   useEffect(() => {
     if (currentUser && !canSeeGantt) navigate('/obras', { replace: true });
   }, [currentUser, canSeeGantt, navigate]);
-  const rolHiddenTabs = isAdmin ? [] : [
-    'Presupuesto', 'Adicionales', 'Contratos MO', 'Portal cliente',
-    ...(!canSeeGantt ? ['Gantt'] : []),
-  ];
   const tabsOcultos = currentUser?.tabsOcultos ?? [];
   const allHiddenTabs = new Set([...tabsOcultos, ...rolHiddenTabs]);
 

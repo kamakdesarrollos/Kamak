@@ -83,10 +83,11 @@ export default function Clientes() {
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const isAdmin = currentUser?.rol === 'Admin';
-  // Guard: solo Admin puede entrar a esta pagina.
+  // Guard: Admin y Administración pueden entrar a esta página.
+  const puedeClientes = isAdmin || currentUser?.rol === 'Administración';
   useEffect(() => {
-    if (currentUser && !isAdmin) navigate('/', { replace: true });
-  }, [currentUser, isAdmin, navigate]);
+    if (currentUser && !puedeClientes) navigate('/', { replace: true });
+  }, [currentUser, puedeClientes, navigate]);
 
   const { clientes, addCliente, updateCliente, removeCliente } = useClientes();
   const { obras, updateObra } = useObras();

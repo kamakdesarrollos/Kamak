@@ -161,7 +161,7 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
-  const [rol, setRol] = useState('Comprador');
+  const [rol, setRol] = useState('Jefe de obra');
   const [obrasAll, setObrasAll] = useState(false);
   const [obrasSelected, setObrasSelected] = useState([]);
   const [cajasAll, setCajasAll] = useState(false);

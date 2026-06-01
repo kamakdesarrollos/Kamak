@@ -13,12 +13,34 @@ const PERMISOS_DEFAULT = {
   aprobarPagos: false, crearObra: false, verDashboard: false,
 };
 
+// Roles del sistema. REGLA GLOBAL: ningún no-admin ve montos generales de obra
+// (verCostos/verMargenes false) ni la plata de otros (verCaja = solo su caja, vía
+// cajasVisibles). El acceso por sección/pestaña NO sale de estos 9 flags sino del
+// Sidebar (allowedRoles) y de rolHiddenTabs por rol — ver Sidebar.jsx / ObraPresupuesto.jsx.
 export const ROLES = {
-  Admin:              { verCostos:true, verMargenes:true, verCaja:true, cargarGastos:true, cargarAvance:true, editarPresu:true, aprobarPagos:true, crearObra:true, verDashboard:true },
-  Administración:     { verCostos:true, verMargenes:false, verCaja:true, cargarGastos:true, cargarAvance:false, editarPresu:false, aprobarPagos:true, crearObra:false, verDashboard:true },
-  Comprador:          { verCostos:true, verMargenes:false, verCaja:false, cargarGastos:true, cargarAvance:false, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
-  'Director de obra': { verCostos:false, verMargenes:false, verCaja:false, cargarGastos:false, cargarAvance:true, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
-  'Contador externo': { verCostos:true, verMargenes:false, verCaja:true, cargarGastos:false, cargarAvance:false, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:true },
+  Admin:                 { verCostos:true,  verMargenes:true,  verCaja:true, cargarGastos:true,  cargarAvance:true,  editarPresu:true,  aprobarPagos:true,  crearObra:true,  verDashboard:true },
+  // Administración: backoffice (proveedores/clientes/facturación/gastos fijos completo,
+  // registra pagos a proveedores). NO ve costos/márgenes/valor de obra. Caja propia.
+  Administración:        { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:true,  cargarAvance:false, editarPresu:false, aprobarPagos:true,  crearObra:false, verDashboard:true },
+  // Jefe de obra: ejecución (tareas, avance, materiales, archivos). Caja propia. Sin plata general.
+  'Jefe de obra':        { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:true,  cargarAvance:true,  editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
+  // Logística y compras: compra materiales (carga gastos, ve proveedores). Caja propia.
+  // El precio de los materiales para comprar se ve en la pestaña Materiales (no en el total de obra).
+  'Logística y compras': { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:true,  cargarAvance:false, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
+  // Contador externo: solo Facturación (rol especial, se mantiene).
+  'Contador externo':    { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:false, cargarAvance:false, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
+};
+
+// Pestañas DENTRO de la obra ocultas por rol (solo aplica a no-admin; Admin ve todo).
+// TABS_DEF: Resumen, Cuenta corriente, Presupuesto, Materiales, Gantt, Movimientos,
+// Contratos MO, Archivos, Portal cliente. Resumen/Cuenta corriente/Presupuesto/
+// Movimientos exponen montos generales de obra → ocultos a TODO no-admin.
+export const ROL_TABS_OCULTAS_DEFAULT = ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Movimientos', 'Contratos MO', 'Portal cliente'];
+export const ROL_TABS_OCULTAS = {
+  Administración:        ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Movimientos', 'Portal cliente'],                                     // ve: Materiales, Gantt, Contratos MO, Archivos
+  'Jefe de obra':        ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Movimientos', 'Contratos MO', 'Portal cliente'],                     // ve: Materiales, Gantt, Archivos
+  'Logística y compras': ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Gantt', 'Movimientos', 'Contratos MO', 'Portal cliente'],           // ve: Materiales, Archivos
+  'Contador externo':    ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Archivos', 'Portal cliente'],
 };
 
 // ── Conversión entre formato DB y formato app ─────────────────────────────────
@@ -137,7 +159,7 @@ export function UsuariosProvider({ children }) {
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   const addUsuario = useCallback(async (data) => {
-    const rol = data.rol || 'Comprador';
+    const rol = data.rol || 'Jefe de obra';
     const nuevo = {
       nombre: data.nombre,
       email: data.email,

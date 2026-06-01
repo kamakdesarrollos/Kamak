@@ -1173,11 +1173,12 @@ export default function Movimientos() {
         if (!m.fecha.startsWith(mes)) return false;
         if (filtroObra && m.obraId !== filtroObra) return false;
         if (soloComprobante && !m.comprobanteUrl) return false;
-        if (!isAdmin && cv !== '*') {
-          // Fail-closed: si el mov no tiene cajaId, o su caja NO esta entre
-          // las visibles del usuario, lo ocultamos. (Antes los movs sin cajaId
-          // se filtraban — leak para no-admins.)
-          if (!m.cajaId || !cajaIdsMias.includes(m.cajaId)) return false;
+        if (!isAdmin) {
+          // No-admin: SOLO sus cajas asignadas. cajasVisibles='*' (o sin asignar)
+          // → NINGUNA (un no-admin no debe ver la plata de otros, ni siquiera con
+          // el default '*'). Las cajas se asignan desde Usuarios.
+          const misCajas = Array.isArray(cv) ? cv : [];
+          if (!m.cajaId || !misCajas.includes(m.cajaId)) return false;
         }
         return true;
       })

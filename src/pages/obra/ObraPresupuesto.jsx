@@ -14,7 +14,7 @@ import ExportModal from '../modales/ExportModal';
 import ContratoMOModal from '../modales/ContratoMOModal';
 import { useGastosFijos } from '../../store/GastosFijosContext';
 import { useCatalog, calcTarea } from '../../store/CatalogContext';
-import { useUsuarios } from '../../store/UsuariosContext';
+import { useUsuarios, ROL_TABS_OCULTAS, ROL_TABS_OCULTAS_DEFAULT } from '../../store/UsuariosContext';
 import { useTareas } from '../../store/TareasContext';
 import { generarTareasObra } from '../../lib/generarTareasObra';
 import { supabase } from '../../lib/supabase';
@@ -4020,11 +4020,8 @@ export default function ObraPresupuesto() {
   const { currentUser, usuarios } = useUsuarios();
   const { addTarea } = useTareas();
   const isAdmin = currentUser?.rol === 'Admin';
-  const canSeeGantt = isAdmin || ['Comprador', 'Director de obra'].includes(currentUser?.rol);
-  const rolHiddenTabs = isAdmin ? [] : [
-    'Presupuesto', 'Cuenta corriente', 'Contratos MO', 'Portal cliente',
-    ...(!canSeeGantt ? ['Gantt'] : []),
-  ];
+  // Pestañas ocultas por rol (mapa único compartido — antes estaba duplicado y con drift).
+  const rolHiddenTabs = isAdmin ? [] : (ROL_TABS_OCULTAS[currentUser?.rol] ?? ROL_TABS_OCULTAS_DEFAULT);
   const tabsOcultos = currentUser?.tabsOcultos ?? [];
   const allHiddenTabs = new Set([...tabsOcultos, ...rolHiddenTabs]);
   const [activeTab, setActiveTab] = useState(() => {
