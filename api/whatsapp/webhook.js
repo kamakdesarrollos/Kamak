@@ -759,7 +759,11 @@ async function handleClienteFlow(phone, cliente, text) {
   };
   const totalCuotas = cuotas.reduce((s, c) => s + cuotaMonto(c), 0);
   const totalCobrado = cobradoUSD;
-  const saldoPendiente = Math.max(0, totalCuotas - totalCobrado);
+  // Total acordado al cliente: si la obra tiene precio fijo en USD (deuda en
+  // dolares, no depende del dolar) se usa ese; sino, la suma de cuotas.
+  const _pf = Number(detalle.precioVentaUSD);
+  const totalAcordado = Number.isFinite(_pf) && _pf > 0 ? Math.round(_pf) : totalCuotas;
+  const saldoPendiente = Math.max(0, totalAcordado - totalCobrado);
   const pagadas = cuotas.filter(c => estadoCuota(c) === 'pagado').length;
   const proximaCuota = cuotas
     .filter(c => estadoCuota(c) !== 'pagado')
@@ -807,7 +811,7 @@ async function handleClienteFlow(phone, cliente, text) {
   if (/(saldo|cuanto\s+debo|cuanto\s+falta|deuda)/.test(t)) {
     await sendWA(phone,
       `💰 *Saldo de tu obra ${obra.nombre}*\n\n` +
-      `Total acordado: ${fmtMonto(totalCuotas, 'USD')}\n` +
+      `Total acordado: ${fmtMonto(totalAcordado, 'USD')}\n` +
       `Pagaste: ${fmtMonto(totalCobrado, 'USD')}\n` +
       `*Saldo pendiente: ${fmtMonto(saldoPendiente, 'USD')}*\n\n` +
       `Detalle completo en el portal:\n${portalUrl}`
@@ -835,10 +839,10 @@ async function handleClienteFlow(phone, cliente, text) {
   }
 
   if (/(cuanto\s+pague|pagado|cobrado|que\s+va)/.test(t)) {
-    const pct = totalCuotas > 0 ? Math.round((totalCobrado / totalCuotas) * 100) : 0;
+    const pct = totalAcordado > 0 ? Math.round((totalCobrado / totalAcordado) * 100) : 0;
     await sendWA(phone,
       `✅ *Pagos de ${obra.nombre}*\n\n` +
-      `Pagaste: *${fmtMonto(totalCobrado, 'USD')}* de ${fmtMonto(totalCuotas, 'USD')} (${pct}%)\n` +
+      `Pagaste: *${fmtMonto(totalCobrado, 'USD')}* de ${fmtMonto(totalAcordado, 'USD')} (${pct}%)\n` +
       `Cuotas cobradas: ${pagadas} de ${cuotas.length}\n\n` +
       `Ver todas: ${portalUrl}`
     );
