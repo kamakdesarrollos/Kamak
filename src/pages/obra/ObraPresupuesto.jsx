@@ -2976,7 +2976,8 @@ function TabCuentaCorriente({ obra, detalle, patch, moneda, onExport }) {
 
       {/* ── Pagos recibidos (detalle, independiente del plan de cuotas) ────── */}
       {(() => {
-        const pagos = ingresosObraUSD(_movs, _cajas, obra.id, tc);
+        const pagos = ingresosObraUSD(_movs, _cajas, obra.id, tc)
+          .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')); // nuevos arriba, viejos abajo
         if (pagos.length === 0) return null;
         const totalPagos = pagos.reduce((s, p) => s + p.monto, 0);
         return (

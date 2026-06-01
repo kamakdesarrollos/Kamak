@@ -654,7 +654,7 @@ export default function PortalCliente() {
                   <span>Pagos recibidos · {ingresosPortal.length}</span>
                   <span style={{ color: '#7ee0b8' }}>{fmt(ingresosPortal.reduce((s, p) => s + (p.monto || 0), 0))}</span>
                 </div>
-                {ingresosPortal.map((p, i) => (
+                {[...ingresosPortal].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map((p, i) => (
                   <div key={p.id || i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: i < ingresosPortal.length - 1 ? `1px solid ${T.faint2}` : 'none' }}>
                     <span style={{ fontSize: 13, color: T.ink2, fontFamily: T.fontMono }}>{fmtD(p.fecha)}</span>
                     <span style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14, color: T.ok }}>+ {fmt(p.monto)}</span>
