@@ -80,12 +80,21 @@ function EditarAccesosModal({ usuario, obras, cajas, onClose }) {
     prev.includes(tab) ? prev.filter(x => x !== tab) : [...prev, tab]
   );
 
-  const guardar = () => {
-    updateUsuario(usuario.id, {
+  const [guardando, setGuardando] = useState(false);
+  const guardar = async () => {
+    if (guardando) return;
+    setGuardando(true);
+    const res = await updateUsuario(usuario.id, {
       obrasVisibles: obrasAll ? '*' : obrasSelected,
       cajasVisibles: cajasAll ? '*' : cajasSelected,
       tabsOcultos,
     });
+    setGuardando(false);
+    if (res?.error) {
+      alert('No se pudieron guardar los accesos:\n\n' + (res.error.message || JSON.stringify(res.error)) +
+        '\n\nSi habla de permisos/RLS o de una columna, avisame ese texto exacto.');
+      return; // no cerrar: el cambio no se guardó
+    }
     onClose();
   };
 
@@ -148,7 +157,7 @@ function EditarAccesosModal({ usuario, obras, cajas, onClose }) {
 
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
           <Btn sm onClick={onClose}>Cancelar</Btn>
-          <Btn sm fill onClick={guardar}>Guardar accesos</Btn>
+          <Btn sm fill onClick={guardar}>{guardando ? 'Guardando…' : 'Guardar accesos'}</Btn>
         </div>
       </div>
     </div>

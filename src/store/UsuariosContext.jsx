@@ -191,18 +191,35 @@ export function UsuariosProvider({ children }) {
 
   const updateUsuario = useCallback(async (id, changes) => {
     const u = usuarios.find(u => u.id === id);
-    if (!u) return;
+    if (!u) return { error: { message: 'Usuario no encontrado en la lista.' } };
     const merged = { ...u, ...changes };
-    const { error } = await supabase.from('app_users').update(userToRow(merged)).eq('id', id);
-    if (!error) {
-      setUsuarios(prev => prev.map(u => u.id === id ? merged : u));
-      setCurrentUser(prev => {
-        if (prev?.id !== id) return prev;
-        const next = { ...prev, ...changes };
-        saveSession(next);
-        return next;
-      });
+    // Mandar SOLO las columnas que cambian (no el row completo vía userToRow): un
+    // update parcial no toca columnas no relacionadas que pudieran no existir o
+    // estar protegidas, así un cambio de cajas no se cae por culpa de otro campo.
+    const patch = { updated_at: new Date().toISOString() };
+    if ('nombre'        in changes) patch.nombre = changes.nombre;
+    if ('email'         in changes) patch.email = changes.email;
+    if ('rol'           in changes) patch.rol = changes.rol;
+    if ('permisos'      in changes) patch.permisos = changes.permisos;
+    if ('obrasVisibles' in changes) patch.obras_visibles = changes.obrasVisibles;
+    if ('cajasVisibles' in changes) patch.cajas_visibles = changes.cajasVisibles;
+    if ('tabsOcultos'   in changes) patch.tabs_ocultos = changes.tabsOcultos;
+    const { error } = await supabase.from('app_users').update(patch).eq('id', id);
+    if (error) {
+      // Antes el error se tragaba en silencio: el modal cerraba como si hubiera
+      // guardado, pero app_users no cambiaba (ej: RLS o columna faltante) y el
+      // cambio nunca llegaba al otro usuario. Ahora lo devolvemos para mostrarlo.
+      console.error('[updateUsuario] update app_users falló:', error, 'patch:', patch);
+      return { error };
     }
+    setUsuarios(prev => prev.map(u => u.id === id ? merged : u));
+    setCurrentUser(prev => {
+      if (prev?.id !== id) return prev;
+      const next = { ...prev, ...changes };
+      saveSession(next);
+      return next;
+    });
+    return { error: null };
   }, [usuarios]);
 
   const removeUsuario = useCallback(async (id) => {
