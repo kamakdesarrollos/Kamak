@@ -98,12 +98,14 @@ async function emisionSet(id, rec) {
 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
+    // Estado mínimo para el cartel, accesible sin auth: solo SI está configurado y
+    // en qué entorno. No filtramos el CUIT ni qué env vars faltan (eso revelaría
+    // datos del emisor / config del servidor a cualquiera) — ese detalle vive en
+    // el POST, detrás de la verificación de Admin.
     return res.status(200).json({
       ok: true,
       configurado: !!(AFIP_CUIT && AFIP_CERT && AFIP_KEY),
       env: AFIP_ENV,
-      cuit: AFIP_CUIT || null,
-      faltan: [!AFIP_CUIT && 'AFIP_CUIT', !AFIP_CERT && 'AFIP_CERT', !AFIP_KEY && 'AFIP_KEY'].filter(Boolean),
     });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
