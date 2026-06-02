@@ -6,6 +6,7 @@ import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useObras, EMPTY_DETALLE } from '../store/ObrasContext';
 import NuevaObraModal from './modales/NuevaObraModal';
+import ImportarArrastreModal from './modales/ImportarArrastreModal';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { calcObra } from './obra/helpers';
@@ -444,6 +445,7 @@ export default function Obras() {
   const [searchParams] = useSearchParams();
   const [tabIdx, setTabIdx] = useState(0);
   const [showNueva, setShowNueva] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editando, setEditando] = useState(null);
   const [busqueda, setBusqueda] = useState(() => searchParams.get('q') || '');
 
@@ -514,6 +516,7 @@ export default function Obras() {
               placeholder="⌕ Buscar obra o cliente…"
               style={{ padding: '5px 10px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, width: 200, outline: 'none', background: 'rgba(255,255,255,0.06)', color: '#fff' }}
             />
+            {isAdmin && <Btn sm onClick={() => setShowImport(true)}>↗ Importar arrastre</Btn>}
             {canCreate && <Btn sm fill onClick={() => setShowNueva(true)}>+ Nueva obra</Btn>}
           </>
         }
@@ -647,6 +650,9 @@ export default function Obras() {
       )}
       {editando && (
         <NuevaObraModal obra={editando} onSave={handleSaveEdit} onClose={() => setEditando(null)} />
+      )}
+      {showImport && (
+        <ImportarArrastreModal onClose={() => setShowImport(false)} />
       )}
     </PageLayout>
   );
