@@ -2,7 +2,8 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback, us
 import { loadSharedData, saveSharedData, patchCatalogItem, appendCatalogItem, removeCatalogItem } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
-import { resolverItemAPU, resolverMOAPU, buildCatalogIndex } from '../lib/apuPriceResolver';
+import { resolverItemAPU, resolverMOAPU, buildCatalogIndex, normalizarNombre } from '../lib/apuPriceResolver';
+import { cascadeRename } from '../lib/catalogCascade';
 import { loadSismatCostMap, migrarCatalogoConSismat } from '../lib/sismatCostFallback';
 import { aplicarCACalCatalogo } from '../lib/cacUpdate';
 
@@ -187,7 +188,26 @@ export function CatalogProvider({ children }) {
   // vez se pisaban (last-write-wins, bug CAT-003: "edito una APU y no se guarda").
   // Ahora cada edición patchea SOLO ese ítem server-side → no se pisan.
   const add    = useCallback((coll, item)        => { markUserEdit(); const full = { id: newId(), ...item, updatedAt: today() }; setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), full] })); appendCatalogItem(coll, full); }, []);
-  const update = useCallback((coll, id, changes) => { markUserEdit(); const patch = { ...changes, updatedAt: today() }; setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...patch } : i) })); patchCatalogItem(coll, id, patch); }, []);
+  const update = useCallback((coll, id, changes) => {
+    markUserEdit();
+    const patch = { ...changes, updatedAt: today() };
+    // Cascada de rename: las recetas de las APU referencian materiales/MO/grales
+    // POR NOMBRE. Si renombrás uno acá sin propagarlo, esas APU quedan "SIN
+    // CATÁLOGO". Detectamos el cambio de nombre y actualizamos las tareas que lo usan.
+    const c = catalogRef.current;
+    const prevItem = ['materiales', 'subcontratos', 'generales'].includes(coll)
+      ? (c?.[coll] || []).find(i => i.id === id) : null;
+    const cascada = (prevItem?.nombre && changes.nombre && normalizarNombre(changes.nombre) !== normalizarNombre(prevItem.nombre))
+      ? cascadeRename(c.tareas, coll, prevItem.nombre, changes.nombre, normalizarNombre) : null;
+
+    setCatalog(prev => {
+      const next = { ...prev, [coll]: prev[coll].map(i => i.id === id ? { ...i, ...patch } : i) };
+      if (cascada) next.tareas = cascada.tareas;
+      return next;
+    });
+    patchCatalogItem(coll, id, patch);
+    if (cascada) for (const cb of cascada.cambios) patchCatalogItem('tareas', cb.id, { [coll]: cb[coll] });
+  }, []);
   const remove = useCallback((coll, id)          => { markUserEdit(); setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) })); removeCatalogItem(coll, id); }, []);
   const bulkSeed = useCallback((additions) => {
     setCatalog(prev => {

@@ -75,8 +75,9 @@ export function factorConversion(unidadApu, unidadCat) {
 }
 
 // Normaliza un nombre para matching tolerante: case-insensitive,
-// sin tildes, sin espacios extra.
-function normalizarNombre(s) {
+// sin tildes, sin espacios extra. Exportada para que la cascada de rename
+// (al renombrar un material/MO) matchee igual que el resolver.
+export function normalizarNombre(s) {
   return (s || '').toString()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .toLowerCase()
