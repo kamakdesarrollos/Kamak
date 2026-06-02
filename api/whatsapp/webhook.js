@@ -973,14 +973,20 @@ async function getLinkedUser(phone) {
 // Antes el código hacía cajasVisibles.length===0 || cajasVisibles.includes(id),
 // que con '*' (string) daba length 1 e includes false → el usuario quedaba SIN
 // ninguna caja (bug que rompía 'saldo' y la carga de gastos para admins).
-function cajaEsVisible(cajasVisibles, cajaId) {
-  // Contrato unificado con la app (Cajas.jsx / Dashboard): '*' = todas las cajas;
-  // un array lista las visibles; [] o sin setear = NINGUNA. Antes el bot trataba
-  // [] como "todas" → bypass de la segregación de acceso a cajas (un usuario sin
-  // cajas asignadas las veía todas por WhatsApp). Ahora hay que asignarle cajas.
-  if (cajasVisibles === '*') return true;
-  if (!Array.isArray(cajasVisibles)) return false;
-  return cajasVisibles.includes(cajaId);
+function cajaEsVisible(user, caja) {
+  // Contrato unificado con la app (src/lib/permisosCaja.js):
+  //  - '*' = admin → ve TODAS las cajas.
+  //  - El RESPONSABLE de la caja (caja.usuarioId === su email) la ve siempre, sin
+  //    importar cajasVisibles. Es lo que se elige al crear la caja ("a quién
+  //    corresponde"); por eso un no-admin ve su caja por WhatsApp sin asignarla a mano.
+  //  - Un array lista las cajas asignadas a mano (extra). [] o sin setear = solo las
+  //    de las que es responsable (NUNCA todas, para no filtrar la plata de otros).
+  if (!caja) return false;
+  const cv = user?.cajasVisibles;
+  if (cv === '*') return true;
+  if (caja.usuarioId && user?.email && caja.usuarioId === user.email) return true;
+  if (!Array.isArray(cv)) return false;
+  return cv.includes(caja.id);
 }
 
 // ── Flujo de vinculación ──────────────────────────────────────────────────────
@@ -1201,7 +1207,7 @@ function extractAvanceCompleto(text, obras, detalles) {
 
 // ── Claude: interpretar mensaje ───────────────────────────────────────────────
 async function callClaude(user, messageText, base64Media, mimeType, conv, ctx, mediaUrl = null) {
-  const cajasUsuario = ctx.cajas.filter(c => cajaEsVisible(user.cajasVisibles, c.id));
+  const cajasUsuario = ctx.cajas.filter(c => cajaEsVisible(user, c));
   const cajasEfectivo = ctx.cajas.filter(c => c.tipo === 'efectivo' && c.usuarioId === user.email);
   const cajaEfectivoARS = cajasEfectivo.find(c => c.moneda === 'ARS');
   const cajaEfectivoUSD = cajasEfectivo.find(c => c.moneda === 'USD');
@@ -1542,7 +1548,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // Si no nombró una caja explícita, preguntamos — nunca la adivinamos (y
     // jamás del nombre de la obra). Un ingreso es plata que entra: la caja importa.
     if (tipo === 'ingreso' && !caja) {
-      const visibles = ctx.cajas.filter(c => cajaEsVisible(user.cajasVisibles, c.id));
+      const visibles = ctx.cajas.filter(c => cajaEsVisible(user, c));
       const opciones = visibles.slice(0, 10).map(c => `• ${c.nombre}`).join('\n');
       await saveConversation(user.phone, { state: 'awaiting_ingreso_caja', data: { datos, mediaUrl } });
       return `💰 Ingreso de *${montoFmt}*${obra ? ` para *${obra.nombre}*` : ''} anotado.\n\n*¿A qué caja entra?*\n${opciones || '(no tenés cajas visibles configuradas)'}\n\nDecime el nombre de la caja.`;
@@ -1768,7 +1774,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       });
       // Caja efectivo del admin (ARS). Sino, primera ARS visible. Si nada → buzón.
       const caja = ctx.cajas.find(c => c.tipo === 'efectivo' && c.usuarioId === user.email && c.moneda === 'ARS')
-                || ctx.cajas.find(c => c.moneda === 'ARS' && cajaEsVisible(user.cajasVisibles, c.id));
+                || ctx.cajas.find(c => c.moneda === 'ARS' && cajaEsVisible(user, c));
       if (caja) {
         const concepto = datos.concepto || `Factura ${tipoLetra}${datos.numeroFactura ? ` ${datos.numeroFactura}` : ''}${datos.proveedor ? ` · ${datos.proveedor}` : ''}`.trim();
         const fechaMov = datos.fecha || new Date().toISOString().split('T')[0];
@@ -1969,10 +1975,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // La caja la decide el usuario: un ingreso es importante, no lo metemos en
     // una caja por adivinanza. Si dijo la caja, la usamos; si no, preguntamos.
     // (NO se infiere de la obra: la obra es solo atribución.)
-    const caja = datos.cajaId ? ctx.cajas.find(c => c.id === datos.cajaId && cajaEsVisible(user.cajasVisibles, c.id)) : null;
+    const caja = datos.cajaId ? ctx.cajas.find(c => c.id === datos.cajaId && cajaEsVisible(user, c)) : null;
     if (!caja) {
       const opciones = ctx.cajas
-        .filter(c => cajaEsVisible(user.cajasVisibles, c.id) && c.moneda === 'ARS')
+        .filter(c => cajaEsVisible(user, c) && c.moneda === 'ARS')
         .slice(0, 8).map(c => `• ${c.nombre}`).join('\n');
       return `🧾 Cheque de *${fmt(monto)}*${datos.banco ? ` · ${datos.banco}` : ''}${datos.numero ? ` · #${datos.numero}` : ''} listo.\n\n*¿A qué caja entra?*\n${opciones || '(no tenés cajas accesibles)'}\n\nDecime el nombre de la caja.`;
     }
@@ -2585,7 +2591,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
   }
 
   if (comando === 'saldo') {
-    const cajasUsuario = ctx.cajas.filter(c => cajaEsVisible(user.cajasVisibles, c.id));
+    const cajasUsuario = ctx.cajas.filter(c => cajaEsVisible(user, c));
     if (!cajasUsuario.length) return 'No tenés cajas asignadas.';
     const lineas = cajasUsuario.map(c =>
       `• ${c.nombre}: *$${calcSaldoCajaBot(c, ctx.movimientos).toLocaleString('es-AR')}* ${c.moneda}`
@@ -3059,7 +3065,7 @@ async function ejecutarComando(comando, datos, user, ctx) {
     if (chq.estado === 'depositado') return `ℹ️ El cheque N° *${chq.numero}* ya estaba depositado${chq.cajaDestinoNombre ? ` en ${chq.cajaDestinoNombre}` : ''}.`;
     if (chq.estado !== 'cartera') return `⚠️ El cheque N° *${chq.numero}* está *${chq.estado}*, no en cartera — no lo deposité.`;
     if (chq.cajaId) {
-      const banco = ctx.cajas.find(c => c.tipo === 'banco' && (c.moneda || 'ARS') === (chq.moneda || 'ARS') && c.id !== chq.cajaId && cajaEsVisible(user.cajasVisibles, c.id))
+      const banco = ctx.cajas.find(c => c.tipo === 'banco' && (c.moneda || 'ARS') === (chq.moneda || 'ARS') && c.id !== chq.cajaId && cajaEsVisible(user, c))
                  || ctx.cajas.find(c => c.tipo === 'banco' && (c.moneda || 'ARS') === (chq.moneda || 'ARS') && c.id !== chq.cajaId);
       if (banco) {
         await appendMovimiento({
@@ -3502,13 +3508,13 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     });
     let cajaId = ext.cajaId;
     if (!cajaId) {
-      const match = ctx.cajas.find(c => cajaEsVisible(user.cajasVisibles, c.id) &&
+      const match = ctx.cajas.find(c => cajaEsVisible(user, c) &&
         (c.nombre?.toLowerCase().includes(q) || (q.length > 2 && q.includes(c.nombre?.toLowerCase()))));
       cajaId = match?.id;
     }
-    const caja = cajaId ? ctx.cajas.find(c => c.id === cajaId && cajaEsVisible(user.cajasVisibles, c.id)) : null;
+    const caja = cajaId ? ctx.cajas.find(c => c.id === cajaId && cajaEsVisible(user, c)) : null;
     if (!caja) {
-      const opciones = ctx.cajas.filter(c => cajaEsVisible(user.cajasVisibles, c.id)).slice(0, 10).map(c => `• ${c.nombre}`).join('\n');
+      const opciones = ctx.cajas.filter(c => cajaEsVisible(user, c)).slice(0, 10).map(c => `• ${c.nombre}`).join('\n');
       await sendWA(phone, `No reconocí esa caja. Elegí una de las tuyas:\n${opciones || '(no tenés cajas visibles)'}\n\nO escribí *no* para cancelar.`);
       return;
     }
