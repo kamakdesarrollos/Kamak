@@ -10,7 +10,10 @@ import { aplicarCACalCatalogo } from '../lib/cacUpdate';
 // la migración (p.ej. si actualizamos las reglas de conversión).
 // v2: fix de encoding (Ã±→ñ) en normalizarNombre — sin esto los nombres del
 // catálogo no matcheaban con los del SISMAT.
-const CATALOG_SISMAT_MIGRATION_VERSION = '2';
+// v3: fixEncoding ampliado a /[ÃÂ]/ (caracteres °/º) + matcher por PREFIJO
+//     (findCostoSub) → rescata ~162 APUs cuya MO existía pero con nombre+sufijo
+//     (ej. "Mampostería de 15" ↔ MO "Mampostería de 15  ladrillo común").
+const CATALOG_SISMAT_MIGRATION_VERSION = '3';
 
 const newId = () => `cat-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -253,6 +256,9 @@ export function CatalogProvider({ children }) {
     if (ver === CATALOG_SISMAT_MIGRATION_VERSION) return;
     const migrated = migrarCatalogoConSismat(catalog, sismatCostMap);
     if (migrated) {
+      // Backup del catálogo pre-migración (reversible si algo sale mal).
+      try { localStorage.setItem('kamak_catalog_sismat_premig_backup', JSON.stringify(catalog)); }
+      catch (e) { console.warn('[SISMAT migr] no pude guardar backup:', e?.message); }
       setCatalog(migrated);
       // Migración one-shot: persiste el blob explícitamente (ya no hay save
       // automático del blob en el useEffect [catalog]).

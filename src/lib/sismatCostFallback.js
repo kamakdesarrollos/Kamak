@@ -20,18 +20,25 @@ const FACTOR_MO_A_SUB = 0.5;
 function fixEncoding(s) {
   if (!s) return s;
   try {
-    if (s.includes('Ã')) {
+    // Dispara con Ã o Â: los caracteres ° / º (grados/ordinales) en
+    // doble-codificación latin1 producen 'Â' SIN 'Ã'. Sin esto, nombres como
+    // "Columna HÂºAÂº..." no se decodificaban y no matcheaban con "HºAº".
+    if (/[ÃÂ]/.test(s)) {
       return decodeURIComponent(escape(s));
     }
   } catch { /* ignore */ }
   return s;
 }
 
-function normalizarNombre(s) {
+// Normaliza para matching tolerante: decodifica encoding, baja acentos,
+// minúsculas y COLAPSA todo lo no-alfanumérico a un espacio (así "H°A°" y
+// "HºAº" → "h a", y los paréntesis/puntos no rompen el match). Mantiene los
+// números (no confunde "15" con "20"). Exportada para tests.
+export function normalizarNombre(s) {
   return fixEncoding((s || '').toString())
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .toLowerCase()
-    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 }
 
@@ -98,6 +105,28 @@ export function getSismatCostsForTarea(nombre, sismatMap) {
   return sismatMap.get(key) || null;
 }
 
+// Busca el costoSub (MO × 0.5) de una tarea en el mapa SISMAT: por nombre
+// exacto o, si no, por PREFIJO normalizado. En SISMAT la MO suele estar cargada
+// como "<nombre de la tarea>  <descripción>" (ej. "Mampostería de 15  ladrillo
+// común", "Cambio de Válvula de Gas  No incluye materiales"), por eso el match
+// EXACTO fallaba y dejaba la tarea sin MO. Devuelve el match más específico
+// (prefijo más corto). 0 si no hay MO (hueco legítimo: alquiler/servicio).
+export function findCostoSub(sismatMap, nombre) {
+  if (!sismatMap) return 0;
+  const tn = normalizarNombre(nombre);
+  if (!tn) return 0;
+  const exact = sismatMap.get(tn);
+  if (exact && exact.costoSub > 0) return exact.costoSub;
+  let best = null;
+  for (const [k, v] of sismatMap) {
+    // El " " final exige separador → "15" no matchea "150" ni "1".
+    if (v.costoSub > 0 && k.startsWith(tn + ' ')) {
+      if (!best || k.length < best.len) best = { len: k.length, costoSub: v.costoSub };
+    }
+  }
+  return best ? best.costoSub : 0;
+}
+
 // Migración one-shot del catálogo APU: para cada APU que NO tenga
 // sub-contratos ni MO cargados, le agrega un sub-contrato con el valor
 // SISMAT × 0.5 (la conversión MO→Sub de Kamak). Esto deja el catálogo
@@ -111,8 +140,8 @@ export function migrarCatalogoConSismat(catalog, sismatMap) {
 
   let changedCount = 0;
   const newTareas = catalog.tareas.map(t => {
-    const sismat = sismatMap.get(normalizarNombre(t.nombre));
-    if (!sismat || sismat.costoSub <= 0) return t;
+    const costoSub = findCostoSub(sismatMap, t.nombre);
+    if (costoSub <= 0) return t;
 
     // Skip si la APU ya tiene sub o mo no-cero (el user puede haberlos
     // editado a mano, no queremos pisarle).
@@ -130,7 +159,7 @@ export function migrarCatalogoConSismat(catalog, sismatMap) {
           nombre: `MO ${t.nombre}`.slice(0, 120),
           cantidad: 1,
           unidad: t.unidad || 'u',
-          precio: sismat.costoSub,
+          precio: costoSub,
         },
       ],
     };
