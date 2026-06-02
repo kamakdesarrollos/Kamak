@@ -6,6 +6,7 @@ import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex } from '../lib/apuPriceResolver';
+import { groupByKey } from '../lib/catalogGroup';
 import TareasEstandarEditor from './modales/TareasEstandarEditor';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useIndices } from '../store/IndicesContext';
@@ -392,8 +393,12 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
               {(() => {
                 const rows = [];
                 let lastGroup = null;
-                filtered.forEach(item => {
-                  if (rubros?.length > 0 && !selRubro) {
+                // Agrupar por rubro SIN asumir que la lista viene ordenada: si no,
+                // el encabezado se repetía cada vez que el rubro reaparecía salteado.
+                const agrupar = rubros?.length > 0 && !selRubro;
+                const lista = agrupar ? groupByKey(filtered, rubroKey) : filtered;
+                lista.forEach(item => {
+                  if (agrupar) {
                     const grp = item[rubroKey] || '';
                     if (grp !== lastGroup) {
                       lastGroup = grp;
