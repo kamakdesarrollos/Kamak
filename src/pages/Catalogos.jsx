@@ -395,7 +395,9 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
                 let lastGroup = null;
                 // Agrupar por rubro SIN asumir que la lista viene ordenada: si no,
                 // el encabezado se repetía cada vez que el rubro reaparecía salteado.
-                const agrupar = rubros?.length > 0 && !selRubro;
+                // Solo agrupamos al NAVEGAR (sin búsqueda ni rubro elegido): al buscar
+                // queremos lista plana de resultados, los títulos de rubro estorban.
+                const agrupar = rubros?.length > 0 && !selRubro && !search.trim();
                 const lista = agrupar ? groupByKey(filtered, rubroKey) : filtered;
                 lista.forEach(item => {
                   if (agrupar) {
