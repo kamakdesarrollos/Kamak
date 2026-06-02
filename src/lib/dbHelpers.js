@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { broadcastChange } from './syncBus';
 import { patchItem, appendItem, removeItem } from './catalogPatch';
+import { createSerialQueue } from './serialQueue';
 
 // Throttle interno para no spamear el mismo toast cuando la red esta caida
 // y cada provider intenta guardar al mismo tiempo. Mostramos como mucho un
@@ -127,6 +128,11 @@ export async function patchItemInSharedArray(key, id, patch) {
 // server-side y atómico, vía las RPC de supabase/migrations/0002. Si la RPC no
 // está desplegada, caen a read-modify-write del blob (no atómico, pero no
 // rompe). Espejo de src/lib/catalogPatch.js.
+// Cola para que las escrituras del catálogo se apliquen EN ORDEN (crear antes
+// que borrar/editar el mismo ítem). Sin esto, crear una copia y borrarla rápido
+// podía desordenarse y la copia "reaparecía".
+const _catalogQueue = createSerialQueue();
+
 async function _catalogAtomic(rpc, fallbackMutate) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -144,24 +150,24 @@ async function _catalogAtomic(rpc, fallbackMutate) {
 }
 
 export function patchCatalogItem(collection, id, patch) {
-  return _catalogAtomic(
+  return _catalogQueue(() => _catalogAtomic(
     () => supabase.rpc('patch_shared_object_item', { p_key: 'catalog', p_collection: collection, p_id: id, p_patch: patch }),
     (c) => ({ ...c, [collection]: patchItem(c[collection] || [], id, patch) }),
-  );
+  ));
 }
 
 export function appendCatalogItem(collection, item) {
-  return _catalogAtomic(
+  return _catalogQueue(() => _catalogAtomic(
     () => supabase.rpc('append_shared_object_item', { p_key: 'catalog', p_collection: collection, p_item: item }),
     (c) => ({ ...c, [collection]: appendItem(c[collection] || [], item) }),
-  );
+  ));
 }
 
 export function removeCatalogItem(collection, id) {
-  return _catalogAtomic(
+  return _catalogQueue(() => _catalogAtomic(
     () => supabase.rpc('remove_shared_object_item', { p_key: 'catalog', p_collection: collection, p_id: id }),
     (c) => ({ ...c, [collection]: removeItem(c[collection] || [], id) }),
-  );
+  ));
 }
 
 export async function saveSharedData(key, value, { silent = false } = {}) {
