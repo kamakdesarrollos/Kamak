@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { broadcastChange } from './syncBus';
+import { patchItem, appendItem, removeItem } from './catalogPatch';
 
 // Throttle interno para no spamear el mismo toast cuando la red esta caida
 // y cada provider intenta guardar al mismo tiempo. Mostramos como mucho un
@@ -117,6 +118,50 @@ export async function patchItemInSharedArray(key, id, patch) {
     const arr = Array.isArray(data) ? data : [];
     return saveSharedData(key, arr.map(x => x.id === id ? { ...x, ...patch } : x));
   }
+}
+
+// ── Escritura ATÓMICA por ítem para el catálogo (fix CAT-003) ──────────────
+// El catálogo (key='catalog') es un objeto con arrays (tareas, materiales, …).
+// Guardarlo como blob entero pierde ediciones cuando dos personas editan a la
+// vez (last-write-wins). Estas funciones patchean SOLO el ítem editado,
+// server-side y atómico, vía las RPC de supabase/migrations/0002. Si la RPC no
+// está desplegada, caen a read-modify-write del blob (no atómico, pero no
+// rompe). Espejo de src/lib/catalogPatch.js.
+async function _catalogAtomic(rpc, fallbackMutate) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return false;
+    const { error } = await rpc();
+    if (error) throw error;
+    broadcastChange('catalog');
+    return true;
+  } catch (e) {
+    console.warn('[catalog atómico] RPC no disponible, fallback RMW:', e?.message || e);
+    const data = await loadSharedData('catalog');
+    if (data === undefined || data === null) return false;
+    return saveSharedData('catalog', fallbackMutate(data));
+  }
+}
+
+export function patchCatalogItem(collection, id, patch) {
+  return _catalogAtomic(
+    () => supabase.rpc('patch_shared_object_item', { p_key: 'catalog', p_collection: collection, p_id: id, p_patch: patch }),
+    (c) => ({ ...c, [collection]: patchItem(c[collection] || [], id, patch) }),
+  );
+}
+
+export function appendCatalogItem(collection, item) {
+  return _catalogAtomic(
+    () => supabase.rpc('append_shared_object_item', { p_key: 'catalog', p_collection: collection, p_item: item }),
+    (c) => ({ ...c, [collection]: appendItem(c[collection] || [], item) }),
+  );
+}
+
+export function removeCatalogItem(collection, id) {
+  return _catalogAtomic(
+    () => supabase.rpc('remove_shared_object_item', { p_key: 'catalog', p_collection: collection, p_id: id }),
+    (c) => ({ ...c, [collection]: removeItem(c[collection] || [], id) }),
+  );
 }
 
 export async function saveSharedData(key, value, { silent = false } = {}) {

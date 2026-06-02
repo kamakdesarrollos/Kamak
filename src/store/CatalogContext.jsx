@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData, patchCatalogItem, appendCatalogItem, removeCatalogItem } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogIndex } from '../lib/apuPriceResolver';
@@ -124,9 +124,11 @@ export function CatalogProvider({ children }) {
         return;
       }
       if (userEditedBeforeFirstLoad.current) {
-        // El usuario editó ANTES de que llegara el fetch — NO lo pisamos: subimos
-        // su versión al remoto. Esto arregla el "renombro/agrego y vuelve al original".
-        saveSharedData('catalog', catalogRef.current);
+        // El usuario editó ANTES de que llegara el fetch. Esos cambios ya se
+        // persistieron de forma ATÓMICA por ítem (add/update/remove → *CatalogItem),
+        // así que NO subimos el blob local: subirlo pisaría ediciones que otro
+        // usuario haya hecho en paralelo (bug CAT-003). Mantenemos el estado
+        // local; los cambios remotos llegan por onRemoteChange.
       } else if (data) {
         // Ya hay catálogo en la base → SIEMPRE se usa ese. NUNCA re-sembrar encima
         // (antes un bump de versión, o el logout borrando kamak_sismat_v, pisaba la
@@ -169,28 +171,21 @@ export function CatalogProvider({ children }) {
     return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Cache local. La persistencia a Supabase de cada edición va por escritura
+  // ATÓMICA por ítem (ver add/update/remove), NO por upsert del blob entero
+  // (que con 2 editores se pisaban — bug CAT-003). Las operaciones masivas
+  // (seed, CAC, migración SISMAT) guardan el blob explícitamente aparte.
   useEffect(() => {
     localStorage.setItem('kamak_catalog_v4', JSON.stringify(catalog));
-    // Guardamos también cuando el usuario editó antes de que termine la carga
-    // inicial (si no, ese cambio temprano no se subía nunca).
-    if (fromRemote.current) return;
-    if (!sbLoaded.current && !userEditedBeforeFirstLoad.current) return;
-    pendingSaveRef.current = catalog;
-    const t = setTimeout(() => {
-      saveSharedData('catalog', catalog);
-      pendingSaveRef.current = null;
-      lastLocalSaveAt.current = Date.now();
-    }, 800);
-    return () => clearTimeout(t);
   }, [catalog]);
 
-  useEffect(() => () => {
-    if (pendingSaveRef.current) saveSharedData('catalog', pendingSaveRef.current, { silent: true });
-  }, []);
-
-  const add    = useCallback((coll, item)        => { markUserEdit(); setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), { id: newId(), ...item, updatedAt: today() }] })); }, []);
-  const update = useCallback((coll, id, changes) => { markUserEdit(); setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...changes, updatedAt: today() } : i) })); }, []);
-  const remove = useCallback((coll, id)          => { markUserEdit(); setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) })); }, []);
+  // add/update/remove: estado local optimista + persistencia ATÓMICA por ítem
+  // (NO upsert del blob entero). Con el blob entero, dos personas editando a la
+  // vez se pisaban (last-write-wins, bug CAT-003: "edito una APU y no se guarda").
+  // Ahora cada edición patchea SOLO ese ítem server-side → no se pisan.
+  const add    = useCallback((coll, item)        => { markUserEdit(); const full = { id: newId(), ...item, updatedAt: today() }; setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), full] })); appendCatalogItem(coll, full); }, []);
+  const update = useCallback((coll, id, changes) => { markUserEdit(); const patch = { ...changes, updatedAt: today() }; setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...patch } : i) })); patchCatalogItem(coll, id, patch); }, []);
+  const remove = useCallback((coll, id)          => { markUserEdit(); setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) })); removeCatalogItem(coll, id); }, []);
   const bulkSeed = useCallback((additions) => {
     setCatalog(prev => {
       const next = {
@@ -259,7 +254,9 @@ export function CatalogProvider({ children }) {
     const migrated = migrarCatalogoConSismat(catalog, sismatCostMap);
     if (migrated) {
       setCatalog(migrated);
-      // El save a Supabase lo dispara el useEffect [catalog] que ya existe.
+      // Migración one-shot: persiste el blob explícitamente (ya no hay save
+      // automático del blob en el useEffect [catalog]).
+      saveSharedData('catalog', migrated, { silent: true });
     }
     localStorage.setItem('kamak_catalog_sismat_migration_v', CATALOG_SISMAT_MIGRATION_VERSION);
   }, [sismatCostMap, catalog]);
