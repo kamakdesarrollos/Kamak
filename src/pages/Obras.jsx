@@ -8,7 +8,8 @@ import { useObras, EMPTY_DETALLE } from '../store/ObrasContext';
 import NuevaObraModal from './modales/NuevaObraModal';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
-import { calcObra } from './obra/helpers';
+import { useDolar } from '../store/DolarContext';
+import { calcObra, calcTotalClienteUSD, cobradoObraUSD } from './obra/helpers';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n, moneda) => {
@@ -57,6 +58,22 @@ function computeStats(obra, detalle, movimientos) {
   // (CardActiva, CardFinalizada). Es lo mismo que ve el usuario en el
   // interior como "venta total al cliente".
   return { presupuesto: venta, venta, costo, gastado, avance, margen };
+}
+
+// Estado de la CUENTA CORRIENTE del cliente (en USD), mismo criterio que la tab
+// Cuenta corriente. Sirve para clasificar una obra finalizada en "con saldo" o
+// "saldada" automáticamente. Para obras de arrastre el total sale de
+// precioVentaUSD y lo cobrado de los montoDolar (independiente del dólar).
+function ccObra(obra, detalle, movimientos, cajas, tc) {
+  const { venta: ventaBaseARS } = calcObra(detalle.rubros || []);
+  const adicionalARS = (detalle.adicionales || [])
+    .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
+    .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
+  const interes = parseFloat((detalle.financiacion || {}).interes) || 0;
+  const totalUSD   = Math.round(calcTotalClienteUSD(detalle, ventaBaseARS, adicionalARS, interes, tc));
+  const cobradoUSD = Math.round(cobradoObraUSD(movimientos, cajas, obra.id, tc));
+  const saldoUSD   = Math.max(0, totalUSD - cobradoUSD);
+  return { totalUSD, cobradoUSD, saldoUSD, saldada: saldoUSD <= 1 };
 }
 
 // ── Menu contextual de una obra ───────────────────────────────────────────────
@@ -228,6 +245,17 @@ function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar, 
         ) : <span />}
         <span style={{ fontFamily: T.fontMono, fontSize: 9.5 }}>fin est. {fmtDate(obra.fechaFinEstim)}</span>
       </div>
+
+      {/* Finalizar obra: pasa la obra a "Finalizada". El saldo (con/sin deuda) lo
+          calcula sola la pestaña Finalizadas desde la cuenta corriente. */}
+      {isAdmin && (
+        <div style={{ marginTop: 8 }} onClick={e => e.stopPropagation()}>
+          <Btn sm style={{ width: '100%', justifyContent: 'center' }}
+            onClick={() => { if (window.confirm(`¿Finalizar la obra "${obra.nombre}"?`)) onTransicion('finalizada'); }}>
+            ✓ Finalizar obra
+          </Btn>
+        </div>
+      )}
     </Box>
   );
 }
@@ -337,16 +365,16 @@ function CardPausada({ obra, stats, onClick, onTransicion, onEditar, onEliminar 
   );
 }
 
-// ── Card: finalizada ──────────────────────────────────────────────────────────
-function CardFinalizada({ obra, stats, onClick, onTransicion, onEditar }) {
-  const { presupuesto, gastado, margen: margenFinal } = stats;
+// ── Card: finalizada — con estado de la cuenta corriente (Total/Cobrado/Saldo) ──
+function CardFinalizada({ obra, cc, onClick, onTransicion, onEditar }) {
   const navigate = useNavigate();
+  const fmtU = (n) => `U$S ${Math.round(n).toLocaleString('es-AR')}`;
 
   return (
     <Box style={{ padding: 13, cursor: 'pointer' }} onClick={onClick}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div className="k-h" style={{ fontSize: 17 }}>{obra.nombre}</div>
+        <div style={{ minWidth: 0 }}>
+          <div className="k-h" style={{ fontSize: 17, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{obra.nombre}</div>
           <div style={{ fontSize: 12, color: T.ink2 }}>
             {obra.cliente
               ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
@@ -357,24 +385,26 @@ function CardFinalizada({ obra, stats, onClick, onTransicion, onEditar }) {
             }
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
-          <Chip ok style={{ fontSize: 9 }}>✓ finalizada</Chip>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+          {cc.saldada
+            ? <Chip ok style={{ fontSize: 9 }}>✓ Saldada</Chip>
+            : <Chip warn style={{ fontSize: 9 }}>⏳ Debe {fmtU(cc.saldoUSD)}</Chip>}
           <ObraMenu obra={obra} onTransicion={onTransicion} onEditar={onEditar} onEliminar={() => {}} />
         </div>
       </div>
 
       <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, fontSize: 11 }}>
         <div style={{ background: T.faint, borderRadius: 4, padding: '6px 8px' }}>
-          <div style={{ color: T.ink2 }}>Presupuesto</div>
-          <div className="k-mono" style={{ fontWeight: 700, fontSize: 12 }}>{fmt(presupuesto, obra.moneda)}</div>
+          <div style={{ color: T.ink2 }}>Total</div>
+          <div className="k-mono" style={{ fontWeight: 700, fontSize: 12 }}>{fmtU(cc.totalUSD)}</div>
         </div>
         <div style={{ background: T.faint, borderRadius: 4, padding: '6px 8px' }}>
-          <div style={{ color: T.ink2 }}>Gastado</div>
-          <div className="k-mono" style={{ fontWeight: 700, fontSize: 12 }}>{fmt(gastado, obra.moneda)}</div>
+          <div style={{ color: T.ink2 }}>Cobrado</div>
+          <div className="k-mono" style={{ fontWeight: 700, fontSize: 12, color: T.ok }}>{fmtU(cc.cobradoUSD)}</div>
         </div>
-        <div style={{ background: T.faint, borderRadius: 4, padding: '6px 8px' }}>
-          <div style={{ color: T.ink2 }}>Margen</div>
-          <div className="k-mono" style={{ fontWeight: 700, fontSize: 12, color: margenColor(margenFinal) }}>{margenFinal}%</div>
+        <div style={{ background: cc.saldada ? T.faint : '#fff3e0', borderRadius: 4, padding: '6px 8px' }}>
+          <div style={{ color: T.ink2 }}>Saldo</div>
+          <div className="k-mono" style={{ fontWeight: 700, fontSize: 12, color: cc.saldoUSD > 0 ? T.warn : T.ok }}>{fmtU(cc.saldoUSD)}</div>
         </div>
       </div>
 
@@ -384,7 +414,7 @@ function CardFinalizada({ obra, stats, onClick, onTransicion, onEditar }) {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginTop: 10 }} onClick={e => e.stopPropagation()}>
-        <Btn sm style={{ flex: 1, justifyContent: 'center' }} onClick={onClick}>Ver historial</Btn>
+        <Btn sm style={{ flex: 1, justifyContent: 'center' }} onClick={onClick}>Ver cuenta corriente</Btn>
         <Btn sm style={{ flex: 1, justifyContent: 'center' }} onClick={() => onTransicion('archivada')}>📁 Archivar</Btn>
       </div>
     </Box>
@@ -430,9 +460,11 @@ function FilaArchivada({ obra, onClick, onTransicion, onEliminar }) {
 export default function Obras() {
   const navigate = useNavigate();
   const { obras, detalles, addObra, updateObra, setEstado, deleteObra, byEstado } = useObras();
-  const { movimientos } = useMovimientos();
+  const { movimientos, cajas } = useMovimientos();
+  const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
+  const tc = dolarVenta || 1070;
 
   const ov = currentUser?.obrasVisibles ?? '*';
   const puedeVer = (o) => ov === '*' || (Array.isArray(ov) && ov.includes(o.id));
@@ -440,6 +472,7 @@ export default function Obras() {
 
   // Item 3.8: 'gastado' por obra ahora viene de los movs reales (no de la semilla).
   const getStats = (obra) => computeStats(obra, detalles[obra.id] || EMPTY_DETALLE, movimientos);
+  const getCC = (obra) => ccObra(obra, detalles[obra.id] || EMPTY_DETALLE, movimientos, cajas, tc);
 
   const [searchParams] = useSearchParams();
   const [tabIdx, setTabIdx] = useState(0);
@@ -457,6 +490,10 @@ export default function Obras() {
   const enPresu      = byEstado('en-presupuesto').filter(puedeVer);
   const finalizadas  = byEstado('finalizada').filter(puedeVer);
   const archivadas   = byEstado('archivada').filter(puedeVer);
+
+  // 2 tipos de finalizadas, calculado solo desde la cuenta corriente (saldo).
+  const finConSaldo = finalizadas.filter(o => !getCC(o).saldada);
+  const finSaldadas = finalizadas.filter(o => getCC(o).saldada);
 
   const TABS = [
     { label: 'Activas',        count: activas.length },
@@ -594,7 +631,7 @@ export default function Obras() {
         </div>
       )}
 
-      {/* ── TAB 2: Finalizadas ── */}
+      {/* ── TAB 2: Finalizadas — 2 grupos según la cuenta corriente ── */}
       {tabIdx === 2 && (
         <div>
           {filtrar(finalizadas).length === 0 ? (
@@ -603,15 +640,25 @@ export default function Obras() {
               <div style={{ fontSize: 15 }}>No hay obras finalizadas</div>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-              {filtrar(finalizadas).map(o => (
-                <CardFinalizada key={o.id} obra={o} stats={getStats(o)}
-                  onClick={() => goObra(o)}
-                  onTransicion={(est) => handleTransicion(o.id, est)}
-                  onEditar={() => setEditando(o)}
-                />
-              ))}
-            </div>
+            [
+              { titulo: '⏳ Finalizadas con saldo pendiente', lista: filtrar(finConSaldo), color: T.warn },
+              { titulo: '✓ Finalizadas y saldadas (cobradas 100%)', lista: filtrar(finSaldadas), color: T.ok },
+            ].filter(s => s.lista.length > 0).map(s => (
+              <div key={s.titulo} style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>
+                  {s.titulo} <span style={{ color: T.ink3 }}>· {s.lista.length}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                  {s.lista.map(o => (
+                    <CardFinalizada key={o.id} obra={o} cc={getCC(o)}
+                      onClick={() => goObra(o)}
+                      onTransicion={(est) => handleTransicion(o.id, est)}
+                      onEditar={() => setEditando(o)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
           )}
         </div>
       )}

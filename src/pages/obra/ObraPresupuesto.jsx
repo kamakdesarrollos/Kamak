@@ -4015,7 +4015,7 @@ export default function ObraPresupuesto() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { obras, getDetalle, patchDetalle, updateObra } = useObras();
+  const { obras, getDetalle, patchDetalle, updateObra, setEstado } = useObras();
   const { clientes } = useClientes();
   const { currentUser, usuarios } = useUsuarios();
   const { addTarea } = useTareas();
@@ -4160,6 +4160,9 @@ export default function ObraPresupuesto() {
         <div style={{ display: 'flex', gap: 6 }}>
           <Btn sm onClick={() => navigate('/obras')}>← Obras</Btn>
           <Btn sm onClick={() => setShowClienteQR(true)}>📲 QR cliente</Btn>
+          {isAdmin && obra.estado === 'activa' && (
+            <Btn sm fill onClick={() => { if (window.confirm(`¿Finalizar la obra "${obra.nombre}"?`)) setEstado(obra.id, 'finalizada'); }}>✓ Finalizar obra</Btn>
+          )}
         </div>
       </div>
 
