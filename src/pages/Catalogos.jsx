@@ -7,6 +7,7 @@ import { T } from '../theme';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex } from '../lib/apuPriceResolver';
 import { groupByKey } from '../lib/catalogGroup';
+import { syncFormItemNames } from '../lib/catalogCascade';
 import TareasEstandarEditor from './modales/TareasEstandarEditor';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useIndices } from '../store/IndicesContext';
@@ -724,6 +725,16 @@ function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMateria
   const [editId, setEditId] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [lastAddedId, setLastAddedId] = useState(null);
+
+  // Mantener el editor abierto MATCHEADO cross-tab: si otra pestaña renombra un
+  // material/MO, el catálogo se recarga (broadcast) y acá adoptamos el nombre
+  // nuevo en el form POR ID del ítem, para que no quede "SIN CATÁLOGO". Solo
+  // toca nombres; no pisa cantidades ni ediciones en curso.
+  useEffect(() => {
+    if (!editMode || !editId) return;
+    const t = (tareas || []).find(x => x.id === editId);
+    if (t) setForm(f => syncFormItemNames(f, t));
+  }, [tareas, editMode, editId]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();

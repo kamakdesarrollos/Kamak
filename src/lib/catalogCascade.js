@@ -28,3 +28,28 @@ export function cascadeRename(tareas, field, oldName, newName, norm) {
   });
   return { tareas: out, cambios };
 }
+
+// syncFormItemNames — mantiene el editor de APU abierto MATCHEADO cuando otra
+// pestaña renombra un material/MO. El form del editor es una copia local con el
+// nombre viejo; al recargar el catálogo (por broadcast), adoptamos el nombre
+// nuevo de la tarea POR ID del ítem (no por nombre, que justamente ya no
+// matchea). Solo cambia el nombre — cantidades/edits en curso quedan intactos.
+// Devuelve el MISMO `form` si no hubo cambios (para no forzar re-render).
+export function syncFormItemNames(form, tarea) {
+  if (!form || !tarea) return form;
+  const sync = (formArr, tareaArr) => {
+    if (!Array.isArray(formArr) || !Array.isArray(tareaArr)) return formArr;
+    let changed = false;
+    const out = formArr.map(fi => {
+      const ti = tareaArr.find(t => t && t.id === fi.id);
+      if (ti && ti.nombre !== fi.nombre) { changed = true; return { ...fi, nombre: ti.nombre }; }
+      return fi;
+    });
+    return changed ? out : formArr;
+  };
+  const materiales = sync(form.materiales, tarea.materiales);
+  const subcontratos = sync(form.subcontratos, tarea.subcontratos);
+  const generales = sync(form.generales, tarea.generales);
+  if (materiales === form.materiales && subcontratos === form.subcontratos && generales === form.generales) return form;
+  return { ...form, materiales, subcontratos, generales };
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cascadeRename } from './catalogCascade';
+import { cascadeRename, syncFormItemNames } from './catalogCascade';
 
 // norm de prueba (en producción usa el normalizarNombre del resolver)
 const norm = s => (s || '').toString().toLowerCase().trim();
@@ -49,5 +49,41 @@ describe('cascadeRename — renombrar material/MO propaga a las recetas de las A
     const { tareas: out, cambios } = cascadeRename(ts, 'subcontratos', 'Oficial albañil', 'Oficial', norm);
     expect(out[0].subcontratos[0].nombre).toBe('Oficial');
     expect(cambios).toHaveLength(1);
+  });
+});
+
+describe('syncFormItemNames — mantener el editor de APU abierto matcheado cross-tab', () => {
+  it('adopta el nombre nuevo del material POR ID (no por nombre, que ya no matchea)', () => {
+    const form = { nombre: 'APU', materiales: [{ id: 'm1', nombre: 'Cemento Loma Negra', cantidad: 5 }] };
+    const tarea = { id: 't1', materiales: [{ id: 'm1', nombre: 'Cemento Portland', cantidad: 99 }] };
+    const out = syncFormItemNames(form, tarea);
+    expect(out.materiales[0].nombre).toBe('Cemento Portland'); // adoptado del catálogo
+    expect(out.materiales[0].cantidad).toBe(5);                // la cantidad del form NO se toca
+  });
+
+  it('sincroniza también subcontratos (MO) y generales', () => {
+    const form = { subcontratos: [{ id: 's1', nombre: 'Viejo' }], generales: [{ id: 'g1', nombre: 'GenViejo' }] };
+    const tarea = { subcontratos: [{ id: 's1', nombre: 'Nuevo' }], generales: [{ id: 'g1', nombre: 'GenNuevo' }] };
+    const out = syncFormItemNames(form, tarea);
+    expect(out.subcontratos[0].nombre).toBe('Nuevo');
+    expect(out.generales[0].nombre).toBe('GenNuevo');
+  });
+
+  it('devuelve el MISMO objeto form si no hay cambios (no fuerza re-render)', () => {
+    const form = { materiales: [{ id: 'm1', nombre: 'X' }] };
+    const tarea = { materiales: [{ id: 'm1', nombre: 'X' }] };
+    expect(syncFormItemNames(form, tarea)).toBe(form);
+  });
+
+  it('no toca ítems del form que no estén en la tarea (por id)', () => {
+    const form = { materiales: [{ id: 'm9', nombre: 'Solo en form' }] };
+    const tarea = { materiales: [{ id: 'm1', nombre: 'Otro' }] };
+    expect(syncFormItemNames(form, tarea).materiales[0].nombre).toBe('Solo en form');
+  });
+
+  it('tolera form/tarea nulos', () => {
+    expect(syncFormItemNames(null, {})).toBe(null);
+    const f = { materiales: [] };
+    expect(syncFormItemNames(f, null)).toBe(f);
   });
 });
