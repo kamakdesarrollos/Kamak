@@ -193,34 +193,33 @@ export function UsuariosProvider({ children }) {
     const u = usuarios.find(u => u.id === id);
     if (!u) return { error: { message: 'Usuario no encontrado en la lista.' } };
     const merged = { ...u, ...changes };
-    // Mandar SOLO las columnas que cambian (no el row completo vía userToRow): un
-    // update parcial no toca columnas no relacionadas que pudieran no existir o
-    // estar protegidas, así un cambio de cajas no se cae por culpa de otro campo.
-    const patch = { updated_at: new Date().toISOString() };
-    if ('nombre'        in changes) patch.nombre = changes.nombre;
-    if ('email'         in changes) patch.email = changes.email;
-    if ('rol'           in changes) patch.rol = changes.rol;
-    if ('permisos'      in changes) patch.permisos = changes.permisos;
-    if ('obrasVisibles' in changes) patch.obras_visibles = changes.obrasVisibles;
-    if ('cajasVisibles' in changes) patch.cajas_visibles = changes.cajasVisibles;
-    if ('tabsOcultos'   in changes) patch.tabs_ocultos = changes.tabsOcultos;
-    // .select() para saber CUÁNTAS filas se actualizaron. Clave: con RLS, un UPDATE
-    // cuyo `using` (is_admin()) da false NO devuelve error — actualiza 0 filas y
-    // "tiene éxito". Sin esto el fallo era invisible (el modal cerraba como si nada).
-    const { data, error } = await supabase.from('app_users').update(patch).eq('id', id).select();
-    if (error) {
-      console.error('[updateUsuario] update app_users falló:', error, 'patch:', patch);
-      return { error };
+    // El guardado lo hace el SERVIDOR con la service key (endpoint /api/admin/update-user):
+    // así NO depende de la policy RLS is_admin(). El UPDATE directo desde el browser
+    // afectaba 0 filas EN SILENCIO cuando is_admin() evaluaba en falso, y el cambio
+    // (rol / cajas visibles / permisos / accesos) nunca persistía. El server valida
+    // con la service key que el que llama es Admin antes de escribir.
+    let resp;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return { error: { message: 'No hay sesión activa. Cerrá sesión y volvé a entrar.' } };
+      const r = await fetch('/api/admin/update-user', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, changes }),
+      });
+      resp = await r.json().catch(() => ({}));
+      if (!r.ok || resp?.error) {
+        console.error('[updateUsuario] endpoint falló:', r.status, resp?.error);
+        return { error: { message: resp?.error || `Error ${r.status} al guardar` } };
+      }
+    } catch (e) {
+      console.error('[updateUsuario] error de red:', e);
+      return { error: { message: e.message || 'Error de red al guardar' } };
     }
-    if (!data || data.length === 0) {
-      // 0 filas sin error = RLS bloqueó el cambio (tu usuario no figura como Admin
-      // en app_users) o el id no existe. Lo hacemos visible.
-      console.error('[updateUsuario] 0 filas actualizadas (RLS is_admin() o id inexistente). patch:', patch, 'id:', id);
-      return { error: { message:
-        'No se actualizó ninguna fila (0 filas) y la base no devolvió error: casi seguro RLS no te reconoce como Admin.\n\n' +
-        'Verificá en Supabase que tu fila en app_users tenga rol = "Admin" (con A mayúscula) y que su email sea EXACTAMENTE el de tu login.\n\nid del usuario editado: ' + id } };
-    }
-    setUsuarios(prev => prev.map(u => u.id === id ? merged : u));
+    // Éxito: reconciliar con la fila que devolvió el servidor (fuente de verdad).
+    const fresh = resp?.user ? rowToUser(resp.user) : merged;
+    setUsuarios(prev => prev.map(x => x.id === id ? fresh : x));
     setCurrentUser(prev => {
       if (prev?.id !== id) return prev;
       const next = { ...prev, ...changes };
