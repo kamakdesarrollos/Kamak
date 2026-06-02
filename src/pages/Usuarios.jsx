@@ -91,10 +91,15 @@ function EditarAccesosModal({ usuario, obras, cajas, onClose }) {
     });
     setGuardando(false);
     if (res?.error) {
-      alert('No se pudieron guardar los accesos:\n\n' + (res.error.message || JSON.stringify(res.error)) +
-        '\n\nSi habla de permisos/RLS o de una columna, avisame ese texto exacto.');
+      alert('No se pudieron guardar los accesos:\n\n' + (res.error.message || JSON.stringify(res.error)));
       return; // no cerrar: el cambio no se guardó
     }
+    // Confirmación visible de lo que REALMENTE quedó grabado en el servidor.
+    const cv = res?.user?.cajasVisibles;
+    const cajasMsg = cv === '*'
+      ? 'todas'
+      : (Array.isArray(cv) && cv.length ? `${cv.length} caja(s)` : '⚠ NINGUNA (no tildaste ninguna caja)');
+    alert(`✓ Guardado en el servidor.\n\n${usuario.nombre}\n• Cajas visibles: ${cajasMsg}\n\nEl usuario las ve al recargar (F5).`);
     onClose();
   };
 

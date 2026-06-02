@@ -226,7 +226,8 @@ export function UsuariosProvider({ children }) {
       saveSession(next);
       return next;
     });
-    return { error: null };
+    // Devolvemos `user` con lo realmente grabado (del server) para confirmarlo en UI.
+    return { error: null, user: fresh };
   }, [usuarios]);
 
   const removeUsuario = useCallback(async (id) => {
