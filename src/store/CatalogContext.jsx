@@ -100,23 +100,48 @@ export function CatalogProvider({ children }) {
   const [catalog, setCatalog] = useState(load);
   const sbLoaded   = useRef(false);
   const fromRemote = useRef(false);
+  // Anti-pisada: si el usuario edita ANTES de que llegue el primer fetch de
+  // Supabase, NO pisamos su trabajo con el remoto; en su lugar subimos lo suyo.
+  // (Mismo patrón que ObrasContext — antes el load tardío revertía el cambio recién
+  // hecho: el usuario renombraba un APU / agregaba una tarea y volvía al original.)
+  const userEditedBeforeFirstLoad = useRef(false);
+  const lastLocalSaveAt = useRef(0);
+  const catalogRef = useRef(catalog);
   const { markReady } = useAppLoading();
+  useEffect(() => { catalogRef.current = catalog; }, [catalog]);
+  const markUserEdit = () => { if (!sbLoaded.current) userEditedBeforeFirstLoad.current = true; };
 
+  const pendingSaveRef = useRef(null);
   useEffect(() => {
     let cancelled = false;
     loadSharedData('catalog').then(async data => {
       if (cancelled) return;
-      const needsReseed = localStorage.getItem('kamak_sismat_v') !== SISMAT_SEED_VERSION;
-
-      if (data && !needsReseed) {
+      if (data === undefined) {
+        // Error de red/permiso en el load: no sembramos ni pisamos nada; usamos el
+        // localStorage que ya tenemos. (Evita re-sembrar por un fetch fallido.)
+        sbLoaded.current = true;
+        markReady();
+        return;
+      }
+      if (userEditedBeforeFirstLoad.current) {
+        // El usuario editó ANTES de que llegara el fetch — NO lo pisamos: subimos
+        // su versión al remoto. Esto arregla el "renombro/agrego y vuelve al original".
+        saveSharedData('catalog', catalogRef.current);
+      } else if (data) {
+        // Ya hay catálogo en la base → SIEMPRE se usa ese. NUNCA re-sembrar encima
+        // (antes un bump de versión, o el logout borrando kamak_sismat_v, pisaba la
+        // base con el seed del SISMAT y se perdían todas las ediciones). Marcamos la
+        // versión de seed como vista para no intentar sembrar de nuevo.
         fromRemote.current = true;
-        setCatalog(data); localStorage.setItem('kamak_catalog_v4', JSON.stringify(data));
+        setCatalog(data);
+        localStorage.setItem('kamak_catalog_v4', JSON.stringify(data));
+        localStorage.setItem('kamak_sismat_v', SISMAT_SEED_VERSION);
         setTimeout(() => { fromRemote.current = false; }, 0);
       } else {
-        // Primera vez o versión desactualizada: importar catálogo Sismat
+        // Base vacía (primera vez de verdad): recién acá sembramos desde el SISMAT.
         const sismatData = await fetchSismatSeed();
         if (cancelled) return;
-        const finalData = sismatData || data || catalog; // eslint-disable-line react-hooks/exhaustive-deps
+        const finalData = sismatData || catalogRef.current;
         fromRemote.current = true;
         setCatalog(finalData);
         localStorage.setItem('kamak_catalog_v4', JSON.stringify(finalData));
@@ -129,6 +154,10 @@ export function CatalogProvider({ children }) {
     });
 
     const unsub = onRemoteChange('catalog', () => {
+      // Ignorar el broadcast si hay un save local pendiente o muy reciente (<3s):
+      // suele traer datos del server sin el cambio local todavía → lo pisaría.
+      if (pendingSaveRef.current) return;
+      if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData('catalog').then(d => {
         if (cancelled || !d) return;
         fromRemote.current = true;
@@ -140,14 +169,17 @@ export function CatalogProvider({ children }) {
     return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pendingSaveRef = useRef(null);
   useEffect(() => {
     localStorage.setItem('kamak_catalog_v4', JSON.stringify(catalog));
-    if (!sbLoaded.current || fromRemote.current) return;
+    // Guardamos también cuando el usuario editó antes de que termine la carga
+    // inicial (si no, ese cambio temprano no se subía nunca).
+    if (fromRemote.current) return;
+    if (!sbLoaded.current && !userEditedBeforeFirstLoad.current) return;
     pendingSaveRef.current = catalog;
     const t = setTimeout(() => {
       saveSharedData('catalog', catalog);
       pendingSaveRef.current = null;
+      lastLocalSaveAt.current = Date.now();
     }, 800);
     return () => clearTimeout(t);
   }, [catalog]);
@@ -156,9 +188,9 @@ export function CatalogProvider({ children }) {
     if (pendingSaveRef.current) saveSharedData('catalog', pendingSaveRef.current, { silent: true });
   }, []);
 
-  const add    = useCallback((coll, item)        => setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), { id: newId(), ...item, updatedAt: today() }] })), []);
-  const update = useCallback((coll, id, changes) => setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...changes, updatedAt: today() } : i) })), []);
-  const remove = useCallback((coll, id)          => setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) })), []);
+  const add    = useCallback((coll, item)        => { markUserEdit(); setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), { id: newId(), ...item, updatedAt: today() }] })); }, []);
+  const update = useCallback((coll, id, changes) => { markUserEdit(); setCatalog(c => ({ ...c, [coll]: c[coll].map(i => i.id === id ? { ...i, ...changes, updatedAt: today() } : i) })); }, []);
+  const remove = useCallback((coll, id)          => { markUserEdit(); setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) })); }, []);
   const bulkSeed = useCallback((additions) => {
     setCatalog(prev => {
       const next = {
