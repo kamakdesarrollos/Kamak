@@ -10,6 +10,7 @@ import { useDolar } from '../store/DolarContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useCheques } from '../store/ChequesContext';
 import TraspasoModal from './modales/TraspasoModal';
+import { puedeVerCaja } from '../lib/permisosCaja';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -350,8 +351,8 @@ export default function Cajas() {
     window.history.replaceState({}, '');
   }, [location.state, cajas]);
 
-  const cv = currentUser?.cajasVisibles ?? '*';
-  const puedoVer = (c) => cv === '*' || (Array.isArray(cv) && cv.includes(c.id));
+  // Ve su caja (de la que es responsable) + las asignadas a mano. Admin ve todas.
+  const puedoVer = (c) => puedeVerCaja(c, currentUser);
 
   const cajasActivas    = cajas.filter(c => c.activa && puedoVer(c));
   const cajasARS        = cajasActivas.filter(c => c.moneda === 'ARS' && c.tipo !== 'rendicion');

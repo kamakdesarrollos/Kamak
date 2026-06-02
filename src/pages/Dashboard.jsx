@@ -11,6 +11,7 @@ import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado } from './obra/helpers';
 import { montoEnARS } from '../lib/caja';
+import { cajasDelUsuario } from '../lib/permisosCaja';
 
 const fmtN = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
 const currMes = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; };
@@ -44,7 +45,6 @@ export default function Dashboard() {
   const { proveedores }        = useProveedores();
   const { currentUser }        = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
-  const cv = currentUser?.cajasVisibles ?? '*';
 
   const [editMode,       setEditMode]       = useState(false);
   const [enabledWidgets, setEnabledWidgets] = useState(loadWidgets);
@@ -180,8 +180,8 @@ export default function Dashboard() {
 
   const fechaStr = today.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-  // No-admin: SOLO sus cajas asignadas. cv='*' (o sin asignar) → ninguna (no ve la plata de otros).
-  const cajasVisibles = isAdmin ? cajas : (Array.isArray(cv) ? cajas.filter(c => cv.includes(c.id)) : []);
+  // No-admin: SOLO sus cajas (de las que es responsable + las asignadas a mano).
+  const cajasVisibles = cajasDelUsuario(cajas, currentUser);
 
   if (!isAdmin) {
     const misCajas = cajasVisibles.filter(c => c.activa);

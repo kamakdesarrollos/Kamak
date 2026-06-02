@@ -17,6 +17,7 @@ import { useCheques } from '../store/ChequesContext';
 import { supabase } from '../lib/supabase';
 import { cobradoObraUSD, repartirCobroEnCuotas, cuotaMontoUSD } from './obra/helpers';
 import { parseMoneyAR, JURISDICCIONES_IIBB } from '../lib/afip';
+import { cajasDelUsuario } from '../lib/permisosCaja';
 
 const DEFAULT_MEDIOS = ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débito', 'Tarjeta'];
 
@@ -1122,11 +1123,10 @@ export default function Movimientos() {
   const { currentUser }    = useUsuarios();
   const { solicitudes, addSolicitud } = useSolicitudes();
   const { cheques, removeCheque } = useCheques();
-  const cv = currentUser?.cajasVisibles ?? '*';
   const isAdmin = currentUser?.rol === 'Admin';
-  // No-admin: SOLO sus cajas asignadas (cv='*' o sin asignar → ninguna). Evita que
-  // vea los saldos de otras cajas, incluido el selector del modal de traspaso.
-  const cajas = isAdmin ? allCajas : (Array.isArray(cv) ? allCajas.filter(c => cv.includes(c.id)) : []);
+  // No-admin: ve SU caja (de la que es responsable) + las asignadas a mano (helper
+  // unificado). Esto también limita el selector del modal de traspaso a sus cajas.
+  const cajas = cajasDelUsuario(allCajas, currentUser);
   const pendingSolIds = useMemo(() =>
     new Set(solicitudes.filter(s => s.estado === 'pendiente').map(s => s.movimientoId)),
     [solicitudes]);
@@ -1165,7 +1165,6 @@ export default function Movimientos() {
 
   const cajaIdsMias = useMemo(() => cajas.map(c => c.id), [cajas]);
   const filtered = useMemo(() => {
-    const cv = currentUser?.cajasVisibles ?? '*';
     return movimientos
       .filter(m => {
         // Cobros de "cuenta corriente previa" (arrastre, sin caja): no son
@@ -1176,16 +1175,14 @@ export default function Movimientos() {
         if (filtroObra && m.obraId !== filtroObra) return false;
         if (soloComprobante && !m.comprobanteUrl) return false;
         if (!isAdmin) {
-          // No-admin: SOLO sus cajas asignadas. cajasVisibles='*' (o sin asignar)
-          // → NINGUNA (un no-admin no debe ver la plata de otros, ni siquiera con
-          // el default '*'). Las cajas se asignan desde Usuarios.
-          const misCajas = Array.isArray(cv) ? cv : [];
-          if (!m.cajaId || !misCajas.includes(m.cajaId)) return false;
+          // No-admin: SOLO movimientos de SUS cajas (responsable + asignadas).
+          // cajaIdsMias ya sale del helper unificado; si no tiene cajas → ninguna.
+          if (!m.cajaId || !cajaIdsMias.includes(m.cajaId)) return false;
         }
         return true;
       })
       .sort((a, b) => b.fecha.localeCompare(a.fecha));
-  }, [movimientos, mes, filtroObra, soloComprobante, isAdmin, cajaIdsMias, currentUser?.cajasVisibles]);
+  }, [movimientos, mes, filtroObra, soloComprobante, isAdmin, cajaIdsMias]);
 
   const ingresos   = useMemo(() => filtered.filter(m => m.tipo === 'ingreso'),  [filtered]);
   // Las notas de crédito de proveedor se listan junto a los gastos (son compra-

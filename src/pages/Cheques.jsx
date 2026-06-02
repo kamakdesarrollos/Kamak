@@ -10,6 +10,7 @@ import { useObras } from '../store/ObrasContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useClientes } from '../store/ClientesContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { idsCajasDelUsuario } from '../lib/permisosCaja';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -657,11 +658,12 @@ export default function Cheques() {
   }, [currentUser, puedeCheques, navigate]);
 
   const { cheques: chequesAll, addCheque, updateCheque, removeCheque, depositarCheque, acreditarCheque, endosarCheque, rechazarCheque, anularCheque, reactivarCheque } = useCheques();
-  // No-admin (ej. Administración): solo ve cheques "en su poder" = los de su(s) caja(s).
-  // Filtra TODA la base (lista, totales y resumen por vencimiento), no solo la lista.
-  const _cvCheq = Array.isArray(currentUser?.cajasVisibles) ? currentUser.cajasVisibles : [];
-  const cheques = isAdmin ? chequesAll : chequesAll.filter(c => c.cajaId && _cvCheq.includes(c.cajaId));
   const { cajas, addMovimiento, removeMovimiento, traspasar } = useMovimientos();
+  // No-admin (ej. Administración): solo ve cheques "en su poder" = los de SUS cajas
+  // (de las que es responsable + las asignadas a mano). Filtra TODA la base (lista,
+  // totales y resumen por vencimiento), no solo la lista.
+  const _idsCajasCheq = idsCajasDelUsuario(cajas, currentUser);
+  const cheques = isAdmin ? chequesAll : chequesAll.filter(c => c.cajaId && _idsCajasCheq.includes(c.cajaId));
   const { obras } = useObras();
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
 
@@ -703,14 +705,8 @@ export default function Cheques() {
     const idsEn7 = new Set(en7Dias.map(c => c.id));
     visibles = visibles.filter(c => idsEn7.has(c.id));
   }
-  // No-admin (ej. Administración): SOLO los cheques "en su poder" = los asignados a
-  // su(s) caja(s). Un cheque sin caja asignada no es de su poder. (Para un control
-  // más fino se podría agregar un campo de tenedor al cheque.)
-  if (!isAdmin) {
-    const cv = currentUser?.cajasVisibles;
-    const misCajas = Array.isArray(cv) ? cv : [];
-    visibles = visibles.filter(c => c.cajaId && misCajas.includes(c.cajaId));
-  }
+  // El filtro "en su poder" para no-admin ya se aplicó en la base (const cheques),
+  // así que cartera/emitidos/historial/resumen quedan filtrados de forma coherente.
 
   // ── Acciones ──────────────────────────────────────────────────────────────
   // Ajusta la caja cuando un cheque "sale" (anular/rechazar/endosar) o

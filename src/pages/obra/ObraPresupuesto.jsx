@@ -22,6 +22,7 @@ import { loadSharedData, saveSharedData } from '../../lib/dbHelpers';
 import { onRemoteChange } from '../../lib/syncBus';
 import { esc, abrirHTML } from '../../lib/html';
 import { BASE_CSS } from '../../lib/printTheme';
+import { cajasDelUsuario } from '../../lib/permisosCaja';
 import {
   cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
   cuotaMontoUSD, arsToUSD, calcTotalClienteUSD,
@@ -2569,19 +2570,18 @@ function TabMovimientos({ obra, moneda }) {
   const navigate        = useNavigate();
   const { currentUser } = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
-  const cv = currentUser?.cajasVisibles ?? '*';
-  const cajas = cv === '*' ? allCajas : allCajas.filter(c => Array.isArray(cv) && cv.includes(c.id));
+  const cajas = cajasDelUsuario(allCajas, currentUser);
   const cajaIdsMias = cajas.map(c => c.id);
 
   const movsObra = useMemo(() =>
     movimientos.filter(m => {
       if (m.obraId !== obra.id) return false;
       if (m.ccPrevia) return false; // arrastre de cuenta corriente: no es movimiento de caja
-      // Fail-closed: si no-admin tiene cajas restringidas, exigir cajaId valido.
-      if (!isAdmin && cv !== '*' && (!m.cajaId || !cajaIdsMias.includes(m.cajaId))) return false;
+      // No-admin: solo movimientos de SUS cajas (responsable + asignadas a mano).
+      if (!isAdmin && (!m.cajaId || !cajaIdsMias.includes(m.cajaId))) return false;
       return true;
     }).sort((a, b) => b.fecha.localeCompare(a.fecha)),
-    [movimientos, obra.id, isAdmin, cv, cajaIdsMias]);
+    [movimientos, obra.id, isAdmin, cajaIdsMias]);
   const ingresos = useMemo(() => movsObra.filter(m => m.tipo === 'ingreso'), [movsObra]);
   const gastos   = useMemo(() => movsObra.filter(m => m.tipo === 'gasto'),   [movsObra]);
 
@@ -4153,7 +4153,7 @@ export default function ObraPresupuesto() {
           </div>
           <div style={{ fontSize: 12, color: T.ink2, marginTop: 2 }}>
             {obra.cliente && <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`)}>{obra.cliente}</span>}{obra.cliente && <span> · </span>}
-            <span>{obra.tipo || 'Obra'} · {moneda}</span>
+            <span>{obra.tipo || 'Obra'}{isAdmin ? ` · ${moneda}` : ''}</span>
             {obra.fechaFinEstim && <span> · entrega est. {fmtD(obra.fechaFinEstim)}</span>}
           </div>
         </div>
