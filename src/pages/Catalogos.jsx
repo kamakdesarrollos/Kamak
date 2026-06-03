@@ -1263,6 +1263,10 @@ export default function Catalogos() {
         {tab === 0 && (() => {
           const seen = new Set();
           const rs = catalog.materiales.map(i => i.rubro).filter(r => r && !seen.has(r) && seen.add(r));
+          // Para ASIGNAR rubro: rubros existentes + TODOS los gremios del catálogo,
+          // así un rubro recién creado (sin materiales todavía) también aparece.
+          const seenDL = new Set();
+          const rsDL = [...catalog.materiales.map(i => i.rubro), ...(catalog.rubros || []).map(r => r.nombre)].filter(r => r && !seenDL.has(r) && seenDL.add(r));
           return (
             <TabSimple
               items={catalog.materiales}
@@ -1290,7 +1294,7 @@ export default function Catalogos() {
                   <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
                   <FRow label="Rubro">
                     <input list="mat-rubros" style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))} placeholder="Elegí o escribí un rubro…" />
-                    <datalist id="mat-rubros">{rs.map(r => <option key={r} value={r} />)}</datalist>
+                    <datalist id="mat-rubros">{rsDL.map(r => <option key={r} value={r} />)}</datalist>
                   </FRow>
                 </>
               )}
@@ -1300,6 +1304,9 @@ export default function Catalogos() {
         {tab === 1 && (() => {
           const seen = new Set();
           const rs = (catalog.subcontratos||[]).map(i => i.rubro).filter(r => r && !seen.has(r) && seen.add(r));
+          // Para ASIGNAR rubro: rubros existentes + TODOS los gremios del catálogo.
+          const seenDL = new Set();
+          const rsDL = [...(catalog.subcontratos||[]).map(i => i.rubro), ...(catalog.rubros || []).map(r => r.nombre)].filter(r => r && !seenDL.has(r) && seenDL.add(r));
           return (
             <TabSimple
               items={catalog.subcontratos||[]}
@@ -1327,7 +1334,7 @@ export default function Catalogos() {
                   <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
                   <FRow label="Rubro">
                     <input list="sub-rubros" style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))} placeholder="Elegí o escribí un rubro…" />
-                    <datalist id="sub-rubros">{rs.map(r => <option key={r} value={r} />)}</datalist>
+                    <datalist id="sub-rubros">{rsDL.map(r => <option key={r} value={r} />)}</datalist>
                   </FRow>
                 </>
               )}
