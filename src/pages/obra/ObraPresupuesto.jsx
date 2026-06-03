@@ -71,6 +71,10 @@ const INLINE_INPUT_ST = { width: '100%', textAlign: 'right', fontFamily: T.fontM
 // para no recortar la columna de venta en pantallas chicas. flex: '0 1 Wpx'.
 const CW = { cantidad: 88, u: 44, mat: 96, sub: 96, costoU: 96, costoT: 106, margen: 74, ventaU: 96, ventaT: 108, accion: 40 };
 const fcol = w => ({ flex: `0 1 ${w}px` });
+// Celda VACIA del mismo ancho: una columna apagada por toggle deja su lugar
+// reservado (no se mueve nada). Las columnas no permitidas por permiso no
+// usan esto (se colapsan), por eso el hueco solo aparece al togglear.
+const slot = w => <div className="k-cell" style={fcol(w)} />;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 0: RESUMEN
@@ -855,13 +859,13 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                     <div className="k-cell" style={{ flex: '1 1 150px', minWidth: 150, whiteSpace: 'nowrap' }}>Tarea</div>
                     <div className="k-cell" style={{ ...fcol(CW.cantidad), textAlign: 'right', fontSize: 9, whiteSpace: 'nowrap' }}>{puedeCargarAvance ? 'CANTIDAD ✏' : 'CANTIDAD'}</div>
                     <div className="k-cell" style={{ ...fcol(CW.u), whiteSpace: 'nowrap' }}>U</div>
-                    {verCostos && !rubro.materialesACargoComprador && <div className="k-cell" style={{ ...fcol(CW.mat), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Mat ✏` : `${viewUSD?'U$S':'$'} Mat`}</div>}
+                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.mat), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{!rubro.materialesACargoComprador ? (puedeEditar ? `${viewUSD?'U$S':'$'} Mat ✏` : `${viewUSD?'U$S':'$'} Mat`) : ''}</div>}
                     {verCostos && <div className="k-cell" style={{ ...fcol(CW.sub), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Sub ✏` : `${viewUSD?'U$S':'$'} Sub`}</div>}
-                    {cols.costoUnit  && <div className="k-cell" style={{ ...fcol(CW.costoU), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Costo u</div>}
-                    {cols.costoTotal && <div className="k-cell" style={{ ...fcol(CW.costoT), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Costo T</div>}
-                    {cols.margenL   && <div className="k-cell" style={{ ...fcol(CW.margen), textAlign: 'right', color: T.ok, whiteSpace: 'nowrap' }}>Margen % {puedeEditar ? '✏' : ''}</div>}
-                    {cols.ventaUnit  && <div className="k-cell" style={{ ...fcol(CW.ventaU), textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Venta u</div>}
-                    {cols.ventaTotal && <div className="k-cell" style={{ ...fcol(CW.ventaT), textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Venta T</div>}
+                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.costoU), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{cols.costoUnit ? `${viewUSD?'U$S':'$'} Costo u` : ''}</div>}
+                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.costoT), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{cols.costoTotal ? `${viewUSD?'U$S':'$'} Costo T` : ''}</div>}
+                    {verMargenes && <div className="k-cell" style={{ ...fcol(CW.margen), textAlign: 'right', color: T.ok, whiteSpace: 'nowrap' }}>{cols.margenL ? `Margen % ${puedeEditar ? '✏' : ''}` : ''}</div>}
+                    {isAdmin && <div className="k-cell" style={{ ...fcol(CW.ventaU), textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{cols.ventaUnit ? `${viewUSD?'U$S':'$'} Venta u` : ''}</div>}
+                    {isAdmin && <div className="k-cell" style={{ ...fcol(CW.ventaT), textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{cols.ventaTotal ? `${viewUSD?'U$S':'$'} Venta T` : ''}</div>}
                     <div className="k-cell" style={{ ...fcol(CW.accion) }}></div>
                   </div>
 
@@ -996,13 +1000,20 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                         </div>
                         {InlineNum({ field: 'cantidad', value: tarea.cantidad, w: CW.cantidad })}
                         <div className="k-cell" style={{ ...fcol(CW.u) }}>{tarea.unidad}</div>
-                        {!rubro.materialesACargoComprador && InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), w: CW.mat, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
-                        {InlineNum({ field: 'costoSub', value: viewUSD ? Math.round((tarea.costoSub || 0) / tc) : (tarea.costoSub || 0), w: CW.sub, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
+                        {verCostos && (!rubro.materialesACargoComprador
+                          ? InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), w: CW.mat, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })
+                          : slot(CW.mat))}
+                        {verCostos && InlineNum({ field: 'costoSub', value: viewUSD ? Math.round((tarea.costoSub || 0) / tc) : (tarea.costoSub || 0), w: CW.sub, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
 
-                        {cols.costoUnit  && <div className="k-cell" style={{ ...fcol(CW.costoU), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#a85648' }}>{fmtVenta(costoUnit)}</div>}
-                        {cols.costoTotal && <div className="k-cell" style={{ ...fcol(CW.costoT), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#a85648' }}>{fmtVenta(costoTotalRow)}</div>}
+                        {verCostos && (cols.costoUnit
+                          ? <div className="k-cell" style={{ ...fcol(CW.costoU), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#a85648' }}>{fmtVenta(costoUnit)}</div>
+                          : slot(CW.costoU))}
+                        {verCostos && (cols.costoTotal
+                          ? <div className="k-cell" style={{ ...fcol(CW.costoT), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#a85648' }}>{fmtVenta(costoTotalRow)}</div>
+                          : slot(CW.costoT))}
 
-                        {cols.margenL && (
+                        {verMargenes && (cols.margenL
+                          ? (
                           <div className="k-cell" style={{ ...fcol(CW.margen), textAlign: 'right', padding: '2px 6px' }}
                             onClick={e => { e.stopPropagation(); setInlineEdit({ taskId: tarea.id, field: 'margenLinea', value: tarea.margenLinea != null ? String(tarea.margenLinea) : '' }); }}>
                             {ie?.field === 'margenLinea'
@@ -1028,10 +1039,14 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                                   {tarea.margenLinea != null ? `${tarea.margenLinea}%` : 'def'}
                                 </span>}
                           </div>
-                        )}
+                          ) : slot(CW.margen))}
 
-                        {cols.ventaUnit  && <div className="k-cell" style={{ ...fcol(CW.ventaU), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: T.accent }}>{fmtVenta(ventaUnitRow)}</div>}
-                        {cols.ventaTotal && <div className="k-cell" style={{ ...fcol(CW.ventaT), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: T.accent }}>{fmtVenta(ventaTotalRow)}</div>}
+                        {isAdmin && (cols.ventaUnit
+                          ? <div className="k-cell" style={{ ...fcol(CW.ventaU), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: T.accent }}>{fmtVenta(ventaUnitRow)}</div>
+                          : slot(CW.ventaU))}
+                        {isAdmin && (cols.ventaTotal
+                          ? <div className="k-cell" style={{ ...fcol(CW.ventaT), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: T.accent }}>{fmtVenta(ventaTotalRow)}</div>
+                          : slot(CW.ventaT))}
 
                         <div className="k-cell" style={{ ...fcol(CW.accion), padding: '0 4px' }}>
                           <span style={{ color: T.accent, fontSize: 11, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); deleteTarea(rubro.id, tarea.id); }}>🗑</span>
