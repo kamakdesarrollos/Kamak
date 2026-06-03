@@ -8,6 +8,7 @@ import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex } from '../lib/apuPriceResolver';
 import { groupByKey } from '../lib/catalogGroup';
 import { syncFormItemNames } from '../lib/catalogCascade';
+import { searchNorm } from '../lib/searchNorm';
 import TareasEstandarEditor from './modales/TareasEstandarEditor';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useIndices } from '../store/IndicesContext';
@@ -326,10 +327,10 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
   const [selRubro, setSelRubro] = useState('');
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
+    const q = searchNorm(search);
     const list = items.filter(i =>
       (!selRubro || i[rubroKey] === selRubro) &&
-      Object.values(i).some(v => String(v).toLowerCase().includes(q))
+      Object.values(i).some(v => searchNorm(v).includes(q))
     );
     if (lastAddedId) {
       const idx = list.findIndex(i => i.id === lastAddedId);
@@ -737,10 +738,10 @@ function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMateria
   }, [tareas, editMode, editId]);
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
+    const q = searchNorm(search);
     const list = tareas.filter(t =>
       (!selRubro || t.rubroNombre === selRubro) &&
-      ((t.nombre||'').toLowerCase().includes(q) || (t.codigo||'').toLowerCase().includes(q))
+      (searchNorm(t.nombre).includes(q) || searchNorm(t.codigo).includes(q))
     );
     if (lastAddedId) {
       const idx = list.findIndex(t => t.id === lastAddedId);
