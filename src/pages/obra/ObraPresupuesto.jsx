@@ -69,7 +69,7 @@ const INLINE_INPUT_ST = { width: '100%', textAlign: 'right', fontFamily: T.fontM
 // numericas no crecen (grow 0) para que prender/apagar un filtro o "sacar
 // mat" NO reescale ni desplace las demas. Se permite encoger (shrink 1)
 // para no recortar la columna de venta en pantallas chicas. flex: '0 1 Wpx'.
-const CW = { cantidad: 88, u: 44, mat: 96, sub: 96, costoU: 96, costoT: 106, margen: 74, ventaU: 96, ventaT: 108, accion: 40 };
+const CW = { cantidad: 88, u: 44, mat: 96, sub: 96, costoU: 96, costoT: 106, margen: 74, ventaU: 96, ventaT: 108, accion: 52 };
 const fcol = w => ({ flex: `0 1 ${w}px` });
 // Celda VACIA del mismo ancho: una columna apagada por toggle deja su lugar
 // reservado (no se mueve nada). Las columnas no permitidas por permiso no
@@ -622,6 +622,52 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   // del rubro (solo la mano de obra) y en el export figura la nota.
   const toggleMaterialesComprador = (rubroId) => patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, materialesACargoComprador: !r.materialesACargoComprador } : r) }));
 
+  // ── Actualizar precios desde el catálogo (base de datos) ───────────────────
+  // El precio que trae es EXACTAMENTE el mismo que daría re-agregar la tarea
+  // desde el autocompletar: calcTarea() sobre el APU del catálogo que matchea
+  // por nombre (ver allSuggestions). Asi "actualizar" == "borrar y recargar".
+  // Devuelve null si la tarea no está en el catálogo (p.ej. escrita a mano).
+  const precioCatalogoTarea = (t) => {
+    const tareas = catalog.tareas || [];
+    const norm = s => (s || '').trim().toLowerCase();
+    const ct = tareas.find(c => c.nombre === t.nombre) || tareas.find(c => norm(c.nombre) === norm(t.nombre));
+    if (!ct) return null;
+    const { mat, sub, mo } = calcTarea(ct, catalogIndex);
+    return { costoMat: Math.round(mat), costoSub: Math.round(sub + mo) };
+  };
+
+  // Botón por TAREA: actualiza el costo de esa tarea con el del catálogo.
+  const actualizarPrecioTarea = (rubroId, tareaId) => {
+    const tarea = detalle.rubros.find(r => r.id === rubroId)?.tareas.find(t => t.id === tareaId);
+    if (!tarea) return;
+    const p = precioCatalogoTarea(tarea);
+    if (!p) { window.alert(`"${tarea.nombre}" no está en el catálogo: no hay precio de base para traer.`); return; }
+    if (p.costoMat === (tarea.costoMat || 0) && p.costoSub === (tarea.costoSub || 0)) {
+      window.alert(`"${tarea.nombre}" ya tiene el precio del catálogo.`);
+      return;
+    }
+    patch(d => ({ ...d, rubros: d.rubros.map(r => r.id !== rubroId ? r : { ...r, tareas: r.tareas.map(t => t.id === tareaId ? { ...t, costoMat: p.costoMat, costoSub: p.costoSub } : t) }) }));
+  };
+
+  // Botón por RUBRO/gremio: actualiza todas las tareas del rubro de una.
+  const actualizarPreciosRubro = (rubroId) => {
+    const rubro = detalle.rubros.find(r => r.id === rubroId);
+    if (!rubro) return;
+    const updates = {}; // tareaId -> { costoMat, costoSub }
+    let same = 0, nf = 0;
+    (rubro.tareas || []).forEach(t => {
+      if (t.tipo === 'seccion') return;
+      const p = precioCatalogoTarea(t);
+      if (!p) { nf++; return; }
+      if (p.costoMat === (t.costoMat || 0) && p.costoSub === (t.costoSub || 0)) { same++; return; }
+      updates[t.id] = p;
+    });
+    const upd = Object.keys(updates).length;
+    if (upd === 0) { window.alert(`Rubro "${rubro.nombre}": no hay nada para actualizar (${same} ya al día, ${nf} sin match en el catálogo).`); return; }
+    if (!window.confirm(`Actualizar ${upd} tarea(s) del rubro "${rubro.nombre}" con el precio del catálogo?\n(${same} ya al día, ${nf} sin match en el catálogo).`)) return;
+    patch(d => ({ ...d, rubros: d.rubros.map(r => r.id !== rubroId ? r : { ...r, tareas: r.tareas.map(t => updates[t.id] ? { ...t, ...updates[t.id] } : t) }) }));
+  };
+
   const saveTask = () => {
     if (!newTask.nombre.trim()) return;
     const t = { id: newId(), ...newTask, cantidad: +newTask.cantidad, costoMat: +newTask.costoMat, costoSub: +newTask.costoSub || 0, receta: { materiales: [] }, avance: 0 };
@@ -864,6 +910,15 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                 </span>
                 {puedeEditar && (
                   <span
+                    onClick={e => { e.stopPropagation(); actualizarPreciosRubro(rubro.id); }}
+                    title="Actualizar los precios de todas las tareas de este rubro desde el catálogo"
+                    style={{ fontSize: 9.5, fontFamily: T.fontMono, cursor: 'pointer', padding: '2px 7px', borderRadius: 3, whiteSpace: 'nowrap',
+                      background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.25)' }}>
+                    ↻ Precios
+                  </span>
+                )}
+                {puedeEditar && (
+                  <span
                     onClick={e => { e.stopPropagation(); toggleMaterialesComprador(rubro.id); }}
                     title={rubro.materialesACargoComprador ? 'Materiales a cargo del comprador — clic para volver a incluirlos' : 'Sacar los materiales del rubro (quedan a cargo del comprador)'}
                     style={{ fontSize: 9.5, fontFamily: T.fontMono, cursor: 'pointer', padding: '2px 7px', borderRadius: 3, whiteSpace: 'nowrap',
@@ -1074,7 +1129,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                           ? <div className="k-cell" style={{ ...fcol(CW.ventaT), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: T.accent }}>{fmtVenta(ventaTotalRow)}</div>
                           : slot(CW.ventaT))}
 
-                        <div className="k-cell" style={{ ...fcol(CW.accion), padding: '0 4px' }}>
+                        <div className="k-cell" style={{ ...fcol(CW.accion), padding: '0 4px', display: 'flex', gap: 7, alignItems: 'center', justifyContent: 'flex-end' }}>
+                          {puedeEditar && <span title="Actualizar el precio de esta tarea desde el catálogo" style={{ color: T.ink3, fontSize: 13, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); actualizarPrecioTarea(rubro.id, tarea.id); }}>↻</span>}
                           <span style={{ color: T.accent, fontSize: 11, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); deleteTarea(rubro.id, tarea.id); }}>🗑</span>
                         </div>
                       </div>
