@@ -821,9 +821,11 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                     : <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>{rubro.proveedor}</span>;
                 })()}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 14, alignItems: 'center', fontFamily: T.fontMono, fontSize: 11 }}>
-                  {verCostos   && <span style={{ color: 'rgba(255,255,255,0.55)' }}>costo <b>{fmtVenta(rubro.costo)}</b></span>}
-                  <span style={{ color: 'rgba(255,255,255,0.85)' }}>venta <b style={{ color: '#5fcf8a' }}>{fmtVenta(rubro.venta)}</b></span>
-                  {verMargenes && <span style={{ color: rubro.margen > 0 ? '#5fcf8a' : '#ff9b8a' }}><b>{rubro.margen > 0 ? '+' : ''}{rubro.margen}%</b></span>}
+                  {!isRubroAbierto(rubro.id) && <>
+                    {verCostos   && <span style={{ color: 'rgba(255,255,255,0.55)' }}>costo <b>{fmtVenta(rubro.costo)}</b></span>}
+                    <span style={{ color: 'rgba(255,255,255,0.85)' }}>venta <b style={{ color: '#5fcf8a' }}>{fmtVenta(rubro.venta)}</b></span>
+                    {verMargenes && <span style={{ color: rubro.margen > 0 ? '#5fcf8a' : '#ff9b8a' }}><b>{rubro.margen > 0 ? '+' : ''}{rubro.margen}%</b></span>}
+                  </>}
                 </span>
                 {puedeEditar && (
                   <span
