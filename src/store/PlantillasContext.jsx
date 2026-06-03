@@ -493,6 +493,10 @@ export function PlantillasProvider({ children }) {
   const [plantillas, setPlantillas] = useState(load);
   const sbLoaded   = useRef(false);
   const fromRemote = useRef(false);
+  // Timestamp del último guardado local. El handler de broadcast ignora eventos
+  // dentro de los 3s siguientes: pueden traer datos del server SIN el cambio que
+  // acabamos de hacer y "desaparecerlo" (la escritura atómica ya lo persistió).
+  const lastLocalSaveAt = useRef(0);
   const { markReady } = useAppLoading();
 
   useEffect(() => {
@@ -520,6 +524,11 @@ export function PlantillasProvider({ children }) {
     });
 
     const unsub = onRemoteChange('plantillas', () => {
+      // Si acabamos de guardar (< 3s), ignoramos el broadcast: puede traer del
+      // server una versión SIN nuestro cambio y pisarlo en pantalla ("aparece y
+      // desaparece"). La escritura atómica ya lo persistió; al pasar la ventana,
+      // la próxima recarga trae todo correcto.
+      if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData('plantillas').then(d => {
         if (cancelled || !d) return;
         fromRemote.current = true;
@@ -542,24 +551,30 @@ export function PlantillasProvider({ children }) {
   }, [plantillas]);
 
   // Mutaciones: estado local optimista + escritura atómica por ítem en Supabase.
+  // touch() marca el guardado local para que el broadcast no pise el cambio.
+  const touch = () => { lastLocalSaveAt.current = Date.now(); };
   const add = useCallback((plt) => {
+    touch();
     const full = { ...plt, id: newId(), updatedAt: today(), usosCount: 0 };
     setPlantillas(p => [...p, full]);
     appendItemInSharedArray('plantillas', full);
     return full.id;
   }, []);
   const update = useCallback((id, changes) => {
+    touch();
     const patch = { ...changes, updatedAt: today() };
     setPlantillas(p => p.map(t => t.id === id ? { ...t, ...patch } : t));
     patchItemInSharedArray('plantillas', id, patch);
   }, []);
   const remove = useCallback((id) => {
+    touch();
     setPlantillas(p => p.filter(t => t.id !== id));
     removeItemInSharedArray('plantillas', id);
   }, []);
   const duplicate = useCallback((id) => {
     const src = plantillasRef.current.find(x => x.id === id);
     if (!src) return;
+    touch();
     const copy = { ...JSON.parse(JSON.stringify(src)), id: newId(), nombre: src.nombre + ' (copia)', updatedAt: today(), usosCount: 0 };
     setPlantillas(p => [...p, copy]);
     appendItemInSharedArray('plantillas', copy);
@@ -567,6 +582,7 @@ export function PlantillasProvider({ children }) {
   const incrementUso = useCallback((id) => {
     const cur = plantillasRef.current.find(t => t.id === id);
     if (!cur) return;
+    touch();
     const usosCount = (cur.usosCount || 0) + 1;
     setPlantillas(p => p.map(t => t.id === id ? { ...t, usosCount } : t));
     patchItemInSharedArray('plantillas', id, { usosCount });
