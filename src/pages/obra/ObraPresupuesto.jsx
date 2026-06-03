@@ -418,7 +418,7 @@ function buildVisibleTareas(tareas, collapsedSections) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 1: PRESUPUESTO
 // ─────────────────────────────────────────────────────────────────────────────
-function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReopen, onExport }) {
+function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReopen, onExport, collapsed, onToggleCollapse }) {
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const { proveedores: provListPresu } = useProveedores();
@@ -473,9 +473,11 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
     });
     for (const r of nuevos) seen.add(r.id);
   }, [detalle.rubros]);
-  const [colsUser, setColsUser] = useState({ costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
+  const [colsUser, setColsUser] = useState({ mat: true, mo: true, costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
   // Force-off cost/margin columns based on permissions
   const cols = {
+    mat:        verCostos   ? colsUser.mat        : false,
+    mo:         verCostos   ? colsUser.mo         : false,
     costoUnit:  verCostos   ? colsUser.costoUnit  : false,
     costoTotal: verCostos   ? colsUser.costoTotal : false,
     margenL:    verMargenes ? colsUser.margenL    : false,
@@ -713,65 +715,63 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   };
   const onTaskDragEnd = () => { dragTaskRef.current = null; setDragOverTaskId(null); };
 
+  // Columnas toggleables, EN ORDEN de aparicion, con su ancho fijo y permiso.
+  // La fila de filtros se arma con esto para que cada toggle quede justo
+  // arriba de su columna. perm: 'cost'|'margin'|'admin'.
   const COLS_DEF = [
-    { key: 'costoUnit', label: '$ Costo unit' },
-    { key: 'costoTotal', label: '$ Costo total' },
-    { key: 'margenL', label: 'Margen %' },
-    { key: 'ventaUnit', label: '$ Venta unit' },
-    { key: 'ventaTotal', label: '$ Venta total' },
+    { key: 'mat',        label: 'Mat.U',       w: CW.mat,    perm: 'cost' },
+    { key: 'mo',         label: 'M.O.U',       w: CW.sub,    perm: 'cost' },
+    { key: 'costoUnit',  label: 'Costo. U',    w: CW.costoU, perm: 'cost' },
+    { key: 'costoTotal', label: 'Costo total', w: CW.costoT, perm: 'cost' },
+    { key: 'margenL',    label: 'Margen',      w: CW.margen, perm: 'margin' },
+    { key: 'ventaUnit',  label: 'Venta.U',     w: CW.ventaU, perm: 'admin' },
+    { key: 'ventaTotal', label: 'Venta total', w: CW.ventaT, perm: 'admin' },
   ];
+  const colPermOk = p => p === 'cost' ? verCostos : p === 'margin' ? verMargenes : isAdmin;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden', height: 'calc(100vh - 250px)', minHeight: 520 }}>
+    <div>
 
-      {/* ── Barra compacta única ──────────────────────────────────────────── */}
+      {/* ── Encabezado de seccion: titulo + acciones + colapsar ──────────────
+          El header ahora vive DENTRO de TabPresupuesto (el padre solo pasa
+          collapsed/onToggleCollapse). Asi las acciones que dependen de estado
+          interno (+Rubro, plantillas, guardar) quedan al lado del titulo. */}
+      <div onClick={onToggleCollapse}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', cursor: 'pointer', userSelect: 'none', borderTop: `1.5px solid ${T.faint2}`, borderBottom: collapsed ? 'none' : `1.5px solid ${T.faint2}`, marginBottom: collapsed ? 0 : 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ display: 'inline-block', width: 8, height: 8, background: T.accent, transform: 'rotate(45deg)', flexShrink: 0 }} />
+          <span className="k-h" style={{ fontSize: 14, lineHeight: 1.1, color: T.ink }}>Cómputo y presupuesto</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
+          {!collapsed && (frozen ? (
+            <>
+              <span style={{ fontSize: 11, color: T.ok, fontWeight: 700 }}>Aprobado{detalle.fechaAprobacion ? ` ${fmtD(detalle.fechaAprobacion)}` : ''}</span>
+              {onReopen && <Btn sm onClick={onReopen}>↩ Editar</Btn>}
+            </>
+          ) : (
+            onApprove && <Btn sm fill onClick={onApprove} style={{ background: T.ok, borderColor: T.ok, color: '#fff' }}>✓ Aprobar</Btn>
+          ))}
+          {!collapsed && onExport && <Btn sm onClick={onExport}>↗</Btn>}
+          {!collapsed && puedeEditar && <Btn sm fill onClick={() => setAddingRubro(true)}>+ Rubro</Btn>}
+          {!collapsed && puedeEditar && <Btn sm onClick={() => setShowPlantillas(true)}>📋</Btn>}
+          {!collapsed && puedeEditar && <Btn sm onClick={() => { setSavePlantillaForm({ nombre: obra.nombre || '', tipo: 'Comercial', descripcion: '' }); setShowSavePlantilla(true); }}>💾</Btn>}
+          <span style={{ fontSize: 10.5, color: T.ink3, fontWeight: 600, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.5, marginLeft: 4 }}>{collapsed ? '▼ Ver' : '▲ Cerrar'}</span>
+        </div>
+      </div>
+
+      {!collapsed && (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden', height: 'calc(100vh - 300px)', minHeight: 480 }}>
+
+      {/* ── Barra de totales + moneda ───────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexShrink: 0, flexWrap: 'wrap', padding: '6px 10px', background: T.faint, borderRadius: 6, border: `1px solid ${T.faint2}` }}>
-
-        {/* Totales inline — Venta solo admin (es precio al cliente). */}
         {isAdmin && <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.accent }}>Venta: {fmtVenta(venta)}</span>}
         {verCostos && <><span style={{ color: T.faint2 }}>·</span><span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#a85648' }}>Costo: {fmtVenta(costo)}</span></>}
         {verMargenes && <><span style={{ color: T.faint2 }}>·</span><span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: venta - costo < 0 ? '#dc2626' : T.ok }}>Ganancia: {fmtVenta(venta - costo)}</span></>}
-
-        <span style={{ width: 1, height: 16, background: T.faint2, flexShrink: 0, margin: '0 2px' }} />
-
-        {/* Toggle moneda */}
+        <div style={{ flex: 1 }} />
         <span onClick={() => setViewUSD(v => !v)}
           style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none', fontWeight: 700, border: `1px solid ${T.accent}`, background: T.accentSoft, color: T.accent }}>
           {viewUSD ? 'U$S' : '$'}
         </span>
-
-        {/* Column toggles */}
-        {COLS_DEF.filter(c => {
-          if ((c.key === 'costoUnit' || c.key === 'costoTotal') && !verCostos) return false;
-          if (c.key === 'margenL' && !verMargenes) return false;
-          if ((c.key === 'ventaUnit' || c.key === 'ventaTotal') && !isAdmin) return false;
-          return true;
-        }).map(c => (
-          <span key={c.key} onClick={() => setColsUser(s => ({ ...s, [c.key]: !s[c.key] }))}
-            style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none', transition: 'all 0.12s',
-              background: cols[c.key] ? T.accent : T.paper, color: cols[c.key] ? 'white' : T.ink3,
-              fontWeight: cols[c.key] ? 700 : 400, border: `1px solid ${cols[c.key] ? T.accent : T.faint2}` }}>
-            {c.label}
-          </span>
-        ))}
-
-        <div style={{ flex: 1 }} />
-
-        {/* Acciones */}
-        {frozen ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11, color: T.ok, fontWeight: 700 }}>
-              Aprobado{detalle.fechaAprobacion ? ` ${fmtD(detalle.fechaAprobacion)}` : ''}
-            </span>
-            {onReopen && <Btn sm onClick={onReopen}>↩ Editar</Btn>}
-          </div>
-        ) : (
-          onApprove && <Btn sm fill onClick={onApprove} style={{ background: T.ok, borderColor: T.ok, color: '#fff' }}>✓ Aprobar</Btn>
-        )}
-        {onExport && <Btn sm onClick={onExport}>↗</Btn>}
-        {puedeEditar && <Btn sm fill onClick={() => setAddingRubro(true)}>+ Rubro</Btn>}
-        {puedeEditar && <Btn sm onClick={() => setShowPlantillas(true)}>📋</Btn>}
-        {puedeEditar && <Btn sm onClick={() => { setSavePlantillaForm({ nombre: obra.nombre || '', tipo: 'Comercial', descripcion: '' }); setShowSavePlantilla(true); }}>💾</Btn>}
       </div>
 
     <div style={{ display: 'flex', gap: 10, flex: 1, overflow: 'hidden' }}>
@@ -803,6 +803,30 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
 
         {/* Rubros */}
         <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+          {/* Fila de filtros: un toggle por columna, JUSTO arriba de su columna.
+              Sticky al tope del scroll y con el mismo ancho que los rubros (asi
+              el scrollbar no la desalinea). Tambien sirve para volver a prender
+              una columna oculta (su lugar queda reservado mas abajo). */}
+          {detalle.rubros.length > 0 && (
+            <div className="k-tr" style={{ alignItems: 'center', flexShrink: 0, position: 'sticky', top: 0, zIndex: 5, background: T.paper, borderBottom: `1.5px solid ${T.faint2}` }}>
+              <div className="k-cell" style={{ flex: '1 1 150px', minWidth: 150, fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 700 }}>Columnas</div>
+              <div className="k-cell" style={{ ...fcol(CW.cantidad) }} />
+              <div className="k-cell" style={{ ...fcol(CW.u) }} />
+              {COLS_DEF.map(c => colPermOk(c.perm) ? (
+                <div key={c.key} className="k-cell" style={{ ...fcol(c.w) }}>
+                  <span onClick={() => setColsUser(s => ({ ...s, [c.key]: !s[c.key] }))}
+                    title={cols[c.key] ? `Ocultar columna ${c.label}` : `Mostrar columna ${c.label}`}
+                    style={{ display: 'block', textAlign: 'center', padding: '2px 0', borderRadius: 4, fontSize: 9.5, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'all 0.12s',
+                      fontWeight: cols[c.key] ? 700 : 500, background: cols[c.key] ? T.accent : T.paper, color: cols[c.key] ? '#fff' : T.ink3, border: `1px solid ${cols[c.key] ? T.accent : T.faint2}` }}>
+                    {c.label}
+                  </span>
+                </div>
+              ) : null)}
+              <div className="k-cell" style={{ ...fcol(CW.accion) }} />
+            </div>
+          )}
+
           {detalle.rubros.length === 0 && !addingRubro && (
             <Box dashed style={{ padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: T.ink3 }}>
               <div style={{ fontSize: 13 }}>Sin rubros. Agregá el primero.</div>
@@ -859,13 +883,13 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                     <div className="k-cell" style={{ flex: '1 1 150px', minWidth: 150, whiteSpace: 'nowrap' }}>Tarea</div>
                     <div className="k-cell" style={{ ...fcol(CW.cantidad), textAlign: 'right', fontSize: 9, whiteSpace: 'nowrap' }}>{puedeCargarAvance ? 'CANTIDAD ✏' : 'CANTIDAD'}</div>
                     <div className="k-cell" style={{ ...fcol(CW.u), whiteSpace: 'nowrap' }}>U</div>
-                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.mat), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{!rubro.materialesACargoComprador ? (puedeEditar ? `${viewUSD?'U$S':'$'} Mat ✏` : `${viewUSD?'U$S':'$'} Mat`) : ''}</div>}
-                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.sub), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Sub ✏` : `${viewUSD?'U$S':'$'} Sub`}</div>}
-                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.costoU), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{cols.costoUnit ? `${viewUSD?'U$S':'$'} Costo u` : ''}</div>}
-                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.costoT), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{cols.costoTotal ? `${viewUSD?'U$S':'$'} Costo T` : ''}</div>}
-                    {verMargenes && <div className="k-cell" style={{ ...fcol(CW.margen), textAlign: 'right', color: T.ok, whiteSpace: 'nowrap' }}>{cols.margenL ? `Margen % ${puedeEditar ? '✏' : ''}` : ''}</div>}
-                    {isAdmin && <div className="k-cell" style={{ ...fcol(CW.ventaU), textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{cols.ventaUnit ? `${viewUSD?'U$S':'$'} Venta u` : ''}</div>}
-                    {isAdmin && <div className="k-cell" style={{ ...fcol(CW.ventaT), textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{cols.ventaTotal ? `${viewUSD?'U$S':'$'} Venta T` : ''}</div>}
+                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.mat), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{(!rubro.materialesACargoComprador && cols.mat) ? (puedeEditar ? 'Mat.U ✏' : 'Mat.U') : ''}</div>}
+                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.sub), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{cols.mo ? (puedeEditar ? 'M.O.U ✏' : 'M.O.U') : ''}</div>}
+                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.costoU), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{cols.costoUnit ? 'Costo. U' : ''}</div>}
+                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.costoT), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{cols.costoTotal ? 'Costo total' : ''}</div>}
+                    {verMargenes && <div className="k-cell" style={{ ...fcol(CW.margen), textAlign: 'right', color: T.ok, whiteSpace: 'nowrap' }}>{cols.margenL ? (puedeEditar ? 'Margen ✏' : 'Margen') : ''}</div>}
+                    {isAdmin && <div className="k-cell" style={{ ...fcol(CW.ventaU), textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{cols.ventaUnit ? 'Venta.U' : ''}</div>}
+                    {isAdmin && <div className="k-cell" style={{ ...fcol(CW.ventaT), textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{cols.ventaTotal ? 'Venta total' : ''}</div>}
                     <div className="k-cell" style={{ ...fcol(CW.accion) }}></div>
                   </div>
 
@@ -1000,10 +1024,12 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                         </div>
                         {InlineNum({ field: 'cantidad', value: tarea.cantidad, w: CW.cantidad })}
                         <div className="k-cell" style={{ ...fcol(CW.u) }}>{tarea.unidad}</div>
-                        {verCostos && (!rubro.materialesACargoComprador
+                        {verCostos && ((!rubro.materialesACargoComprador && cols.mat)
                           ? InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), w: CW.mat, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })
                           : slot(CW.mat))}
-                        {verCostos && InlineNum({ field: 'costoSub', value: viewUSD ? Math.round((tarea.costoSub || 0) / tc) : (tarea.costoSub || 0), w: CW.sub, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
+                        {verCostos && (cols.mo
+                          ? InlineNum({ field: 'costoSub', value: viewUSD ? Math.round((tarea.costoSub || 0) / tc) : (tarea.costoSub || 0), w: CW.sub, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })
+                          : slot(CW.sub))}
 
                         {verCostos && (cols.costoUnit
                           ? <div className="k-cell" style={{ ...fcol(CW.costoU), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#a85648' }}>{fmtVenta(costoUnit)}</div>
@@ -1234,6 +1260,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
           (componentes individuales) queda pendiente — si se necesita, se
           accede via un boton/modal por tarea. */}
     </div>
+    </div>
+    )}
     </div>
   );
 }
@@ -4261,33 +4289,11 @@ export default function ObraPresupuesto() {
       )}
       {displayTab === 2 && (
         <>
-          {/* Acordeón "Cómputo y presupuesto" — la edición del cómputo + tareas
-              + rubros. Default: abierto, salvo presupuesto aprobado. */}
-          <div
-            onClick={() => setShowComputo(v => !v)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '10px 0',
-              cursor: 'pointer',
-              userSelect: 'none',
-              borderTop: `1.5px solid ${T.faint2}`,
-              borderBottom: showComputo ? `1.5px solid ${T.faint2}` : 'none',
-              marginBottom: showComputo ? 14 : 0,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ display: 'inline-block', width: 8, height: 8, background: T.accent, transform: 'rotate(45deg)', flexShrink: 0 }} />
-              <span className="k-h" style={{ fontSize: 14, lineHeight: 1.1, color: T.ink }}>Cómputo y presupuesto</span>
-            </div>
-            <span style={{ fontSize: 10.5, color: T.ink3, fontWeight: 600, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.5 }}>
-              {showComputo ? '▲ Cerrar' : '▼ Ver'}
-            </span>
-          </div>
-          {showComputo && (
-            <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} frozen={presupuestoFrozenReal} onApprove={handleApprove} onReopen={handleReopen} onExport={() => setShowExport(true)} />
-          )}
+          {/* El encabezado "Cómputo y presupuesto" + acciones + colapsar ahora
+              los renderiza TabPresupuesto; aca solo le pasamos el estado de
+              colapso (showComputo se sigue manejando arriba: se cierra al
+              aprobar y se abre al reabrir). */}
+          <TabPresupuesto obra={obra} detalle={detalle} patch={patch} moneda={moneda} frozen={presupuestoFrozenReal} onApprove={handleApprove} onReopen={handleReopen} onExport={() => setShowExport(true)} collapsed={!showComputo} onToggleCollapse={() => setShowComputo(v => !v)} />
 
           {/* Acordeón "Plan de pagos y cuotas" — armar el plan con intereses
               y cuotas. La cobranza (cuotas pagadas) se ve en Cuenta corriente
