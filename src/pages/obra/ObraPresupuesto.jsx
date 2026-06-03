@@ -813,7 +813,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                 <span style={{ color: 'rgba(255,255,255,0.4)', cursor: 'grab', userSelect: 'none' }}>⋮⋮</span>
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>{isRubroAbierto(rubro.id) ? '▾' : '▸'}</span>
                 <div className="k-h" style={{ fontSize: 15, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>{rubro.nombre}</div>
-                <span style={{ fontSize: 10, fontFamily: T.fontMono, color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap' }}>mat {rubro.margenMat}% · MO {rubro.margenMO}%</span>
+                <span style={{ fontSize: 10, fontFamily: T.fontMono, color: '#5fcf8a', whiteSpace: 'nowrap' }}>mat {rubro.margenMat}% · MO {rubro.margenMO}%</span>
                 {rubro.proveedor && (() => {
                   const prov = provListPresu.find(p => p.nombre === rubro.proveedor);
                   return prov
@@ -846,7 +846,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                     <div className="k-cell" style={{ flex: 3, whiteSpace: 'nowrap' }}>Tarea</div>
                     <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', fontSize: 9, whiteSpace: 'nowrap' }}>{puedeCargarAvance ? 'CANTIDAD ✏' : 'CANTIDAD'}</div>
                     <div className="k-cell" style={{ flex: 0.4, whiteSpace: 'nowrap' }}>U</div>
-                    {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Mat ✏` : `${viewUSD?'U$S':'$'} Mat`}</div>}
+                    {verCostos && !rubro.materialesACargoComprador && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Mat ✏` : `${viewUSD?'U$S':'$'} Mat`}</div>}
                     {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Sub ✏` : `${viewUSD?'U$S':'$'} Sub`}</div>}
                     {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Costo u</div>}
                     {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Costo T</div>}
@@ -858,7 +858,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
 
                   {buildVisibleTareas(rubro.tareas, collapsedSections).map((tarea, i) => {
                     if (tarea._hidden) return null;
-                    const costoUnit = tarea.costoMat + (tarea.costoSub || 0);
+                    const costoUnit = (rubro.materialesACargoComprador ? 0 : tarea.costoMat) + (tarea.costoSub || 0);
                     const costoTotalRow = costoUnit * tarea.cantidad;
                     const ventaUnitRow = tareaVentaUnit(tarea, rubro);
                     const ventaTotalRow = ventaUnitRow * tarea.cantidad;
@@ -987,9 +987,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                         </div>
                         {InlineNum({ field: 'cantidad', value: tarea.cantidad, flex: 1.1 })}
                         <div className="k-cell" style={{ flex: 0.4 }}>{tarea.unidad}</div>
-                        {rubro.materialesACargoComprador
-                          ? <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: T.ink3, textDecoration: 'line-through', opacity: 0.6 }} title="Material a cargo del comprador (no se cobra)">{fmtVenta(tarea.costoMat || 0)}</div>
-                          : InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
+                        {!rubro.materialesACargoComprador && InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
                         {InlineNum({ field: 'costoSub', value: viewUSD ? Math.round((tarea.costoSub || 0) / tc) : (tarea.costoSub || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
 
                         {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#a85648' }}>{fmtVenta(costoUnit)}</div>}
