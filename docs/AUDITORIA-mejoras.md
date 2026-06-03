@@ -22,6 +22,11 @@ El guard de 3s existe y se chequea (línea 166), **pero `lastLocalSaveAt.current
 Persisten `{ obras, detalles }` / `{ proveedores, ccEntries }` completos con debounce. Dos personas editando **obras distintas** → el último guardado pisa al otro (last-write-wins). Es el bug que ya sacamos de Catálogo y Plantillas, pero acá sigue. Afecta presupuestos (los detalles de obra viven acá).
 **Fix:** migrar a escritura atómica por ítem (RPC nueva 0004 para objetos tipo diccionario, o key por obra `obras_detalle_<id>`). Es el cambio más grande de la lista.
 
+> 🎯 **REQUISITO DEL USUARIO (2026-06-03): edición colaborativa del presupuesto EN VIVO.**
+> Cuando 2 usuarios están en el MISMO presupuesto y uno modifica algo (cantidad, rubro, tarea, plan de pagos…), el otro **no lo ve en vivo** — tiene que verlo **en directo, por cada movimiento**.
+> Hoy: el detalle de obra se guarda como blob entero con debounce de ~800ms + broadcast → la otra pestaña recién recarga al recibir el broadcast (y si ambos editan, el guard de 3s puede demorar/suprimir la actualización). Además `ObraPresupuesto` puede tener estado local del detalle que no se re-renderiza con el cambio remoto.
+> Para lograrlo hace falta: (1) **escritura atómica por ítem** del detalle (fix B) para que cada cambio viaje granular sin pisar; (2) que `ObraPresupuesto` lea el detalle SIEMPRE en vivo del context (sin copia local stale); (3) idealmente **Supabase Realtime (postgres_changes)** sobre `shared_data` para *push* instantáneo en vez del broadcast+reload, o al menos bajar el debounce y refinar el guard para que NO suprima los cambios del OTRO usuario (el guard solo debe ignorar los propios). Es una funcionalidad, no solo un bug — planificar junto con B.
+
 ### C. Re-aprobar un presupuesto reabierto genera tareas inconsistentes
 `src/pages/obra/ObraPresupuesto.jsx` (handleReopen) + `src/lib/generarTareasObra.js:71`
 Al reabrir, se pone `presupuestoAprobado=false` pero **no se limpia `tareasGeneradas`**. Si modificás el presupuesto y re-aprobás, los rubros ya marcados no regeneran sus tareas; rubros viejos por ID quedan "ya aplicados".
