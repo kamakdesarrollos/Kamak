@@ -11,40 +11,85 @@ const TIPOS_DOC = ['Contrato', 'Presupuesto', 'Planos', 'Certificado', 'Factura'
 const fmtD = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
 
 export default function TabDocumentos({ detalle, patch, obraId }) {
-  const [adding,      setAdding]      = useState(false);
-  const [form,        setForm]        = useState({ nombre: '', tipo: 'Contrato', fecha: new Date().toISOString().split('T')[0] });
-  const [pendingFile, setPendingFile] = useState(null);
-  const [uploading,   setUploading]   = useState(false);
-  const [uploadErr,   setUploadErr]   = useState('');
+  const [adding,       setAdding]       = useState(false);
+  const [form,         setForm]         = useState({ nombre: '', tipo: 'Contrato', fecha: new Date().toISOString().split('T')[0] });
+  // pendingFiles: lista de { file, status: 'pending'|'uploading'|'done'|'error', error? }.
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [uploading,    setUploading]    = useState(false);
+  const [uploadErr,    setUploadErr]    = useState('');
   const fileRef = useRef(null);
 
-  const handleFile = (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    setPendingFile(f);
-    if (!form.nombre.trim()) setForm(p => ({ ...p, nombre: f.name.replace(/\.[^.]+$/, '') }));
-  };
-
-  const save = async () => {
-    if (!form.nombre.trim()) return;
-    let url = null;
-    if (pendingFile) {
-      setUploading(true);
-      setUploadErr('');
-      const ext  = pendingFile.name.split('.').pop();
-      const path = `obras/${obraId}/docs/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('kamak-fotos').upload(path, pendingFile, { upsert: true });
-      if (error) { setUploadErr('Error al subir el archivo: ' + error.message); setUploading(false); return; }
-      url = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
-      setUploading(false);
-    }
-    patch(d => ({ ...d, documentos: [...d.documentos, { id: newId('doc'), ...form, url }] }));
+  const resetAndClose = () => {
     setAdding(false);
     setForm({ nombre: '', tipo: 'Contrato', fecha: new Date().toISOString().split('T')[0] });
-    setPendingFile(null);
+    setPendingFiles([]);
+    setUploadErr('');
+  };
+
+  // Permite elegir uno o VARIOS archivos; se acumulan (podés agregar en tandas).
+  const handleFiles = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    // Si es el primer y único archivo y no hay nombre, lo prellenamos (comodidad
+    // para el caso de 1 solo documento).
+    if (!form.nombre.trim() && files.length === 1 && pendingFiles.length === 0) {
+      setForm(p => ({ ...p, nombre: files[0].name.replace(/\.[^.]+$/, '') }));
+    }
+    setPendingFiles(prev => [...prev, ...files.map(f => ({ file: f, status: 'pending' }))]);
+    e.target.value = ''; // permite volver a elegir el mismo archivo si hace falta
+  };
+
+  const removeFile = (i) => setPendingFiles(prev => prev.filter((_, idx) => idx !== i));
+
+  const save = async () => {
+    // Sin archivos: documento solo-metadata (necesita nombre). Igual que antes.
+    if (pendingFiles.length === 0) {
+      if (!form.nombre.trim()) return;
+      patch(d => ({ ...d, documentos: [...d.documentos, { id: newId('doc'), ...form, url: null }] }));
+      resetAndClose();
+      return;
+    }
+
+    setUploading(true);
+    setUploadErr('');
+    setPendingFiles(prev => prev.map(pf => ({ ...pf, status: 'uploading', error: undefined })));
+
+    const single = pendingFiles.length === 1;
+    const nuevos = [];
+    const failed = [];
+
+    for (let i = 0; i < pendingFiles.length; i++) {
+      const file = pendingFiles[i].file;
+      const ext  = file.name.split('.').pop();
+      const path = `obras/${obraId}/docs/${Date.now()}-${i}.${ext}`;
+      const { error } = await supabase.storage.from('kamak-fotos').upload(path, file, { upsert: true });
+      if (error) {
+        failed.push(i);
+        setPendingFiles(prev => prev.map((pf, idx) => idx === i ? { ...pf, status: 'error', error: error.message } : pf));
+        continue;
+      }
+      const url = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
+      // Con 1 archivo se respeta el nombre tipeado; con varios, el de cada archivo.
+      const nombre = (single && form.nombre.trim()) ? form.nombre.trim() : file.name.replace(/\.[^.]+$/, '');
+      nuevos.push({ id: newId('doc'), nombre, tipo: form.tipo, fecha: form.fecha, url });
+      setPendingFiles(prev => prev.map((pf, idx) => idx === i ? { ...pf, status: 'done' } : pf));
+    }
+
+    if (nuevos.length) patch(d => ({ ...d, documentos: [...d.documentos, ...nuevos] }));
+    setUploading(false);
+
+    if (failed.length === 0) {
+      resetAndClose();
+    } else {
+      // Dejamos solo los que fallaron, listos para reintentar.
+      setPendingFiles(prev => prev.filter((_, idx) => failed.includes(idx)).map(pf => ({ ...pf, status: 'pending', error: undefined })));
+      setUploadErr(`${failed.length} archivo(s) no se pudieron subir. Reintentá o quitalos de la lista.`);
+    }
   };
 
   const del = (id) => patch(d => ({ ...d, documentos: d.documentos.filter(dc => dc.id !== id) }));
+
+  const multi = pendingFiles.length > 1;
 
   return (
     <div style={{ maxWidth: 700 }}>
@@ -56,12 +101,17 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
         <FormPanel
           title="Agregar documento"
           onSave={save}
-          onCancel={() => { setAdding(false); setPendingFile(null); setUploadErr(''); }}
+          onCancel={resetAndClose}
           style={{ marginBottom: 14 }}
-          saveLabel={uploading ? 'Subiendo...' : 'Guardar'}
-          saveDisabled={uploading}
+          saveLabel={uploading ? 'Subiendo...' : (multi ? `Subir ${pendingFiles.length} archivos` : 'Guardar')}
+          saveDisabled={uploading || (pendingFiles.length === 0 && !form.nombre.trim())}
         >
-          <FInput label="Nombre del documento" value={form.nombre} onChange={v => setForm(p => ({ ...p, nombre: v }))} placeholder="Ej: Contrato de obra firmado" />
+          <FInput
+            label={multi ? 'Nombre (se ignora con varios archivos)' : 'Nombre del documento'}
+            value={form.nombre}
+            onChange={v => setForm(p => ({ ...p, nombre: v }))}
+            placeholder={multi ? 'Se usa el nombre de cada archivo' : 'Ej: Contrato de obra firmado'}
+          />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <FSelect label="Tipo" value={form.tipo} onChange={v => setForm(p => ({ ...p, tipo: v }))} options={TIPOS_DOC} />
             <FInput label="Fecha" value={form.fecha} onChange={v => setForm(p => ({ ...p, fecha: v }))} type="date" />
@@ -73,18 +123,35 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
             <input
               ref={fileRef}
               type="file"
+              multiple
               accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
               style={{ display: 'none' }}
-              onChange={handleFile}
+              onChange={handleFiles}
             />
-            {pendingFile ? (
-              <div style={{ fontSize: 12, color: T.ink, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 18 }}>📎</span>
-                <span style={{ fontWeight: 600 }}>{pendingFile.name}</span>
-                <span style={{ color: T.ink3 }}>({(pendingFile.size / 1024).toFixed(0)} KB)</span>
+            {pendingFiles.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {pendingFiles.map((pf, i) => (
+                  <div key={i} style={{ fontSize: 12, color: T.ink, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 16, flexShrink: 0 }}>📎</span>
+                    <span style={{ fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pf.file.name}</span>
+                    <span style={{ color: T.ink3, flexShrink: 0 }}>({(pf.file.size / 1024).toFixed(0)} KB)</span>
+                    {pf.status === 'uploading' && <span style={{ color: T.accent, flexShrink: 0 }}>subiendo…</span>}
+                    {pf.status === 'done'      && <span style={{ color: T.ok, flexShrink: 0 }}>✓</span>}
+                    {pf.status === 'error'     && <span style={{ color: '#dc2626', flexShrink: 0 }} title={pf.error}>error</span>}
+                    {!uploading && pf.status !== 'done' && (
+                      <span
+                        onClick={(e) => { e.stopPropagation(); removeFile(i); }}
+                        style={{ color: T.ink3, cursor: 'pointer', flexShrink: 0 }}
+                        role="button"
+                        aria-label="Quitar archivo"
+                      >🗑</span>
+                    )}
+                  </div>
+                ))}
+                {!uploading && <div style={{ fontSize: 11, color: T.accent, textAlign: 'center', marginTop: 4 }}>+ Clic para agregar más archivos</div>}
               </div>
             ) : (
-              <div style={{ fontSize: 12, color: T.ink2, textAlign: 'center' }}>📎 Clic para seleccionar archivo (PDF, Word, Excel, imágenes)</div>
+              <div style={{ fontSize: 12, color: T.ink2, textAlign: 'center' }}>📎 Clic para seleccionar uno o varios archivos (PDF, Word, Excel, imágenes)</div>
             )}
           </div>
           {uploadErr && <div style={{ fontSize: 11, color: '#dc2626' }}>{uploadErr}</div>}
