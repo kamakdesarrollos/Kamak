@@ -8,6 +8,7 @@ import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex } from '../lib/apuPriceResolver';
 import { groupByKey } from '../lib/catalogGroup';
 import { syncFormItemNames } from '../lib/catalogCascade';
+import { normUnidad } from '../lib/unidad';
 import { searchNorm } from '../lib/searchNorm';
 import TareasEstandarEditor from './modales/TareasEstandarEditor';
 import { useUsuarios, ROLES } from '../store/UsuariosContext';
@@ -204,7 +205,7 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
             placeholder="Sub-categoría" style={headerInput({ width: 180 })} />
           <input value={form.codigo || ''} onChange={e => setForm(f => ({ ...f, codigo: e.target.value }))}
             placeholder="Código" style={headerInput({ width: 100, fontFamily: T.fontMono })} />
-          <input value={form.unidad || ''} onChange={e => setForm(f => ({ ...f, unidad: e.target.value }))}
+          <input value={form.unidad || ''} onChange={e => setForm(f => ({ ...f, unidad: normUnidad(e.target.value) }))}
             placeholder="Unidad" style={headerInput({ width: 70 })} />
           <select value={form.rubroNombre || ''} onChange={e => setForm(f => ({ ...f, rubroNombre: e.target.value }))}
             style={headerInput({ cursor: 'pointer' })}>
@@ -639,7 +640,7 @@ function ImportarAPUModal({ rubros, onImport, onClose }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignContent: 'start' }}>
                     <div>
                       <div style={labelSt}>Unidad</div>
-                      <input style={inputSt} value={unidad} onChange={e => setUnidad(e.target.value)} />
+                      <input style={inputSt} value={unidad} onChange={e => setUnidad(normUnidad(e.target.value))} />
                     </div>
                     <div>
                       <div style={labelSt}>Gremio / Rubro</div>

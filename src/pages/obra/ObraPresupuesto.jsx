@@ -17,6 +17,7 @@ import { useCatalog, calcTarea } from '../../store/CatalogContext';
 import { useUsuarios, ROL_TABS_OCULTAS, ROL_TABS_OCULTAS_DEFAULT } from '../../store/UsuariosContext';
 import { useTareas } from '../../store/TareasContext';
 import { generarTareasObra } from '../../lib/generarTareasObra';
+import { normUnidad } from '../../lib/unidad';
 import { supabase } from '../../lib/supabase';
 import { loadSharedData, saveSharedData } from '../../lib/dbHelpers';
 import { onRemoteChange } from '../../lib/syncBus';
@@ -682,7 +683,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
 
   const saveTask = () => {
     if (!newTask.nombre.trim()) return;
-    const t = { id: newId(), ...newTask, cantidad: +newTask.cantidad, costoMat: +newTask.costoMat, costoSub: +newTask.costoSub || 0, receta: { materiales: [] }, avance: 0 };
+    const t = { id: newId(), ...newTask, unidad: normUnidad(newTask.unidad), cantidad: +newTask.cantidad, costoMat: +newTask.costoMat, costoSub: +newTask.costoSub || 0, receta: { materiales: [] }, avance: 0 };
     patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === addingTask ? { ...r, tareas: [...r.tareas, t] } : r) }));
     setAddingTask(null);
     setNewTask({ codigo: '', nombre: '', unidad: 'u', cantidad: 1, costoMat: 0, costoSub: 0 });
@@ -1168,7 +1169,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                           />
                         </FRow>
                         <FInput label="Cantidad" value={newTask.cantidad} onChange={v => setNewTask(p => ({ ...p, cantidad: v }))} type="number" />
-                        <FInput label="Unidad" value={newTask.unidad} onChange={v => setNewTask(p => ({ ...p, unidad: v }))} />
+                        <FInput label="Unidad" value={newTask.unidad} onChange={v => setNewTask(p => ({ ...p, unidad: normUnidad(v) }))} />
                         <FInput label="$ Materiales" value={newTask.costoMat} onChange={v => setNewTask(p => ({ ...p, costoMat: v }))} type="number" />
                         <FInput label="$ M.O" value={newTask.costoSub} onChange={v => setNewTask(p => ({ ...p, costoSub: v }))} type="number" />
                       </div>
@@ -1932,7 +1933,7 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 10 }}>
             <FInput label="Tarea" value={form.tarea} onChange={v => setForm(p => ({ ...p, tarea: v }))} placeholder="Ej: Pintura interior látex" />
             <FInput label="Cantidad" value={form.cantidad} onChange={set('cantidad')} type="number" />
-            <FInput label="Unidad" value={form.unidad} onChange={v => setForm(p => ({ ...p, unidad: v }))} placeholder="m², u..." />
+            <FInput label="Unidad" value={form.unidad} onChange={v => setForm(p => ({ ...p, unidad: normUnidad(v) }))} placeholder="m², u..." />
             <FInput label="Fecha" value={form.fecha} onChange={v => setForm(p => ({ ...p, fecha: v }))} type="date" />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginTop: 4 }}>

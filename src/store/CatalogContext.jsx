@@ -6,6 +6,7 @@ import { resolverItemAPU, resolverMOAPU, buildCatalogIndex, normalizarNombre } f
 import { cascadeRename } from '../lib/catalogCascade';
 import { loadSismatCostMap, migrarCatalogoConSismat } from '../lib/sismatCostFallback';
 import { aplicarCACalCatalogo } from '../lib/cacUpdate';
+import { normUnidad } from '../lib/unidad';
 
 // Versión de la migración SISMAT → catálogo APU. Bumpeala si querés re-correr
 // la migración (p.ej. si actualizamos las reglas de conversión).
@@ -191,10 +192,11 @@ export function CatalogProvider({ children }) {
   // (NO upsert del blob entero). Con el blob entero, dos personas editando a la
   // vez se pisaban (last-write-wins, bug CAT-003: "edito una APU y no se guarda").
   // Ahora cada edición patchea SOLO ese ítem server-side → no se pisan.
-  const add    = useCallback((coll, item)        => { markUserEdit(); touch(); const full = { id: newId(), ...item, updatedAt: today() }; setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), full] })); appendCatalogItem(coll, full); }, []);
+  const add    = useCallback((coll, item)        => { markUserEdit(); touch(); const full = { id: newId(), ...item, updatedAt: today() }; if (full.unidad != null) full.unidad = normUnidad(full.unidad); setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), full] })); appendCatalogItem(coll, full); }, []);
   const update = useCallback((coll, id, changes) => {
     markUserEdit(); touch();
     const patch = { ...changes, updatedAt: today() };
+    if (patch.unidad != null) patch.unidad = normUnidad(patch.unidad);
     // Cascada de rename: las recetas de las APU referencian materiales/MO/grales
     // POR NOMBRE. Si renombrás uno acá sin propagarlo, esas APU quedan "SIN
     // CATÁLOGO". Detectamos el cambio de nombre y actualizamos las tareas que lo usan.
@@ -290,6 +292,39 @@ export function CatalogProvider({ children }) {
     }
     localStorage.setItem('kamak_catalog_sismat_migration_v', CATALOG_SISMAT_MIGRATION_VERSION);
   }, [sismatCostMap, catalog]);
+
+  // Migración one-shot de UNIDADES: normaliza m2/M2→m², m3/M3→m³ en las unidades
+  // ya cargadas del catálogo. Patches ATÓMICOS por ítem (no pisa el blob entero,
+  // así no choca con ediciones concurrentes). Idempotente (flag en localStorage)
+  // y self-healing: si otro cliente ya las normalizó, no encuentra nada que
+  // cambiar. Espera al primer load remoto y no corre si hubo ediciones pre-load
+  // (mismo criterio anti-pisada que el resto del contexto).
+  useEffect(() => {
+    if (!sbLoaded.current || userEditedBeforeFirstLoad.current) return;
+    if (!catalog?.tareas) return;
+    if (localStorage.getItem('kamak_catalog_unit_norm_v') === '1') return;
+    const colls = ['tareas', 'materiales', 'subcontratos', 'generales', 'mo'];
+    const fixes = [];
+    for (const coll of colls) for (const it of (catalog[coll] || [])) {
+      if (it.unidad == null || !it.id) continue;
+      const nu = normUnidad(it.unidad);
+      if (nu !== it.unidad) fixes.push({ coll, id: it.id, unidad: nu });
+    }
+    if (fixes.length) {
+      touch();
+      setCatalog(prev => {
+        const next = { ...prev };
+        for (const coll of colls) next[coll] = (prev[coll] || []).map(it => {
+          const nu = normUnidad(it.unidad);
+          return (it.unidad != null && nu !== it.unidad) ? { ...it, unidad: nu } : it;
+        });
+        localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
+        return next;
+      });
+      for (const f of fixes) patchCatalogItem(f.coll, f.id, { unidad: f.unidad });
+    }
+    localStorage.setItem('kamak_catalog_unit_norm_v', '1');
+  }, [catalog]);
 
   const value = useMemo(
     () => ({ catalog, catalogIndex, sismatCostMap, add, update, remove, bulkSeed, bulkUpdatePreciosCAC, restoreCatalogCACBackup }),
