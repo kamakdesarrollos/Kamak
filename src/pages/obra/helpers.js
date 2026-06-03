@@ -204,9 +204,13 @@ export const detallePagosCuotas = (cuotas, ingresosUSD, obraMoneda, tc) => {
  * o por rubro (mat / mano de obra).
  */
 export const tareaVentaUnit = (t, rubro) => {
-  const costoUnit = t.costoMat + (t.costoSub || 0);
+  // "Materiales a cargo del comprador": no se cobran los materiales del rubro
+  // (el cliente los compra), solo la mano de obra / subcontrato.
+  const mat = rubro.materialesACargoComprador ? 0 : t.costoMat;
+  const sub = t.costoSub || 0;
+  const costoUnit = mat + sub;
   if (t.margenLinea != null) return costoUnit * (1 + t.margenLinea / 100);
-  return t.costoMat * (1 + rubro.margenMat / 100) + (t.costoSub || 0) * (1 + rubro.margenMO / 100);
+  return mat * (1 + rubro.margenMat / 100) + sub * (1 + rubro.margenMO / 100);
 };
 
 /**
@@ -214,10 +218,13 @@ export const tareaVentaUnit = (t, rubro) => {
  * tareas. Las "secciones" (separadores visuales) se excluyen del calculo.
  */
 export const calcRubro = (rubro) => {
+  // Si los materiales van a cargo del comprador, NO los contamos como costo
+  // nuestro (el cliente los compra) — solo la mano de obra.
+  const sinMat = !!rubro.materialesACargoComprador;
   const tareas = (rubro.tareas || []).filter(t => t.tipo !== 'seccion');
   let cMat = 0, cSub = 0, venta = 0;
   for (const t of tareas) {
-    cMat += t.costoMat * t.cantidad;
+    cMat += (sinMat ? 0 : t.costoMat) * t.cantidad;
     cSub += (t.costoSub || 0) * t.cantidad;
     venta += tareaVentaUnit(t, rubro) * t.cantidad;
   }

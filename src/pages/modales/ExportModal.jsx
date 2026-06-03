@@ -11,15 +11,19 @@ const fmtM = (n, m) => m === 'USD' ? `U$S ${fmtN(n)}` : `$ ${fmtN(n)}`;
 const fmtFecha = () => new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' });
 
 const tareaVentaUnit = (t, rubro) => {
-  const cu = t.costoMat + (t.costoSub || 0);
+  // Materiales a cargo del comprador: no se cobran (solo mano de obra).
+  const mat = rubro.materialesACargoComprador ? 0 : t.costoMat;
+  const sub = t.costoSub || 0;
+  const cu = mat + sub;
   if (t.margenLinea != null) return cu * (1 + t.margenLinea / 100);
-  return t.costoMat * (1 + rubro.margenMat / 100) + (t.costoSub || 0) * (1 + rubro.margenMO / 100);
+  return mat * (1 + rubro.margenMat / 100) + sub * (1 + rubro.margenMO / 100);
 };
 
 const calcRubroExport = (rubro) => {
+  const sinMat = !!rubro.materialesACargoComprador;
   let cMat = 0, cSub = 0, venta = 0;
   for (const t of rubro.tareas.filter(t => t.tipo !== 'seccion')) {
-    cMat += t.costoMat * t.cantidad;
+    cMat += (sinMat ? 0 : t.costoMat) * t.cantidad;
     cSub += (t.costoSub || 0) * t.cantidad;
     venta += tareaVentaUnit(t, rubro) * t.cantidad;
   }
@@ -112,6 +116,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
 
     return `<div class="rubro-sec">
       <div class="rubro-ttl"><span class="dmnd-sm"></span>RUBRO ${String(ri + 1).padStart(2, '0')} · ${esc(rubro.nombre.toUpperCase())}</div>
+      ${rubro.materialesACargoComprador ? `<div style="font-size:10.5px;font-style:italic;color:#8a6d2a;background:#fcf6e3;border:1px solid #e6d9a8;border-radius:3px;padding:4px 9px;margin:3px 0 6px;">⚑ Materiales de ${esc(rubro.nombre)} <b>a cargo del comprador</b> (no incluidos en este precio).</div>` : ''}
       <div class="tbl-hdr">
         <div class="tc tc-name">TAREA / DESCRIPCIÓN</div>
         <div class="tc tc-un">UN</div>

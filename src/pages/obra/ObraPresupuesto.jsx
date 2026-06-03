@@ -605,6 +605,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const toggleRubro = (id) => toggleRubroAbierto(id);
   const deleteTarea = (rubroId, tareaId) => patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, tareas: r.tareas.filter(t => t.id !== tareaId) } : r) }));
   const deleteRubro = (rubroId) => { if (window.confirm('¿Eliminar rubro y todas sus tareas?')) patch(d => ({ ...d, rubros: d.rubros.filter(r => r.id !== rubroId) })); };
+  // Toggle "materiales a cargo del comprador": no se cobran/cuentan los materiales
+  // del rubro (solo la mano de obra) y en el export figura la nota.
+  const toggleMaterialesComprador = (rubroId) => patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, materialesACargoComprador: !r.materialesACargoComprador } : r) }));
 
   const saveTask = () => {
     if (!newTask.nombre.trim()) return;
@@ -822,6 +825,17 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                   <span style={{ color: 'rgba(255,255,255,0.85)' }}>venta <b style={{ color: '#5fcf8a' }}>{fmtVenta(rubro.venta)}</b></span>
                   {verMargenes && <span style={{ color: rubro.margen > 0 ? '#5fcf8a' : '#ff9b8a' }}><b>{rubro.margen > 0 ? '+' : ''}{rubro.margen}%</b></span>}
                 </span>
+                {puedeEditar && (
+                  <span
+                    onClick={e => { e.stopPropagation(); toggleMaterialesComprador(rubro.id); }}
+                    title={rubro.materialesACargoComprador ? 'Materiales a cargo del comprador — clic para volver a incluirlos' : 'Sacar los materiales del rubro (quedan a cargo del comprador)'}
+                    style={{ fontSize: 9.5, fontFamily: T.fontMono, cursor: 'pointer', padding: '2px 7px', borderRadius: 3, whiteSpace: 'nowrap',
+                      background: rubro.materialesACargoComprador ? '#5fcf8a' : 'rgba(255,255,255,0.12)',
+                      color: rubro.materialesACargoComprador ? '#10261a' : 'rgba(255,255,255,0.8)',
+                      border: `1px solid ${rubro.materialesACargoComprador ? '#5fcf8a' : 'rgba(255,255,255,0.25)'}` }}>
+                    {rubro.materialesACargoComprador ? '✓ Mat. a cargo del comprador' : 'Sacar mat.'}
+                  </span>
+                )}
                 {puedeEditar && <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, cursor: 'pointer' }}
                   onClick={e => { e.stopPropagation(); deleteRubro(rubro.id); }}>🗑</span>}
               </div>
@@ -973,7 +987,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                         </div>
                         {InlineNum({ field: 'cantidad', value: tarea.cantidad, flex: 1.1 })}
                         <div className="k-cell" style={{ flex: 0.4 }}>{tarea.unidad}</div>
-                        {InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
+                        {rubro.materialesACargoComprador
+                          ? <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: T.ink3, textDecoration: 'line-through', opacity: 0.6 }} title="Material a cargo del comprador (no se cobra)">{fmtVenta(tarea.costoMat || 0)}</div>
+                          : InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
                         {InlineNum({ field: 'costoSub', value: viewUSD ? Math.round((tarea.costoSub || 0) / tc) : (tarea.costoSub || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
 
                         {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#a85648' }}>{fmtVenta(costoUnit)}</div>}
