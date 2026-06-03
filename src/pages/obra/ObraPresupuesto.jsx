@@ -4019,6 +4019,12 @@ export default function ObraPresupuesto() {
   const { clientes } = useClientes();
   const { currentUser, usuarios } = useUsuarios();
   const { addTarea } = useTareas();
+  // catalog estaba SIN declarar en este componente y handleApprove lo usaba
+  // (generarTareasObra) → las tareas estándar (rubro/tipo/APU) nunca se generaban.
+  const { catalog } = useCatalog();
+  // Para Pieza 2 (auto-aprobar al recibir dinero): cobrado de la obra.
+  const { movimientos: allMovs, cajas: allCajasGlobal } = useMovimientos();
+  const { dolarVenta } = useDolar();
   const isAdmin = currentUser?.rol === 'Admin';
   // Pestañas ocultas por rol (mapa único compartido — antes estaba duplicado y con drift).
   const rolHiddenTabs = isAdmin ? [] : (ROL_TABS_OCULTAS[currentUser?.rol] ?? ROL_TABS_OCULTAS_DEFAULT);
@@ -4093,18 +4099,16 @@ export default function ObraPresupuesto() {
 
   const estadoColor = { activa: T.ok, 'en-presupuesto': T.ink2, pausada: T.warn, finalizada: T.accent, archivada: T.ink3 };
 
-  const handleApprove = () => {
-    if (!confirm('¿Aprobar y congelar el presupuesto?\n\nUna vez aprobado no podrás modificar rubros ni tareas.\nLos cambios futuros van en Cuenta corriente → Adicionales.')) return;
+  const aprobarPresupuesto = ({ silent = false } = {}) => {
     const hoy = new Date().toISOString().split('T')[0];
-
-    // Generar tareas automáticas desde el catálogo (tareasBase del tipo de
-    // obra + tareasEstandar de cada rubro). Idempotente vía obra.tareasGeneradas.
+    // Generar tareas automáticas: tareasBase del tipo de obra + tareasEstandar
+    // de cada rubro + tareasEstandar de cada APU del presupuesto. Idempotente
+    // vía detalle.tareasGeneradas.
     const detalleConFecha = { ...detalle, fechaAprobacion: hoy };
     const { tareasNuevas, rubrosAplicados, tipoAplicado, apusAplicados } = generarTareasObra({
       obra, detalle: detalleConFecha, catalog, usuarios,
       generadoPor: currentUser?.id,
     });
-
     patch(d => ({
       ...d,
       presupuestoAprobado: true,
@@ -4112,16 +4116,36 @@ export default function ObraPresupuesto() {
       tareasGeneradas: { tipoIdAplicado: tipoAplicado, rubrosAplicados, apusAplicados },
     }));
     tareasNuevas.forEach(payload => addTarea(payload));
-
     if (obra.estado === 'en-presupuesto') updateObra(obra.id, { estado: 'activa' });
     setForcedUnfrozenPresu(false);
     setShowComputo(false);
-    handleTab(2);
-
-    if (tareasNuevas.length > 0) {
-      setTimeout(() => alert(`Presupuesto aprobado.\nSe generaron ${tareasNuevas.length} tarea${tareasNuevas.length === 1 ? '' : 's'} automática${tareasNuevas.length === 1 ? '' : 's'} en /tareas.`), 100);
+    if (!silent) {
+      handleTab(2);
+      if (tareasNuevas.length > 0) {
+        setTimeout(() => alert(`Presupuesto aprobado.\nSe generaron ${tareasNuevas.length} tarea${tareasNuevas.length === 1 ? '' : 's'} automática${tareasNuevas.length === 1 ? '' : 's'} en /tareas.`), 100);
+      }
+    } else {
+      window.dispatchEvent(new CustomEvent('kamak:toast', { detail: { type: 'ok', msg: `Presupuesto aprobado automáticamente al recibir un pago${tareasNuevas.length ? ` · ${tareasNuevas.length} tarea${tareasNuevas.length === 1 ? '' : 's'} generada${tareasNuevas.length === 1 ? '' : 's'}` : ''}.` } }));
     }
   };
+
+  const handleApprove = () => {
+    if (!confirm('¿Aprobar y congelar el presupuesto?\n\nUna vez aprobado no podrás modificar rubros ni tareas.\nLos cambios futuros van en Cuenta corriente → Adicionales.')) return;
+    aprobarPresupuesto({ silent: false });
+  };
+
+  // PIEZA 2 — auto-aprobar al recibir dinero: si la obra ya tiene cobros y el
+  // presupuesto no está aprobado (y tiene rubros), se aprueba solo y dispara las
+  // tareas. Reversible con "Reabrir". Ref para no re-disparar en el mismo montaje.
+  const autoAprobRef = useRef(false);
+  useEffect(() => {
+    if (autoAprobRef.current || detalle.presupuestoAprobado || !(detalle.rubros || []).length) return;
+    const cobrado = cobradoObraUSD(allMovs, allCajasGlobal, obra.id, dolarVenta || 1070);
+    if (cobrado > 0) {
+      autoAprobRef.current = true;
+      aprobarPresupuesto({ silent: true });
+    }
+  }, [allMovs, allCajasGlobal, dolarVenta, detalle.presupuestoAprobado, detalle.rubros, obra.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleReopen = () => {
     if (!confirm('¿Reabrir el presupuesto para editar?\n\nEl plan de pagos también se va a reabrir para que ajustes los montos a los nuevos totales.')) return;
