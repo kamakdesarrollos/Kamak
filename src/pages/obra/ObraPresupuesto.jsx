@@ -622,50 +622,62 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   // del rubro (solo la mano de obra) y en el export figura la nota.
   const toggleMaterialesComprador = (rubroId) => patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, materialesACargoComprador: !r.materialesACargoComprador } : r) }));
 
-  // ── Actualizar precios desde el catálogo (base de datos) ───────────────────
-  // El precio que trae es EXACTAMENTE el mismo que daría re-agregar la tarea
-  // desde el autocompletar: calcTarea() sobre el APU del catálogo que matchea
-  // por nombre (ver allSuggestions). Asi "actualizar" == "borrar y recargar".
-  // Devuelve null si la tarea no está en el catálogo (p.ej. escrita a mano).
-  const precioCatalogoTarea = (t) => {
+  // ── Actualizar desde el catálogo (base de datos) ───────────────────────────
+  // Trae nombre + unidad + código + costos del catálogo, igual que re-agregar la
+  // tarea desde el autocompletar (calcTarea sobre el APU). Matchea PRIMERO por
+  // código (link estable que sobrevive a un cambio de nombre en el catálogo) y,
+  // si no hay código, por nombre. Devuelve null si no está en el catálogo.
+  const datosCatalogoTarea = (t) => {
     const tareas = catalog.tareas || [];
     const norm = s => (s || '').trim().toLowerCase();
-    const ct = tareas.find(c => c.nombre === t.nombre) || tareas.find(c => norm(c.nombre) === norm(t.nombre));
+    let ct = null;
+    if (t.codigo) ct = tareas.find(c => c.codigo && c.codigo === t.codigo);
+    if (!ct) ct = tareas.find(c => c.nombre === t.nombre) || tareas.find(c => norm(c.nombre) === norm(t.nombre));
     if (!ct) return null;
     const { mat, sub, mo } = calcTarea(ct, catalogIndex);
-    return { costoMat: Math.round(mat), costoSub: Math.round(sub + mo) };
+    return {
+      nombre:   ct.nombre,
+      unidad:   ct.unidad || t.unidad || 'u',
+      codigo:   ct.codigo || t.codigo || '',
+      costoMat: Math.round(mat),
+      costoSub: Math.round(sub + mo),
+    };
   };
 
-  // Botón por TAREA: actualiza el costo de esa tarea con el del catálogo.
+  // ¿La tarea ya está igual que el catálogo? (nombre + unidad + costos)
+  const igualAlCatalogo = (t, c) =>
+    c.nombre === t.nombre && c.unidad === (t.unidad || 'u') &&
+    c.costoMat === (t.costoMat || 0) && c.costoSub === (t.costoSub || 0);
+
+  const aplicarCatalogo = (t, c) => ({ ...t, nombre: c.nombre, unidad: c.unidad, codigo: c.codigo, costoMat: c.costoMat, costoSub: c.costoSub });
+
+  // Botón por TAREA: sincroniza esa tarea con el catálogo (nombre incluido).
   const actualizarPrecioTarea = (rubroId, tareaId) => {
     const tarea = detalle.rubros.find(r => r.id === rubroId)?.tareas.find(t => t.id === tareaId);
     if (!tarea) return;
-    const p = precioCatalogoTarea(tarea);
-    if (!p) { window.alert(`"${tarea.nombre}" no está en el catálogo: no hay precio de base para traer.`); return; }
-    if (p.costoMat === (tarea.costoMat || 0) && p.costoSub === (tarea.costoSub || 0)) {
-      window.alert(`"${tarea.nombre}" ya tiene el precio del catálogo.`);
-      return;
-    }
-    patch(d => ({ ...d, rubros: d.rubros.map(r => r.id !== rubroId ? r : { ...r, tareas: r.tareas.map(t => t.id === tareaId ? { ...t, costoMat: p.costoMat, costoSub: p.costoSub } : t) }) }));
+    const c = datosCatalogoTarea(tarea);
+    if (!c) { window.alert(`"${tarea.nombre}" no está en el catálogo: no hay datos de base para traer.`); return; }
+    if (igualAlCatalogo(tarea, c)) { window.alert(`"${tarea.nombre}" ya está igual que el catálogo.`); return; }
+    patch(d => ({ ...d, rubros: d.rubros.map(r => r.id !== rubroId ? r : { ...r, tareas: r.tareas.map(t => t.id === tareaId ? aplicarCatalogo(t, c) : t) }) }));
   };
 
-  // Botón por RUBRO/gremio: actualiza todas las tareas del rubro de una.
+  // Botón por RUBRO/gremio: sincroniza todas las tareas del rubro de una.
   const actualizarPreciosRubro = (rubroId) => {
     const rubro = detalle.rubros.find(r => r.id === rubroId);
     if (!rubro) return;
-    const updates = {}; // tareaId -> { costoMat, costoSub }
+    const updates = {}; // tareaId -> datos del catálogo
     let same = 0, nf = 0;
     (rubro.tareas || []).forEach(t => {
       if (t.tipo === 'seccion') return;
-      const p = precioCatalogoTarea(t);
-      if (!p) { nf++; return; }
-      if (p.costoMat === (t.costoMat || 0) && p.costoSub === (t.costoSub || 0)) { same++; return; }
-      updates[t.id] = p;
+      const c = datosCatalogoTarea(t);
+      if (!c) { nf++; return; }
+      if (igualAlCatalogo(t, c)) { same++; return; }
+      updates[t.id] = c;
     });
     const upd = Object.keys(updates).length;
     if (upd === 0) { window.alert(`Rubro "${rubro.nombre}": no hay nada para actualizar (${same} ya al día, ${nf} sin match en el catálogo).`); return; }
-    if (!window.confirm(`Actualizar ${upd} tarea(s) del rubro "${rubro.nombre}" con el precio del catálogo?\n(${same} ya al día, ${nf} sin match en el catálogo).`)) return;
-    patch(d => ({ ...d, rubros: d.rubros.map(r => r.id !== rubroId ? r : { ...r, tareas: r.tareas.map(t => updates[t.id] ? { ...t, ...updates[t.id] } : t) }) }));
+    if (!window.confirm(`Actualizar ${upd} tarea(s) del rubro "${rubro.nombre}" desde el catálogo (nombre + costos)?\n(${same} ya al día, ${nf} sin match en el catálogo).`)) return;
+    patch(d => ({ ...d, rubros: d.rubros.map(r => r.id !== rubroId ? r : { ...r, tareas: r.tareas.map(t => updates[t.id] ? aplicarCatalogo(t, updates[t.id]) : t) }) }));
   };
 
   const saveTask = () => {
@@ -911,10 +923,10 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                 {puedeEditar && (
                   <span
                     onClick={e => { e.stopPropagation(); actualizarPreciosRubro(rubro.id); }}
-                    title="Actualizar los precios de todas las tareas de este rubro desde el catálogo"
+                    title="Actualizar todas las tareas de este rubro desde el catálogo (nombre + precio)"
                     style={{ fontSize: 9.5, fontFamily: T.fontMono, cursor: 'pointer', padding: '2px 7px', borderRadius: 3, whiteSpace: 'nowrap',
                       background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.25)' }}>
-                    ↻ Precios
+                    ↻ Catálogo
                   </span>
                 )}
                 {puedeEditar && (
@@ -1130,7 +1142,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                           : slot(CW.ventaT))}
 
                         <div className="k-cell" style={{ ...fcol(CW.accion), padding: '0 4px', display: 'flex', gap: 7, alignItems: 'center', justifyContent: 'flex-end' }}>
-                          {puedeEditar && <span title="Actualizar el precio de esta tarea desde el catálogo" style={{ color: T.ink3, fontSize: 13, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); actualizarPrecioTarea(rubro.id, tarea.id); }}>↻</span>}
+                          {puedeEditar && <span title="Actualizar esta tarea desde el catálogo (nombre + precio)" style={{ color: T.ink3, fontSize: 13, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); actualizarPrecioTarea(rubro.id, tarea.id); }}>↻</span>}
                           <span style={{ color: T.accent, fontSize: 11, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); deleteTarea(rubro.id, tarea.id); }}>🗑</span>
                         </div>
                       </div>
