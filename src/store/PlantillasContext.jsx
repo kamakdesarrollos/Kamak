@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData, patchItemInSharedArray, appendItemInSharedArray, removeItemInSharedArray } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 
@@ -531,34 +531,46 @@ export function PlantillasProvider({ children }) {
     return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pendingSaveRef = useRef(null);
+  // Persistencia: cache local + escritura ATÓMICA por ítem (ver mutaciones).
+  // YA NO se guarda el blob entero con debounce: eso pisaba la edición de otra
+  // persona/pestaña (last-write-wins) y los cambios "desaparecían" al recibir su
+  // broadcast. Cada add/update/remove persiste solo SU ítem.
+  const plantillasRef = useRef(plantillas);
   useEffect(() => {
+    plantillasRef.current = plantillas;
     localStorage.setItem('kamak_plantillas_v1', JSON.stringify(plantillas));
-    if (!sbLoaded.current || fromRemote.current) return;
-    pendingSaveRef.current = plantillas;
-    const t = setTimeout(() => {
-      saveSharedData('plantillas', plantillas);
-      pendingSaveRef.current = null;
-    }, 800);
-    return () => clearTimeout(t);
   }, [plantillas]);
 
-  useEffect(() => () => {
-    if (pendingSaveRef.current) saveSharedData('plantillas', pendingSaveRef.current, { silent: true });
+  // Mutaciones: estado local optimista + escritura atómica por ítem en Supabase.
+  const add = useCallback((plt) => {
+    const full = { ...plt, id: newId(), updatedAt: today(), usosCount: 0 };
+    setPlantillas(p => [...p, full]);
+    appendItemInSharedArray('plantillas', full);
+    return full.id;
   }, []);
-
-  const add = useCallback((plt) => setPlantillas(p => [...p, { ...plt, id: newId(), updatedAt: today(), usosCount: 0 }]), []);
-  const update = useCallback((id, changes) => setPlantillas(p => p.map(t => t.id === id ? { ...t, ...changes, updatedAt: today() } : t)), []);
-  const remove = useCallback((id) => setPlantillas(p => p.filter(t => t.id !== id)), []);
+  const update = useCallback((id, changes) => {
+    const patch = { ...changes, updatedAt: today() };
+    setPlantillas(p => p.map(t => t.id === id ? { ...t, ...patch } : t));
+    patchItemInSharedArray('plantillas', id, patch);
+  }, []);
+  const remove = useCallback((id) => {
+    setPlantillas(p => p.filter(t => t.id !== id));
+    removeItemInSharedArray('plantillas', id);
+  }, []);
   const duplicate = useCallback((id) => {
-    setPlantillas(p => {
-      const src = p.find(x => x.id === id);
-      if (!src) return p;
-      const copy = JSON.parse(JSON.stringify(src));
-      return [...p, { ...copy, id: newId(), nombre: src.nombre + ' (copia)', updatedAt: today(), usosCount: 0 }];
-    });
+    const src = plantillasRef.current.find(x => x.id === id);
+    if (!src) return;
+    const copy = { ...JSON.parse(JSON.stringify(src)), id: newId(), nombre: src.nombre + ' (copia)', updatedAt: today(), usosCount: 0 };
+    setPlantillas(p => [...p, copy]);
+    appendItemInSharedArray('plantillas', copy);
   }, []);
-  const incrementUso = useCallback((id) => setPlantillas(p => p.map(t => t.id === id ? { ...t, usosCount: (t.usosCount||0) + 1 } : t)), []);
+  const incrementUso = useCallback((id) => {
+    const cur = plantillasRef.current.find(t => t.id === id);
+    if (!cur) return;
+    const usosCount = (cur.usosCount || 0) + 1;
+    setPlantillas(p => p.map(t => t.id === id ? { ...t, usosCount } : t));
+    patchItemInSharedArray('plantillas', id, { usosCount });
+  }, []);
 
   const value = useMemo(() => ({ plantillas, add, update, remove, duplicate, incrementUso }), [plantillas, add, update, remove, duplicate, incrementUso]);
 

@@ -101,24 +101,45 @@ export async function loadSharedData(key) {
   return res?.data?.data ?? null;
 }
 
-// Edita (merge) UN ítem por id dentro de una key cuyo data es un array, de forma
-// ATÓMICA (RPC server-side patch_item_in_shared_array): NO reescribe el array
-// entero, así no pisa ítems que el bot u otra pestaña agregaron en paralelo.
-// Fallback a read-modify-write si el RPC no está disponible.
-export async function patchItemInSharedArray(key, id, patch) {
+// ── Escritura ATÓMICA por ítem para shared_data cuyo `data` es un ARRAY ──────
+// (plantillas, alertas, whatsapp_pending). Mismo problema que el catálogo: el
+// blob entero pisa ediciones concurrentes (last-write-wins). Estas funciones
+// modifican SOLO el ítem por id, vía las RPC de supabase/migrations/0003. Si la
+// RPC no está desplegada, caen a read-modify-write (leen el array FRESCO, aplican
+// el cambio puntual y reescriben — ya no pisan con la copia vieja en memoria).
+// Cola serial para preservar el orden (crear antes que editar/borrar el mismo id).
+const _arrayQueue = createSerialQueue();
+
+async function _arrayAtomic(key, rpc, fallbackMutate) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return false;
-    const { error } = await supabase.rpc('patch_item_in_shared_array', { p_key: key, p_id: id, p_patch: patch });
+    const { error } = await rpc();
     if (error) throw error;
     broadcastChange(key);
     return true;
   } catch (e) {
-    console.error('[patchItemInSharedArray] fallback RMW:', key, e?.message || e);
+    console.warn('[array atómico] RPC no disponible, fallback RMW:', key, e?.message || e);
     const data = await loadSharedData(key);
-    const arr = Array.isArray(data) ? data : [];
-    return saveSharedData(key, arr.map(x => x.id === id ? { ...x, ...patch } : x));
+    if (data === undefined) return false; // error de red: NO pisar con []
+    return saveSharedData(key, fallbackMutate(Array.isArray(data) ? data : []));
   }
+}
+
+export function patchItemInSharedArray(key, id, patch) {
+  return _arrayQueue(() => _arrayAtomic(key,
+    () => supabase.rpc('patch_item_in_shared_array', { p_key: key, p_id: id, p_patch: patch }),
+    (arr) => patchItem(arr, id, patch)));
+}
+export function appendItemInSharedArray(key, item) {
+  return _arrayQueue(() => _arrayAtomic(key,
+    () => supabase.rpc('append_item_in_shared_array', { p_key: key, p_item: item }),
+    (arr) => appendItem(arr, item)));
+}
+export function removeItemInSharedArray(key, id) {
+  return _arrayQueue(() => _arrayAtomic(key,
+    () => supabase.rpc('remove_item_in_shared_array', { p_key: key, p_id: id }),
+    (arr) => removeItem(arr, id)));
 }
 
 // ── Escritura ATÓMICA por ítem para el catálogo (fix CAT-003) ──────────────
