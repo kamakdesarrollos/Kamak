@@ -63,7 +63,7 @@ const fmtD = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
 // Estilos del editor inline en celdas del presupuesto (constantes, no varian
 // por celda ni por render). Antes se creaban dentro del .map() por cada tarea.
 const INLINE_CELL_ST  = { fontFamily: T.fontMono, fontSize: 12, color: T.ink2, cursor: 'text', textDecoration: 'underline dotted', textDecorationColor: T.faint2 };
-const INLINE_INPUT_ST = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, border: `1.5px solid ${T.accent}`, borderRadius: 3, padding: '1px 4px', outline: 'none', background: 'white' };
+const INLINE_INPUT_ST = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, border: `1.5px solid ${T.accent}`, borderRadius: 3, padding: '2px 5px', outline: 'none', background: 'white', boxShadow: `0 0 0 3px ${T.accentSoft}` };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 0: RESUMEN
@@ -812,7 +812,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                 onClick={() => { toggleRubro(rubro.id); setSelRubroId(rubro.id); setSelTask(null); }}>
                 <span style={{ color: 'rgba(255,255,255,0.4)', cursor: 'grab', userSelect: 'none' }}>⋮⋮</span>
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>{isRubroAbierto(rubro.id) ? '▾' : '▸'}</span>
-                <div className="k-h" style={{ fontSize: 15, color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>{rubro.nombre}</div>
+                <div className="k-h" style={{ fontSize: 15, color: '#fff', fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>{rubro.nombre}</div>
                 <span style={{ fontSize: 10, fontFamily: T.fontMono, color: '#5fcf8a', whiteSpace: 'nowrap' }}>mat {rubro.margenMat}% · MO {rubro.margenMO}%</span>
                 {rubro.proveedor && (() => {
                   const prov = provListPresu.find(p => p.nombre === rubro.proveedor);
@@ -842,7 +842,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
 
               {isRubroAbierto(rubro.id) && (
                 <>
-                  <div className="k-tr k-th" style={{ background: T.paper, borderBottom: `1px dashed ${T.faint2}`, whiteSpace: 'nowrap' }}>
+                  <div className="k-tr k-th" style={{ background: '#e0d9c6', borderBottom: `1.5px solid ${T.faint2}`, whiteSpace: 'nowrap' }}>
                     <div className="k-cell" style={{ flex: 3, whiteSpace: 'nowrap' }}>Tarea</div>
                     <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', fontSize: 9, whiteSpace: 'nowrap' }}>{puedeCargarAvance ? 'CANTIDAD ✏' : 'CANTIDAD'}</div>
                     <div className="k-cell" style={{ flex: 0.4, whiteSpace: 'nowrap' }}>U</div>
@@ -944,7 +944,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                         onDragOver={e => onTaskDragOver(e, tarea.id)}
                         onDrop={e => onTaskDrop(e, rubro.id, tarea.id)}
                         onDragEnd={onTaskDragEnd}
-                        style={{ alignItems: 'center', background: isSelected ? T.accentSoft : (i % 2 ? 'rgba(45,45,45,0.045)' : 'transparent'), cursor: 'pointer', borderTop: dragOverTaskId === tarea.id ? `2px solid ${T.accent}` : '2px solid transparent', transition: 'border-top 0.1s' }}
+                        style={{ alignItems: 'center', background: isSelected ? T.accentSoft : (i % 2 ? T.faint : 'transparent'), cursor: 'pointer', borderTop: dragOverTaskId === tarea.id ? `2px solid ${T.accent}` : '2px solid transparent', transition: 'border-top 0.1s, background 0.12s' }}
                         onClick={() => { setSelTask(tarea); setSelRubroId(rubro.id); setEditTask(null); }}>
                         <div className="k-cell" style={{ flex: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ color: T.ink3, cursor: 'grab', userSelect: 'none', fontSize: 10 }}>⋮⋮</span>
@@ -1030,6 +1030,13 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                       </div>
                     );
                   })}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '7px 14px', background: T.faint, borderTop: `1.5px solid ${T.faint2}`, fontFamily: T.fontMono, fontSize: 11 }}>
+                    <span style={{ color: T.ink3, fontSize: 9.5, letterSpacing: 0.5, marginRight: 'auto', textTransform: 'uppercase' }}>Total {rubro.nombre}</span>
+                    {verCostos   && <span style={{ color: T.ink2 }}>costo <b style={{ color: T.ink }}>{fmtVenta(rubro.costo)}</b></span>}
+                    <span style={{ color: T.ink2 }}>venta <b style={{ color: T.ok }}>{fmtVenta(rubro.venta)}</b></span>
+                    {verMargenes && <span style={{ color: rubro.margen > 0 ? T.ok : '#a85648' }}><b>{rubro.margen > 0 ? '+' : ''}{rubro.margen}%</b></span>}
+                  </div>
 
                   {addingTask === rubro.id ? (
                     <div style={{ padding: '10px 12px', background: T.accentSoft, borderTop: `1px solid ${T.accent}` }}>
