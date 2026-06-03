@@ -4100,7 +4100,7 @@ export default function ObraPresupuesto() {
     // Generar tareas automáticas desde el catálogo (tareasBase del tipo de
     // obra + tareasEstandar de cada rubro). Idempotente vía obra.tareasGeneradas.
     const detalleConFecha = { ...detalle, fechaAprobacion: hoy };
-    const { tareasNuevas, rubrosAplicados, tipoAplicado } = generarTareasObra({
+    const { tareasNuevas, rubrosAplicados, tipoAplicado, apusAplicados } = generarTareasObra({
       obra, detalle: detalleConFecha, catalog, usuarios,
       generadoPor: currentUser?.id,
     });
@@ -4109,7 +4109,7 @@ export default function ObraPresupuesto() {
       ...d,
       presupuestoAprobado: true,
       fechaAprobacion: hoy,
-      tareasGeneradas: { tipoIdAplicado: tipoAplicado, rubrosAplicados },
+      tareasGeneradas: { tipoIdAplicado: tipoAplicado, rubrosAplicados, apusAplicados },
     }));
     tareasNuevas.forEach(payload => addTarea(payload));
 

@@ -10,12 +10,13 @@ import { groupByKey } from '../lib/catalogGroup';
 import { syncFormItemNames } from '../lib/catalogCascade';
 import { searchNorm } from '../lib/searchNorm';
 import TareasEstandarEditor from './modales/TareasEstandarEditor';
-import { useUsuarios } from '../store/UsuariosContext';
+import { useUsuarios, ROLES } from '../store/UsuariosContext';
 import { useIndices } from '../store/IndicesContext';
 import { calcularPreviewCAC } from '../lib/cacUpdate';
 import { getIndiceTipo } from '../lib/indices';
 
 const newId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+const ROLES_LIST = Object.keys(ROLES || {});
 const fmtPrecio = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-AR')}`;
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 const today = () => new Date().toISOString().split('T')[0];
@@ -956,13 +957,14 @@ function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMateria
 }
 
 // ── Tab: Rubros / Gremios ─────────────────────────────────────────────────────
-function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateMO }) {
+function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateMO, onUpdateTarea, roles }) {
   const { rubros, tareas, mo, subcontratos } = catalog;
   const subs = subcontratos || [];
   const [form, setForm] = useState(null);
   const [selId, setSelId] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [moEdit, setMoEdit] = useState(null);
+  const [expandedApuId, setExpandedApuId] = useState(null); // APU cuyo editor de tareas estándar está abierto
 
   const activeRubro = rubros.find(r => r.id === activeId) || null;
   const activeAPUs  = activeRubro ? tareas.filter(t => t.rubroNombre === activeRubro.nombre) : [];
@@ -1047,18 +1049,39 @@ function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateM
             {activeAPUs.length === 0 && <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic' }}>Sin tareas APU — creá una desde la pestaña "Tareas (APU)"</div>}
             {activeAPUs.map(t => {
               const c = calcTarea(t, catalogIndex);
+              const nTE = (t.tareasEstandar || []).length;
+              const open = expandedApuId === t.id;
               return (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, marginBottom: 5, gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{t.nombre}</div>
-                    {t.codigo && <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{t.codigo}</div>}
+                <div key={t.id} style={{ background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, marginBottom: 5, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>{t.nombre}</div>
+                      {t.codigo && <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{t.codigo}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11, fontFamily: T.fontMono, alignItems: 'center' }}>
+                      <span style={{ color: T.ink2 }}>Mat: $ {fmtN(c.mat)}</span>
+                      <span style={{ color: T.ink2 }}>M.O: $ {fmtN(c.sub)}</span>
+                      <span style={{ fontWeight: 800, color: T.accent }}>$ {fmtN(c.total)}</span>
+                      <span style={{ fontFamily: T.font, fontSize: 10, color: T.ink3 }}>{t.unidad}</span>
+                    </div>
+                    <span onClick={() => setExpandedApuId(open ? null : t.id)}
+                      title="Tareas a generar al aprobar un presupuesto con este APU"
+                      style={{ cursor: 'pointer', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, whiteSpace: 'nowrap', background: nTE ? T.accentSoft : T.faint, color: nTE ? T.accent : T.ink3 }}>
+                      ◆ {nTE || ''} tarea{nTE === 1 ? '' : 's'} {open ? '▾' : '▸'}
+                    </span>
                   </div>
-                  <div style={{ display: 'flex', gap: 12, fontSize: 11, fontFamily: T.fontMono, alignItems: 'center' }}>
-                    <span style={{ color: T.ink2 }}>Mat: $ {fmtN(c.mat)}</span>
-                    <span style={{ color: T.ink2 }}>M.O: $ {fmtN(c.sub)}</span>
-                    <span style={{ fontWeight: 800, color: T.accent }}>$ {fmtN(c.total)}</span>
-                    <span style={{ fontFamily: T.font, fontSize: 10, color: T.ink3 }}>{t.unidad}</span>
-                  </div>
+                  {open && (
+                    <div style={{ borderTop: `1px solid ${T.faint2}`, padding: '8px 12px', background: '#fbf9f1' }}>
+                      <div style={{ fontSize: 9, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                        Tareas a generar cuando este APU esté en un presupuesto aprobado
+                      </div>
+                      <TareasEstandarEditor
+                        value={t.tareasEstandar || []}
+                        onChange={(next) => onUpdateTarea && onUpdateTarea(t.id, { tareasEstandar: next })}
+                        roles={roles}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1383,6 +1406,8 @@ export default function Catalogos() {
             onUpdate={(id, ch) => update('rubros', id, ch)}
             onDelete={id => remove('rubros', id)}
             onUpdateMO={(id, ch) => update('mo', id, ch)}
+            onUpdateTarea={(id, ch) => update('tareas', id, ch)}
+            roles={ROLES_LIST}
           />
         )}
         {tab === 5 && (

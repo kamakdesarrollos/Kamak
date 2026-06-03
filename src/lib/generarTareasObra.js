@@ -111,7 +111,34 @@ export function generarTareasObra({
     rubrosAplicados.push(cr.id);
   }
 
-  return { tareasNuevas: payloads, rubrosAplicados, tipoAplicado };
+  // (3) Tareas ESTÁNDAR por cada APU presente en el presupuesto.
+  // Las filas del presupuesto (detalle.rubros[].tareas[]) referencian los APU
+  // del catálogo por nombre. Por cada APU presente (salteando filas de sección),
+  // generamos sus tareasEstandar. Idempotente vía marca.apusAplicados (un APU
+  // dispara sus tareas una sola vez aunque aparezca repetido o se re-sincronice).
+  const yaApus = new Set(marca.apusAplicados || []);
+  const apusAplicados = [...(marca.apusAplicados || [])];
+  const catTareasByName = new Map();
+  for (const ct of (catalog.tareas || [])) {
+    if ((ct.tareasEstandar || []).length > 0) catTareasByName.set(normalizarRol(ct.nombre), ct);
+  }
+  for (const obraRubro of (detalle.rubros || [])) {
+    for (const bt of (obraRubro.tareas || [])) {
+      if (bt.tipo === 'seccion') continue;
+      const ct = catTareasByName.get(normalizarRol(bt.nombre));
+      if (!ct || yaApus.has(ct.id)) continue;
+      yaApus.add(ct.id);
+      apusAplicados.push(ct.id);
+      for (const te of (ct.tareasEstandar || [])) {
+        payloads.push(tareaEstandarToPayload(te, {
+          obraId: obra.id, generadoPor, usuarios, fechaBase,
+          origen: 'auto-apu', origenRef: ct.id,
+        }));
+      }
+    }
+  }
+
+  return { tareasNuevas: payloads, rubrosAplicados, tipoAplicado, apusAplicados };
 }
 
 // Helper de id (re-exportado por conveniencia para tests, etc.)
