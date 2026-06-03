@@ -65,6 +65,13 @@ const fmtD = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
 const INLINE_CELL_ST  = { fontFamily: T.fontMono, fontSize: 12, color: T.ink2, cursor: 'text', textDecoration: 'underline dotted', textDecorationColor: T.faint2 };
 const INLINE_INPUT_ST = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, border: `1.5px solid ${T.accent}`, borderRadius: 3, padding: '2px 5px', outline: 'none', background: 'white', boxShadow: `0 0 0 3px ${T.accentSoft}` };
 
+// Anchos FIJOS de columna del presupuesto (px). Solo "Tarea" crece; las
+// numericas no crecen (grow 0) para que prender/apagar un filtro o "sacar
+// mat" NO reescale ni desplace las demas. Se permite encoger (shrink 1)
+// para no recortar la columna de venta en pantallas chicas. flex: '0 1 Wpx'.
+const CW = { cantidad: 88, u: 44, mat: 96, sub: 96, costoU: 96, costoT: 106, margen: 74, ventaU: 96, ventaT: 108, accion: 40 };
+const fcol = w => ({ flex: `0 1 ${w}px` });
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 0: RESUMEN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -845,17 +852,17 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
               {isRubroAbierto(rubro.id) && (
                 <>
                   <div className="k-tr k-th" style={{ background: '#e0d9c6', borderBottom: `1.5px solid ${T.faint2}`, whiteSpace: 'nowrap' }}>
-                    <div className="k-cell" style={{ flex: 3, whiteSpace: 'nowrap' }}>Tarea</div>
-                    <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', fontSize: 9, whiteSpace: 'nowrap' }}>{puedeCargarAvance ? 'CANTIDAD ✏' : 'CANTIDAD'}</div>
-                    <div className="k-cell" style={{ flex: 0.4, whiteSpace: 'nowrap' }}>U</div>
-                    {verCostos && !rubro.materialesACargoComprador && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Mat ✏` : `${viewUSD?'U$S':'$'} Mat`}</div>}
-                    {verCostos && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Sub ✏` : `${viewUSD?'U$S':'$'} Sub`}</div>}
-                    {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Costo u</div>}
-                    {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Costo T</div>}
-                    {cols.margenL   && <div className="k-cell" style={{ flex: 0.9, textAlign: 'right', color: T.ok, whiteSpace: 'nowrap' }}>Margen % {puedeEditar ? '✏' : ''}</div>}
-                    {cols.ventaUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Venta u</div>}
-                    {cols.ventaTotal && <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Venta T</div>}
-                    <div className="k-cell" style={{ flex: 0.4 }}></div>
+                    <div className="k-cell" style={{ flex: '1 1 150px', minWidth: 150, whiteSpace: 'nowrap' }}>Tarea</div>
+                    <div className="k-cell" style={{ ...fcol(CW.cantidad), textAlign: 'right', fontSize: 9, whiteSpace: 'nowrap' }}>{puedeCargarAvance ? 'CANTIDAD ✏' : 'CANTIDAD'}</div>
+                    <div className="k-cell" style={{ ...fcol(CW.u), whiteSpace: 'nowrap' }}>U</div>
+                    {verCostos && !rubro.materialesACargoComprador && <div className="k-cell" style={{ ...fcol(CW.mat), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Mat ✏` : `${viewUSD?'U$S':'$'} Mat`}</div>}
+                    {verCostos && <div className="k-cell" style={{ ...fcol(CW.sub), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{puedeEditar ? `${viewUSD?'U$S':'$'} Sub ✏` : `${viewUSD?'U$S':'$'} Sub`}</div>}
+                    {cols.costoUnit  && <div className="k-cell" style={{ ...fcol(CW.costoU), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Costo u</div>}
+                    {cols.costoTotal && <div className="k-cell" style={{ ...fcol(CW.costoT), textAlign: 'right', color: '#a85648', whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Costo T</div>}
+                    {cols.margenL   && <div className="k-cell" style={{ ...fcol(CW.margen), textAlign: 'right', color: T.ok, whiteSpace: 'nowrap' }}>Margen % {puedeEditar ? '✏' : ''}</div>}
+                    {cols.ventaUnit  && <div className="k-cell" style={{ ...fcol(CW.ventaU), textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Venta u</div>}
+                    {cols.ventaTotal && <div className="k-cell" style={{ ...fcol(CW.ventaT), textAlign: 'right', color: T.accent, whiteSpace: 'nowrap' }}>{viewUSD?'U$S':'$'} Venta T</div>}
+                    <div className="k-cell" style={{ ...fcol(CW.accion) }}></div>
                   </div>
 
                   {buildVisibleTareas(rubro.tareas, collapsedSections).map((tarea, i) => {
@@ -872,8 +879,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                     // un anti-patron (50 funciones nuevas por render con 50
                     // tareas); ahora las constantes de estilo son globales y
                     // los handlers vienen del scope superior estables.
-                    const InlineNum = ({ field, value, flex, fmt, color }) => (
-                      <div className="k-cell" style={{ flex, textAlign: 'right', padding: '2px 6px', cursor: puedeEditar ? 'text' : 'inherit' }}
+                    const InlineNum = ({ field, value, w, fmt, color }) => (
+                      <div className="k-cell" style={{ ...fcol(w), textAlign: 'right', padding: '2px 6px', cursor: puedeEditar ? 'text' : 'inherit' }}
                         onClick={e => {
                           if (!puedeEditar) return; // bloqueado si presupuesto aprobado
                           e.stopPropagation();
@@ -948,7 +955,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                         onDragEnd={onTaskDragEnd}
                         style={{ alignItems: 'center', background: isSelected ? T.accentSoft : (i % 2 ? T.faint : 'transparent'), cursor: 'pointer', borderTop: dragOverTaskId === tarea.id ? `2px solid ${T.accent}` : '2px solid transparent', transition: 'border-top 0.1s, background 0.12s' }}
                         onClick={() => { setSelTask(tarea); setSelRubroId(rubro.id); setEditTask(null); }}>
-                        <div className="k-cell" style={{ flex: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div className="k-cell" style={{ flex: '1 1 150px', minWidth: 150, display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ color: T.ink3, cursor: 'grab', userSelect: 'none', fontSize: 10 }}>⋮⋮</span>
                           {ie?.field === 'nombre' ? (
                             <input
@@ -987,16 +994,16 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                             </span>
                           )}
                         </div>
-                        {InlineNum({ field: 'cantidad', value: tarea.cantidad, flex: 1.1 })}
-                        <div className="k-cell" style={{ flex: 0.4 }}>{tarea.unidad}</div>
-                        {!rubro.materialesACargoComprador && InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
-                        {InlineNum({ field: 'costoSub', value: viewUSD ? Math.round((tarea.costoSub || 0) / tc) : (tarea.costoSub || 0), flex: 1, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
+                        {InlineNum({ field: 'cantidad', value: tarea.cantidad, w: CW.cantidad })}
+                        <div className="k-cell" style={{ ...fcol(CW.u) }}>{tarea.unidad}</div>
+                        {!rubro.materialesACargoComprador && InlineNum({ field: 'costoMat', value: viewUSD ? Math.round((tarea.costoMat || 0) / tc) : (tarea.costoMat || 0), w: CW.mat, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
+                        {InlineNum({ field: 'costoSub', value: viewUSD ? Math.round((tarea.costoSub || 0) / tc) : (tarea.costoSub || 0), w: CW.sub, fmt: v => fmtVenta(viewUSD ? v * tc : v), color: '#a85648' })}
 
-                        {cols.costoUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#a85648' }}>{fmtVenta(costoUnit)}</div>}
-                        {cols.costoTotal && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#a85648' }}>{fmtVenta(costoTotalRow)}</div>}
+                        {cols.costoUnit  && <div className="k-cell" style={{ ...fcol(CW.costoU), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: '#a85648' }}>{fmtVenta(costoUnit)}</div>}
+                        {cols.costoTotal && <div className="k-cell" style={{ ...fcol(CW.costoT), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#a85648' }}>{fmtVenta(costoTotalRow)}</div>}
 
                         {cols.margenL && (
-                          <div className="k-cell" style={{ flex: 0.9, textAlign: 'right', padding: '2px 6px' }}
+                          <div className="k-cell" style={{ ...fcol(CW.margen), textAlign: 'right', padding: '2px 6px' }}
                             onClick={e => { e.stopPropagation(); setInlineEdit({ taskId: tarea.id, field: 'margenLinea', value: tarea.margenLinea != null ? String(tarea.margenLinea) : '' }); }}>
                             {ie?.field === 'margenLinea'
                               ? <input autoFocus type="number" min="0" step="any" style={{ ...INLINE_INPUT_ST, width: 56 }} value={ie.value}
@@ -1023,10 +1030,10 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                           </div>
                         )}
 
-                        {cols.ventaUnit  && <div className="k-cell" style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: T.accent }}>{fmtVenta(ventaUnitRow)}</div>}
-                        {cols.ventaTotal && <div className="k-cell" style={{ flex: 1.1, textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: T.accent }}>{fmtVenta(ventaTotalRow)}</div>}
+                        {cols.ventaUnit  && <div className="k-cell" style={{ ...fcol(CW.ventaU), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, color: T.accent }}>{fmtVenta(ventaUnitRow)}</div>}
+                        {cols.ventaTotal && <div className="k-cell" style={{ ...fcol(CW.ventaT), textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: T.accent }}>{fmtVenta(ventaTotalRow)}</div>}
 
-                        <div className="k-cell" style={{ flex: 0.4, padding: '0 4px' }}>
+                        <div className="k-cell" style={{ ...fcol(CW.accion), padding: '0 4px' }}>
                           <span style={{ color: T.accent, fontSize: 11, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); deleteTarea(rubro.id, tarea.id); }}>🗑</span>
                         </div>
                       </div>
