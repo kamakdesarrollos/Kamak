@@ -11,7 +11,10 @@ import { Btn } from '../../components/ui';
 // Cada tarea: { id, titulo, descripcion, rol, diasOffset, prioridad, checklist }
 // El callback `onChange(nextArray)` se dispara con la lista actualizada.
 
-const ROLES_DEFAULT = ['Admin', 'Comprador', 'Director de obra', 'Capataz', 'Administración'];
+// Roles REALES del sistema (deben coincidir con ROLES de UsuariosContext).
+// Antes había roles fantasma ('Comprador'/'Director de obra'/'Capataz') que no
+// existen → las tareas caían siempre en Admin (resolverUserPorRol no los encontraba).
+const ROLES_DEFAULT = ['Admin', 'Administración', 'Jefe de obra', 'Logística y compras', 'Contador externo'];
 const PRIORIDADES  = [['baja','Baja'], ['media','Media'], ['alta','Alta']];
 
 const newId = () => `te-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;

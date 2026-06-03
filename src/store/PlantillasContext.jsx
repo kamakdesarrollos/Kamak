@@ -506,13 +506,20 @@ export function PlantillasProvider({ children }) {
     loadSharedData('plantillas').then(data => {
       if (cancelled) return;
       if (needsReseed) {
-        // Versión bumpeada: ignoramos el remote viejo y forzamos SEED nuevo,
-        // sobreescribiéndolo en Supabase para que se propague a otros tabs.
+        // Versión del SEED bumpeada: actualizamos las plantillas del SEED PERO
+        // sin destruir las creadas por el usuario (MERGE, no reemplazo). Antes
+        // esto sobreescribía TODO con el SEED → borraba las plantillas propias
+        // (ej. "Puma Shop Express"). Conservamos las creadas por el usuario
+        // (id con timestamp de newId) y descartamos basura de seeds viejos.
+        const seedIds = new Set(SEED.map(p => p.id));
+        const userPlts = (Array.isArray(data) ? data : [])
+          .filter(p => p && !seedIds.has(p.id) && /^plt-\d{10,}/.test(p.id || ''));
+        const merged = [...SEED, ...userPlts];
         localStorage.setItem('kamak_plantillas_seed_v', PLANTILLAS_SEED_VERSION);
-        localStorage.setItem('kamak_plantillas_v1', JSON.stringify(SEED));
+        localStorage.setItem('kamak_plantillas_v1', JSON.stringify(merged));
         fromRemote.current = true;
-        setPlantillas(SEED);
-        saveSharedData('plantillas', SEED);
+        setPlantillas(merged);
+        saveSharedData('plantillas', merged);
         setTimeout(() => { fromRemote.current = false; }, 0);
       } else if (data) {
         fromRemote.current = true;

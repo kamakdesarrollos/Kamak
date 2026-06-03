@@ -1113,6 +1113,7 @@ function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateM
             </div>
             <TareasEstandarEditor
               value={activeRubro.tareasEstandar || []}
+              roles={ROLES_LIST}
               onChange={(next) => onUpdate(activeRubro.id, { tareasEstandar: next })}
             />
           </div>
@@ -1218,6 +1219,7 @@ function TabTiposObra({ tiposObra, onAdd, onUpdate, onDelete }) {
             </div>
             <TareasEstandarEditor
               value={activeTipo.tareasBase || []}
+              roles={ROLES_LIST}
               onChange={(next) => onUpdate(activeTipo.id, { tareasBase: next })}
             />
           </div>

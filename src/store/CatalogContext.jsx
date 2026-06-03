@@ -114,6 +114,10 @@ export function CatalogProvider({ children }) {
   const { markReady } = useAppLoading();
   useEffect(() => { catalogRef.current = catalog; }, [catalog]);
   const markUserEdit = () => { if (!sbLoaded.current) userEditedBeforeFirstLoad.current = true; };
+  // Marca un guardado local reciente para que el guard de onRemoteChange (abajo)
+  // ignore el broadcast de los próximos 3s y NO pise el cambio recién hecho.
+  // (Sin esto el guard estaba inerte: lastLocalSaveAt nunca se actualizaba.)
+  const touch = () => { lastLocalSaveAt.current = Date.now(); };
 
   const pendingSaveRef = useRef(null);
   useEffect(() => {
@@ -187,9 +191,9 @@ export function CatalogProvider({ children }) {
   // (NO upsert del blob entero). Con el blob entero, dos personas editando a la
   // vez se pisaban (last-write-wins, bug CAT-003: "edito una APU y no se guarda").
   // Ahora cada edición patchea SOLO ese ítem server-side → no se pisan.
-  const add    = useCallback((coll, item)        => { markUserEdit(); const full = { id: newId(), ...item, updatedAt: today() }; setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), full] })); appendCatalogItem(coll, full); }, []);
+  const add    = useCallback((coll, item)        => { markUserEdit(); touch(); const full = { id: newId(), ...item, updatedAt: today() }; setCatalog(c => ({ ...c, [coll]: [...(c[coll]||[]), full] })); appendCatalogItem(coll, full); }, []);
   const update = useCallback((coll, id, changes) => {
-    markUserEdit();
+    markUserEdit(); touch();
     const patch = { ...changes, updatedAt: today() };
     // Cascada de rename: las recetas de las APU referencian materiales/MO/grales
     // POR NOMBRE. Si renombrás uno acá sin propagarlo, esas APU quedan "SIN
@@ -208,7 +212,7 @@ export function CatalogProvider({ children }) {
     patchCatalogItem(coll, id, patch);
     if (cascada) for (const cb of cascada.cambios) patchCatalogItem('tareas', cb.id, { [coll]: cb[coll] });
   }, []);
-  const remove = useCallback((coll, id)          => { markUserEdit(); setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) })); removeCatalogItem(coll, id); }, []);
+  const remove = useCallback((coll, id)          => { markUserEdit(); touch(); setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) })); removeCatalogItem(coll, id); }, []);
   const bulkSeed = useCallback((additions) => {
     setCatalog(prev => {
       const next = {

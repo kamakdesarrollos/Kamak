@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { startAutoReload } from './lib/autoReload'
 
 // ── Manejo de chunk loading failures ─────────────────────────────────────
 // Cuando hay un deploy nuevo, los chunks JS cambian de hash. Si el usuario
@@ -52,3 +53,7 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 )
+
+// Detecta deploys nuevos y actualiza las pestañas viejas solas (al volver a
+// la pestaña), para que no queden corriendo código viejo que pise datos.
+startAutoReload();

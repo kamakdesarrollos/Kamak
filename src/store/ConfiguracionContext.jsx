@@ -54,6 +54,8 @@ export function ConfiguracionProvider({ children }) {
   const [config, setConfig] = useState(load);
   const sbLoaded   = useRef(false);
   const fromRemote = useRef(false);
+  const pendingSaveRef = useRef(null);
+  const lastLocalSaveAt = useRef(0); // guard: ignora broadcasts < 3s tras un guardado local
   const { markReady } = useAppLoading();
 
   useEffect(() => {
@@ -70,6 +72,10 @@ export function ConfiguracionProvider({ children }) {
     });
 
     const unsub = onRemoteChange('config', () => {
+      // No pisar un cambio recién guardado: el broadcast puede traer la versión
+      // del server sin el cambio local todavía ("aparece y desaparece").
+      if (pendingSaveRef.current) return;
+      if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData('config').then(d => {
         if (cancelled || !d) return;
         fromRemote.current = true;
@@ -81,12 +87,12 @@ export function ConfiguracionProvider({ children }) {
     return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pendingSaveRef = useRef(null);
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
     pendingSaveRef.current = config;
     const t = setTimeout(() => {
       saveSharedData('config', config);
+      lastLocalSaveAt.current = Date.now();
       pendingSaveRef.current = null;
     }, 800);
     return () => clearTimeout(t);

@@ -4139,13 +4139,16 @@ export default function ObraPresupuesto() {
   // tareas. Reversible con "Reabrir". Ref para no re-disparar en el mismo montaje.
   const autoAprobRef = useRef(false);
   useEffect(() => {
-    if (autoAprobRef.current || detalle.presupuestoAprobado || !(detalle.rubros || []).length) return;
+    // Esperamos a que el catálogo esté cargado: si auto-aprobamos con el catálogo
+    // vacío, generarTareasObra no genera NINGUNA tarea y autoAprobRef bloquea el
+    // reintento → el cobro quedaría sin disparar tareas para siempre.
+    if (autoAprobRef.current || detalle.presupuestoAprobado || !(detalle.rubros || []).length || !(catalog?.tareas || []).length) return;
     const cobrado = cobradoObraUSD(allMovs, allCajasGlobal, obra.id, dolarVenta || 1070);
     if (cobrado > 0) {
       autoAprobRef.current = true;
       aprobarPresupuesto({ silent: true });
     }
-  }, [allMovs, allCajasGlobal, dolarVenta, detalle.presupuestoAprobado, detalle.rubros, obra.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allMovs, allCajasGlobal, dolarVenta, detalle.presupuestoAprobado, detalle.rubros, obra.id, catalog]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleReopen = () => {
     if (!confirm('¿Reabrir el presupuesto para editar?\n\nEl plan de pagos también se va a reabrir para que ajustes los montos a los nuevos totales.')) return;
