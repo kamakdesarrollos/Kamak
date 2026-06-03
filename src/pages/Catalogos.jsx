@@ -718,7 +718,7 @@ function ImportarAPUModal({ rubros, onImport, onClose }) {
 }
 
 // ── Tab: APU ──────────────────────────────────────────────────────────────────
-function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcontrato }) {
+function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcontrato, nuevaApuRubro, onNuevaApuConsumida }) {
   const { tareas, rubros, materiales, subcontratos, mo } = catalog;
   const [selRubro, setSelRubro] = useState('');
   const [search, setSearch] = useState('');
@@ -768,11 +768,19 @@ function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMateria
   const hayMas = filtered.length > pageSize;
 
   const startEdit = (t) => { setForm(JSON.parse(JSON.stringify(t))); setEditId(t.id); setEditMode(true); };
-  const startNew  = () => {
-    setForm({ codigo: '', nombre: '', subRubro: '', unidad: 'u', rubroNombre: rubros[0]?.nombre || '', materiales: [], subcontratos: [], mo: [] });
+  const startNew  = (rubroPref) => {
+    setForm({ codigo: '', nombre: '', subRubro: '', unidad: 'u', rubroNombre: rubroPref || rubros[0]?.nombre || '', materiales: [], subcontratos: [], mo: [] });
     setEditId(null);
     setEditMode(true);
   };
+  // Abrir el editor de APU nueva ya asignada a un rubro (disparado desde
+  // Rubros/Gremios con "+ Agregar APU"). Consume la intención una sola vez.
+  useEffect(() => {
+    if (!nuevaApuRubro) return;
+    setSelRubro(nuevaApuRubro);
+    startNew(nuevaApuRubro);
+    onNuevaApuConsumida && onNuevaApuConsumida();
+  }, [nuevaApuRubro]); // eslint-disable-line react-hooks/exhaustive-deps
   const cancel = () => { setEditMode(false); setForm(null); setEditId(null); setLastAddedId(null); };
   const duplicate = (t) => {
     const dupId = newId();
@@ -862,7 +870,7 @@ function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMateria
             style={{ ...inputSt, flex: 1, padding: '4px 8px' }} />
           <Chip style={{ fontSize: 10 }}>{filtered.length} tareas</Chip>
           <Btn sm onClick={() => setShowImport(true)}>⬇ Desde Excel</Btn>
-          <Btn sm fill onClick={startNew}>+ Nueva APU</Btn>
+          <Btn sm fill onClick={() => startNew(selRubro)}>+ Nueva APU</Btn>
         </div>
         <div style={{ flex: 1, overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -957,7 +965,7 @@ function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMateria
 }
 
 // ── Tab: Rubros / Gremios ─────────────────────────────────────────────────────
-function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateMO, onUpdateTarea, roles }) {
+function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateMO, onUpdateTarea, onAgregarApu, roles }) {
   const { rubros, tareas, mo, subcontratos } = catalog;
   const subs = subcontratos || [];
   const [form, setForm] = useState(null);
@@ -1043,10 +1051,13 @@ function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateM
           <Divider />
 
           <div>
-            <div style={{ fontSize: 10, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-              Tareas APU · {activeAPUs.length} items
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Tareas APU · {activeAPUs.length} items
+              </div>
+              <Btn sm onClick={() => onAgregarApu && onAgregarApu(activeRubro.nombre)}>+ Agregar APU</Btn>
             </div>
-            {activeAPUs.length === 0 && <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic' }}>Sin tareas APU — creá una desde la pestaña "Tareas (APU)"</div>}
+            {activeAPUs.length === 0 && <div style={{ color: T.ink3, fontSize: 12, fontStyle: 'italic' }}>Sin tareas APU en este gremio — agregá una con "+ Agregar APU".</div>}
             {activeAPUs.map(t => {
               const c = calcTarea(t, catalogIndex);
               const nTE = (t.tareasEstandar || []).length;
@@ -1240,6 +1251,7 @@ export default function Catalogos() {
   }, [currentUser, isAdmin, navigate]);
 
   const [tab, setTab] = useState(4);
+  const [nuevaApuRubro, setNuevaApuRubro] = useState(null); // intención de crear APU en un rubro (desde Rubros/Gremios)
   const { catalog, catalogIndex, add, update, remove, bulkUpdatePreciosCAC, restoreCatalogCACBackup } = useCatalog();
   const { indices } = useIndices();
   const [cacModal, setCacModal] = useState(false);
@@ -1396,6 +1408,8 @@ export default function Catalogos() {
             onDelete={id => remove('tareas', id)}
             onAddMaterial={item => add('materiales', item)}
             onAddSubcontrato={item => add('subcontratos', item)}
+            nuevaApuRubro={nuevaApuRubro}
+            onNuevaApuConsumida={() => setNuevaApuRubro(null)}
           />
         )}
         {tab === 4 && (
@@ -1407,6 +1421,7 @@ export default function Catalogos() {
             onDelete={id => remove('rubros', id)}
             onUpdateMO={(id, ch) => update('mo', id, ch)}
             onUpdateTarea={(id, ch) => update('tareas', id, ch)}
+            onAgregarApu={(rubroNombre) => { setNuevaApuRubro(rubroNombre); setTab(3); }}
             roles={ROLES_LIST}
           />
         )}
