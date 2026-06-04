@@ -5,10 +5,17 @@ import { useAppLoading } from './AppLoadingContext';
 import { SAVE_DEBOUNCE_MS } from '../lib/constants';
 
 // Alerta global "obra iniciada" para todo el equipo (campana del Topbar +
-// dashboard). Se dispara cuando una obra pasa a 'activa' (al aprobar el
-// presupuesto o confirmarla a mano). Append atómico en shared_data 'alertas'.
+// dashboard). Se dispara cuando una obra pasa a 'activa' — sea confirmándola a
+// mano, al aprobar el presupuesto, o automáticamente al recibir el primer pago
+// (recibir plata auto-aprueba el presupuesto y activa la obra). Append atómico
+// en shared_data 'alertas'.
+//
+// De-dupe por obra dentro de la sesión: aunque la transición se evalúe dos veces
+// muy rápido (antes de que obrasRef se sincronice), la alerta sale UNA sola vez.
+const obrasYaAlertadas = new Set();
 function emitAlertaObraIniciada(obra) {
-  if (!obra) return;
+  if (!obra || obrasYaAlertadas.has(obra.id)) return;
+  obrasYaAlertadas.add(obra.id);
   appendItemInSharedArray('alertas', {
     id:     `alerta-obra-${obra.id}-${Date.now()}`,
     tipo:   'obra_iniciada',
