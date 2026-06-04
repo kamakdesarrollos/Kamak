@@ -43,6 +43,14 @@ const isVencida = (fechaLimite, estado) => {
   return fechaLimite < new Date().toISOString().slice(0, 10);
 };
 
+// Fecha+hora corta para los comentarios (DD/MM HH:mm).
+const fmtFechaHora = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
 function ProgressBar({ completos, total }) {
   const pct = total > 0 ? Math.round((completos / total) * 100) : 0;
   const color = pct === 100 ? '#059669' : pct >= 50 ? '#d97706' : T.accent;
@@ -58,7 +66,7 @@ function ProgressBar({ completos, total }) {
   );
 }
 
-function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, solapaUserId }) {
+function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, solapaUserId }) {
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
   const obra = obras.find(o => o.id === tarea.obraId);
   const totalItems = (tarea.checklist || []).length;
@@ -79,6 +87,14 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
     if (!txt) return;
     addItem(tarea.id, txt);
     setNuevoItem('');
+  };
+
+  const [nuevoCom, setNuevoCom] = useState('');
+  const handleAddCom = () => {
+    const txt = nuevoCom.trim();
+    if (!txt) return;
+    addComentario(tarea.id, currentUser?.id, txt);
+    setNuevoCom('');
   };
 
   return (
@@ -132,6 +148,11 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
             {agregadaPorOtro && (
               <span style={{ background: '#6366f1', color: '#fff', fontSize: 8.5, padding: '1px 5px', borderRadius: 8, fontWeight: 700, letterSpacing: 0.3, flexShrink: 0 }} title={`Asignada por ${creador}`}>
                 ↦ {creador}
+              </span>
+            )}
+            {(tarea.comentarios || []).length > 0 && (
+              <span style={{ color: T.ink3, fontSize: 10, fontFamily: T.fontMono, flexShrink: 0 }} title={`${tarea.comentarios.length} comentario(s)`}>
+                💬 {tarea.comentarios.length}
               </span>
             )}
           </div>
@@ -266,6 +287,41 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
             />
             <Btn sm onClick={onEdit}>Editar tarea</Btn>
           </div>
+
+          {/* Comentarios — visibles sin entrar a editar (+ agregar inline). */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontFamily: T.fontMono, fontSize: 9.5, letterSpacing: 1, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
+              ◆ Comentarios{(tarea.comentarios || []).length ? ` (${tarea.comentarios.length})` : ''}
+            </div>
+            {(tarea.comentarios || []).length === 0 ? (
+              <div style={{ fontSize: 11, color: T.ink3, fontStyle: 'italic', padding: '2px 0' }}>Sin comentarios todavía.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {(tarea.comentarios || []).map(c => {
+                  const autor = usuarios.find(u => u.id === c.userId)?.nombre || '?';
+                  return (
+                    <div key={c.id} style={{ fontSize: 12, background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, padding: '6px 8px' }}>
+                      <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, marginBottom: 2, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontWeight: 700, color: T.ink2 }}>{autor}</span>
+                        <span>{fmtFechaHora(c.creadoAt)}</span>
+                      </div>
+                      <div style={{ color: T.ink, whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{c.texto}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+              <input
+                type="text"
+                value={nuevoCom}
+                onChange={e => setNuevoCom(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCom(); } }}
+                placeholder="+ Comentario y presionar Enter"
+                style={{ flex: 1, padding: '5px 8px', fontSize: 11, border: `1px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, background: T.paper, outline: 'none' }}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -275,7 +331,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
 export default function Tareas() {
   const { currentUser, usuarios } = useUsuarios();
   const { obras } = useObras();
-  const { tareas, marcarVista, toggleItem, addItem } = useTareas();
+  const { tareas, marcarVista, toggleItem, addItem, addComentario } = useTareas();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const isAdmin = currentUser?.rol === 'Admin';
@@ -486,6 +542,7 @@ export default function Tareas() {
               onEdit={() => setEditingId(t.id)}
               toggleItem={toggleItem}
               addItem={addItem}
+              addComentario={addComentario}
             />
           ))
         )}
