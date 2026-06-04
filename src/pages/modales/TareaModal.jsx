@@ -54,6 +54,9 @@ export default function TareaModal({ tareaId, presetAsignado, onClose }) {
   const isAdmin = currentUser?.rol === 'Admin';
   const esCreador = !!tareaActual && tareaActual.creadoPor === currentUser?.id;
   const esAsignado = !!tareaActual && (tareaActual.asignadoA || []).includes(currentUser?.id);
+  // Responsable de algún ítem (aunque no sea asignado de la tarea entera) → puede
+  // completar SUS ítems.
+  const esResponsableItem = !!tareaActual && (tareaActual.checklist || []).some(it => it.asignadoA === currentUser?.id);
   const puedeEditarCampos = esNueva || isAdmin || esCreador;
   const puedeAsignarAOtros = isAdmin;
 
@@ -161,9 +164,12 @@ export default function TareaModal({ tareaId, presetAsignado, onClose }) {
   };
 
   const checklistActual = tareaActual?.checklist || [];
-  const checklistRender = esNueva ? (checklistDraft || []) : checklistActual;
-  const completos = checklistActual.filter(i => i.completado).length;
-  const totalItems = checklistActual.length;
+  // No-admin: solo ve los ítems del checklist de los que es responsable.
+  const checklistRender = esNueva
+    ? (checklistDraft || [])
+    : (isAdmin ? checklistActual : checklistActual.filter(it => it.asignadoA === currentUser?.id));
+  const completos = checklistRender.filter(i => i.completado).length;
+  const totalItems = checklistRender.length;
   const progresoPct = totalItems > 0 ? Math.round((completos / totalItems) * 100) : 0;
 
   // Usuarios disponibles para asignar.
@@ -330,7 +336,7 @@ export default function TareaModal({ tareaId, presetAsignado, onClose }) {
               <div style={{ border: `1px solid ${T.faint2}`, borderRadius: 4, background: T.paper }}>
                 {checklistRender.map((item, idx) => {
                   const itemId = item.id;
-                  const puedeMarcar = !esNueva && (esAsignado || esCreador || isAdmin);
+                  const puedeMarcar = !esNueva && (esAsignado || esCreador || isAdmin || esResponsableItem);
                   const puedeBorrar = esNueva || puedeEditarCampos;
                   return (
                     <div key={itemId || idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', borderBottom: idx < checklistRender.length - 1 ? `1px solid ${T.faint2}` : 'none' }}>

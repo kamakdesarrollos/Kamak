@@ -20,9 +20,12 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
    observación libre (📝). Editable en el panel de Tareas (inline) y visible en
    el modal. Campo `observacion` + `setItemObservacion` en TareasContext.
 3. ~~**Checklist asignable por persona + tarea grupal.**~~ ✅ HECHO: cada ítem del
-   checklist tiene un **responsable** (selector por ítem en el panel, visible en
-   el modal). Campo `asignadoA` por ítem + `setItemAsignado`. La tarea sigue
-   asignándose a varios (grupal); los ítems se reparten entre esas/otras personas.
+   checklist tiene un **responsable** (campo `asignadoA` por ítem + `setItemAsignado`).
+   **Visibilidad (3b):** asignar un ítem hace aparecer la tarea en el panel de esa
+   persona (`tocaAlUsuario` = asignado a la tarea O responsable de un ítem; aplica
+   a filtros y contadores). **Un NO-admin ve solo el título + SUS ítems** (no los
+   de los demás), en el panel y en el modal; el selector de responsable y el armar
+   checklist son solo del admin. El selector no aparece en ítems ya completados.
 4. ~~**Adjuntar documentos/fotos a tareas.**~~ ✅ HECHO: sección Adjuntos en el
    panel de la tarea (subida multi-archivo a `kamak-fotos` path `tareas/<id>/`,
    lista con link, badge 📎N en la tarjeta). Campo `adjuntos` + addAdjunto/

@@ -52,6 +52,12 @@ const fmtFechaHora = (iso) => {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
+// Una tarea "le toca" a un usuario si está asignado a la tarea O es responsable
+// de algún ítem del checklist. Así, asignarle un ítem a alguien hace aparecer la
+// tarea en su panel (aunque no sea de los asignados a la tarea entera).
+const tocaAlUsuario = (t, uid) =>
+  !!uid && ((t.asignadoA || []).includes(uid) || (t.checklist || []).some(it => it.asignadoA === uid));
+
 function ProgressBar({ completos, total }) {
   const pct = total > 0 ? Math.round((completos / total) * 100) : 0;
   const color = pct === 100 ? '#059669' : pct >= 50 ? '#d97706' : T.accent;
@@ -117,14 +123,19 @@ function AdjuntosTarea({ tarea, currentUser, addAdjunto, removeAdjunto }) {
   );
 }
 
-function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto, solapaUserId }) {
+function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto, isAdmin, solapaUserId }) {
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
   const obra = obras.find(o => o.id === tarea.obraId);
-  const totalItems = (tarea.checklist || []).length;
-  const completos = (tarea.checklist || []).filter(i => i.completado).length;
+  // No-admin: solo ve los ítems del checklist de los que es responsable (no los
+  // de los demás). Admin: ve el checklist completo.
+  const checklistVisible = isAdmin
+    ? (tarea.checklist || [])
+    : (tarea.checklist || []).filter(it => it.asignadoA === currentUser?.id);
+  const totalItems = checklistVisible.length;
+  const completos = checklistVisible.filter(i => i.completado).length;
   const vencida = isVencida(tarea.fechaLimite, tarea.estado);
   const esNueva = currentUser
-    && (tarea.asignadoA || []).includes(currentUser.id)
+    && tocaAlUsuario(tarea, currentUser.id)
     && !(tarea.vistaPor || []).includes(currentUser.id);
   // En la solapa de un usuario, una tarea "agregada por otro" = la creó alguien
   // distinto al dueño de la solapa (ej. el Admin se la asignó). Se pinta distinto.
@@ -280,11 +291,11 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
 
           {totalItems === 0 ? (
             <div style={{ fontSize: 11, color: T.ink3, fontStyle: 'italic', padding: '6px 0' }}>
-              Sin ítems. Agregá uno abajo.
+              {isAdmin ? 'Sin ítems. Agregá uno abajo.' : 'No tenés ítems asignados en esta tarea.'}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {(tarea.checklist || []).map(it => {
+              {checklistVisible.map(it => {
                 const completadoPor = it.completadoPor ? usuarios.find(u => u.id === it.completadoPor)?.nombre : null;
                 const editandoObs = obsEditId === it.id;
                 const guardarObs = () => { setItemObservacion(tarea.id, it.id, obsDraft.trim()); setObsEditId(null); };
@@ -319,8 +330,9 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                         {it.texto}
                       </span>
                       {/* El responsable es para repartir trabajo PENDIENTE; en un
-                          ítem ya completado solo importa el "✓ quién lo hizo". */}
-                      {!it.completado && (
+                          ítem ya completado solo importa el "✓ quién lo hizo".
+                          Solo el admin reparte; el no-admin no reasigna. */}
+                      {!it.completado && isAdmin && (
                         <select
                           value={it.asignadoA || ''}
                           onChange={e => setItemAsignado(tarea.id, it.id, e.target.value || null)}
@@ -375,26 +387,28 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
             </div>
           )}
 
-          {/* Agregar ítem rápido */}
+          {/* Agregar ítem rápido (solo admin arma/edita el checklist). */}
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            <input
-              type="text"
-              value={nuevoItem}
-              onChange={e => setNuevoItem(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddItem(); } }}
-              placeholder="+ Agregar ítem y presionar Enter"
-              style={{
-                flex: 1,
-                padding: '5px 8px',
-                fontSize: 11,
-                border: `1px solid ${T.faint2}`,
-                borderRadius: 4,
-                fontFamily: T.font,
-                background: T.paper,
-                outline: 'none',
-              }}
-            />
-            <Btn sm onClick={onEdit}>Editar tarea</Btn>
+            {isAdmin && (
+              <input
+                type="text"
+                value={nuevoItem}
+                onChange={e => setNuevoItem(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddItem(); } }}
+                placeholder="+ Agregar ítem y presionar Enter"
+                style={{
+                  flex: 1,
+                  padding: '5px 8px',
+                  fontSize: 11,
+                  border: `1px solid ${T.faint2}`,
+                  borderRadius: 4,
+                  fontFamily: T.font,
+                  background: T.paper,
+                  outline: 'none',
+                }}
+              />
+            )}
+            <Btn sm onClick={onEdit}>{isAdmin ? 'Editar tarea' : 'Ver tarea'}</Btn>
           </div>
 
           {/* Comentarios — visibles sin entrar a editar (+ agregar inline). */}
@@ -487,10 +501,10 @@ export default function Tareas() {
     let base;
     if (tab === 'completadas') {
       base = tareas.filter(t => !activa(t));
-      if (!isAdmin) base = base.filter(t => (t.asignadoA || []).includes(currentUser.id) || t.creadoPor === currentUser.id);
+      if (!isAdmin) base = base.filter(t => tocaAlUsuario(t, currentUser.id) || t.creadoPor === currentUser.id);
     } else {
-      // Solapa de un usuario: sus tareas activas (asignadas a él).
-      base = tareas.filter(t => (t.asignadoA || []).includes(tab) && activa(t));
+      // Solapa de un usuario: sus tareas activas (asignada a él, o responsable de algún ítem).
+      base = tareas.filter(t => tocaAlUsuario(t, tab) && activa(t));
     }
     if (filtroPrio) base = base.filter(t => t.prioridad === filtroPrio);
     if (filtroObra === 'sin-obra') base = base.filter(t => !t.obraId);
@@ -518,10 +532,10 @@ export default function Tareas() {
   const kpiUserId = tab === 'completadas' ? currentUser?.id : tab;
   const kpis = useMemo(() => {
     if (!currentUser) return [];
-    const suyas = tareas.filter(t => (t.asignadoA || []).includes(kpiUserId) && activa(t));
+    const suyas = tareas.filter(t => tocaAlUsuario(t, kpiUserId) && activa(t));
     const vencidas = suyas.filter(t => isVencida(t.fechaLimite, t.estado));
     const enProgreso = suyas.filter(t => t.estado === 'en_progreso');
-    const completadas = tareas.filter(t => (t.asignadoA || []).includes(kpiUserId) && t.estado === 'completada');
+    const completadas = tareas.filter(t => tocaAlUsuario(t, kpiUserId) && t.estado === 'completada');
     return [
       { label: 'Pendientes',  value: suyas.length,      color: T.accent },
       { label: 'En progreso', value: enProgreso.length, color: '#d97706' },
@@ -536,11 +550,11 @@ export default function Tareas() {
     const userTabs = usuariosSolapa.map(u => ({
       key: u.id,
       label: u.id === currentUser?.id ? 'Mis tareas' : u.nombre,
-      count: tareas.filter(t => (t.asignadoA || []).includes(u.id) && activa(t)).length,
+      count: tareas.filter(t => tocaAlUsuario(t, u.id) && activa(t)).length,
     }));
     const completadasCount = tareas.filter(t => {
       if (activa(t)) return false;
-      return isAdmin || (t.asignadoA || []).includes(currentUser?.id) || t.creadoPor === currentUser?.id;
+      return isAdmin || tocaAlUsuario(t, currentUser?.id) || t.creadoPor === currentUser?.id;
     }).length;
     return [...userTabs, { key: 'completadas', label: 'Completadas', count: completadasCount }];
   }, [tareas, usuarios, isAdmin, currentUser]);
@@ -658,6 +672,7 @@ export default function Tareas() {
               setItemAsignado={setItemAsignado}
               addAdjunto={addAdjunto}
               removeAdjunto={removeAdjunto}
+              isAdmin={isAdmin}
             />
           ))
         )}
