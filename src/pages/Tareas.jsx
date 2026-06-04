@@ -126,9 +126,11 @@ function AdjuntosTarea({ tarea, currentUser, addAdjunto, removeAdjunto }) {
 function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto, isAdmin, solapaUserId }) {
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
   const obra = obras.find(o => o.id === tarea.obraId);
-  // No-admin: solo ve los ítems del checklist de los que es responsable (no los
-  // de los demás). Admin: ve el checklist completo.
-  const checklistVisible = isAdmin
+  // Gestiona el checklist (ve TODO + asigna ítems a otros + agrega ítems): el
+  // admin o quien CREÓ la tarea (el que delega). Los demás (los que reciben un
+  // ítem) ven SOLO sus ítems.
+  const puedeGestionar = isAdmin || (!!currentUser && tarea.creadoPor === currentUser.id);
+  const checklistVisible = puedeGestionar
     ? (tarea.checklist || [])
     : (tarea.checklist || []).filter(it => it.asignadoA === currentUser?.id);
   const totalItems = checklistVisible.length;
@@ -291,7 +293,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
 
           {totalItems === 0 ? (
             <div style={{ fontSize: 11, color: T.ink3, fontStyle: 'italic', padding: '6px 0' }}>
-              {isAdmin ? 'Sin ítems. Agregá uno abajo.' : 'No tenés ítems asignados en esta tarea.'}
+              {puedeGestionar ? 'Sin ítems. Agregá uno abajo.' : 'No tenés ítems asignados en esta tarea.'}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -331,8 +333,8 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                       </span>
                       {/* El responsable es para repartir trabajo PENDIENTE; en un
                           ítem ya completado solo importa el "✓ quién lo hizo".
-                          Solo el admin reparte; el no-admin no reasigna. */}
-                      {!it.completado && isAdmin && (
+                          Solo el gestor (admin o creador) reparte; el que recibe no. */}
+                      {!it.completado && puedeGestionar && (
                         <select
                           value={it.asignadoA || ''}
                           onChange={e => setItemAsignado(tarea.id, it.id, e.target.value || null)}
@@ -387,9 +389,9 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
             </div>
           )}
 
-          {/* Agregar ítem rápido (solo admin arma/edita el checklist). */}
+          {/* Agregar ítem rápido (solo el gestor —admin o creador— arma el checklist). */}
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            {isAdmin && (
+            {puedeGestionar && (
               <input
                 type="text"
                 value={nuevoItem}
@@ -408,7 +410,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                 }}
               />
             )}
-            <Btn sm onClick={onEdit}>{isAdmin ? 'Editar tarea' : 'Ver tarea'}</Btn>
+            <Btn sm onClick={onEdit}>{puedeGestionar ? 'Editar tarea' : 'Ver tarea'}</Btn>
           </div>
 
           {/* Comentarios — visibles sin entrar a editar (+ agregar inline). */}

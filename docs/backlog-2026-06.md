@@ -24,8 +24,11 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
    **Visibilidad (3b):** asignar un ítem hace aparecer la tarea en el panel de esa
    persona (`tocaAlUsuario` = asignado a la tarea O responsable de un ítem; aplica
    a filtros y contadores). **Un NO-admin ve solo el título + SUS ítems** (no los
-   de los demás), en el panel y en el modal; el selector de responsable y el armar
-   checklist son solo del admin. El selector no aparece en ítems ya completados.
+   de los demás), en el panel y en el modal. El que **gestiona** el checklist (ve
+   todo + asigna ítems a otros + agrega ítems) = **admin O el creador** de la tarea
+   (el que delega); un no-admin puede crear una tarea y repartir sus ítems. El que
+   solo recibe un ítem ve únicamente el suyo. El selector no aparece en ítems ya
+   completados.
 4. ~~**Adjuntar documentos/fotos a tareas.**~~ ✅ HECHO: sección Adjuntos en el
    panel de la tarea (subida multi-archivo a `kamak-fotos` path `tareas/<id>/`,
    lista con link, badge 📎N en la tarjeta). Campo `adjuntos` + addAdjunto/

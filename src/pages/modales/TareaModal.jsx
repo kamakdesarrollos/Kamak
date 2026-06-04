@@ -164,10 +164,11 @@ export default function TareaModal({ tareaId, presetAsignado, onClose }) {
   };
 
   const checklistActual = tareaActual?.checklist || [];
-  // No-admin: solo ve los ítems del checklist de los que es responsable.
+  // Quien gestiona (admin o creador) ve todo el checklist; el que solo recibe un
+  // ítem ve únicamente los suyos.
   const checklistRender = esNueva
     ? (checklistDraft || [])
-    : (isAdmin ? checklistActual : checklistActual.filter(it => it.asignadoA === currentUser?.id));
+    : ((isAdmin || esCreador) ? checklistActual : checklistActual.filter(it => it.asignadoA === currentUser?.id));
   const completos = checklistRender.filter(i => i.completado).length;
   const totalItems = checklistRender.length;
   const progresoPct = totalItems > 0 ? Math.round((completos / totalItems) * 100) : 0;
