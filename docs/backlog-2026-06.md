@@ -13,16 +13,21 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
 ---
 
 ## Fase 1 — Mejoras al sistema de tareas (chicas, sobre lo existente)
-1. **Comentarios visibles sin editar.** Hoy los comentarios se guardan pero solo
-   se ven al editar. → Mostrarlos en la tarjeta / panel expandido de la tarea.
-   _Chico._ **← arrancamos por acá.**
-2. **Observaciones por ítem de checklist.** Hoy el ítem solo tiene `texto`. →
-   Agregar nota/observación por ítem (campo + UI). _Chico-medio._
+1. ~~**Comentarios visibles sin editar.**~~ ✅ HECHO (commit b4b6c03): se muestran
+   en el panel expandido (autor + fecha/hora) + alta inline + badge 💬N en la
+   tarjeta colapsada.
+2. ~~**Observaciones por ítem de checklist.**~~ ✅ HECHO: cada ítem tiene una
+   observación libre (📝). Editable en el panel de Tareas (inline) y visible en
+   el modal. Campo `observacion` + `setItemObservacion` en TareasContext.
 3. **Checklist asignable por persona + tarea grupal.** La tarea ya se asigna a
    varios; falta asignar **cada ítem** del checklist a una persona distinta
    (ej. "presupuesto obra" con ítems repartidos). _Medio._
 4. **Adjuntar documentos/fotos a tareas.** Reutilizar el subidor multi-archivo
    (bucket `kamak-fotos`). _Medio (requiere policy 0004 aplicada)._
+4b. **Carpetas en la sección "Archivos".** Poder **crear carpetas** para organizar
+   tanto **fotos** como **documentos** de la obra (crear/renombrar/mover a carpeta;
+   navegación por carpeta). _Medio — toca el modelo de documentos/fotos + UI de
+   las tabs Documentos y Fotos._
 
 ## Fase 2 — Notificaciones / bot
 5. **Alerta a todo el equipo al iniciar/confirmar una obra.** Enganchar el cambio
@@ -52,5 +57,5 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
 ---
 
 ## Orden propuesto de ejecución
-1 → 2 → 3 → 4 → 5 → 6 → 7 → 8(Enzo, cuando haya datos) → 9 → 10 → 11.
+1 ✅ → 2 ✅ → 3 → 4 → 4b → 5 → 6 → 7 → 8(Enzo, cuando haya datos) → 9 → 10 → 11.
 (Las grandes 9/10/11 se brainstormean aparte antes de codear.)

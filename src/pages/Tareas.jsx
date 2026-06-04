@@ -66,7 +66,7 @@ function ProgressBar({ completos, total }) {
   );
 }
 
-function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, solapaUserId }) {
+function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, solapaUserId }) {
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
   const obra = obras.find(o => o.id === tarea.obraId);
   const totalItems = (tarea.checklist || []).length;
@@ -96,6 +96,10 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
     addComentario(tarea.id, currentUser?.id, txt);
     setNuevoCom('');
   };
+
+  // Observación en edición (qué ítem del checklist + borrador del texto).
+  const [obsEditId, setObsEditId] = useState(null);
+  const [obsDraft, setObsDraft] = useState('');
 
   return (
     <div style={{ borderBottom: `1px solid ${T.faint2}` }}>
@@ -226,41 +230,77 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {(tarea.checklist || []).map(it => {
                 const completadoPor = it.completadoPor ? usuarios.find(u => u.id === it.completadoPor)?.nombre : null;
+                const editandoObs = obsEditId === it.id;
+                const guardarObs = () => { setItemObservacion(tarea.id, it.id, obsDraft.trim()); setObsEditId(null); };
                 return (
-                  <label
+                  <div
                     key={it.id}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
                       padding: '5px 8px',
                       borderRadius: 4,
-                      cursor: 'pointer',
                       background: it.completado ? '#ecfdf5' : T.paper,
                       border: `1px solid ${it.completado ? '#bbf7d0' : T.faint2}`,
                       transition: 'background 0.1s',
                     }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={!!it.completado}
-                      onChange={() => toggleItem(tarea.id, it.id, currentUser?.id)}
-                      style={{ cursor: 'pointer', accentColor: '#059669' }}
-                    />
-                    <span style={{
-                      fontSize: 12,
-                      color: it.completado ? T.ink3 : T.ink,
-                      textDecoration: it.completado ? 'line-through' : 'none',
-                      flex: 1,
-                    }}>
-                      {it.texto}
-                    </span>
-                    {completadoPor && (
-                      <span style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono }}>
-                        {completadoPor}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!it.completado}
+                        onChange={() => toggleItem(tarea.id, it.id, currentUser?.id)}
+                        style={{ cursor: 'pointer', accentColor: '#059669' }}
+                      />
+                      <span
+                        onClick={() => toggleItem(tarea.id, it.id, currentUser?.id)}
+                        style={{
+                          fontSize: 12,
+                          color: it.completado ? T.ink3 : T.ink,
+                          textDecoration: it.completado ? 'line-through' : 'none',
+                          flex: 1,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {it.texto}
                       </span>
+                      {completadoPor && (
+                        <span style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono }}>
+                          {completadoPor}
+                        </span>
+                      )}
+                      <span
+                        onClick={() => { setObsEditId(it.id); setObsDraft(it.observacion || ''); }}
+                        title={it.observacion ? 'Editar observación' : 'Agregar observación'}
+                        style={{ fontSize: 12, cursor: 'pointer', opacity: it.observacion ? 1 : 0.4, flexShrink: 0 }}
+                      >📝</span>
+                    </div>
+
+                    {(editandoObs || it.observacion) && (
+                      <div style={{ paddingLeft: 26, marginTop: 4 }}>
+                        {editandoObs ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            value={obsDraft}
+                            onChange={e => setObsDraft(e.target.value)}
+                            onBlur={guardarObs}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') { e.preventDefault(); guardarObs(); }
+                              if (e.key === 'Escape') setObsEditId(null);
+                            }}
+                            placeholder="Observación…"
+                            style={{ width: '100%', padding: '4px 7px', fontSize: 11, border: `1px solid ${T.accent}`, borderRadius: 4, fontFamily: T.font, background: T.paper, outline: 'none' }}
+                          />
+                        ) : (
+                          <div
+                            onClick={() => { setObsEditId(it.id); setObsDraft(it.observacion || ''); }}
+                            style={{ fontSize: 11, color: T.ink2, fontStyle: 'italic', cursor: 'text', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}
+                          >
+                            📝 {it.observacion}
+                          </div>
+                        )}
+                      </div>
                     )}
-                  </label>
+                  </div>
                 );
               })}
             </div>
@@ -331,7 +371,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
 export default function Tareas() {
   const { currentUser, usuarios } = useUsuarios();
   const { obras } = useObras();
-  const { tareas, marcarVista, toggleItem, addItem, addComentario } = useTareas();
+  const { tareas, marcarVista, toggleItem, addItem, addComentario, setItemObservacion } = useTareas();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const isAdmin = currentUser?.rol === 'Admin';
@@ -543,6 +583,7 @@ export default function Tareas() {
               toggleItem={toggleItem}
               addItem={addItem}
               addComentario={addComentario}
+              setItemObservacion={setItemObservacion}
             />
           ))
         )}

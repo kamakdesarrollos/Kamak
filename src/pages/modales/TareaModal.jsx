@@ -350,6 +350,11 @@ export default function TareaModal({ tareaId, presetAsignado, onClose }) {
                             ✓ {usuarios.find(u => u.id === item.completadoPor)?.nombre || 'Alguien'} · {fmtDatetime(item.completadoAt)}
                           </div>
                         )}
+                        {item.observacion && (
+                          <div style={{ fontSize: 11, color: T.ink2, fontStyle: 'italic', marginTop: 3, whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
+                            📝 {item.observacion}
+                          </div>
+                        )}
                       </div>
                       {puedeBorrar && (
                         <span

@@ -141,6 +141,18 @@ export function TareasProvider({ children }) {
     }));
   }, [setTareas]);
 
+  // Observación/nota libre por ítem del checklist (no afecta el estado).
+  const setItemObservacion = useCallback((tareaId, itemId, observacion) => {
+    setTareas(prev => prev.map(t => {
+      if (t.id !== tareaId) return t;
+      return {
+        ...t,
+        checklist: (t.checklist || []).map(it => it.id === itemId ? { ...it, observacion } : it),
+        actualizadoAt: new Date().toISOString(),
+      };
+    }));
+  }, [setTareas]);
+
   // ── Comentarios ────────────────────────────────────────────────────────────
 
   const addComentario = useCallback((tareaId, userId, texto) => {
@@ -177,10 +189,11 @@ export function TareasProvider({ children }) {
       toggleItem,
       addItem,
       removeItem,
+      setItemObservacion,
       addComentario,
       marcarVista,
     }),
-    [tareas, addTarea, updateTarea, deleteTarea, toggleItem, addItem, removeItem, addComentario, marcarVista]
+    [tareas, addTarea, updateTarea, deleteTarea, toggleItem, addItem, removeItem, setItemObservacion, addComentario, marcarVista]
   );
 
   return <CTX.Provider value={value}>{children}</CTX.Provider>;
