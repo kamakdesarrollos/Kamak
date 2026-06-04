@@ -3784,6 +3784,11 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 7: FOTOS
 // ─────────────────────────────────────────────────────────────────────────────
+// Carpetas de fotos que siempre están disponibles. "Avance de obra" recibe las
+// fotos que manda el bot por avance (ver webhook) y las que subís estando parado
+// en esa carpeta.
+const CARPETAS_FOTO_BASE = ['Antes', 'Después', 'Avance de obra'];
+
 function TabFotos({ detalle, patch, obraId }) {
   const [adding,      setAdding]      = useState(false);
   const [form,        setForm]        = useState({ label: '', fecha: new Date().toISOString().split('T')[0], rubro: '' });
@@ -3794,6 +3799,17 @@ function TabFotos({ detalle, patch, obraId }) {
   const [uploading,   setUploading]   = useState(false);
   const [uploadErr,   setUploadErr]   = useState('');
   const fileRef      = useRef(null);
+  // Carpeta seleccionada (filtro) y carpetas creadas en la sesión (aún vacías).
+  const [carpetaSel,    setCarpetaSel]    = useState('todas');
+  const [carpetasExtra, setCarpetasExtra] = useState([]);
+  const carpetaActiva = carpetaSel === 'todas' ? '' : carpetaSel;
+  const carpetas = useMemo(() => {
+    const usadas = (detalle.fotos || []).map(f => f.carpeta).filter(Boolean);
+    return Array.from(new Set([...CARPETAS_FOTO_BASE, ...carpetasExtra, ...usadas]));
+  }, [detalle.fotos, carpetasExtra]);
+  const fotosFiltradas = carpetaSel === 'todas'
+    ? (detalle.fotos || [])
+    : (detalle.fotos || []).filter(f => (f.carpeta || '') === carpetaSel);
 
   // ── Modo subida múltiple ──────────────────────────────────────────────────
   const [multiMode,   setMultiMode]   = useState(false);
@@ -3840,7 +3856,7 @@ function TabFotos({ detalle, patch, obraId }) {
       } catch {
         setMultiFiles(prev => prev.map((x, idx) => idx === i ? { ...x, status: 'error' } : x));
       }
-      nuevasFotos.push({ id: newId(), label: m.label, fecha: multiFecha, rubro: multiRubro, url });
+      nuevasFotos.push({ id: newId(), label: m.label, fecha: multiFecha, rubro: multiRubro, carpeta: carpetaActiva, url });
       setMultiProgress({ done: i + 1, total: multiFiles.length });
     }
     patch(d => ({ ...d, fotos: [...d.fotos, ...nuevasFotos] }));
@@ -3876,7 +3892,7 @@ function TabFotos({ detalle, patch, obraId }) {
       url = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
       setUploading(false);
     }
-    patch(d => ({ ...d, fotos: [...d.fotos, { id: newId(), ...form, url }] }));
+    patch(d => ({ ...d, fotos: [...d.fotos, { id: newId(), ...form, carpeta: carpetaActiva, url }] }));
     cancelAdding();
   };
 
@@ -3892,7 +3908,7 @@ function TabFotos({ detalle, patch, obraId }) {
       if (avanceActual !== null) break;
     }
     setEditingFoto(f);
-    setEditForm({ label: f.label || '', fecha: f.fecha || '', rubro: f.rubro || '', avance: avanceActual !== null ? avanceActual : '' });
+    setEditForm({ label: f.label || '', fecha: f.fecha || '', rubro: f.rubro || '', carpeta: f.carpeta || '', avance: avanceActual !== null ? avanceActual : '' });
   };
 
   const saveEditFoto = () => {
@@ -3900,7 +3916,7 @@ function TabFotos({ detalle, patch, obraId }) {
     patch(d => ({
       ...d,
       fotos: d.fotos.map(f => f.id === editingFoto.id
-        ? { ...f, label: editForm.label, fecha: editForm.fecha, rubro: editForm.rubro }
+        ? { ...f, label: editForm.label, fecha: editForm.fecha, rubro: editForm.rubro, carpeta: editForm.carpeta }
         : f
       ),
       // Si cambió el avance, actualizar la tarea que tenga el mismo nombre de rubro
@@ -3929,10 +3945,30 @@ function TabFotos({ detalle, patch, obraId }) {
         </div>
       </div>
 
+      {/* ── Barra de carpetas. La carpeta seleccionada filtra la grilla y es
+          donde caen las fotos que subas. "+ Carpeta" crea una nueva. ── */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+        {['todas', ...carpetas].map(c => {
+          const count = c === 'todas' ? (detalle.fotos || []).length : (detalle.fotos || []).filter(f => (f.carpeta || '') === c).length;
+          const on = carpetaSel === c;
+          return (
+            <span key={c} onClick={() => setCarpetaSel(c)}
+              style={{ fontSize: 11, padding: '3px 9px', borderRadius: 12, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
+                background: on ? T.accent : T.paper, color: on ? '#fff' : T.ink2, border: `1px solid ${on ? T.accent : T.faint2}`, fontWeight: on ? 700 : 500 }}>
+              📁 {c === 'todas' ? 'Todas' : c}{count ? ` · ${count}` : ''}
+            </span>
+          );
+        })}
+        <span onClick={() => { const n = window.prompt('Nombre de la nueva carpeta:'); const name = (n || '').trim(); if (name) { setCarpetasExtra(prev => prev.includes(name) ? prev : [...prev, name]); setCarpetaSel(name); } }}
+          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 12, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', background: T.faint, color: T.accent, border: `1px dashed ${T.accent}` }}>
+          + Carpeta
+        </span>
+      </div>
+
       {/* ── Subida múltiple ── */}
       {multiMode && (
         <div style={{ background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 6, padding: 14, marginBottom: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Subir varias fotos</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Subir varias fotos {carpetaActiva && <span style={{ color: T.accent, fontWeight: 600 }}>→ 📁 {carpetaActiva}</span>}</div>
 
           {multiFiles.length === 0 ? (
             <div style={{ border: `1.5px dashed ${T.faint2}`, borderRadius: 6, padding: 24, textAlign: 'center', cursor: 'pointer', background: T.faint }}
@@ -4004,7 +4040,7 @@ function TabFotos({ detalle, patch, obraId }) {
 
       {/* ── Agregar foto individual ── */}
       {adding && (
-        <FormPanel title="Agregar foto" onSave={save} onCancel={cancelAdding}
+        <FormPanel title={carpetaActiva ? `Agregar foto → 📁 ${carpetaActiva}` : 'Agregar foto'} onSave={save} onCancel={cancelAdding}
           style={{ marginBottom: 14, maxWidth: 500 }} saveLabel={uploading ? 'Subiendo...' : 'Guardar'} saveDisabled={uploading}>
           <FInput label="Descripción" value={form.label} onChange={v => setForm(p => ({ ...p, label: v }))} placeholder="Ej: Tablero instalado" />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -4039,6 +4075,12 @@ function TabFotos({ detalle, patch, obraId }) {
             <FInput label="Fecha" value={editForm.fecha} onChange={v => setEditForm(p => ({ ...p, fecha: v }))} type="date" />
             <FInput label="Tarea / Rubro" value={editForm.rubro} onChange={v => setEditForm(p => ({ ...p, rubro: v }))} />
           </div>
+          <FRow label="Carpeta">
+            <select style={inputSt} value={editForm.carpeta || ''} onChange={e => setEditForm(p => ({ ...p, carpeta: e.target.value }))}>
+              <option value="">(Sin carpeta)</option>
+              {carpetas.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </FRow>
           {editForm.avance !== '' && (
             <div>
               <div style={{ fontSize: 11, color: T.ink2, marginBottom: 4 }}>
@@ -4066,11 +4108,11 @@ function TabFotos({ detalle, patch, obraId }) {
         </FormPanel>
       )}
 
-      {detalle.fotos.length === 0 ? (
-        <div style={{ color: T.ink3, padding: 40, textAlign: 'center' }}>Sin fotos. Agregá la primera.</div>
+      {fotosFiltradas.length === 0 ? (
+        <div style={{ color: T.ink3, padding: 40, textAlign: 'center' }}>{carpetaSel === 'todas' ? 'Sin fotos. Agregá la primera.' : 'No hay fotos en esta carpeta.'}</div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-          {detalle.fotos.map(f => (
+          {fotosFiltradas.map(f => (
             <div key={f.id} style={{ position: 'relative' }}>
               <a href={f.url || undefined} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'block' }}>
                 <div style={{ borderRadius: 6, aspectRatio: '4/3', overflow: 'hidden', border: `1.5px solid ${T.faint2}`, background: T.faint2, position: 'relative' }}>
@@ -4081,7 +4123,7 @@ function TabFotos({ detalle, patch, obraId }) {
                   )}
                   <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.55)', color: 'white', padding: '4px 8px' }}>
                     <div style={{ fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.label}</div>
-                    <div style={{ fontSize: 9, opacity: 0.8 }}>{fmtD(f.fecha)}{f.rubro ? ` · ${f.rubro}` : ''}</div>
+                    <div style={{ fontSize: 9, opacity: 0.8 }}>{fmtD(f.fecha)}{f.carpeta ? ` · 📁 ${f.carpeta}` : ''}{f.rubro ? ` · ${f.rubro}` : ''}</div>
                   </div>
                 </div>
               </a>

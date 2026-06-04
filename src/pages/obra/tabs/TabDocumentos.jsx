@@ -91,11 +91,36 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
 
   const multi = pendingFiles.length > 1;
 
+  // Carpetas = los TIPOS de documento (Planos, Contrato, etc.). El selector
+  // filtra la lista por carpeta/tipo.
+  const [tipoSel, setTipoSel] = useState('todos');
+  const tiposPresentes = Array.from(new Set((detalle.documentos || []).map(d => d.tipo || 'Otro')));
+  const docsFiltrados = tipoSel === 'todos'
+    ? (detalle.documentos || [])
+    : (detalle.documentos || []).filter(d => (d.tipo || 'Otro') === tipoSel);
+
   return (
     <div style={{ maxWidth: 700 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
         <Btn sm fill onClick={() => setAdding(true)}>+ Documento</Btn>
       </div>
+
+      {/* Carpetas por tipo: Todos + cada tipo presente (con su conteo). */}
+      {detalle.documentos.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+          {['todos', ...tiposPresentes].map(t => {
+            const count = t === 'todos' ? detalle.documentos.length : detalle.documentos.filter(d => (d.tipo || 'Otro') === t).length;
+            const on = tipoSel === t;
+            return (
+              <span key={t} onClick={() => setTipoSel(t)}
+                style={{ fontSize: 11, padding: '3px 9px', borderRadius: 12, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
+                  background: on ? T.accent : T.paper, color: on ? '#fff' : T.ink2, border: `1px solid ${on ? T.accent : T.faint2}`, fontWeight: on ? 700 : 500 }}>
+                📁 {t === 'todos' ? 'Todos' : t}{count ? ` · ${count}` : ''}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {adding && (
         <FormPanel
@@ -158,18 +183,18 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
         </FormPanel>
       )}
 
-      {detalle.documentos.length === 0 ? (
-        <div style={{ color: T.ink3, padding: 24, textAlign: 'center' }}>Sin documentos</div>
+      {docsFiltrados.length === 0 ? (
+        <div style={{ color: T.ink3, padding: 24, textAlign: 'center' }}>{tipoSel === 'todos' ? 'Sin documentos' : 'No hay documentos en esta carpeta.'}</div>
       ) : (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
-          {detalle.documentos.map((dc, i) => (
+          {docsFiltrados.map((dc, i) => (
             <div
               key={dc.id}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 padding: '10px 14px',
-                borderBottom: i < detalle.documentos.length - 1 ? `1px solid ${T.faint2}` : 'none',
+                borderBottom: i < docsFiltrados.length - 1 ? `1px solid ${T.faint2}` : 'none',
                 gap: 12,
               }}
             >

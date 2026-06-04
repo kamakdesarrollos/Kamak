@@ -33,10 +33,12 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
    panel de la tarea (subida multi-archivo a `kamak-fotos` path `tareas/<id>/`,
    lista con link, badge 📎N en la tarjeta). Campo `adjuntos` + addAdjunto/
    removeAdjunto. (La 0004 NO hizo falta: el bucket ya permitía subir.)
-4b. **Carpetas en la sección "Archivos".** Poder **crear carpetas** para organizar
-   tanto **fotos** como **documentos** de la obra (crear/renombrar/mover a carpeta;
-   navegación por carpeta). _Medio — toca el modelo de documentos/fotos + UI de
-   las tabs Documentos y Fotos._
+4b. ~~**Carpetas en la sección "Archivos".**~~ ✅ HECHO. **Fotos:** campo `carpeta`
+   + barra de carpetas (Antes / Después / Avance de obra + "+ Carpeta"); subís
+   parado en una carpeta y caen ahí; mover desde editar foto; las fotos del **bot
+   por avance** caen en "Avance de obra" (webhook). **Documentos:** carpetas = el
+   `tipo` existente (Planos, Contrato…); barra de carpetas que filtra. (Flat, un
+   nivel.)
 
 ## Fase 2 — Notificaciones / bot
 5. **Alerta a todo el equipo al iniciar/confirmar una obra.** Enganchar el cambio
@@ -66,5 +68,5 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
 ---
 
 ## Orden propuesto de ejecución
-1 ✅ → 2 ✅ → 3 ✅ → 4 ✅ → 4b → 5 → 6 → 7 → 8(Enzo, cuando haya datos) → 9 → 10 → 11.
+1 ✅ → 2 ✅ → 3 ✅ → 4 ✅ → 4b ✅ → 5 → 6 → 7 → 8(Enzo, cuando haya datos) → 9 → 10 → 11.
 (Las grandes 9/10/11 se brainstormean aparte antes de codear.)

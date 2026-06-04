@@ -2170,6 +2170,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       fecha:     new Date().toISOString().split('T')[0],
       label:     datos.descripcion || 'Avance de obra',
       rubro:     tarea?.nombre || datos.tareaId || '',
+      // Las fotos que manda el bot por avance caen en la carpeta "Avance de obra".
+      carpeta:   'Avance de obra',
       creadoPor: user.user_name,
     } : null;
 
