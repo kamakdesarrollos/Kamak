@@ -29,6 +29,44 @@ export function cascadeRename(tareas, field, oldName, newName, norm) {
   return { tareas: out, cambios };
 }
 
+// cascadeRubroRename — al renombrar un RUBRO, propaga el nuevo nombre a todo lo
+// que lo referencia POR NOMBRE: tareas[].rubroNombre, materiales/subcontratos/
+// generales[].rubro y mo[].oficio. Sin esto, renombrar un rubro desagrupa todas
+// sus entidades y rompe la auto-generación de tareas (generarTareasObra matchea
+// por nombre). Bug CAT-001.
+//
+// Devuelve { patched, cambios }:
+//   - patched: { [coll]: nuevoArray } SOLO de las colecciones que cambiaron (para setCatalog).
+//   - cambios: [{ coll, id, patch }] de cada ítem que cambió, para persistir atómico.
+const RUBRO_REF_FIELDS = [
+  { coll: 'tareas',       field: 'rubroNombre' },
+  { coll: 'materiales',   field: 'rubro' },
+  { coll: 'subcontratos', field: 'rubro' },
+  { coll: 'generales',    field: 'rubro' },
+  { coll: 'mo',           field: 'oficio' },
+];
+
+export function cascadeRubroRename(catalog, oldName, newName) {
+  const patched = {};
+  const cambios = [];
+  if (!catalog || !oldName || !newName || oldName === newName) return { patched, cambios };
+  for (const { coll, field } of RUBRO_REF_FIELDS) {
+    const list = catalog[coll];
+    if (!Array.isArray(list)) continue;
+    let changed = false;
+    const out = list.map(it => {
+      if (it && it[field] === oldName) {
+        changed = true;
+        cambios.push({ coll, id: it.id, patch: { [field]: newName } });
+        return { ...it, [field]: newName };
+      }
+      return it;
+    });
+    if (changed) patched[coll] = out;
+  }
+  return { patched, cambios };
+}
+
 // syncFormItemNames — mantiene el editor de APU abierto MATCHEADO cuando otra
 // pestaña renombra un material/MO. El form del editor es una copia local con el
 // nombre viejo; al recargar el catálogo (por broadcast), adoptamos el nombre

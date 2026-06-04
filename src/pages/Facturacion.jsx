@@ -921,9 +921,13 @@ export default function Facturacion() {
         const v = (manual, auto) => (manual != null && manual !== '' ? Number(manual) : auto);
         let acum = 0;
         const filas = meses.map(mk => {
-          const ventas = comprobantes
-            .filter(c => c.estado !== 'anulado' && String(c.fecha || '').slice(0, 7) === mk)
+          const ventasComps = comprobantes
+            .filter(c => c.estado !== 'anulado' && String(c.fecha || '').slice(0, 7) === mk);
+          const ventas = ventasComps
             .reduce((s, c) => s + (getTipoComprobante(c.tipoId)?.signo ?? 1) * (c.total || 0), 0);
+          // FAC-001: el IIBB devengado va sobre el NETO gravado, no el total c/IVA.
+          const ventasNeto = ventasComps
+            .reduce((s, c) => s + (getTipoComprobante(c.tipoId)?.signo ?? 1) * (c.neto ?? c.total ?? 0), 0);
           const compras = (movimientos || [])
             .filter(m => m.comprobanteRecibido && !SIN_IVA_CREDITO.has(m.categoriaFiscal) && String(m.fecha || '').slice(0, 7) === mk)
             .reduce((s, m) => s + signoComprobanteRecibido(m.comprobanteRecibido) * (m.comprobanteRecibido?.total || m.monto || 0), 0);
@@ -946,7 +950,7 @@ export default function Facturacion() {
             .filter(m => !esJurisdiccionPBA(m.jurisdiccionIIBB))
             .reduce((s, m) => s + Number(m.percepcionIIBB || 0), 0);
           const descuentoIIBB = retIIBB + percIIBB;
-          const iibbDevengado = Math.round(ventas * iibbAli) / 100;
+          const iibbDevengado = Math.round(ventasNeto * iibbAli) / 100;
           const iibbAuto    = Math.max(0, iibbDevengado - descuentoIIBB);
           const sueldosAuto = sumPorCatFiscal(mk, 'sueldo');
           const csSocAuto   = sumPorCatFiscal(mk, 'cs-soc');

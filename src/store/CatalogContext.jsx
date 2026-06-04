@@ -3,7 +3,7 @@ import { loadSharedData, saveSharedData, patchCatalogItem, appendCatalogItem, re
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogIndex, normalizarNombre } from '../lib/apuPriceResolver';
-import { cascadeRename } from '../lib/catalogCascade';
+import { cascadeRename, cascadeRubroRename } from '../lib/catalogCascade';
 import { loadSismatCostMap, migrarCatalogoConSismat } from '../lib/sismatCostFallback';
 import { aplicarCACalCatalogo } from '../lib/cacUpdate';
 import { normUnidad } from '../lib/unidad';
@@ -207,13 +207,22 @@ export function CatalogProvider({ children }) {
     const cascada = (prevItem?.nombre && changes.nombre && normalizarNombre(changes.nombre) !== normalizarNombre(prevItem.nombre))
       ? cascadeRename(c.tareas, coll, prevItem.nombre, changes.nombre, normalizarNombre) : null;
 
+    // CAT-001: renombrar un RUBRO debe propagar a tareas[].rubroNombre,
+    // materiales/subcontratos/generales[].rubro y mo[].oficio (todos lo referencian
+    // por nombre). Sin esto se desagrupa todo y se rompe generarTareasObra.
+    const prevRubro = coll === 'rubros' ? (c?.rubros || []).find(r => r.id === id) : null;
+    const rubroCascade = (prevRubro?.nombre && changes.nombre && changes.nombre !== prevRubro.nombre)
+      ? cascadeRubroRename(c, prevRubro.nombre, changes.nombre) : null;
+
     setCatalog(prev => {
-      const next = { ...prev, [coll]: prev[coll].map(i => i.id === id ? { ...i, ...patch } : i) };
+      let next = { ...prev, [coll]: prev[coll].map(i => i.id === id ? { ...i, ...patch } : i) };
       if (cascada) next.tareas = cascada.tareas;
+      if (rubroCascade) next = { ...next, ...rubroCascade.patched };
       return next;
     });
     patchCatalogItem(coll, id, patch);
     if (cascada) for (const cb of cascada.cambios) patchCatalogItem('tareas', cb.id, { [coll]: cb[coll] });
+    if (rubroCascade) for (const cb of rubroCascade.cambios) patchCatalogItem(cb.coll, cb.id, cb.patch);
   }, []);
   const remove = useCallback((coll, id)          => { markUserEdit(); touch(); setCatalog(c => ({ ...c, [coll]: c[coll].filter(i => i.id !== id) })); removeCatalogItem(coll, id); }, []);
   const bulkSeed = useCallback((additions) => {

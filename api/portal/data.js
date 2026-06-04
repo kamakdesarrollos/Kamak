@@ -28,7 +28,13 @@ function nombreMatch(a, b) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // PORTAL-DATA-003: CORS restringido a los dominios kamak (el token sigue siendo
+  // el gate real, pero esto evita que cualquier sitio lea la respuesta desde un
+  // browser). Si el portal se sirve desde otro dominio, agregarlo al regex.
+  const origin = req.headers.origin || '';
+  const corsOk = /^https:\/\/([a-z0-9-]+\.)?kamak\.com\.ar$/.test(origin);
+  res.setHeader('Access-Control-Allow-Origin', corsOk ? origin : 'https://kamak.com.ar');
+  res.setHeader('Vary', 'Origin');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const { token } = req.query;
@@ -92,9 +98,20 @@ export default async function handler(req, res) {
       .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
     const cobradoUSD = ingresos.reduce((s, i) => s + i.monto, 0);
 
+    // PORTAL-DATA-003: no exponer datos internos que el portal NO usa: lo gastado
+    // y el margen de la obra, los contratos de subcontratistas (lo que les pagamos)
+    // ni los movimientos internos de la obra. (Los costos/márgenes por tarea siguen
+    // porque el portal calcula la venta con ellos — moverlo al server es aparte.)
+    const { gastado, margen, ...obraPublica } = obra;
+    let detallePublico = detalle;
+    if (detalle) {
+      const { contratos, movimientos, ...restoDetalle } = detalle;
+      detallePublico = restoDetalle;
+    }
+
     return res.status(200).json({
-      obra,
-      detalle,
+      obra: obraPublica,
+      detalle: detallePublico,
       // Devolvemos solo el cliente (nombre) — no toda la lista
       clienteNombre: cliente?.nombre || obra.cliente || '',
       dolarVenta,

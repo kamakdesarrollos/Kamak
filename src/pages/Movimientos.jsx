@@ -9,6 +9,7 @@ import { useObras } from '../store/ObrasContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useClientes } from '../store/ClientesContext';
 import { useDolar } from '../store/DolarContext';
+import { montoEnARS } from '../lib/caja';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useSolicitudes } from '../store/SolicitudesContext';
 import { useCatalog } from '../store/CatalogContext';
@@ -1190,8 +1191,9 @@ export default function Movimientos() {
   const gastos     = useMemo(() => filtered.filter(m => m.tipo === 'gasto' || m.tipo === 'nota_credito_compra'), [filtered]);
   const traspasos  = useMemo(() => filtered.filter(m => m.tipo === 'traspaso'), [filtered]);
 
-  const totalIngresos = ingresos.reduce((s, m) => s + m.monto, 0);
-  const totalGastos   = gastos.reduce((s, m) => s + m.monto, 0);
+  // MOV-02: consolidar en ARS (no sumar pesos + dólares como si fueran lo mismo).
+  const totalIngresos = ingresos.reduce((s, m) => s + montoEnARS(m, cajas, dolarVenta || 1070), 0);
+  const totalGastos   = gastos.reduce((s, m) => s + montoEnARS(m, cajas, dolarVenta || 1070), 0);
   const neto          = totalIngresos - totalGastos;
 
   const exportCSV = () => {

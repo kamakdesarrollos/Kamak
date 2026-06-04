@@ -525,7 +525,14 @@ export default function Obras() {
   };
 
   const handleEliminar = (id) => {
-    if (window.confirm('¿Eliminar esta obra? Esta acción no se puede deshacer.')) deleteObra(id);
+    // IR-01 (parcial): el borrado NO cascadea movimientos/CC (la plata ya se
+    // movió en su caja; borrarlos alteraría saldos — es decisión de negocio).
+    // Pero avisamos qué queda asociado para que no sea un orfanato silencioso.
+    const movs = movimientos.filter(m => m.obraId === id).length;
+    const aviso = movs > 0
+      ? `Esta obra tiene ${movs} movimiento(s) de caja asociados. Si la eliminás, esos movimientos NO se borran (siguen impactando sus cajas) pero quedan sin obra. ¿Eliminar igual?`
+      : '¿Eliminar esta obra? Esta acción no se puede deshacer.';
+    if (window.confirm(aviso)) deleteObra(id);
   };
 
   const handleSaveNueva = (datos) => {

@@ -3859,7 +3859,7 @@ function TabFotos({ detalle, patch, obraId }) {
       nuevasFotos.push({ id: newId(), label: m.label, fecha: multiFecha, rubro: multiRubro, carpeta: carpetaActiva, url });
       setMultiProgress({ done: i + 1, total: multiFiles.length });
     }
-    patch(d => ({ ...d, fotos: [...d.fotos, ...nuevasFotos] }));
+    patch(d => ({ ...d, fotos: [...(d.fotos || []), ...nuevasFotos] }));
     cancelMulti();
   };
 
@@ -3892,7 +3892,7 @@ function TabFotos({ detalle, patch, obraId }) {
       url = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
       setUploading(false);
     }
-    patch(d => ({ ...d, fotos: [...d.fotos, { id: newId(), ...form, carpeta: carpetaActiva, url }] }));
+    patch(d => ({ ...d, fotos: [...(d.fotos || []), { id: newId(), ...form, carpeta: carpetaActiva, url }] }));
     cancelAdding();
   };
 
@@ -3938,7 +3938,7 @@ function TabFotos({ detalle, patch, obraId }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: T.ink2 }}>{detalle.fotos.length} fotos</div>
+        <div style={{ fontSize: 12, color: T.ink2 }}>{(detalle.fotos || []).length} fotos</div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Btn sm onClick={() => { setMultiMode(true); setAdding(false); }}>🖼️ Subir varias</Btn>
           <Btn sm fill onClick={() => { setAdding(true); setMultiMode(false); }}>📷 Agregar 1 foto</Btn>

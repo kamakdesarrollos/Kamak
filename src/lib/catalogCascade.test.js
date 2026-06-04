@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cascadeRename, syncFormItemNames } from './catalogCascade';
+import { cascadeRename, syncFormItemNames, cascadeRubroRename } from './catalogCascade';
 
 // norm de prueba (en producción usa el normalizarNombre del resolver)
 const norm = s => (s || '').toString().toLowerCase().trim();
@@ -49,6 +49,74 @@ describe('cascadeRename — renombrar material/MO propaga a las recetas de las A
     const { tareas: out, cambios } = cascadeRename(ts, 'subcontratos', 'Oficial albañil', 'Oficial', norm);
     expect(out[0].subcontratos[0].nombre).toBe('Oficial');
     expect(cambios).toHaveLength(1);
+  });
+});
+
+// CAT-001: renombrar un RUBRO debe propagar el nuevo nombre a todo lo que lo
+// referencia por nombre (tareas.rubroNombre, materiales/subcontratos/generales.rubro,
+// mo.oficio). Sin esto se desagrupa todo y se rompe generarTareasObra (match por nombre).
+const catalogo = () => ({
+  rubros: [{ id: 'r1', nombre: 'PINTURA' }, { id: 'r2', nombre: 'ELECTRICIDAD' }],
+  tareas: [
+    { id: 't1', nombre: 'Pintar', rubroNombre: 'PINTURA' },
+    { id: 't2', nombre: 'Cablear', rubroNombre: 'ELECTRICIDAD' },
+  ],
+  materiales: [
+    { id: 'm1', nombre: 'Látex', rubro: 'PINTURA' },
+    { id: 'm2', nombre: 'Cable', rubro: 'ELECTRICIDAD' },
+  ],
+  subcontratos: [{ id: 's1', nombre: 'Pintor', rubro: 'PINTURA' }],
+  generales: [{ id: 'g1', nombre: 'Andamio', rubro: 'PINTURA' }],
+  mo: [{ id: 'o1', nombre: 'Oficial pintor', oficio: 'PINTURA' }],
+});
+
+describe('cascadeRubroRename — renombrar un rubro propaga a todas las referencias (CAT-001)', () => {
+  it('renombra rubroNombre en tareas, rubro en mat/sub/gral y oficio en mo', () => {
+    const { patched, cambios } = cascadeRubroRename(catalogo(), 'PINTURA', 'PINTURAS');
+    expect(patched.tareas.find(t => t.id === 't1').rubroNombre).toBe('PINTURAS');
+    expect(patched.materiales.find(m => m.id === 'm1').rubro).toBe('PINTURAS');
+    expect(patched.subcontratos[0].rubro).toBe('PINTURAS');
+    expect(patched.generales[0].rubro).toBe('PINTURAS');
+    expect(patched.mo[0].oficio).toBe('PINTURAS');
+    // los de otro rubro quedan intactos
+    expect(patched.tareas.find(t => t.id === 't2').rubroNombre).toBe('ELECTRICIDAD');
+    expect(patched.materiales.find(m => m.id === 'm2').rubro).toBe('ELECTRICIDAD');
+  });
+
+  it('cambios trae { coll, id, patch } por cada ítem que cambió (para persistir atómico)', () => {
+    const { cambios } = cascadeRubroRename(catalogo(), 'PINTURA', 'PINTURAS');
+    // t1 (tareas), m1 (materiales), s1 (subcontratos), g1 (generales), o1 (mo) = 5
+    expect(cambios).toHaveLength(5);
+    const t = cambios.find(c => c.id === 't1');
+    expect(t).toEqual({ coll: 'tareas', id: 't1', patch: { rubroNombre: 'PINTURAS' } });
+    const o = cambios.find(c => c.id === 'o1');
+    expect(o).toEqual({ coll: 'mo', id: 'o1', patch: { oficio: 'PINTURAS' } });
+  });
+
+  it('no muta el catálogo original', () => {
+    const c = catalogo();
+    cascadeRubroRename(c, 'PINTURA', 'PINTURAS');
+    expect(c.tareas[0].rubroNombre).toBe('PINTURA');
+  });
+
+  it('sin matches o mismo nombre → cambios vacío y patched vacío', () => {
+    expect(cascadeRubroRename(catalogo(), 'NO-EXISTE', 'X').cambios).toEqual([]);
+    expect(cascadeRubroRename(catalogo(), 'PINTURA', 'PINTURA').cambios).toEqual([]);
+    expect(cascadeRubroRename(catalogo(), 'PINTURA', 'PINTURA').patched).toEqual({});
+  });
+
+  it('solo incluye en patched las colecciones que cambiaron', () => {
+    const { patched } = cascadeRubroRename(catalogo(), 'ELECTRICIDAD', 'ELÉCTRICA');
+    // ELECTRICIDAD está en tareas (t2) y materiales (m2); no en sub/gral/mo
+    expect(patched.tareas).toBeTruthy();
+    expect(patched.materiales).toBeTruthy();
+    expect(patched.subcontratos).toBeUndefined();
+    expect(patched.mo).toBeUndefined();
+  });
+
+  it('tolera colecciones ausentes', () => {
+    const { cambios } = cascadeRubroRename({ tareas: [{ id: 't1', rubroNombre: 'PINTURA' }] }, 'PINTURA', 'X');
+    expect(cambios).toEqual([{ coll: 'tareas', id: 't1', patch: { rubroNombre: 'X' } }]);
   });
 });
 

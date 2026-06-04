@@ -10,6 +10,7 @@ import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useDolar } from '../store/DolarContext';
 import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado } from './obra/helpers';
+import { montoEnARS } from '../lib/caja';
 
 const CY = new Date().getFullYear();
 const fmtM = (n) => {
@@ -57,8 +58,9 @@ export default function Reportes() {
     movimientos.filter(m => (m.fecha || '').startsWith(String(CY)) && !m.ccPrevia),
     [movimientos]);
 
-  const facturacionYTD = allMovsYTD.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0);
-  const costoYTD       = allMovsYTD.filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0);
+  // REP-01: consolidar en ARS (no sumar pesos + dólares como si fueran lo mismo).
+  const facturacionYTD = allMovsYTD.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
+  const costoYTD       = allMovsYTD.filter(m => m.tipo === 'gasto').reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
   const margenProm = activas.length > 0
     ? activas.reduce((s, o) => s + (o.margen || 0), 0) / activas.length : 0;
 
@@ -88,10 +90,10 @@ export default function Reportes() {
   const topProveedores = useMemo(() => {
     const map = {};
     allMovsYTD.filter(m => m.tipo === 'gasto' && m.proveedor).forEach(m => {
-      map[m.proveedor] = (map[m.proveedor] || 0) + m.monto;
+      map[m.proveedor] = (map[m.proveedor] || 0) + montoEnARS(m, cajas, tc);
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  }, [allMovsYTD]);
+  }, [allMovsYTD, cajas, tc]);
 
   // ── Financiación cross-obra ──
   const adicionalesAprobados = useMemo(() => {

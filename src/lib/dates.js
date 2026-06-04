@@ -51,5 +51,7 @@ export const inicioMes = () => {
 export const fechaRelativa = (dias) => {
   const d = new Date();
   d.setDate(d.getDate() + dias);
-  return d.toISOString().split('T')[0];
+  // GLB-02: componentes LOCALES (no toISOString/UTC) para no fechar al día
+  // siguiente después de las 21:00 ARG (saltaba de mes en vencimientos/cheques).
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };

@@ -12,10 +12,9 @@ import { SAVE_DEBOUNCE_MS } from '../lib/constants';
 //
 // De-dupe por obra dentro de la sesión: aunque la transición se evalúe dos veces
 // muy rápido (antes de que obrasRef se sincronice), la alerta sale UNA sola vez.
-const obrasYaAlertadas = new Set();
-function emitAlertaObraIniciada(obra) {
-  if (!obra || obrasYaAlertadas.has(obra.id)) return;
-  obrasYaAlertadas.add(obra.id);
+function emitAlertaObraIniciada(obra, yaAlertadas) {
+  if (!obra || yaAlertadas.has(obra.id)) return;
+  yaAlertadas.add(obra.id);
   appendItemInSharedArray('alertas', {
     id:     `alerta-obra-${obra.id}-${Date.now()}`,
     tipo:   'obra_iniciada',
@@ -224,6 +223,9 @@ export function ObrasProvider({ children }) {
   // los obraId cuyo detalle cambió, para flushearlos atómicos POR OBRA.
   const lastLocalSaveAt = useRef(0);
   const dirtyDetalles = useRef(new Set());
+  // De-dupe de alertas "obra iniciada" POR SESIÓN. Antes era un Set module-level
+  // que sobrevivía remounts/sesiones y silenciaba la alerta para siempre.
+  const obrasYaAlertadas = useRef(new Set());
   const { markReady } = useAppLoading();
   useEffect(() => { obrasRef.current = obras; }, [obras]);
   useEffect(() => { detallesRef.current = detalles; }, [detalles]);
@@ -336,7 +338,7 @@ export function ObrasProvider({ children }) {
     markUserEdit();
     if (changes.estado === 'activa') {
       const prev = obrasRef.current.find(o => o.id === id);
-      if (prev && prev.estado !== 'activa') emitAlertaObraIniciada(prev);
+      if (prev && prev.estado !== 'activa') emitAlertaObraIniciada(prev, obrasYaAlertadas.current);
     }
     setObras(prev => prev.map(o => o.id === id ? { ...o, ...changes } : o));
     patchObjectItem('obras', 'obras', id, changes);
@@ -345,7 +347,7 @@ export function ObrasProvider({ children }) {
   const setEstado = useCallback((id, nuevoEstado) => {
     markUserEdit();
     const prevObra = obrasRef.current.find(o => o.id === id);
-    if (nuevoEstado === 'activa' && prevObra && prevObra.estado !== 'activa') emitAlertaObraIniciada(prevObra);
+    if (nuevoEstado === 'activa' && prevObra && prevObra.estado !== 'activa') emitAlertaObraIniciada(prevObra, obrasYaAlertadas.current);
     const today = new Date().toISOString().split('T')[0];
     const ch = { estado: nuevoEstado };
     if (nuevoEstado === 'activa' && prevObra && !prevObra.fechaInicio) ch.fechaInicio = today;
