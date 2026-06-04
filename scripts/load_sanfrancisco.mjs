@@ -21,7 +21,7 @@ if (!pick('SUPABASE_SERVICE_KEY')) { console.error('Falta SUPABASE_SERVICE_KEY e
 const today = new Date().toISOString().split('T')[0];
 const borrar = process.argv.includes('--borrar');
 const FUENTE = 'sanfrancisco';
-const RUBRO = 'Mobiliario';
+const RUBRO = 'Mobiliario San Francisco';
 const EXCLUIR = new Set(['servicios', 'servicio de corte', 'herramientas', 'discontinuados', 'discontinuos']);
 
 const pkDe = (url) => { const m = String(url || '').match(/_(\d+)\/?$/); return m ? Number(m[1]) : null; }; // PK Oscar (para el sync por listado)
@@ -62,7 +62,7 @@ const subRubroDe = (p) => {
 
   // Asegurar rubro Mobiliario
   if (!c.rubros.some(r => (r.nombre || '').trim().toLowerCase() === RUBRO.toLowerCase())) {
-    c.rubros.push({ id: 'prueba-rubro-mob', nombre: RUBRO, updatedAt: today, tareasEstandar: [] });
+    c.rubros.push({ id: 'rubro-mob-sf', nombre: RUBRO, updatedAt: today, tareasEstandar: [] });
   }
 
   const productos = JSON.parse(readFileSync(resolve(__dirname, 'sanfrancisco_catalogo.json'), 'utf8'));

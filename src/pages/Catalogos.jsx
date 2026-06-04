@@ -356,6 +356,17 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
     return list;
   }, [items, search, lastAddedId, selRubro, rubroKey]);
 
+  // Conteo por rubro en UNA pasada. El panel "Por rubro" solo muestra rubros que
+  // TIENEN materiales: antes listaba rubros del catálogo sin ítems (ej. un rubro
+  // con APUs/MO pero sin materiales) y al clickearlos no aparecía nada ("entro a
+  // materiales, busco por rubro y no figura ninguno"). Además evita recorrer
+  // todos los items por cada rubro en cada render (importante con miles de items).
+  const rubroCounts = useMemo(() => {
+    const m = {};
+    for (const i of items) { const k = i[rubroKey]; if (k) m[k] = (m[k] || 0) + 1; }
+    return m;
+  }, [items, rubroKey]);
+
   const startAdd  = () => { setForm({ ...emptyForm }); setSel(null); };
   const startEdit = (item) => { setForm({ ...item }); setSel(item.id); };
   const cancel    = () => { setForm(null); setSel(null); setLastAddedId(null); };
@@ -376,8 +387,8 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
             <span style={{ color: !selRubro ? T.ink : T.ink2 }}>Todos</span>
             <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono }}>{items.length}</span>
           </div>
-          {[...rubros].sort(ordenarRubros).map(r => {
-            const count = items.filter(i => i[rubroKey] === r).length;
+          {[...rubros].filter(r => rubroCounts[r] > 0).sort(ordenarRubros).map(r => {
+            const count = rubroCounts[r] || 0;
             const isOn  = selRubro === r;
             const label = r.replace(/^\d+\s*-\s*/, '');
             const num   = r.match(/^(\d+)/)?.[1];
