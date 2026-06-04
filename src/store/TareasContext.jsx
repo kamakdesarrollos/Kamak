@@ -166,6 +166,25 @@ export function TareasProvider({ children }) {
     }));
   }, [setTareas]);
 
+  // ── Adjuntos (documentos / fotos de la tarea) ───────────────────────────────
+  // Se suben al bucket kamak-fotos (path tareas/<id>/...). Acá solo guardamos
+  // la referencia { id, nombre, url, tipo, subidoPor, creadoAt }.
+  const addAdjunto = useCallback((tareaId, adjunto) => {
+    setTareas(prev => prev.map(t => t.id !== tareaId ? t : {
+      ...t,
+      adjuntos: [...(t.adjuntos || []), { id: newId('adj'), creadoAt: new Date().toISOString(), ...adjunto }],
+      actualizadoAt: new Date().toISOString(),
+    }));
+  }, [setTareas]);
+
+  const removeAdjunto = useCallback((tareaId, adjuntoId) => {
+    setTareas(prev => prev.map(t => t.id !== tareaId ? t : {
+      ...t,
+      adjuntos: (t.adjuntos || []).filter(a => a.id !== adjuntoId),
+      actualizadoAt: new Date().toISOString(),
+    }));
+  }, [setTareas]);
+
   // ── Comentarios ────────────────────────────────────────────────────────────
 
   const addComentario = useCallback((tareaId, userId, texto) => {
@@ -204,10 +223,12 @@ export function TareasProvider({ children }) {
       removeItem,
       setItemObservacion,
       setItemAsignado,
+      addAdjunto,
+      removeAdjunto,
       addComentario,
       marcarVista,
     }),
-    [tareas, addTarea, updateTarea, deleteTarea, toggleItem, addItem, removeItem, setItemObservacion, setItemAsignado, addComentario, marcarVista]
+    [tareas, addTarea, updateTarea, deleteTarea, toggleItem, addItem, removeItem, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto, addComentario, marcarVista]
   );
 
   return <CTX.Provider value={value}>{children}</CTX.Provider>;

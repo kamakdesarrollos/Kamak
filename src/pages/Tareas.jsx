@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
@@ -7,6 +7,7 @@ import { T } from '../theme';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
 import { useTareas } from '../store/TareasContext';
+import { supabase } from '../lib/supabase';
 import TareaModal from './modales/TareaModal';
 
 // Pagina /tareas. Hub de tareas con checklist asignables entre usuarios.
@@ -66,7 +67,57 @@ function ProgressBar({ completos, total }) {
   );
 }
 
-function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, solapaUserId }) {
+// Adjuntos (docs/fotos) de una tarea: subida multi-archivo al bucket kamak-fotos
+// (path tareas/<id>/...) + lista con link. El borrado quita solo la referencia
+// (no borra del Storage), igual que en Documentos de obra.
+function AdjuntosTarea({ tarea, currentUser, addAdjunto, removeAdjunto }) {
+  const fileRef = useRef(null);
+  const [subiendo, setSubiendo] = useState(false);
+  const adjuntos = tarea.adjuntos || [];
+
+  const onFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    setSubiendo(true);
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const ext = f.name.split('.').pop();
+      const path = `tareas/${tarea.id}/${Date.now()}-${i}.${ext}`;
+      const { error } = await supabase.storage.from('kamak-fotos').upload(path, f, { upsert: true });
+      if (error) { window.alert(`No se pudo subir "${f.name}": ${error.message}`); continue; }
+      const url = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
+      addAdjunto(tarea.id, { nombre: f.name, url, tipo: f.type || '', subidoPor: currentUser?.id });
+    }
+    setSubiendo(false);
+  };
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontFamily: T.fontMono, fontSize: 9.5, letterSpacing: 1, color: T.ink3, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
+        ◆ Adjuntos{adjuntos.length ? ` (${adjuntos.length})` : ''}
+      </div>
+      {adjuntos.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+          {adjuntos.map(a => {
+            const esImg = (a.tipo || '').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(a.nombre || '');
+            return (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, padding: '5px 8px' }}>
+                <span style={{ flexShrink: 0 }}>{esImg ? '🖼️' : '📄'}</span>
+                <a href={a.url} target="_blank" rel="noreferrer" style={{ flex: 1, color: T.accent, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.nombre}</a>
+                <span onClick={() => removeAdjunto(tarea.id, a.id)} role="button" title="Quitar adjunto" style={{ cursor: 'pointer', color: T.ink3, fontSize: 12, flexShrink: 0 }}>🗑</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <input ref={fileRef} type="file" multiple style={{ display: 'none' }} onChange={onFiles} />
+      <Btn sm onClick={() => fileRef.current?.click()} disabled={subiendo}>{subiendo ? 'Subiendo…' : '📎 Adjuntar archivos'}</Btn>
+    </div>
+  );
+}
+
+function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto, solapaUserId }) {
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
   const obra = obras.find(o => o.id === tarea.obraId);
   const totalItems = (tarea.checklist || []).length;
@@ -157,6 +208,11 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
             {(tarea.comentarios || []).length > 0 && (
               <span style={{ color: T.ink3, fontSize: 10, fontFamily: T.fontMono, flexShrink: 0 }} title={`${tarea.comentarios.length} comentario(s)`}>
                 💬 {tarea.comentarios.length}
+              </span>
+            )}
+            {(tarea.adjuntos || []).length > 0 && (
+              <span style={{ color: T.ink3, fontSize: 10, fontFamily: T.fontMono, flexShrink: 0 }} title={`${tarea.adjuntos.length} adjunto(s)`}>
+                📎 {tarea.adjuntos.length}
               </span>
             )}
           </div>
@@ -371,6 +427,8 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
               />
             </div>
           </div>
+
+          <AdjuntosTarea tarea={tarea} currentUser={currentUser} addAdjunto={addAdjunto} removeAdjunto={removeAdjunto} />
         </div>
       )}
     </div>
@@ -380,7 +438,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
 export default function Tareas() {
   const { currentUser, usuarios } = useUsuarios();
   const { obras } = useObras();
-  const { tareas, marcarVista, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado } = useTareas();
+  const { tareas, marcarVista, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto } = useTareas();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const isAdmin = currentUser?.rol === 'Admin';
@@ -594,6 +652,8 @@ export default function Tareas() {
               addComentario={addComentario}
               setItemObservacion={setItemObservacion}
               setItemAsignado={setItemAsignado}
+              addAdjunto={addAdjunto}
+              removeAdjunto={removeAdjunto}
             />
           ))
         )}

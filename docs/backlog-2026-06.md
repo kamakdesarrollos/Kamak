@@ -23,8 +23,10 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
    checklist tiene un **responsable** (selector por ítem en el panel, visible en
    el modal). Campo `asignadoA` por ítem + `setItemAsignado`. La tarea sigue
    asignándose a varios (grupal); los ítems se reparten entre esas/otras personas.
-4. **Adjuntar documentos/fotos a tareas.** Reutilizar el subidor multi-archivo
-   (bucket `kamak-fotos`). _Medio (requiere policy 0004 aplicada)._
+4. ~~**Adjuntar documentos/fotos a tareas.**~~ ✅ HECHO: sección Adjuntos en el
+   panel de la tarea (subida multi-archivo a `kamak-fotos` path `tareas/<id>/`,
+   lista con link, badge 📎N en la tarjeta). Campo `adjuntos` + addAdjunto/
+   removeAdjunto. (La 0004 NO hizo falta: el bucket ya permitía subir.)
 4b. **Carpetas en la sección "Archivos".** Poder **crear carpetas** para organizar
    tanto **fotos** como **documentos** de la obra (crear/renombrar/mover a carpeta;
    navegación por carpeta). _Medio — toca el modelo de documentos/fotos + UI de
@@ -58,5 +60,5 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
 ---
 
 ## Orden propuesto de ejecución
-1 ✅ → 2 ✅ → 3 ✅ → 4 → 4b → 5 → 6 → 7 → 8(Enzo, cuando haya datos) → 9 → 10 → 11.
+1 ✅ → 2 ✅ → 3 ✅ → 4 ✅ → 4b → 5 → 6 → 7 → 8(Enzo, cuando haya datos) → 9 → 10 → 11.
 (Las grandes 9/10/11 se brainstormean aparte antes de codear.)
