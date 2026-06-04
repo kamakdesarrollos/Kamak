@@ -3940,8 +3940,8 @@ function TabFotos({ detalle, patch, obraId }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: T.ink2 }}>{detalle.fotos.length} fotos</div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Btn sm onClick={() => { setMultiMode(true); setAdding(false); }}>📁 Subir carpeta</Btn>
-          <Btn sm fill onClick={() => { setAdding(true); setMultiMode(false); }}>📷 Agregar foto</Btn>
+          <Btn sm onClick={() => { setMultiMode(true); setAdding(false); }}>🖼️ Subir varias</Btn>
+          <Btn sm fill onClick={() => { setAdding(true); setMultiMode(false); }}>📷 Agregar 1 foto</Btn>
         </div>
       </div>
 

@@ -36,9 +36,11 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
 4b. ~~**Carpetas en la sección "Archivos".**~~ ✅ HECHO. **Fotos:** campo `carpeta`
    + barra de carpetas (Antes / Después / Avance de obra + "+ Carpeta"); subís
    parado en una carpeta y caen ahí; mover desde editar foto; las fotos del **bot
-   por avance** caen en "Avance de obra" (webhook). **Documentos:** carpetas = el
-   `tipo` existente (Planos, Contrato…); barra de carpetas que filtra. (Flat, un
-   nivel.)
+   por avance** caen en "Avance de obra" (webhook). **Documentos:** mismo sistema
+   que Fotos — campo `carpeta` propio + barra con "+ Carpeta" (base Planos/
+   Contratos + custom), subís dentro de la carpeta activa, y movés cada doc con un
+   selector en su fila. (Flat, un nivel.) El multi-upload de fotos es "🖼️ Subir
+   varias"; el de documentos es "+ Documento" (acepta varios archivos).
 
 ## Fase 2 — Notificaciones / bot
 5. **Alerta a todo el equipo al iniciar/confirmar una obra.** Enganchar el cambio

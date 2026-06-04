@@ -6,6 +6,8 @@ import { newId } from '../../../lib/id';
 import { FInput, FSelect, FormPanel } from '../forms';
 
 const TIPOS_DOC = ['Contrato', 'Presupuesto', 'Planos', 'Certificado', 'Factura', 'Permiso', 'Otro'];
+// Carpetas de documentos siempre disponibles. Podés crear más con "+ Carpeta".
+const CARPETAS_DOC_BASE = ['Planos', 'Contratos'];
 
 // Mismo formato que el resto de las tabs (DD/MM/YYYY).
 const fmtD = (iso) => !iso ? '—' : iso.split('-').reverse().join('/');
@@ -45,7 +47,7 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
     // Sin archivos: documento solo-metadata (necesita nombre). Igual que antes.
     if (pendingFiles.length === 0) {
       if (!form.nombre.trim()) return;
-      patch(d => ({ ...d, documentos: [...d.documentos, { id: newId('doc'), ...form, url: null }] }));
+      patch(d => ({ ...d, documentos: [...d.documentos, { id: newId('doc'), ...form, carpeta: carpetaActiva, url: null }] }));
       resetAndClose();
       return;
     }
@@ -71,7 +73,7 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
       const url = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
       // Con 1 archivo se respeta el nombre tipeado; con varios, el de cada archivo.
       const nombre = (single && form.nombre.trim()) ? form.nombre.trim() : file.name.replace(/\.[^.]+$/, '');
-      nuevos.push({ id: newId('doc'), nombre, tipo: form.tipo, fecha: form.fecha, url });
+      nuevos.push({ id: newId('doc'), nombre, tipo: form.tipo, fecha: form.fecha, carpeta: carpetaActiva, url });
       setPendingFiles(prev => prev.map((pf, idx) => idx === i ? { ...pf, status: 'done' } : pf));
     }
 
@@ -91,13 +93,17 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
 
   const multi = pendingFiles.length > 1;
 
-  // Carpetas = los TIPOS de documento (Planos, Contrato, etc.). El selector
-  // filtra la lista por carpeta/tipo.
-  const [tipoSel, setTipoSel] = useState('todos');
-  const tiposPresentes = Array.from(new Set((detalle.documentos || []).map(d => d.tipo || 'Otro')));
-  const docsFiltrados = tipoSel === 'todos'
+  // Carpetas propias (campo `carpeta`). La seleccionada filtra la lista y es
+  // donde caen los documentos que subas. "+ Carpeta" crea una nueva.
+  const [carpetaSel,    setCarpetaSel]    = useState('todos');
+  const [carpetasExtra, setCarpetasExtra] = useState([]);
+  const carpetaActiva = carpetaSel === 'todos' ? '' : carpetaSel;
+  const usadas = Array.from(new Set((detalle.documentos || []).map(d => d.carpeta).filter(Boolean)));
+  const carpetas = Array.from(new Set([...CARPETAS_DOC_BASE, ...carpetasExtra, ...usadas]));
+  const docsFiltrados = carpetaSel === 'todos'
     ? (detalle.documentos || [])
-    : (detalle.documentos || []).filter(d => (d.tipo || 'Otro') === tipoSel);
+    : (detalle.documentos || []).filter(d => (d.carpeta || '') === carpetaSel);
+  const moverDoc = (id, carpeta) => patch(d => ({ ...d, documentos: d.documentos.map(dc => dc.id === id ? { ...dc, carpeta } : dc) }));
 
   return (
     <div style={{ maxWidth: 700 }}>
@@ -105,26 +111,29 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
         <Btn sm fill onClick={() => setAdding(true)}>+ Documento</Btn>
       </div>
 
-      {/* Carpetas por tipo: Todos + cada tipo presente (con su conteo). */}
-      {detalle.documentos.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-          {['todos', ...tiposPresentes].map(t => {
-            const count = t === 'todos' ? detalle.documentos.length : detalle.documentos.filter(d => (d.tipo || 'Otro') === t).length;
-            const on = tipoSel === t;
-            return (
-              <span key={t} onClick={() => setTipoSel(t)}
-                style={{ fontSize: 11, padding: '3px 9px', borderRadius: 12, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
-                  background: on ? T.accent : T.paper, color: on ? '#fff' : T.ink2, border: `1px solid ${on ? T.accent : T.faint2}`, fontWeight: on ? 700 : 500 }}>
-                📁 {t === 'todos' ? 'Todos' : t}{count ? ` · ${count}` : ''}
-              </span>
-            );
-          })}
-        </div>
-      )}
+      {/* Barra de carpetas. La seleccionada filtra la lista y es donde caen los
+          documentos que subas. "+ Carpeta" crea una nueva. */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+        {['todos', ...carpetas].map(c => {
+          const count = c === 'todos' ? (detalle.documentos || []).length : (detalle.documentos || []).filter(d => (d.carpeta || '') === c).length;
+          const on = carpetaSel === c;
+          return (
+            <span key={c} onClick={() => setCarpetaSel(c)}
+              style={{ fontSize: 11, padding: '3px 9px', borderRadius: 12, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
+                background: on ? T.accent : T.paper, color: on ? '#fff' : T.ink2, border: `1px solid ${on ? T.accent : T.faint2}`, fontWeight: on ? 700 : 500 }}>
+              📁 {c === 'todos' ? 'Todos' : c}{count ? ` · ${count}` : ''}
+            </span>
+          );
+        })}
+        <span onClick={() => { const n = window.prompt('Nombre de la nueva carpeta:'); const name = (n || '').trim(); if (name) { setCarpetasExtra(prev => prev.includes(name) ? prev : [...prev, name]); setCarpetaSel(name); } }}
+          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 12, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', background: T.faint, color: T.accent, border: `1px dashed ${T.accent}` }}>
+          + Carpeta
+        </span>
+      </div>
 
       {adding && (
         <FormPanel
-          title="Agregar documento"
+          title={carpetaActiva ? `Agregar documento → 📁 ${carpetaActiva}` : 'Agregar documento'}
           onSave={save}
           onCancel={resetAndClose}
           style={{ marginBottom: 14 }}
@@ -184,7 +193,7 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
       )}
 
       {docsFiltrados.length === 0 ? (
-        <div style={{ color: T.ink3, padding: 24, textAlign: 'center' }}>{tipoSel === 'todos' ? 'Sin documentos' : 'No hay documentos en esta carpeta.'}</div>
+        <div style={{ color: T.ink3, padding: 24, textAlign: 'center' }}>{carpetaSel === 'todos' ? 'Sin documentos' : 'No hay documentos en esta carpeta.'}</div>
       ) : (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
           {docsFiltrados.map((dc, i) => (
@@ -203,6 +212,11 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{dc.nombre}</div>
                 <div style={{ fontSize: 11, color: T.ink2 }}>{dc.tipo} · {fmtD(dc.fecha)}</div>
               </div>
+              <select value={dc.carpeta || ''} onChange={e => moverDoc(dc.id, e.target.value)} title="Mover a carpeta"
+                style={{ fontSize: 10, padding: '2px 4px', border: `1px solid ${dc.carpeta ? '#a5b4fc' : T.faint2}`, borderRadius: 3, background: dc.carpeta ? '#eef2ff' : T.paper, color: dc.carpeta ? '#3949ab' : T.ink3, maxWidth: 120, cursor: 'pointer' }}>
+                <option value="">📁 (sin carpeta)</option>
+                {carpetas.map(c => <option key={c} value={c}>📁 {c}</option>)}
+              </select>
               <Chip style={{ fontSize: 10 }}>{dc.tipo}</Chip>
               {dc.url
                 ? <a href={dc.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}><Btn sm>↓ Abrir</Btn></a>
