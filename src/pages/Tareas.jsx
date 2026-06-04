@@ -66,7 +66,7 @@ function ProgressBar({ completos, total }) {
   );
 }
 
-function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, solapaUserId }) {
+function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, solapaUserId }) {
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
   const obra = obras.find(o => o.id === tarea.obraId);
   const totalItems = (tarea.checklist || []).length;
@@ -262,9 +262,18 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                       >
                         {it.texto}
                       </span>
+                      <select
+                        value={it.asignadoA || ''}
+                        onChange={e => setItemAsignado(tarea.id, it.id, e.target.value || null)}
+                        title="Responsable de este ítem"
+                        style={{ fontSize: 10, padding: '1px 3px', border: `1px solid ${it.asignadoA ? '#a5b4fc' : T.faint2}`, borderRadius: 3, background: it.asignadoA ? '#eef2ff' : T.paper, color: it.asignadoA ? '#3949ab' : T.ink3, maxWidth: 100, flexShrink: 0, cursor: 'pointer' }}
+                      >
+                        <option value="">— responsable</option>
+                        {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                      </select>
                       {completadoPor && (
-                        <span style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono }}>
-                          {completadoPor}
+                        <span style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono }} title="Completó">
+                          ✓ {completadoPor}
                         </span>
                       )}
                       <span
@@ -371,7 +380,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
 export default function Tareas() {
   const { currentUser, usuarios } = useUsuarios();
   const { obras } = useObras();
-  const { tareas, marcarVista, toggleItem, addItem, addComentario, setItemObservacion } = useTareas();
+  const { tareas, marcarVista, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado } = useTareas();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const isAdmin = currentUser?.rol === 'Admin';
@@ -584,6 +593,7 @@ export default function Tareas() {
               addItem={addItem}
               addComentario={addComentario}
               setItemObservacion={setItemObservacion}
+              setItemAsignado={setItemAsignado}
             />
           ))
         )}

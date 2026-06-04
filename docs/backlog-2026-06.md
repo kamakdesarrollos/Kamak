@@ -19,9 +19,10 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
 2. ~~**Observaciones por ítem de checklist.**~~ ✅ HECHO: cada ítem tiene una
    observación libre (📝). Editable en el panel de Tareas (inline) y visible en
    el modal. Campo `observacion` + `setItemObservacion` en TareasContext.
-3. **Checklist asignable por persona + tarea grupal.** La tarea ya se asigna a
-   varios; falta asignar **cada ítem** del checklist a una persona distinta
-   (ej. "presupuesto obra" con ítems repartidos). _Medio._
+3. ~~**Checklist asignable por persona + tarea grupal.**~~ ✅ HECHO: cada ítem del
+   checklist tiene un **responsable** (selector por ítem en el panel, visible en
+   el modal). Campo `asignadoA` por ítem + `setItemAsignado`. La tarea sigue
+   asignándose a varios (grupal); los ítems se reparten entre esas/otras personas.
 4. **Adjuntar documentos/fotos a tareas.** Reutilizar el subidor multi-archivo
    (bucket `kamak-fotos`). _Medio (requiere policy 0004 aplicada)._
 4b. **Carpetas en la sección "Archivos".** Poder **crear carpetas** para organizar
@@ -57,5 +58,5 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
 ---
 
 ## Orden propuesto de ejecución
-1 ✅ → 2 ✅ → 3 → 4 → 4b → 5 → 6 → 7 → 8(Enzo, cuando haya datos) → 9 → 10 → 11.
+1 ✅ → 2 ✅ → 3 ✅ → 4 → 4b → 5 → 6 → 7 → 8(Enzo, cuando haya datos) → 9 → 10 → 11.
 (Las grandes 9/10/11 se brainstormean aparte antes de codear.)

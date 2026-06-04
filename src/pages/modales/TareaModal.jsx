@@ -350,6 +350,11 @@ export default function TareaModal({ tareaId, presetAsignado, onClose }) {
                             ✓ {usuarios.find(u => u.id === item.completadoPor)?.nombre || 'Alguien'} · {fmtDatetime(item.completadoAt)}
                           </div>
                         )}
+                        {item.asignadoA && (
+                          <div style={{ fontSize: 10, color: '#3949ab', marginTop: 2, fontFamily: T.fontMono }}>
+                            👤 {usuarios.find(u => u.id === item.asignadoA)?.nombre || '?'}
+                          </div>
+                        )}
                         {item.observacion && (
                           <div style={{ fontSize: 11, color: T.ink2, fontStyle: 'italic', marginTop: 3, whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
                             📝 {item.observacion}
