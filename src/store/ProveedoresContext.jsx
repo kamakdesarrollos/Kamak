@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData, patchObjectItem, appendObjectItem, removeObjectItem } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 
@@ -96,7 +96,6 @@ export function ProveedoresProvider({ children }) {
   // broadcasts inmediatamente posteriores (traen datos del server sin el cambio
   // local todavía → hacían "desaparecer" cambios recién guardados).
   const lastLocalSaveAt = useRef(0);
-  const pendingSaveRef = useRef(null);
   const { markReady } = useAppLoading();
   useEffect(() => { provsRef.current = proveedores; }, [proveedores]);
   useEffect(() => { ccRef.current = ccEntries; }, [ccEntries]);
@@ -111,8 +110,10 @@ export function ProveedoresProvider({ children }) {
         sbLoaded.current = true; markReady(); return;
       }
       if (userEditedBeforeFirstLoad.current) {
-        // El usuario ya editó antes del fetch → subimos lo suyo, no lo pisamos.
-        saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
+        // El usuario ya editó antes del fetch → sus cambios YA se persistieron
+        // atómicamente (append/patch/remove por ítem). No pisamos su estado local
+        // con el remoto. Si el key todavía no existía (fresh install), lo creamos.
+        if (data === null) saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
       } else if (data) {
         fromRemote.current = true;
         if (data.proveedores) { setProveedores(data.proveedores); save(LS_PROVS, data.proveedores); }
@@ -126,9 +127,9 @@ export function ProveedoresProvider({ children }) {
     });
 
     const unsub = onRemoteChange('proveedores', () => {
-      // Ignorar el broadcast si hay un save local pendiente o recién disparado
-      // (< 3s): suele traer datos del server sin el cambio local todavía.
-      if (pendingSaveRef.current) return;
+      // Ignorar el broadcast recién disparado (< 3s): suele traer datos del
+      // server sin el cambio local todavía. La escritura atómica ya lo persistió;
+      // al pasar la ventana, el próximo broadcast/recarga trae todo mergeado.
       if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData('proveedores').then(d => {
         if (cancelled || !d) return;
@@ -141,87 +142,65 @@ export function ProveedoresProvider({ children }) {
     return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!sbLoaded.current || fromRemote.current) return;
-    pendingSaveRef.current = { proveedores: provsRef.current, ccEntries: ccRef.current };
-    const t = setTimeout(() => {
-      saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
-      lastLocalSaveAt.current = Date.now();
-      pendingSaveRef.current = null;
-    }, 800);
-    return () => clearTimeout(t);
-  }, [proveedores, ccEntries]);
+  // Persistencia: estado local optimista + escritura ATÓMICA por ítem (ver
+  // mutaciones). YA NO se guarda el blob entero {proveedores, ccEntries} con
+  // debounce: eso pisaba lo que el bot escribía atómico en ccEntries
+  // (certificaciones/facturas) → la deuda del proveedor "desaparecía"
+  // (bug PROV-CC-001). Cada add/update/remove persiste solo SU ítem.
 
-  useEffect(() => () => {
-    if (pendingSaveRef.current) saveSharedData('proveedores', pendingSaveRef.current, { silent: true });
-  }, []);
-
-  // Marca que el usuario editó antes del primer fetch (no pisar sus cambios).
-  const markUserEdit = () => { if (!sbLoaded.current) userEditedBeforeFirstLoad.current = true; };
+  // mark(): antes del primer fetch marca que el usuario ya editó (para no pisar
+  // sus cambios al cargar) y sella el timestamp del último cambio local (el
+  // broadcast guard ignora eventos < 3s que traerían datos sin este cambio).
+  const mark = () => {
+    if (!sbLoaded.current) userEditedBeforeFirstLoad.current = true;
+    lastLocalSaveAt.current = Date.now();
+  };
 
   // ── Proveedores CRUD ──────────────────────────────────────────────────────
   const addProveedor = useCallback((data) => {
-    markUserEdit();
+    mark();
     const nuevo = { ...data, id: newId() };
-    setProveedores(prev => {
-      const next = [...prev, nuevo];
-      save(LS_PROVS, next);
-      return next;
-    });
+    setProveedores(prev => { const next = [...prev, nuevo]; save(LS_PROVS, next); return next; });
+    appendObjectItem('proveedores', 'proveedores', nuevo);
     return nuevo.id;
   }, []);
 
   const updateProveedor = useCallback((id, changes) => {
-    markUserEdit();
-    setProveedores(prev => {
-      const next = prev.map(p => p.id === id ? { ...p, ...changes } : p);
-      save(LS_PROVS, next);
-      return next;
-    });
+    mark();
+    setProveedores(prev => { const next = prev.map(p => p.id === id ? { ...p, ...changes } : p); save(LS_PROVS, next); return next; });
+    patchObjectItem('proveedores', 'proveedores', id, changes);
   }, []);
 
   const removeProveedor = useCallback((id) => {
-    markUserEdit();
-    setProveedores(prev => {
-      const next = prev.filter(p => p.id !== id);
-      save(LS_PROVS, next);
-      return next;
-    });
-    setCCEntries(prev => {
-      const next = prev.filter(e => e.proveedorId !== id);
-      save(LS_CC, next);
-      return next;
-    });
+    mark();
+    setProveedores(prev => { const next = prev.filter(p => p.id !== id); save(LS_PROVS, next); return next; });
+    removeObjectItem('proveedores', 'proveedores', id);
+    // Borrar también, atómicamente, los asientos de CC de ese proveedor (es un
+    // borrado por proveedorId, no por id → un remove por cada asiento que matchea).
+    const ccDel = (ccRef.current || []).filter(e => e.proveedorId === id);
+    setCCEntries(prev => { const next = prev.filter(e => e.proveedorId !== id); save(LS_CC, next); return next; });
+    ccDel.forEach(e => removeObjectItem('proveedores', 'ccEntries', e.id));
   }, []);
 
   // ── CC CRUD ───────────────────────────────────────────────────────────────
   const addCC = useCallback((entry) => {
-    markUserEdit();
+    mark();
     const nuevo = { ...entry, id: ccId(), fecha: entry.fecha || today() };
-    setCCEntries(prev => {
-      const next = [...prev, nuevo];
-      save(LS_CC, next);
-      return next;
-    });
+    setCCEntries(prev => { const next = [...prev, nuevo]; save(LS_CC, next); return next; });
+    appendObjectItem('proveedores', 'ccEntries', nuevo);
     return nuevo.id;
   }, []);
 
   const updateCC = useCallback((id, changes) => {
-    markUserEdit();
-    setCCEntries(prev => {
-      const next = prev.map(e => e.id === id ? { ...e, ...changes } : e);
-      save(LS_CC, next);
-      return next;
-    });
+    mark();
+    setCCEntries(prev => { const next = prev.map(e => e.id === id ? { ...e, ...changes } : e); save(LS_CC, next); return next; });
+    patchObjectItem('proveedores', 'ccEntries', id, changes);
   }, []);
 
   const removeCC = useCallback((id) => {
-    markUserEdit();
-    setCCEntries(prev => {
-      const next = prev.filter(e => e.id !== id);
-      save(LS_CC, next);
-      return next;
-    });
+    mark();
+    setCCEntries(prev => { const next = prev.filter(e => e.id !== id); save(LS_CC, next); return next; });
+    removeObjectItem('proveedores', 'ccEntries', id);
   }, []);
 
   const getObrasProveedor = useCallback((proveedorId) => {

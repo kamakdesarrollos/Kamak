@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { loadSharedData, saveSharedData, appendItemInSharedArray } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData, appendItemInSharedArray, appendObjectItem, patchObjectItem, removeObjectItem, patchDetalleObra } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 import { SAVE_DEBOUNCE_MS } from '../lib/constants';
@@ -220,6 +220,10 @@ export function ObrasProvider({ children }) {
   // a Supabase. Sin esto, el remote pisaba ediciones tempranas — sintoma
   // tipico: borrar una foto y verla aparecer de vuelta a los 2 segundos.
   const userEditedBeforeFirstLoad = useRef(false);
+  // Timestamp del último save local (broadcast guard de 3s). dirtyDetalles junta
+  // los obraId cuyo detalle cambió, para flushearlos atómicos POR OBRA.
+  const lastLocalSaveAt = useRef(0);
+  const dirtyDetalles = useRef(new Set());
   const { markReady } = useAppLoading();
   useEffect(() => { obrasRef.current = obras; }, [obras]);
   useEffect(() => { detallesRef.current = detalles; }, [detalles]);
@@ -241,9 +245,10 @@ export function ObrasProvider({ children }) {
         return;
       }
       if (userEditedBeforeFirstLoad.current) {
-        // El usuario ya hizo cambios antes de que llegara el fetch — no
-        // pisamos su trabajo, en su lugar subimos sus cambios al remoto.
-        saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
+        // El usuario ya hizo cambios antes de que llegara el fetch — sus cambios
+        // YA se persistieron atómicos (obra por id / detalle por obra). No
+        // pisamos. Si el key no existía (fresh install), lo creamos.
+        if (data === null) saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
       } else if (data) {
         fromRemote.current = true;
         if (data.obras)    { setObras(data.obras);       saveObras(data.obras); }
@@ -263,7 +268,6 @@ export function ObrasProvider({ children }) {
       // y los cambios desaparecían momentaneamente. Sintoma reportado: al
       // agregar un contrato MO (o cualquier patch), el item aparecía y
       // desaparecía. Esperamos a que el save propio se confirme.
-      if (pendingSaveRef.current) return;
       if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData('obras').then(d => {
         if (cancelled || !d) return;
@@ -279,38 +283,52 @@ export function ObrasProvider({ children }) {
   useEffect(() => { saveObras(obras); }, [obras]);
   useEffect(() => { saveDet(detalles); }, [detalles]);
 
-  const pendingSaveRef = useRef(null);
-  // Timestamp del ultimo save local. Sirve para que el handler de
-  // onRemoteChange ignore broadcasts inmediatamente posteriores (que
-  // pueden traer datos viejos del server porque el save aun no se
-  // propago — clasica race que hacia "desaparecer" cambios locales).
-  const lastLocalSaveAt = useRef(0);
+  // Persistencia ATÓMICA. Las obras (array) se persisten por ítem en cada
+  // mutación (append/patch/remove). Los detalles (mapa por obraId) se flushean
+  // con debounce y POR OBRA (patch_detalle_obra) — así editar el presupuesto de
+  // una obra NO pisa el avance que el bot escribió en OTRA, y el tipeo rápido no
+  // spamea ni se pisa entre sí (se junta y se escribe una vez por obra). YA NO se
+  // guarda el blob entero {obras, detalles}, que era el que pisaba al bot.
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
-    pendingSaveRef.current = { obras: obrasRef.current, detalles: detallesRef.current };
+    if (dirtyDetalles.current.size === 0) return;
     const t = setTimeout(() => {
-      saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
+      const ids = Array.from(dirtyDetalles.current);
+      dirtyDetalles.current.clear();
+      ids.forEach(obraId => {
+        const det = detallesRef.current[obraId];
+        if (det) patchDetalleObra(obraId, det);
+      });
       lastLocalSaveAt.current = Date.now();
-      pendingSaveRef.current = null;
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [obras, detalles]);
+  }, [detalles]);
 
+  // Flush al desmontar: escribir los detalles dirty que quedaron sin debounce.
   useEffect(() => () => {
-    if (pendingSaveRef.current) saveSharedData('obras', pendingSaveRef.current, { silent: true });
+    const ids = Array.from(dirtyDetalles.current);
+    dirtyDetalles.current.clear();
+    ids.forEach(obraId => {
+      const det = detallesRef.current[obraId];
+      if (det) patchDetalleObra(obraId, det);
+    });
   }, []);
 
   // Helper: marcar que el usuario hizo un cambio antes del primer fetch a
-  // Supabase. Si esto pasa, el load remoto no debe pisar los cambios locales.
+  // Supabase (el load remoto no debe pisar los cambios locales) y sellar el
+  // timestamp del último cambio local (broadcast guard de 3s).
   const markUserEdit = () => {
     if (!sbLoaded.current) userEditedBeforeFirstLoad.current = true;
+    lastLocalSaveAt.current = Date.now();
   };
 
   // ── Obras CRUD (memoizado para que el value del Provider sea estable)
   const addObra = useCallback((obra) => {
     markUserEdit();
     const id = `obra-${Date.now()}`;
-    setObras(prev => [...prev, { id, nombre: obra.nombre, cliente: obra.cliente, clienteId: obra.clienteId || null, direccion: obra.direccion || '', tipo: obra.tipo || 'Otro', estado: 'en-presupuesto', moneda: obra.moneda || 'ARS', presupuesto: Number(obra.presupuesto) || 0, gastado: 0, avance: 0, margen: 0, fechaInicio: obra.fechaInicio || '', fechaFinEstim: obra.fechaFinEstim || '', fechaFin: '', notas: obra.notas || '', createdAt: new Date().toISOString() }]);
+    const nueva = { id, nombre: obra.nombre, cliente: obra.cliente, clienteId: obra.clienteId || null, direccion: obra.direccion || '', tipo: obra.tipo || 'Otro', estado: 'en-presupuesto', moneda: obra.moneda || 'ARS', presupuesto: Number(obra.presupuesto) || 0, gastado: 0, avance: 0, margen: 0, fechaInicio: obra.fechaInicio || '', fechaFinEstim: obra.fechaFinEstim || '', fechaFin: '', notas: obra.notas || '', createdAt: new Date().toISOString() };
+    setObras(prev => [...prev, nueva]);
+    appendObjectItem('obras', 'obras', nueva);
     return id;
   }, []);
 
@@ -321,27 +339,26 @@ export function ObrasProvider({ children }) {
       if (prev && prev.estado !== 'activa') emitAlertaObraIniciada(prev);
     }
     setObras(prev => prev.map(o => o.id === id ? { ...o, ...changes } : o));
+    patchObjectItem('obras', 'obras', id, changes);
   }, []);
 
   const setEstado = useCallback((id, nuevoEstado) => {
     markUserEdit();
-    if (nuevoEstado === 'activa') {
-      const prev = obrasRef.current.find(o => o.id === id);
-      if (prev && prev.estado !== 'activa') emitAlertaObraIniciada(prev);
-    }
+    const prevObra = obrasRef.current.find(o => o.id === id);
+    if (nuevoEstado === 'activa' && prevObra && prevObra.estado !== 'activa') emitAlertaObraIniciada(prevObra);
     const today = new Date().toISOString().split('T')[0];
-    setObras(prev => prev.map(o => {
-      if (o.id !== id) return o;
-      const ch = { estado: nuevoEstado };
-      if (nuevoEstado === 'activa' && !o.fechaInicio) ch.fechaInicio = today;
-      if (nuevoEstado === 'finalizada') { ch.avance = 100; ch.fechaFin = today; }
-      return { ...o, ...ch };
-    }));
+    const ch = { estado: nuevoEstado };
+    if (nuevoEstado === 'activa' && prevObra && !prevObra.fechaInicio) ch.fechaInicio = today;
+    if (nuevoEstado === 'finalizada') { ch.avance = 100; ch.fechaFin = today; }
+    setObras(prev => prev.map(o => o.id === id ? { ...o, ...ch } : o));
+    patchObjectItem('obras', 'obras', id, ch);
   }, []);
 
   const deleteObra = useCallback((id) => {
     markUserEdit();
     setObras(prev => prev.filter(o => o.id !== id));
+    removeObjectItem('obras', 'obras', id);
+    // (El detalle[id] queda huérfano — la limpieza con cascada es IR-01, aparte.)
   }, []);
 
   // byEstado y getDetalle son derivados — devuelven nueva referencia cada
@@ -363,6 +380,9 @@ export function ObrasProvider({ children }) {
       const updated = typeof fn === 'function' ? fn(current) : { ...current, ...fn };
       return { ...prev, [id]: updated };
     });
+    // El detalle de esta obra se persiste atómico (patch_detalle_obra) con
+    // debounce: lo marcamos dirty y el efecto lo flushea por obra.
+    dirtyDetalles.current.add(id);
   }, []);
 
   // Permite forzar una recarga desde Supabase (usado por el portal del

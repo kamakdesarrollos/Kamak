@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { broadcastChange } from './syncBus';
-import { patchItem, appendItem, removeItem } from './catalogPatch';
+import { patchItem, appendItem, removeItem, patchObjItem, appendObjItem, removeObjItem } from './catalogPatch';
 import { createSerialQueue } from './serialQueue';
 
 // Throttle interno para no spamear el mismo toast cuando la red esta caida
@@ -142,53 +142,74 @@ export function removeItemInSharedArray(key, id) {
     (arr) => removeItem(arr, id)));
 }
 
-// ── Escritura ATÓMICA por ítem para el catálogo (fix CAT-003) ──────────────
-// El catálogo (key='catalog') es un objeto con arrays (tareas, materiales, …).
-// Guardarlo como blob entero pierde ediciones cuando dos personas editan a la
-// vez (last-write-wins). Estas funciones patchean SOLO el ítem editado,
-// server-side y atómico, vía las RPC de supabase/migrations/0002. Si la RPC no
-// está desplegada, caen a read-modify-write del blob (no atómico, pero no
-// rompe). Espejo de src/lib/catalogPatch.js.
-// Cola para que las escrituras del catálogo se apliquen EN ORDEN (crear antes
-// que borrar/editar el mismo ítem). Sin esto, crear una copia y borrarla rápido
-// podía desordenarse y la copia "reaparecía".
-const _catalogQueue = createSerialQueue();
+// ── Escritura ATÓMICA por ítem para keys cuyo `data` es un OBJETO con colecciones
+// (catalog={tareas,materiales,…}; proveedores={proveedores,ccEntries};
+// movimientos={cajas,movimientos}). Guardar el blob entero pierde ediciones
+// cuando dos actores escriben a la vez (last-write-wins) — el caso grave es la
+// app pisando lo que el bot escribió atómico. Estas funciones patchean SOLO el
+// ítem de la colección pedida, server-side y atómico, vía las RPC de
+// supabase/migrations/0002. Si la RPC no está desplegada, caen a
+// read-modify-write (leen el objeto FRESCO y mutan solo esa colección — ya no
+// pisan con la copia vieja en memoria). Espejo de src/lib/catalogPatch.js.
+// Una cola serial POR KEY preserva el orden (crear antes que borrar/editar el
+// mismo ítem) sin que keys distintas se bloqueen entre sí. Cierra la familia
+// last-write-wins app↔bot: CAT-003 (catálogo), PROV-CC-001 (proveedores/CC),
+// MOV-05 (movimientos/cajas).
+const _objectQueues = new Map();
+const _queueForKey = (key) => {
+  let q = _objectQueues.get(key);
+  if (!q) { q = createSerialQueue(); _objectQueues.set(key, q); }
+  return q;
+};
 
-async function _catalogAtomic(rpc, fallbackMutate) {
+async function _objectAtomic(key, rpc, fallbackMutate) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return false;
     const { error } = await rpc();
     if (error) throw error;
-    broadcastChange('catalog');
+    broadcastChange(key);
     return true;
   } catch (e) {
-    console.warn('[catalog atómico] RPC no disponible, fallback RMW:', e?.message || e);
-    const data = await loadSharedData('catalog');
+    console.warn('[objeto atómico] RPC no disponible, fallback RMW:', key, e?.message || e);
+    const data = await loadSharedData(key);
     if (data === undefined || data === null) return false;
-    return saveSharedData('catalog', fallbackMutate(data));
+    return saveSharedData(key, fallbackMutate(data));
   }
 }
 
-export function patchCatalogItem(collection, id, patch) {
-  return _catalogQueue(() => _catalogAtomic(
-    () => supabase.rpc('patch_shared_object_item', { p_key: 'catalog', p_collection: collection, p_id: id, p_patch: patch }),
-    (c) => ({ ...c, [collection]: patchItem(c[collection] || [], id, patch) }),
-  ));
+export function patchObjectItem(key, collection, id, patch) {
+  return _queueForKey(key)(() => _objectAtomic(key,
+    () => supabase.rpc('patch_shared_object_item', { p_key: key, p_collection: collection, p_id: id, p_patch: patch }),
+    (o) => patchObjItem(o, collection, id, patch)));
+}
+export function appendObjectItem(key, collection, item) {
+  return _queueForKey(key)(() => _objectAtomic(key,
+    () => supabase.rpc('append_shared_object_item', { p_key: key, p_collection: collection, p_item: item }),
+    (o) => appendObjItem(o, collection, item)));
+}
+export function removeObjectItem(key, collection, id) {
+  return _queueForKey(key)(() => _objectAtomic(key,
+    () => supabase.rpc('remove_shared_object_item', { p_key: key, p_collection: collection, p_id: id }),
+    (o) => removeObjItem(o, collection, id)));
 }
 
-export function appendCatalogItem(collection, item) {
-  return _catalogQueue(() => _catalogAtomic(
-    () => supabase.rpc('append_shared_object_item', { p_key: 'catalog', p_collection: collection, p_item: item }),
-    (c) => ({ ...c, [collection]: appendItem(c[collection] || [], item) }),
-  ));
-}
+// Catálogo: misma mecánica con key fija 'catalog'. Mantiene la API previa
+// (patchCatalogItem/appendCatalogItem/removeCatalogItem) delegando en las
+// genéricas, así no hay que tocar CatalogContext.
+export function patchCatalogItem(collection, id, patch) { return patchObjectItem('catalog', collection, id, patch); }
+export function appendCatalogItem(collection, item)     { return appendObjectItem('catalog', collection, item); }
+export function removeCatalogItem(collection, id)       { return removeObjectItem('catalog', collection, id); }
 
-export function removeCatalogItem(collection, id) {
-  return _catalogQueue(() => _catalogAtomic(
-    () => supabase.rpc('remove_shared_object_item', { p_key: 'catalog', p_collection: collection, p_id: id }),
-    (c) => ({ ...c, [collection]: removeItem(c[collection] || [], id) }),
-  ));
+// Detalle de UNA obra (key 'obras' → data.detalles[obraId], que es un OBJETO/mapa
+// por obraId, no un array). Mergea (superficial top-level) `patch` en el detalle
+// de esa obra, sin tocar las demás obras ni la lista `obras`. Espejo EXACTO del
+// helper del bot (sbPatchDetalleObra → RPC patch_detalle_obra). Pasando el detalle
+// completo como patch, reemplaza sus claves de primer nivel (rubros, cuotas, …).
+export function patchDetalleObra(obraId, patch) {
+  return _queueForKey('obras')(() => _objectAtomic('obras',
+    () => supabase.rpc('patch_detalle_obra', { p_obra_id: obraId, p_patch: patch }),
+    (o) => ({ ...o, detalles: { ...(o.detalles || {}), [obraId]: { ...((o.detalles || {})[obraId] || {}), ...patch } } })));
 }
 
 export async function saveSharedData(key, value, { silent = false } = {}) {

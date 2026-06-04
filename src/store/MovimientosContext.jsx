@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData, patchObjectItem, appendObjectItem, removeObjectItem } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 import { efectoEnCaja, calcSaldoCaja } from '../lib/caja';
@@ -89,7 +89,9 @@ export function MovimientosProvider({ children }) {
   const fromRemote = useRef(false);
   const cajasRef   = useRef(cajas);
   const movsRef    = useRef(movimientos);
-  const pendingSaveRef = useRef(null);
+  // Marca true si el usuario edita ANTES del primer fetch (sino el remoto pisaría
+  // sus cambios tempranos). Mismo guard que Proveedores.
+  const userEditedBeforeFirstLoad = useRef(false);
   // Timestamp del último save local — para ignorar broadcasts inmediatamente
   // posteriores que traen datos viejos del server y pisarían cambios recientes
   // (mismo patrón que useSyncedSharedData, que evitó que se pisaran los cheques).
@@ -105,28 +107,29 @@ export function MovimientosProvider({ children }) {
     let cancelled = false;
     loadSharedData('movimientos').then(data => {
       if (cancelled) return;
-      if (data) {
+      if (data && !userEditedBeforeFirstLoad.current) {
         fromRemote.current = true;
         const movs = data.movimientos || movsRef.current || [];
         if (data.movimientos) { setMovimientos(movs); persist(LS_MOVS, movs); }
         if (data.cajas)       { const cm = migrarSaldoInicial(data.cajas, movs); setCajas(cm); persist(LS_CAJAS, cm); }
         setTimeout(() => { fromRemote.current = false; }, 0);
       } else if (data === null) {
-        // data === null: query OK pero no hay registro (primer save).
-        // Si fue undefined (error de red/permiso) NO guardamos: sino pisaríamos
-        // el remoto con el cache local y se perdería, p.ej., un movimiento que
-        // acaba de cargar el bot.
+        // data === null: query OK pero no hay registro (primer save / bootstrap
+        // del key). Si fue undefined (error de red/permiso) NO guardamos: sino
+        // pisaríamos el remoto con el cache local y se perdería, p.ej., un
+        // movimiento que acaba de cargar el bot.
         saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
       }
+      // Si el usuario ya editó antes del fetch (data truthy + flag), no pisamos
+      // su estado local: sus cambios ya se persistieron atómicamente por ítem.
       sbLoaded.current = true;
       markReady();
     });
 
     const unsub = onRemoteChange('movimientos', () => {
-      // Si tenemos un save propio pendiente o muy reciente (<3s), ignoramos el
-      // broadcast: puede traer datos del server SIN nuestro último cambio y
-      // pisarlo. (Mismo guard que usa el sync de cheques.)
-      if (pendingSaveRef.current) return;
+      // Si acabamos de guardar (<3s), ignoramos el broadcast: puede traer datos
+      // del server SIN nuestro último cambio y pisarlo. La escritura atómica ya
+      // lo persistió. (Mismo guard que usa el sync de cheques.)
       if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData('movimientos').then(d => {
         if (cancelled || !d) return;
@@ -140,40 +143,43 @@ export function MovimientosProvider({ children }) {
     return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!sbLoaded.current || fromRemote.current) return;
-    pendingSaveRef.current = { cajas: cajasRef.current, movimientos: movsRef.current };
-    const t = setTimeout(() => {
-      saveSharedData('movimientos', { cajas: cajasRef.current, movimientos: movsRef.current });
-      lastLocalSaveAt.current = Date.now();
-      pendingSaveRef.current = null;
-    }, 800);
-    return () => clearTimeout(t);
-  }, [cajas, movimientos]);
+  // Persistencia: estado local optimista + escritura ATÓMICA por ítem (ver
+  // mutaciones). YA NO se guarda el blob entero {cajas, movimientos} con debounce:
+  // eso podía pisar un movimiento que el bot agregó atómicamente
+  // (append_movimiento) → bug MOV-05. Cada add/update/remove persiste solo SU
+  // ítem. El saldo de la caja lo derivan app y bot desde los movimientos
+  // (saldoInicial + Σ efectos), así que no hace falta reescribir las cajas al
+  // mover plata — el `saldo` guardado es vestigial.
 
-  useEffect(() => () => {
-    if (pendingSaveRef.current) saveSharedData('movimientos', pendingSaveRef.current, { silent: true });
-  }, []);
+  // mark(): antes del primer fetch marca que el usuario ya editó (para no pisar
+  // sus cambios al cargar) y sella el timestamp del último cambio local (el
+  // broadcast guard ignora eventos < 3s que traerían datos sin este cambio).
+  const mark = () => {
+    if (!sbLoaded.current) userEditedBeforeFirstLoad.current = true;
+    lastLocalSaveAt.current = Date.now();
+  };
 
   // ── Cajas CRUD ────────────────────────────────────────────────────────────
   const addCaja = useCallback((data) => {
     // El saldo inicial que carga el form es el saldoInicial (base del cálculo).
     const inicial = data.saldoInicial ?? data.saldo ?? 0;
     const nueva = { ...data, id: cajaId(), saldoInicial: inicial, saldo: inicial, activa: true };
+    mark();
     setCajas(prev => { const next = [...prev, nueva]; persist(LS_CAJAS, next); return next; });
+    appendObjectItem('movimientos', 'cajas', nueva);
     return nueva.id;
   }, []);
 
   const updateCaja = useCallback((id, changes) => {
-    setCajas(prev => {
-      const next = prev.map(c => c.id === id ? { ...c, ...changes } : c);
-      persist(LS_CAJAS, next);
-      return next;
-    });
+    mark();
+    setCajas(prev => { const next = prev.map(c => c.id === id ? { ...c, ...changes } : c); persist(LS_CAJAS, next); return next; });
+    patchObjectItem('movimientos', 'cajas', id, changes);
   }, []);
 
   const removeCaja = useCallback((id) => {
+    mark();
     setCajas(prev => { const next = prev.filter(c => c.id !== id); persist(LS_CAJAS, next); return next; });
+    removeObjectItem('movimientos', 'cajas', id);
   }, []);
 
   // ── Movimientos CRUD ──────────────────────────────────────────────────────
@@ -184,20 +190,22 @@ export function MovimientosProvider({ children }) {
 
   const addMovimiento = useCallback((data) => {
     const nuevo = { ...data, id: newId(), fecha: data.fecha || today() };
+    mark();
     setMovimientos(prev => { const next = [nuevo, ...prev]; persist(LS_MOVS, next); return next; });
+    appendObjectItem('movimientos', 'movimientos', nuevo);
     return nuevo.id;
   }, []);
 
   const updateMovimiento = useCallback((id, changes) => {
-    setMovimientos(prev => {
-      const next = prev.map(m => m.id === id ? { ...m, ...changes } : m);
-      persist(LS_MOVS, next);
-      return next;
-    });
+    mark();
+    setMovimientos(prev => { const next = prev.map(m => m.id === id ? { ...m, ...changes } : m); persist(LS_MOVS, next); return next; });
+    patchObjectItem('movimientos', 'movimientos', id, changes);
   }, []);
 
   const removeMovimiento = useCallback((id) => {
+    mark();
     setMovimientos(prev => { const next = prev.filter(m => m.id !== id); persist(LS_MOVS, next); return next; });
+    removeObjectItem('movimientos', 'movimientos', id);
   }, []);
 
   // ── Traspaso ──────────────────────────────────────────────────────────────
@@ -215,7 +223,9 @@ export function MovimientosProvider({ children }) {
       proveedor: '', categoria: 'traspaso', medioPago: 'Interno',
       referencia: '', fondoReparo: false, tcAplicado: tcAplicado || null,
     };
+    mark();
     setMovimientos(prev => { const next = [mov, ...prev]; persist(LS_MOVS, next); return next; });
+    appendObjectItem('movimientos', 'movimientos', mov);
     return mov.id;
   }, []);
 
