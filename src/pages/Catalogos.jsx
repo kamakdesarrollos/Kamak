@@ -324,6 +324,18 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
 }
 
 // ── Tab: Materiales / Sub contratos / MO / Generales (tabla simple + panel) ────
+// Ordena rubros: los numerados ("1 - X") primero por número, después los sin
+// número alfabéticamente. Así un rubro nuevo (ej. Mobiliario) no queda tirado al
+// fondo de la lista "Por rubro".
+const _rubNum = (s) => { const m = String(s || '').match(/^(\d+)/); return m ? parseInt(m[1], 10) : null; };
+const ordenarRubros = (a, b) => {
+  const na = _rubNum(a), nb = _rubNum(b);
+  if (na != null && nb != null) return na - nb;
+  if (na != null) return -1;
+  if (nb != null) return 1;
+  return String(a).localeCompare(String(b), 'es');
+};
+
 function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm, rubroKey = 'rubro', rubros }) {
   const [sel, setSel] = useState(null);
   const [form, setForm] = useState(null);
@@ -364,7 +376,7 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
             <span style={{ color: !selRubro ? T.ink : T.ink2 }}>Todos</span>
             <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono }}>{items.length}</span>
           </div>
-          {rubros.map(r => {
+          {[...rubros].sort(ordenarRubros).map(r => {
             const count = items.filter(i => i[rubroKey] === r).length;
             const isOn  = selRubro === r;
             const label = r.replace(/^\d+\s*-\s*/, '');
@@ -850,7 +862,7 @@ function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMateria
           <span style={{ color: !selRubro ? T.ink : T.ink2 }}>Todos</span>
           <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono }}>{tareas.length}</span>
         </div>
-        {rubros.map(r => {
+        {[...rubros].sort((a, b) => ordenarRubros(a.nombre, b.nombre)).map(r => {
           const count = tareas.filter(t => t.rubroNombre === r.nombre).length;
           const isOn  = selRubro === r.nombre;
           // Show "N · Nombre corto" — strip the leading number prefix
@@ -1262,13 +1274,19 @@ export default function Catalogos() {
   const { dolarVenta } = useDolar();
   const { indices } = useIndices();
 
-  // Columna "Precio" que muestra U$S + su equivalente en pesos al dólar BNA si el
-  // item está en USD; si no, pesos normales.
-  const precioColUSD = {
-    key: 'precio', label: 'Precio', align: 'right', mono: true,
-    render: (v, it) => it?.moneda === 'USD'
-      ? `U$S ${fmtN(v)} · ≈ $ ${fmtN(Math.round((Number(v) || 0) * dolarVenta))}`
-      : `$ ${fmtN(v)}`,
+  // Columna "Precio $": pesos. Para ítems en USD muestra el equivalente al dólar
+  // BNA del momento (convertido); para ARS, el precio normal.
+  const precioCol = {
+    key: 'precio', label: 'Precio $', align: 'right', mono: true,
+    render: (v, it) => '$ ' + fmtN(it?.moneda === 'USD' ? Math.round((Number(it.precio) || 0) * dolarVenta) : v),
+  };
+  // Columna "U$S" aparte: solo los ítems atados al dólar muestran su valor en
+  // dólares; los de pesos van con un guion. Queda todo derechito en su columna.
+  const usdCol = {
+    key: 'usd', label: 'U$S', align: 'right', mono: true,
+    render: (_v, it) => it?.moneda === 'USD'
+      ? <span style={{ color: '#3949ab', fontWeight: 700 }}>{fmtN(it.precio)}</span>
+      : <span style={{ color: T.faint2 }}>—</span>,
   };
   // Filas Precio + Moneda para los formularios (material / M.O / general).
   const MonedaPrecio = (form, setForm) => (
@@ -1348,7 +1366,7 @@ export default function Catalogos() {
               cols={[
                 { key: 'codigo', label: 'Código', mono: true },
                 { key: 'nombre', label: 'Nombre' },
-                precioColUSD,
+                precioCol, usdCol,
                 { key: 'unidad', label: 'Unidad' },
                 { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
                 { key: 'updatedAt', label: 'Actualizado', mono: true },
@@ -1386,7 +1404,7 @@ export default function Catalogos() {
               cols={[
                 { key: 'codigo', label: 'Código', mono: true },
                 { key: 'nombre', label: 'Nombre' },
-                precioColUSD,
+                precioCol, usdCol,
                 { key: 'unidad', label: 'Unidad' },
                 { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
                 { key: 'updatedAt', label: 'Actualizado', mono: true },
@@ -1417,7 +1435,7 @@ export default function Catalogos() {
             onDelete={id => remove('generales', id)}
             cols={[
               { key: 'nombre', label: 'Concepto' },
-              precioColUSD,
+              precioCol, usdCol,
               { key: 'unidad', label: 'Unidad' },
             ]}
             emptyForm={{ nombre: '', unidad: 'gl', precio: 0, moneda: 'ARS' }}
