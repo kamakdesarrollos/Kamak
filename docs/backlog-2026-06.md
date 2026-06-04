@@ -43,8 +43,12 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
    varias"; el de documentos es "+ Documento" (acepta varios archivos).
 
 ## Fase 2 — Notificaciones / bot
-5. **Alerta a todo el equipo al iniciar/confirmar una obra.** Enganchar el cambio
-   de estado de obra con AlertasContext + bot WhatsApp. _Medio._
+5. ~~**Alerta a todo el equipo al iniciar/confirmar una obra.**~~ ✅ HECHO (in-app):
+   cuando una obra pasa a 'activa' (al aprobar presupuesto vía `updateObra` o
+   confirmarla a mano vía `setEstado`), `ObrasContext` emite una alerta global
+   `obra_iniciada` (append atómico en shared_data 'alertas') → la ve todo el
+   equipo en la campana del Topbar (🏗️) y en el Dashboard. _Pendiente opcional:
+   además mandarla por WhatsApp al equipo (requiere teléfonos + endpoint)._
 6. **Aviso del bot 30 días posteriores.** Recordatorio diferido del bot. _Medio
    (depende de cron/scheduler del bot)._
 7. **Factura "pendiente de pago" → saldarla (conectar con bot).** Cargar factura
@@ -70,5 +74,5 @@ muestra los comentarios (solo se ven entrando al `TareaModal` a editar).
 ---
 
 ## Orden propuesto de ejecución
-1 ✅ → 2 ✅ → 3 ✅ → 4 ✅ → 4b ✅ → 5 → 6 → 7 → 8(Enzo, cuando haya datos) → 9 → 10 → 11.
+1 ✅ → 2 ✅ → 3 ✅ → 4 ✅ → 4b ✅ → 5 ✅ → 6 → 7 → 8(Enzo, cuando haya datos) → 9 → 10 → 11.
 (Las grandes 9/10/11 se brainstormean aparte antes de codear.)

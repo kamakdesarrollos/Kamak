@@ -115,7 +115,7 @@ function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, 
   alertas.filter(a => !a.leida).slice(0, 15).forEach(a => {
     items.push({
       id:     a.id,
-      icon:   a.tipo === 'exceso' ? '📊' : '⚠️',
+      icon:   a.tipo === 'exceso' ? '📊' : a.tipo === 'obra_iniciada' ? '🏗️' : '⚠️',
       titulo: a.obra ? `${a.obra}${a.tarea ? ' · ' + a.tarea : ''}` : 'Alerta',
       subtit: a.texto,
       fecha:  fmtFecha(a.fecha),

@@ -1,8 +1,26 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { loadSharedData, saveSharedData } from '../lib/dbHelpers';
+import { loadSharedData, saveSharedData, appendItemInSharedArray } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 import { SAVE_DEBOUNCE_MS } from '../lib/constants';
+
+// Alerta global "obra iniciada" para todo el equipo (campana del Topbar +
+// dashboard). Se dispara cuando una obra pasa a 'activa' (al aprobar el
+// presupuesto o confirmarla a mano). Append atómico en shared_data 'alertas'.
+function emitAlertaObraIniciada(obra) {
+  if (!obra) return;
+  appendItemInSharedArray('alertas', {
+    id:     `alerta-obra-${obra.id}-${Date.now()}`,
+    tipo:   'obra_iniciada',
+    texto:  `Se inició la obra "${obra.nombre}"${obra.cliente ? ' — ' + obra.cliente : ''}. ¡A trabajar!`,
+    obra:   obra.nombre,
+    obraId: obra.id,
+    tarea:  '',
+    fecha:  new Date().toISOString(),
+    leida:  false,
+    fuente: 'app',
+  });
+}
 
 // ── Datos semilla obras ───────────────────────────────────────────────────────
 const SEED_OBRAS = [
@@ -291,11 +309,19 @@ export function ObrasProvider({ children }) {
 
   const updateObra = useCallback((id, changes) => {
     markUserEdit();
+    if (changes.estado === 'activa') {
+      const prev = obrasRef.current.find(o => o.id === id);
+      if (prev && prev.estado !== 'activa') emitAlertaObraIniciada(prev);
+    }
     setObras(prev => prev.map(o => o.id === id ? { ...o, ...changes } : o));
   }, []);
 
   const setEstado = useCallback((id, nuevoEstado) => {
     markUserEdit();
+    if (nuevoEstado === 'activa') {
+      const prev = obrasRef.current.find(o => o.id === id);
+      if (prev && prev.estado !== 'activa') emitAlertaObraIniciada(prev);
+    }
     const today = new Date().toISOString().split('T')[0];
     setObras(prev => prev.map(o => {
       if (o.id !== id) return o;

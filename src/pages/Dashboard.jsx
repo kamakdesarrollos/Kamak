@@ -372,7 +372,7 @@ export default function Dashboard() {
                   {/* Alertas desde WhatsApp (no leídas) */}
                   {alertasWA.filter(a => !a.leida).map(a => (
                     <div key={a.id} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', background: T.faint, borderRadius: 4, padding: '5px 7px' }}>
-                      <Chip accent>{a.tipo === 'exceso' ? '📊' : '⚠'}</Chip>
+                      <Chip accent>{a.tipo === 'exceso' ? '📊' : a.tipo === 'obra_iniciada' ? '🏗️' : '⚠'}</Chip>
                       <div style={{ flex: 1 }}>
                         <div>{a.texto}</div>
                         <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>
