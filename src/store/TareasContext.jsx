@@ -1,5 +1,6 @@
-import { createContext, useContext, useCallback, useMemo } from 'react';
+import { createContext, useContext, useCallback, useMemo, useRef, useEffect } from 'react';
 import useSyncedSharedData from '../lib/useSyncedSharedData';
+import { appendItemInSharedArray, patchItemInSharedArray, removeItemInSharedArray } from '../lib/dbHelpers';
 import { newId } from '../lib/id';
 
 // Tareas con checklist asignables entre usuarios.
@@ -30,10 +31,28 @@ const calcEstadoTarea = (tarea) => {
 };
 
 export function TareasProvider({ children }) {
+  // atomic: escritura por ítem. El bot crea/actualiza tareas atómico; sin esto
+  // el save del blob entero de la app pisaba la tarea nueva o el avance del bot
+  // (tareas LWW del audit).
   const [tareas, setTareas] = useSyncedSharedData('tareas', [], {
     lsKey: 'kamak_tareas_v1',
     skipMarkReady: true,
+    atomic: true,
   });
+
+  const tareasRef = useRef(tareas);
+  useEffect(() => { tareasRef.current = tareas; }, [tareas]);
+
+  // aplicarTarea: computa la tarea nueva desde el estado actual (ref), hace el
+  // setState optimista y persiste SOLO esa tarea atómica (patchItemInSharedArray
+  // con la tarea entera como patch → reemplaza sus campos, sin tocar las demás).
+  const aplicarTarea = useCallback((tareaId, transform) => {
+    const cur = tareasRef.current.find(t => t.id === tareaId);
+    if (!cur) return;
+    const updated = transform(cur);
+    setTareas(prev => prev.map(t => t.id === tareaId ? updated : t));
+    patchItemInSharedArray('tareas', tareaId, updated);
+  }, [setTareas]);
 
   // ── CRUD ────────────────────────────────────────────────────────────────────
 
@@ -69,30 +88,30 @@ export function TareasProvider({ children }) {
       completadoAt: null,
     };
     setTareas(prev => [nueva, ...prev]);
+    appendItemInSharedArray('tareas', nueva);
     return nueva.id;
   }, [setTareas]);
 
   const updateTarea = useCallback((id, changes) => {
-    setTareas(prev => prev.map(t => {
-      if (t.id !== id) return t;
+    aplicarTarea(id, t => {
       const updated = { ...t, ...changes, actualizadoAt: new Date().toISOString() };
       updated.estado = calcEstadoTarea(updated);
       if (updated.estado === 'completada' && !updated.completadoAt) {
         updated.completadoAt = new Date().toISOString();
       }
       return updated;
-    }));
-  }, [setTareas]);
+    });
+  }, [aplicarTarea]);
 
   const deleteTarea = useCallback((id) => {
     setTareas(prev => prev.filter(t => t.id !== id));
+    removeItemInSharedArray('tareas', id);
   }, [setTareas]);
 
   // ── Checklist items ─────────────────────────────────────────────────────────
 
   const toggleItem = useCallback((tareaId, itemId, userId) => {
-    setTareas(prev => prev.map(t => {
-      if (t.id !== tareaId) return t;
+    aplicarTarea(tareaId, t => {
       const checklist = (t.checklist || []).map(it => {
         if (it.id !== itemId) return it;
         const completado = !it.completado;
@@ -111,12 +130,11 @@ export function TareasProvider({ children }) {
         updated.completadoAt = null;
       }
       return updated;
-    }));
-  }, [setTareas]);
+    });
+  }, [aplicarTarea]);
 
   const addItem = useCallback((tareaId, texto) => {
-    setTareas(prev => prev.map(t => {
-      if (t.id !== tareaId) return t;
+    aplicarTarea(tareaId, t => {
       const nuevo = { id: newId('item'), texto, completado: false, completadoPor: null, completadoAt: null };
       const updated = {
         ...t,
@@ -125,12 +143,11 @@ export function TareasProvider({ children }) {
       };
       updated.estado = calcEstadoTarea(updated);
       return updated;
-    }));
-  }, [setTareas]);
+    });
+  }, [aplicarTarea]);
 
   const removeItem = useCallback((tareaId, itemId) => {
-    setTareas(prev => prev.map(t => {
-      if (t.id !== tareaId) return t;
+    aplicarTarea(tareaId, t => {
       const updated = {
         ...t,
         checklist: (t.checklist || []).filter(it => it.id !== itemId),
@@ -138,79 +155,67 @@ export function TareasProvider({ children }) {
       };
       updated.estado = calcEstadoTarea(updated);
       return updated;
-    }));
-  }, [setTareas]);
+    });
+  }, [aplicarTarea]);
 
   // Observación/nota libre por ítem del checklist (no afecta el estado).
   const setItemObservacion = useCallback((tareaId, itemId, observacion) => {
-    setTareas(prev => prev.map(t => {
-      if (t.id !== tareaId) return t;
-      return {
-        ...t,
-        checklist: (t.checklist || []).map(it => it.id === itemId ? { ...it, observacion } : it),
-        actualizadoAt: new Date().toISOString(),
-      };
+    aplicarTarea(tareaId, t => ({
+      ...t,
+      checklist: (t.checklist || []).map(it => it.id === itemId ? { ...it, observacion } : it),
+      actualizadoAt: new Date().toISOString(),
     }));
-  }, [setTareas]);
+  }, [aplicarTarea]);
 
   // Responsable de un ítem del checklist (userId o null). Permite repartir los
   // ítems de una tarea grupal entre distintas personas. No afecta el estado.
   const setItemAsignado = useCallback((tareaId, itemId, userId) => {
-    setTareas(prev => prev.map(t => {
-      if (t.id !== tareaId) return t;
-      return {
-        ...t,
-        checklist: (t.checklist || []).map(it => it.id === itemId ? { ...it, asignadoA: userId || null } : it),
-        actualizadoAt: new Date().toISOString(),
-      };
+    aplicarTarea(tareaId, t => ({
+      ...t,
+      checklist: (t.checklist || []).map(it => it.id === itemId ? { ...it, asignadoA: userId || null } : it),
+      actualizadoAt: new Date().toISOString(),
     }));
-  }, [setTareas]);
+  }, [aplicarTarea]);
 
   // ── Adjuntos (documentos / fotos de la tarea) ───────────────────────────────
   // Se suben al bucket kamak-fotos (path tareas/<id>/...). Acá solo guardamos
   // la referencia { id, nombre, url, tipo, subidoPor, creadoAt }.
   const addAdjunto = useCallback((tareaId, adjunto) => {
-    setTareas(prev => prev.map(t => t.id !== tareaId ? t : {
+    aplicarTarea(tareaId, t => ({
       ...t,
       adjuntos: [...(t.adjuntos || []), { id: newId('adj'), creadoAt: new Date().toISOString(), ...adjunto }],
       actualizadoAt: new Date().toISOString(),
     }));
-  }, [setTareas]);
+  }, [aplicarTarea]);
 
   const removeAdjunto = useCallback((tareaId, adjuntoId) => {
-    setTareas(prev => prev.map(t => t.id !== tareaId ? t : {
+    aplicarTarea(tareaId, t => ({
       ...t,
       adjuntos: (t.adjuntos || []).filter(a => a.id !== adjuntoId),
       actualizadoAt: new Date().toISOString(),
     }));
-  }, [setTareas]);
+  }, [aplicarTarea]);
 
   // ── Comentarios ────────────────────────────────────────────────────────────
 
   const addComentario = useCallback((tareaId, userId, texto) => {
-    setTareas(prev => prev.map(t => {
-      if (t.id !== tareaId) return t;
-      return {
-        ...t,
-        comentarios: [
-          ...(t.comentarios || []),
-          { id: newId('com'), userId, texto, creadoAt: new Date().toISOString() },
-        ],
-        actualizadoAt: new Date().toISOString(),
-      };
+    aplicarTarea(tareaId, t => ({
+      ...t,
+      comentarios: [
+        ...(t.comentarios || []),
+        { id: newId('com'), userId, texto, creadoAt: new Date().toISOString() },
+      ],
+      actualizadoAt: new Date().toISOString(),
     }));
-  }, [setTareas]);
+  }, [aplicarTarea]);
 
   // ── Notificación: marcar como vista ────────────────────────────────────────
 
   const marcarVista = useCallback((tareaId, userId) => {
-    setTareas(prev => prev.map(t => {
-      if (t.id !== tareaId) return t;
-      const vistaPor = t.vistaPor || [];
-      if (vistaPor.includes(userId)) return t;
-      return { ...t, vistaPor: [...vistaPor, userId] };
-    }));
-  }, [setTareas]);
+    const cur = tareasRef.current.find(t => t.id === tareaId);
+    if (!cur || (cur.vistaPor || []).includes(userId)) return; // ya vista: sin write
+    aplicarTarea(tareaId, t => ({ ...t, vistaPor: [...(t.vistaPor || []), userId] }));
+  }, [aplicarTarea]);
 
   const value = useMemo(
     () => ({

@@ -1,5 +1,6 @@
 import { createContext, useContext, useCallback, useMemo } from 'react';
 import useSyncedSharedData from '../lib/useSyncedSharedData';
+import { appendItemInSharedArray, patchItemInSharedArray, removeItemInSharedArray } from '../lib/dbHelpers';
 import { newId } from '../lib/id';
 import { today } from '../lib/dates';
 
@@ -11,8 +12,12 @@ import { today } from '../lib/dates';
 const CTX = createContext(null);
 
 export function ChequesProvider({ children }) {
+  // atomic: escritura por ítem. El bot crea/edita cheques atómico (carga por
+  // WhatsApp, cambio de estado); sin esto el save del blob entero de la app los
+  // pisaba (cheques LWW del audit).
   const [cheques, setCheques] = useSyncedSharedData('cheques', [], {
     lsKey: 'kamak_cheques_v1',
+    atomic: true,
   });
 
   const addCheque = useCallback((data) => {
@@ -33,15 +38,18 @@ export function ChequesProvider({ children }) {
       id: newId('chq'),
     };
     setCheques(prev => [nuevo, ...prev]);
+    appendItemInSharedArray('cheques', nuevo);
     return nuevo.id;
   }, [setCheques]);
 
   const updateCheque = useCallback((id, changes) => {
     setCheques(prev => prev.map(c => c.id === id ? { ...c, ...changes } : c));
+    patchItemInSharedArray('cheques', id, changes);
   }, [setCheques]);
 
   const removeCheque = useCallback((id) => {
     setCheques(prev => prev.filter(c => c.id !== id));
+    removeItemInSharedArray('cheques', id);
   }, [setCheques]);
 
   const depositarCheque = useCallback((id, { cajaDestinoId, cajaDestinoNombre, fechaDeposito, movimientoId }) => {

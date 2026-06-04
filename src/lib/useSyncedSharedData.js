@@ -66,7 +66,7 @@ async function saveSharedDataKeepalive(key, value) {
  * @param {boolean} opts.skipMarkReady Si true, no llama markReady() (para Alertas / WAPending)
  * @returns {[state, setState]} igual que useState
  */
-export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady = false } = {}) {
+export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady = false, atomic = false } = {}) {
   // Carga inicial: localStorage si esta, sino el initial.
   const [state, setState] = useState(() => {
     if (!lsKey) return initial;
@@ -116,7 +116,9 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
       // Si el usuario edito algo ANTES de que llegue este fetch, no pisamos
       // su cambio. En su lugar, lo subimos al remoto (gana el local).
       if (userEditedBeforeFirstLoad.current) {
-        saveSharedData(key, stateRef.current);
+        // En modo atómico los cambios ya se persistieron por ítem; solo
+        // bootstrapeamos el key si todavía no existía (data === null).
+        if (!atomic || data === null) saveSharedData(key, stateRef.current);
       } else if (data !== null) {
         fromRemote.current = true;
         setState(data);
@@ -150,6 +152,9 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
   // Debounced save al cambiar el state (item 2.9).
   useEffect(() => {
     if (!sbLoaded.current || fromRemote.current) return;
+    // En modo atómico el provider persiste por ítem (append/patch/remove); NO
+    // guardamos el blob entero (era lo que pisaba lo que el bot escribía atómico).
+    if (atomic) return;
     pendingSaveRef.current = state;
     const t = setTimeout(() => {
       saveSharedData(key, state);
@@ -157,7 +162,7 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
       pendingSaveRef.current = null;
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [state, key]);
+  }, [state, key, atomic]);
 
   // Flush pendiente al desmontar (item 2.9). Usa fetch con keepalive para
   // que el save sobreviva al unload/F5 — antes el fetch del SDK era cancelado
@@ -181,8 +186,12 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
   // el load remoto no pise estos cambios.
   const setSynced = useCallback((next) => {
     if (!sbLoaded.current) userEditedBeforeFirstLoad.current = true;
+    // En modo atómico, cada setState corresponde a una mutación que el provider
+    // persiste por ítem; sellamos el timestamp para que onRemoteChange ignore el
+    // eco del broadcast (< 3s) y no "desaparezca" el cambio recién hecho.
+    if (atomic) lastLocalSaveAt.current = Date.now();
     setState(prev => typeof next === 'function' ? next(prev) : next);
-  }, []);
+  }, [atomic]);
 
   return [state, setSynced];
 }

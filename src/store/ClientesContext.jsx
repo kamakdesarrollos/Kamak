@@ -1,5 +1,6 @@
 import { createContext, useContext, useCallback, useMemo } from 'react';
 import useSyncedSharedData from '../lib/useSyncedSharedData';
+import { appendItemInSharedArray, patchItemInSharedArray, removeItemInSharedArray } from '../lib/dbHelpers';
 import { newId } from '../lib/id';
 
 // Item 3.3: este provider antes tenia ~110 lineas de boilerplate identico
@@ -16,22 +17,28 @@ const SEED_CLIENTES = [
 ];
 
 export function ClientesProvider({ children }) {
+  // atomic: escritura por ítem (no blob entero). El bot vincula el teléfono del
+  // cliente en el onboarding de WhatsApp; sin esto la app lo pisaba al guardar.
   const [clientes, setClientes] = useSyncedSharedData('clientes', SEED_CLIENTES, {
     lsKey: 'kamak_clientes_v1',
+    atomic: true,
   });
 
   const addCliente = useCallback((data) => {
     const nuevo = { nombre: '', empresa: '', cuit: '', condicionIVA: 'CF', telefono: '', email: '', notas: '', ...data, id: newId('cl') };
     setClientes(prev => [...prev, nuevo]);
+    appendItemInSharedArray('clientes', nuevo);
     return nuevo.id;
   }, [setClientes]);
 
   const updateCliente = useCallback((id, changes) => {
     setClientes(prev => prev.map(c => c.id === id ? { ...c, ...changes } : c));
+    patchItemInSharedArray('clientes', id, changes);
   }, [setClientes]);
 
   const removeCliente = useCallback((id) => {
     setClientes(prev => prev.filter(c => c.id !== id));
+    removeItemInSharedArray('clientes', id);
   }, [setClientes]);
 
   const value = useMemo(
