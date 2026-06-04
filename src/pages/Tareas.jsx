@@ -318,15 +318,19 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                       >
                         {it.texto}
                       </span>
-                      <select
-                        value={it.asignadoA || ''}
-                        onChange={e => setItemAsignado(tarea.id, it.id, e.target.value || null)}
-                        title="Responsable de este ítem"
-                        style={{ fontSize: 10, padding: '1px 3px', border: `1px solid ${it.asignadoA ? '#a5b4fc' : T.faint2}`, borderRadius: 3, background: it.asignadoA ? '#eef2ff' : T.paper, color: it.asignadoA ? '#3949ab' : T.ink3, maxWidth: 100, flexShrink: 0, cursor: 'pointer' }}
-                      >
-                        <option value="">— responsable</option>
-                        {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
-                      </select>
+                      {/* El responsable es para repartir trabajo PENDIENTE; en un
+                          ítem ya completado solo importa el "✓ quién lo hizo". */}
+                      {!it.completado && (
+                        <select
+                          value={it.asignadoA || ''}
+                          onChange={e => setItemAsignado(tarea.id, it.id, e.target.value || null)}
+                          title="Responsable de este ítem"
+                          style={{ fontSize: 10, padding: '1px 3px', border: `1px solid ${it.asignadoA ? '#a5b4fc' : T.faint2}`, borderRadius: 3, background: it.asignadoA ? '#eef2ff' : T.paper, color: it.asignadoA ? '#3949ab' : T.ink3, maxWidth: 100, flexShrink: 0, cursor: 'pointer' }}
+                        >
+                          <option value="">— responsable</option>
+                          {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                        </select>
+                      )}
                       {completadoPor && (
                         <span style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono }} title="Completó">
                           ✓ {completadoPor}
