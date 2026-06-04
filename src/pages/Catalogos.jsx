@@ -5,7 +5,8 @@ import { Box, Btn, Chip, Divider } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
-import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex } from '../lib/apuPriceResolver';
+import { useDolar } from '../store/DolarContext';
+import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex, aplicarDolarItems } from '../lib/apuPriceResolver';
 import { groupByKey } from '../lib/catalogGroup';
 import { syncFormItemNames } from '../lib/catalogCascade';
 import { normUnidad } from '../lib/unidad';
@@ -147,15 +148,17 @@ function InsumoSearch({ items, onSelect, placeholder }) {
 const cellInSt = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fontSize: 12, border: `1px solid ${T.faint2}`, borderRadius: 3, padding: '2px 5px', outline: 'none', background: T.paper };
 
 function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, generales, onSave, onCancel }) {
+  const { dolarVenta } = useDolar();
   // Index del catálogo (Map por nombre normalizado) para lookup O(1) en
   // calcTarea — sin esto, cada material × cada item del catálogo SISMAT
   // (~2000) hacía string normalization lineal y mataba el render.
+  // aplicarDolarItems convierte a ARS los items en USD (atados al dólar BNA).
   const catalogIndex = useMemo(() => ({
-    materiales:   buildCatalogItemsIndex(materiales || []),
-    subcontratos: buildCatalogItemsIndex(subcontratos || []),
-    mo:           buildCatalogItemsIndex(moItems || []),
-    generales:    buildCatalogItemsIndex(generales || []),
-  }), [materiales, subcontratos, moItems, generales]);
+    materiales:   buildCatalogItemsIndex(aplicarDolarItems(materiales || [], dolarVenta)),
+    subcontratos: buildCatalogItemsIndex(aplicarDolarItems(subcontratos || [], dolarVenta)),
+    mo:           buildCatalogItemsIndex(aplicarDolarItems(moItems || [], dolarVenta)),
+    generales:    buildCatalogItemsIndex(aplicarDolarItems(generales || [], dolarVenta)),
+  }), [materiales, subcontratos, moItems, generales, dolarVenta]);
   const costs = useMemo(() => calcTarea(form, catalogIndex), [form, catalogIndex]);
 
   const addMat = (item) => setForm(f => ({ ...f, materiales: [...f.materiales, { id: newId(), nombre: item.nombre, cantidad: 1, unidad: item.unidad, precio: item.precio }] }));
@@ -1256,7 +1259,38 @@ export default function Catalogos() {
   const [tab, setTab] = useState(4);
   const [nuevaApuRubro, setNuevaApuRubro] = useState(null); // intención de crear APU en un rubro (desde Rubros/Gremios)
   const { catalog, catalogIndex, add, update, remove, bulkUpdatePreciosCAC, restoreCatalogCACBackup } = useCatalog();
+  const { dolarVenta } = useDolar();
   const { indices } = useIndices();
+
+  // Columna "Precio" que muestra U$S + su equivalente en pesos al dólar BNA si el
+  // item está en USD; si no, pesos normales.
+  const precioColUSD = {
+    key: 'precio', label: 'Precio', align: 'right', mono: true,
+    render: (v, it) => it?.moneda === 'USD'
+      ? `U$S ${fmtN(v)} · ≈ $ ${fmtN(Math.round((Number(v) || 0) * dolarVenta))}`
+      : `$ ${fmtN(v)}`,
+  };
+  // Filas Precio + Moneda para los formularios (material / M.O / general).
+  const MonedaPrecio = (form, setForm) => (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 8 }}>
+        <FRow label={form.moneda === 'USD' ? 'Precio U$S' : 'Precio $'}>
+          <input style={inputSt} type="number" min="0" value={form.precio || 0} onChange={e => setForm(f => ({ ...f, precio: +e.target.value }))} />
+        </FRow>
+        <FRow label="Moneda">
+          <select style={inputSt} value={form.moneda || 'ARS'} onChange={e => setForm(f => ({ ...f, moneda: e.target.value }))}>
+            <option value="ARS">$ Pesos</option>
+            <option value="USD">U$S (atado al dólar BNA)</option>
+          </select>
+        </FRow>
+      </div>
+      {form.moneda === 'USD' && (
+        <div style={{ fontSize: 11, color: T.ink3, marginTop: -2, marginBottom: 4 }}>
+          ≈ $ {fmtN(Math.round((form.precio || 0) * dolarVenta))} al dólar BNA de hoy (${fmtN(dolarVenta)}). El precio se actualiza solo cuando cambia el dólar.
+        </div>
+      )}
+    </>
+  );
   const [cacModal, setCacModal] = useState(false);
   const [cacFlash, setCacFlash] = useState('');
 
@@ -1314,12 +1348,12 @@ export default function Catalogos() {
               cols={[
                 { key: 'codigo', label: 'Código', mono: true },
                 { key: 'nombre', label: 'Nombre' },
-                { key: 'precio', label: 'Precio $', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
+                precioColUSD,
                 { key: 'unidad', label: 'Unidad' },
                 { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
                 { key: 'updatedAt', label: 'Actualizado', mono: true },
               ]}
-              emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, rubro: rs[0] || '', updatedAt: today() }}
+              emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, moneda: 'ARS', rubro: rs[0] || '', updatedAt: today() }}
               renderForm={(form, setForm) => (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -1327,7 +1361,7 @@ export default function Catalogos() {
                     <FRow label="Unidad"><input style={inputSt} value={form.unidad||''} onChange={e => setForm(f=>({...f, unidad:e.target.value}))} /></FRow>
                   </div>
                   <FRow label="Nombre"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
-                  <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
+                  {MonedaPrecio(form, setForm)}
                   <FRow label="Rubro">
                     <input list="mat-rubros" style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))} placeholder="Elegí o escribí un rubro…" />
                     <datalist id="mat-rubros">{rs.map(r => <option key={r} value={r} />)}</datalist>
@@ -1352,12 +1386,12 @@ export default function Catalogos() {
               cols={[
                 { key: 'codigo', label: 'Código', mono: true },
                 { key: 'nombre', label: 'Nombre' },
-                { key: 'precio', label: 'Precio $', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
+                precioColUSD,
                 { key: 'unidad', label: 'Unidad' },
                 { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
                 { key: 'updatedAt', label: 'Actualizado', mono: true },
               ]}
-              emptyForm={{ codigo: '', nombre: '', unidad: 'm²', precio: 0, rubro: rs[0] || '', updatedAt: today() }}
+              emptyForm={{ codigo: '', nombre: '', unidad: 'm²', precio: 0, moneda: 'ARS', rubro: rs[0] || '', updatedAt: today() }}
               renderForm={(form, setForm) => (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -1365,7 +1399,7 @@ export default function Catalogos() {
                     <FRow label="Unidad"><input style={inputSt} value={form.unidad||''} onChange={e => setForm(f=>({...f, unidad:e.target.value}))} /></FRow>
                   </div>
                   <FRow label="Nombre"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
-                  <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
+                  {MonedaPrecio(form, setForm)}
                   <FRow label="Rubro">
                     <input list="sub-rubros" style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))} placeholder="Elegí o escribí un rubro…" />
                     <datalist id="sub-rubros">{rs.map(r => <option key={r} value={r} />)}</datalist>
@@ -1383,17 +1417,15 @@ export default function Catalogos() {
             onDelete={id => remove('generales', id)}
             cols={[
               { key: 'nombre', label: 'Concepto' },
-              { key: 'precio', label: 'Precio $', align: 'right', mono: true, render: v => `$ ${fmtN(v)}` },
+              precioColUSD,
               { key: 'unidad', label: 'Unidad' },
             ]}
-            emptyForm={{ nombre: '', unidad: 'gl', precio: 0 }}
+            emptyForm={{ nombre: '', unidad: 'gl', precio: 0, moneda: 'ARS' }}
             renderForm={(form, setForm) => (
               <>
                 <FRow label="Concepto"><input style={inputSt} value={form.nombre||''} onChange={e => setForm(f=>({...f, nombre:e.target.value}))} /></FRow>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <FRow label="Unidad"><input style={inputSt} value={form.unidad||''} onChange={e => setForm(f=>({...f, unidad:e.target.value}))} /></FRow>
-                  <FRow label="Precio $"><input style={inputSt} type="number" min="0" value={form.precio||0} onChange={e => setForm(f=>({...f, precio:+e.target.value}))} /></FRow>
-                </div>
+                <FRow label="Unidad"><input style={inputSt} value={form.unidad||''} onChange={e => setForm(f=>({...f, unidad:e.target.value}))} /></FRow>
+                {MonedaPrecio(form, setForm)}
               </>
             )}
           />

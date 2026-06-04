@@ -101,16 +101,38 @@ export function buildCatalogItemsIndex(items) {
   return map;
 }
 
+// Convierte a ARS los items con moneda 'USD' usando el dólar venta BNA. El valor
+// original en USD queda en `_usd` (para mostrarlo). Los items en ARS pasan sin
+// tocar. Se aplica al construir el ÍNDICE de precios, así un item en USD queda
+// "atado" al dólar: el índice se reconstruye cuando cambia la cotización.
+// Devuelve la MISMA referencia si no había ningún item USD (no rompe memos).
+export function aplicarDolarItems(items, dolarVenta) {
+  if (!Array.isArray(items) || !dolarVenta) return items;
+  let cambio = false;
+  const out = items.map(it => {
+    if (!it || it.moneda !== 'USD') return it;
+    cambio = true;
+    const n = { ...it, _usd: Number(it.precio) || 0 };
+    if (it.precio != null)     n.precio     = Math.round((Number(it.precio) || 0) * dolarVenta);
+    if (it.precioHora != null) { n._usdHora = Number(it.precioHora) || 0; n.precioHora = Math.round((Number(it.precioHora) || 0) * dolarVenta); }
+    return n;
+  });
+  return cambio ? out : items;
+}
+
 // Conveniencia: indexa los sub-catálogos de una vez. Incluye `tareas` (APU
 // del catálogo) para que las plantillas puedan buscar la APU por nombre y
 // derivar los costos desde ahí, sin guardar copia hardcoded.
-export function buildCatalogIndex(catalog) {
+//
+// dolarVenta (opcional): si se pasa, los items en USD se convierten a ARS a esa
+// cotización ANTES de indexar → todo el cálculo de precios queda atado al dólar.
+export function buildCatalogIndex(catalog, dolarVenta = null) {
   if (!catalog) return null;
   return {
-    materiales:   buildCatalogItemsIndex(catalog.materiales),
-    subcontratos: buildCatalogItemsIndex(catalog.subcontratos),
-    mo:           buildCatalogItemsIndex(catalog.mo),
-    generales:    buildCatalogItemsIndex(catalog.generales),
+    materiales:   buildCatalogItemsIndex(aplicarDolarItems(catalog.materiales, dolarVenta)),
+    subcontratos: buildCatalogItemsIndex(aplicarDolarItems(catalog.subcontratos, dolarVenta)),
+    mo:           buildCatalogItemsIndex(aplicarDolarItems(catalog.mo, dolarVenta)),
+    generales:    buildCatalogItemsIndex(aplicarDolarItems(catalog.generales, dolarVenta)),
     tareas:       buildCatalogItemsIndex(catalog.tareas),
   };
 }

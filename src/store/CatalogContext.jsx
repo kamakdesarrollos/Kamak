@@ -7,6 +7,7 @@ import { cascadeRename } from '../lib/catalogCascade';
 import { loadSismatCostMap, migrarCatalogoConSismat } from '../lib/sismatCostFallback';
 import { aplicarCACalCatalogo } from '../lib/cacUpdate';
 import { normUnidad } from '../lib/unidad';
+import { useDolar } from './DolarContext';
 
 // Versión de la migración SISMAT → catálogo APU. Bumpeala si querés re-correr
 // la migración (p.ej. si actualizamos las reglas de conversión).
@@ -258,7 +259,11 @@ export function CatalogProvider({ children }) {
   // Index Map por nombre normalizado — lookup O(1) para calcTarea.
   // Sin esto, resolver precios en presupuestos con muchos APUs y materiales
   // se volvía O(N×M) con string normalization → render lentísimo.
-  const catalogIndex = useMemo(() => buildCatalogIndex(catalog), [catalog]);
+  // Items en USD del catálogo se convierten a ARS al dólar venta BNA acá: el
+  // índice (que usa todo el cálculo de precios) se reconstruye cuando cambia la
+  // cotización → los precios en USD quedan atados 100% al dólar.
+  const { dolarVenta } = useDolar();
+  const catalogIndex = useMemo(() => buildCatalogIndex(catalog, dolarVenta), [catalog, dolarVenta]);
 
   // Carga el index de costos SISMAT (materiales + MO×0.5) que sirve para
   // (1) migrar el catálogo una vez al cargar (ver useEffect debajo) y (2)
