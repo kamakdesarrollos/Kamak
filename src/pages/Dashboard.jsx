@@ -313,39 +313,39 @@ export default function Dashboard() {
                   aging proporcional (verde/ámbar/rojo) y pills por tramo. */}
               {deudaTerminadas.total > 0 ? (
                 <div onClick={() => navigate('/obras')}
-                  style={{ borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer', position: 'relative', overflow: 'hidden', background: 'linear-gradient(180deg,#fff8ef 0%,#ffffff 70%)' }}
-                  onMouseEnter={e => e.currentTarget.style.filter = 'brightness(0.985)'}
-                  onMouseLeave={e => e.currentTarget.style.filter = ''}>
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: 'linear-gradient(180deg,#f59e0b,#ea580c)' }} />
-                  <div style={{ padding: '12px 16px 13px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 11 }}>
-                      <div>
-                        <div style={{ fontSize: 8.5, color: '#b8651a', fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.8, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 5 }}>
-                          <span style={{ fontSize: 11 }}>💸</span> ME DEBEN · OBRAS TERMINADAS
+                  style={{ borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer', position: 'relative', overflow: 'hidden', background: '#fff' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#fff7ed'}
+                  onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#f59e0b,#ea580c)' }} />
+                  <div style={{ padding: '12px 16px 13px 18px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, marginBottom: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 9, color: '#9a3412', fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.2, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          💸 ME DEBEN · OBRAS TERMINADAS
                         </div>
-                        <div style={{ fontSize: 9.5, color: T.ink3, marginTop: 4 }}>
-                          saldo a cobrar de {deudaTerminadas.n} obra{deudaTerminadas.n === 1 ? '' : 's'} entregada{deudaTerminadas.n === 1 ? '' : 's'}
+                        <div style={{ fontSize: 11, color: T.ink2, marginTop: 4, fontWeight: 600 }}>
+                          saldo a cobrar · {deudaTerminadas.n} obra{deudaTerminadas.n === 1 ? '' : 's'} entregada{deudaTerminadas.n === 1 ? '' : 's'}
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 10 }}>
-                        <div className="k-mono" style={{ fontSize: 25, fontWeight: 900, color: '#ea580c', lineHeight: 1, letterSpacing: '-0.02em' }}>U$S {fmtN(deudaTerminadas.total)}</div>
-                        <div style={{ fontSize: 9.5, color: T.ink3, marginTop: 3, fontFamily: `'JetBrains Mono', monospace` }}>≈ $ {fmtN(Math.round(deudaTerminadas.total * tc))} ARS</div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div className="k-mono" style={{ fontSize: 23, fontWeight: 900, color: '#c2410c', lineHeight: 1, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>U$S {fmtN(deudaTerminadas.total)}</div>
+                        <div style={{ fontSize: 10, color: T.ink2, marginTop: 4, fontFamily: `'JetBrains Mono', monospace` }}>≈ $ {fmtN(Math.round(deudaTerminadas.total * tc))} ARS</div>
                       </div>
                     </div>
-                    {/* Barra de aging proporcional */}
-                    <div style={{ display: 'flex', height: 6, borderRadius: 4, overflow: 'hidden', background: T.faint2, marginBottom: 8 }}>
-                      {[['d15', T.ok], ['d30', '#e0a020'], ['dmas', '#dc2626']].map(([k, c]) =>
+                    {/* Barra de aging proporcional (verde 1-15 · ámbar 15-30 · rojo +30) */}
+                    <div style={{ display: 'flex', height: 7, borderRadius: 4, overflow: 'hidden', background: T.faint2, marginBottom: 8 }}>
+                      {[['d15', '#3d7a4a'], ['d30', '#d97706'], ['dmas', '#dc2626']].map(([k, c]) =>
                         deudaTerminadas[k] > 0 ? <div key={k} style={{ width: `${(deudaTerminadas[k] / deudaTerminadas.total) * 100}%`, background: c }} /> : null
                       )}
                     </div>
                     {/* Pills por tramo de antigüedad */}
                     <div style={{ display: 'flex', gap: 6 }}>
-                      {[['1–15 días', 'd15', T.ok], ['15–30 días', 'd30', '#c98a1a'], ['+30 días', 'dmas', '#dc2626']].map(([lab, k, c]) => (
-                        <div key={k} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 6, background: '#fff', border: `1px solid ${T.faint2}` }}>
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: deudaTerminadas[k] > 0 ? c : T.faint2, flexShrink: 0 }} />
+                      {[['1–15 días', 'd15', '#3d7a4a'], ['15–30 días', 'd30', '#b45309'], ['+30 días', 'dmas', '#dc2626']].map(([lab, k, c]) => (
+                        <div key={k} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 7, padding: '6px 9px', borderRadius: 6, background: T.faint, border: `1px solid ${T.faint2}`, minWidth: 0 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: deudaTerminadas[k] > 0 ? c : T.faint2, flexShrink: 0 }} />
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 7.5, color: T.ink3, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.3, whiteSpace: 'nowrap' }}>{lab}</div>
-                            <div className="k-mono" style={{ fontSize: 11.5, fontWeight: 800, color: deudaTerminadas[k] > 0 ? c : T.ink3 }}>{fmtN(deudaTerminadas[k])}</div>
+                            <div style={{ fontSize: 8.5, color: T.ink2, fontWeight: 700, letterSpacing: 0.2, whiteSpace: 'nowrap' }}>{lab}</div>
+                            <div className="k-mono" style={{ fontSize: 12, fontWeight: 800, color: deudaTerminadas[k] > 0 ? c : T.ink3, whiteSpace: 'nowrap' }}>$ {fmtN(deudaTerminadas[k])}</div>
                           </div>
                         </div>
                       ))}
@@ -353,8 +353,8 @@ export default function Dashboard() {
                   </div>
                 </div>
               ) : (
-                <div style={{ borderBottom: `1px solid ${T.faint2}`, padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.faint }}>
-                  <div style={{ fontSize: 8.5, color: T.ink3, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.8, fontWeight: 800 }}>💸 ME DEBEN · OBRAS TERMINADAS</div>
+                <div style={{ borderBottom: `1px solid ${T.faint2}`, padding: '11px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.faint }}>
+                  <div style={{ fontSize: 9, color: T.ink2, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.2, fontWeight: 800 }}>💸 ME DEBEN · OBRAS TERMINADAS</div>
                   <div style={{ fontSize: 11, color: T.ok, fontWeight: 700 }}>✓ Todo cobrado</div>
                 </div>
               )}
