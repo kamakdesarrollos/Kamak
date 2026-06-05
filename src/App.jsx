@@ -36,6 +36,7 @@ const ObraPresupuesto    = lazy(() => import('./pages/obra/ObraPresupuesto'));
 const ObraGantt          = lazy(() => import('./pages/obra/ObraGantt'));
 const Proveedores        = lazy(() => import('./pages/Proveedores'));
 const Clientes           = lazy(() => import('./pages/Clientes'));
+const Pipeline           = lazy(() => import('./pages/comercial/Pipeline'));
 const Facturacion        = lazy(() => import('./pages/Facturacion'));
 const ProveedorCC        = lazy(() => import('./pages/ProveedorCC'));
 const Movimientos        = lazy(() => import('./pages/Movimientos'));
@@ -241,6 +242,7 @@ function AppShell() {
                   <Route path="/obras/:id/gantt" element={<ObraGantt />} />
                   <Route path="/proveedores" element={<Proveedores />} />
                   <Route path="/clientes" element={<Clientes />} />
+                  <Route path="/comercial" element={<Pipeline />} />
                   <Route path="/proveedores/:id" element={<ProveedorCC />} />
                   <Route path="/movimientos" element={<Movimientos />} />
                   <Route path="/cajas" element={<Cajas />} />
