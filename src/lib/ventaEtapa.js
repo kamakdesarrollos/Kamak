@@ -50,6 +50,21 @@ export function necesitaGanarPorPago(obra, cobradoUSD) {
   return etapa !== 'ganado' && etapa !== 'perdido';
 }
 
+// El embudo OCULTA las obras terminadas (finalizada): son historia entregada,
+// no parte del funnel de ventas. El resto (en-presupuesto, activa, pausada,
+// archivada) sí se muestra.
+export function visibleEnEmbudo(obra) {
+  return !!obra && obra.estado !== 'finalizada';
+}
+
+// Solo las oportunidades ABIERTAS (en-presupuesto) se pueden arrastrar en el
+// board. Una obra ya confirmada (activa/finalizada) o perdida (archivada) queda
+// fija: arrastrarla a una columna de presupuesto le revertiría el estado y
+// desconfirmaría una obra real. Para cambiarla, se va a la obra.
+export function esArrastrableEnEmbudo(obra) {
+  return !!obra && obra.estado === 'en-presupuesto';
+}
+
 // Resumen del embudo desde las etapas efectivas de las oportunidades.
 export function resumenEmbudo(etapas) {
   const conteo = { prospecto: 0, cotizado: 0, negociacion: 0, ganado: 0, perdido: 0 };

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   obraEstadoParaEtapa, etapaEfectiva, etapaInicialBackfill,
   necesitaGanarPorPago, resumenEmbudo, ETAPA_META,
+  visibleEnEmbudo, esArrastrableEnEmbudo,
 } from './ventaEtapa';
 
 describe('obraEstadoParaEtapa', () => {
@@ -90,5 +91,36 @@ describe('ETAPA_META', () => {
       expect(ETAPA_META[e].label).toBeTruthy();
       expect(ETAPA_META[e].color).toMatch(/^#/);
     }
+  });
+});
+
+describe('visibleEnEmbudo', () => {
+  it('oculta las obras terminadas (finalizada)', () => {
+    expect(visibleEnEmbudo({ estado: 'finalizada' })).toBe(false);
+  });
+  it('muestra el resto (en-presupuesto, activa, pausada, archivada)', () => {
+    expect(visibleEnEmbudo({ estado: 'en-presupuesto' })).toBe(true);
+    expect(visibleEnEmbudo({ estado: 'activa' })).toBe(true);
+    expect(visibleEnEmbudo({ estado: 'pausada' })).toBe(true);
+    expect(visibleEnEmbudo({ estado: 'archivada' })).toBe(true);
+  });
+  it('obra nula no es visible', () => {
+    expect(visibleEnEmbudo(null)).toBe(false);
+  });
+});
+
+describe('esArrastrableEnEmbudo', () => {
+  it('solo las oportunidades abiertas (en-presupuesto) se pueden arrastrar', () => {
+    expect(esArrastrableEnEmbudo({ estado: 'en-presupuesto' })).toBe(true);
+  });
+  it('una obra confirmada (activa/finalizada) NO se arrastra: revertirla a presupuesto desconfirmaría una obra real', () => {
+    expect(esArrastrableEnEmbudo({ estado: 'activa' })).toBe(false);
+    expect(esArrastrableEnEmbudo({ estado: 'finalizada' })).toBe(false);
+  });
+  it('una obra perdida/archivada tampoco se arrastra desde el board', () => {
+    expect(esArrastrableEnEmbudo({ estado: 'archivada' })).toBe(false);
+  });
+  it('obra nula no es arrastrable', () => {
+    expect(esArrastrableEnEmbudo(null)).toBe(false);
   });
 });
