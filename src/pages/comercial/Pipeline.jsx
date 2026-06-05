@@ -6,6 +6,7 @@ import { useObras } from '../../store/ObrasContext';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useDolar } from '../../store/DolarContext';
 import { useUsuarios } from '../../store/UsuariosContext';
+import { useComercial } from '../../store/ComercialContext';
 import { ccObra, cobradoObraUSD } from '../obra/helpers';
 import { ETAPAS_VENTA } from '../../lib/constants';
 import { ETAPA_META, etapaEfectiva, resumenEmbudo, visibleEnEmbudo, esArrastrableEnEmbudo } from '../../lib/ventaEtapa';
@@ -24,6 +25,7 @@ export default function Pipeline() {
   const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
+  const { addActividad } = useComercial();
   const tc = dolarVenta || 1070;
 
   const [drag, setDrag] = useState(null);          // obraId arrastrándose
@@ -51,8 +53,15 @@ export default function Pipeline() {
     // Solo se mueven oportunidades abiertas: una obra confirmada/perdida no se
     // revierte desde el board (evita desconfirmar una obra real).
     if (!op || op.etapa === etapaDestino || !esArrastrableEnEmbudo(op.obra)) return;
-    if (etapaDestino === 'perdido') { setPerdida({ obraId, nombre: op.obra.nombre }); return; }
+    if (etapaDestino === 'perdido') { setPerdida({ obraId, nombre: op.obra.nombre, clienteId: op.obra.clienteId || null }); return; }
     setVentaEtapa(obraId, etapaDestino, { usuario: currentUser?.id || null });
+    addActividad({
+      clienteId: op.obra.clienteId || null,
+      obraId,
+      tipo: 'cambio_etapa',
+      texto: `Movida a ${(ETAPA_META[etapaDestino]?.label) || etapaDestino} — ${op.obra.nombre}`,
+      usuario: currentUser?.id || null,
+    });
   };
 
   return (
@@ -163,6 +172,13 @@ export default function Pipeline() {
           onClose={() => setPerdida(null)}
           onConfirm={(motivo) => {
             setVentaEtapa(perdida.obraId, 'perdido', { motivoPerdida: motivo, usuario: currentUser?.id || null });
+            addActividad({
+              clienteId: perdida.clienteId || null,
+              obraId: perdida.obraId,
+              tipo: 'cambio_etapa',
+              texto: `Perdida: ${motivo} — ${perdida.nombre}`,
+              usuario: currentUser?.id || null,
+            });
             setPerdida(null);
           }}
         />

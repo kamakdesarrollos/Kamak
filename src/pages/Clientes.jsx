@@ -9,7 +9,15 @@ import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { CONDICIONES_IVA, validarCUIT } from '../lib/afip';
+import { derivaClienteEstado } from '../lib/derivaClienteEstado';
 import ClienteFicha360Modal from './Clientes/ClienteFicha360Modal';
+
+// Chip de estado derivado del cliente: cliente=verde, prospecto=accent, inactivo=gris.
+const ESTADO_CLIENTE_CHIP = {
+  cliente: { label: 'Cliente', color: T.ok },
+  prospecto: { label: 'Prospecto', color: T.accent },
+  inactivo: { label: 'Inactivo', color: T.ink3 },
+};
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -107,8 +115,8 @@ export default function Clientes() {
   const isAdmin = currentUser?.rol === 'Admin';
   // Grilla de la tabla: el no-admin no ve la columna "Facturado" (monto general).
   const gridCols = isAdmin
-    ? '2.5fr 1.5fr 1fr 1.5fr 0.6fr 1fr 0.8fr'
-    : '2.5fr 1.5fr 1fr 1.5fr 0.6fr 0.8fr';
+    ? '2.5fr 1.5fr 1fr 1.5fr 0.6fr 0.9fr 1fr 0.8fr'
+    : '2.5fr 1.5fr 1fr 1.5fr 0.6fr 0.9fr 0.8fr';
   // Guard: Admin y Administración pueden entrar a esta página.
   const puedeClientes = isAdmin || currentUser?.rol === 'Administración';
   useEffect(() => {
@@ -246,11 +254,14 @@ export default function Clientes() {
             <span>CUIT</span>
             <span>Contacto</span>
             <span style={{ textAlign: 'center' }}>Obras</span>
+            <span>Estado</span>
             {isAdmin && <span style={{ textAlign: 'right' }}>Facturado</span>}
             <span>Acciones</span>
           </div>
           {filtered.map(c => {
             const phone = (c.telefono || '').replace(/\s/g, '').replace('+', '');
+            const estado = derivaClienteEstado(c, obras.filter(o => o.clienteId === c.id || o.cliente === c.nombre), null);
+            const ec = ESTADO_CLIENTE_CHIP[estado] || ESTADO_CLIENTE_CHIP.prospecto;
             return (
               <div key={c.id}
                 style={{ display: 'grid', gridTemplateColumns: gridCols, padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}
@@ -286,6 +297,9 @@ export default function Clientes() {
                       {obrasCount[c.id]}
                     </span>
                   ) : <span style={{ color: T.ink3, fontFamily: T.fontMono }}>0</span>}
+                </span>
+                <span onClick={e => e.stopPropagation()}>
+                  <span style={{ background: ec.color, color: '#fff', borderRadius: 12, padding: '2px 9px', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' }}>{ec.label}</span>
                 </span>
                 {isAdmin && (
                   <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontSize: 11, color: totalFacturado[c.id] > 0 ? T.ok : T.ink3 }}>
