@@ -11,9 +11,9 @@ import { newId } from '../lib/id';
 const CTX = createContext(null);
 
 const SEED_CLIENTES = [
-  { id: 'cl-familia-perez', nombre: 'Familia Pérez',  empresa: '',                      cuit: '',              condicionIVA: 'CF', telefono: '+54 11 5555-1234', email: 'perez@gmail.com',    notas: '' },
-  { id: 'cl-shell',         nombre: 'Shell Argentina', empresa: 'Shell CAPSA',            cuit: '30-51297267-0', condicionIVA: 'RI', telefono: '0800-888-7435',    email: 'obras@shell.com.ar', notas: '' },
-  { id: 'cl-axion',         nombre: 'Axion Energy',    empresa: 'Axion Energy Argentina', cuit: '30-70929499-1', condicionIVA: 'RI', telefono: '',                 email: '',                   notas: '' },
+  { id: 'cl-familia-perez', nombre: 'Familia Pérez',  empresa: '',                      cuit: '',              condicionIVA: 'CF', telefono: '+54 11 5555-1234', email: 'perez@gmail.com',    notas: '', tags: [], responsableComercial: null, fechaProximoContacto: null, estado: 'prospecto' },
+  { id: 'cl-shell',         nombre: 'Shell Argentina', empresa: 'Shell CAPSA',            cuit: '30-51297267-0', condicionIVA: 'RI', telefono: '0800-888-7435',    email: 'obras@shell.com.ar', notas: '', tags: [], responsableComercial: null, fechaProximoContacto: null, estado: 'prospecto' },
+  { id: 'cl-axion',         nombre: 'Axion Energy',    empresa: 'Axion Energy Argentina', cuit: '30-70929499-1', condicionIVA: 'RI', telefono: '',                 email: '',                   notas: '', tags: [], responsableComercial: null, fechaProximoContacto: null, estado: 'prospecto' },
 ];
 
 export function ClientesProvider({ children }) {
@@ -25,7 +25,7 @@ export function ClientesProvider({ children }) {
   });
 
   const addCliente = useCallback((data) => {
-    const nuevo = { nombre: '', empresa: '', cuit: '', condicionIVA: 'CF', telefono: '', email: '', notas: '', ...data, id: newId('cl') };
+    const nuevo = { nombre: '', empresa: '', cuit: '', condicionIVA: 'CF', telefono: '', email: '', notas: '', tags: [], responsableComercial: null, fechaProximoContacto: null, estado: 'prospecto', ...data, id: newId('cl') };
     setClientes(prev => [...prev, nuevo]);
     appendItemInSharedArray('clientes', nuevo);
     return nuevo.id;
