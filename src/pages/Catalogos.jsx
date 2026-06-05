@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Divider } from '../components/ui';
@@ -14,6 +14,9 @@ import { searchNorm } from '../lib/searchNorm';
 import TareasEstandarEditor from './modales/TareasEstandarEditor';
 import { useUsuarios, ROLES } from '../store/UsuariosContext';
 import { useIndices } from '../store/IndicesContext';
+import { useObras } from '../store/ObrasContext';
+import { useMovimientos } from '../store/MovimientosContext';
+import { usePlantillas } from '../store/PlantillasContext';
 import { calcularPreviewCAC } from '../lib/cacUpdate';
 import { getIndiceTipo } from '../lib/indices';
 
@@ -1284,6 +1287,25 @@ export default function Catalogos() {
   const { catalog, catalogIndex, add, update, remove, bulkUpdatePreciosCAC, restoreCatalogCACBackup } = useCatalog();
   const { dolarVenta } = useDolar();
   const { indices } = useIndices();
+  const { renombrarRubroEnObras } = useObras();
+  const { renombrarRubroEnMovimientos } = useMovimientos();
+  const { renombrarRubroEnPlantillas } = usePlantillas();
+
+  // Renombrar un rubro desde "Rubros / Gremios". El nombre del rubro se "chupa"
+  // en muchos lados además del catálogo: CatalogContext.update('rubros') ya
+  // cascada dentro del catálogo (tareas/APU/materiales/MO — CAT-001), pero el
+  // nombre también vive COPIADO en el presupuesto de cada obra y en los gastos
+  // imputados por nombre. Por eso, ante un cambio de nombre, propagamos también
+  // a obras (detalle.rubros) y a movimientos (rubroNombre).
+  const handleUpdateRubro = useCallback((id, ch) => {
+    const prev = (catalog.rubros || []).find(r => r.id === id);
+    update('rubros', id, ch);
+    if (prev && ch && typeof ch.nombre === 'string' && ch.nombre !== prev.nombre && ch.nombre.trim()) {
+      renombrarRubroEnObras(prev.nombre, ch.nombre);
+      renombrarRubroEnMovimientos(prev.nombre, ch.nombre);
+      renombrarRubroEnPlantillas(prev.nombre, ch.nombre);
+    }
+  }, [catalog.rubros, update, renombrarRubroEnObras, renombrarRubroEnMovimientos, renombrarRubroEnPlantillas]);
 
   // Columna "Precio $": pesos. Para ítems en USD muestra el equivalente al dólar
   // BNA del momento (convertido); para ARS, el precio normal.
@@ -1477,7 +1499,7 @@ export default function Catalogos() {
             catalog={catalog}
             catalogIndex={catalogIndex}
             onAdd={item => add('rubros', item)}
-            onUpdate={(id, ch) => update('rubros', id, ch)}
+            onUpdate={handleUpdateRubro}
             onDelete={id => remove('rubros', id)}
             onUpdateMO={(id, ch) => update('mo', id, ch)}
             onUpdateTarea={(id, ch) => update('tareas', id, ch)}

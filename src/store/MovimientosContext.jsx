@@ -208,6 +208,22 @@ export function MovimientosProvider({ children }) {
     removeObjectItem('movimientos', 'movimientos', id);
   }, []);
 
+  // Al renombrar un rubro en el catálogo, los gastos viejos imputados POR NOMBRE
+  // (m.rubroNombre, sin rubroId) seguirían apuntando al nombre viejo y dejarían
+  // de matchear el rubro del presupuesto (gastadoPorRubro). Renombramos esos
+  // movimientos de forma atómica. Los que tienen rubroId no necesitan tocarse
+  // (la imputación por id es robusta ante renombres). Devuelve cuántos cambió.
+  const renombrarRubroEnMovimientos = useCallback((oldName, newName) => {
+    if (!oldName || !newName || oldName === newName) return 0;
+    const afectados = (movsRef.current || []).filter(m => m.rubroNombre === oldName).map(m => m.id);
+    if (!afectados.length) return 0;
+    mark();
+    const ids = new Set(afectados);
+    setMovimientos(prev => { const next = prev.map(m => ids.has(m.id) ? { ...m, rubroNombre: newName } : m); persist(LS_MOVS, next); return next; });
+    afectados.forEach(id => patchObjectItem('movimientos', 'movimientos', id, { rubroNombre: newName }));
+    return afectados.length;
+  }, []);
+
   // ── Traspaso ──────────────────────────────────────────────────────────────
   // Bug previo: el destino recibia el mismo monto que el origen, aunque las
   // cajas fueran de distinta moneda. Ahora acepta montoDestino opcional para
@@ -252,6 +268,7 @@ export function MovimientosProvider({ children }) {
     cajas: cajasConSaldo, movimientos,
     addCaja, updateCaja, removeCaja,
     addMovimiento, updateMovimiento, removeMovimiento,
+    renombrarRubroEnMovimientos,
     traspasar,
     totalARS, totalUSD,
     getMovsByObraId, getMovsByCajaId,
@@ -259,6 +276,7 @@ export function MovimientosProvider({ children }) {
     cajasConSaldo, movimientos,
     addCaja, updateCaja, removeCaja,
     addMovimiento, updateMovimiento, removeMovimiento,
+    renombrarRubroEnMovimientos,
     traspasar,
     totalARS, totalUSD,
     getMovsByObraId, getMovsByCajaId,

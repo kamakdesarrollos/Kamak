@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cascadeRename, syncFormItemNames, cascadeRubroRename } from './catalogCascade';
+import { cascadeRename, syncFormItemNames, cascadeRubroRename, cascadeRubroRenameEnDetalle } from './catalogCascade';
 
 // norm de prueba (en producción usa el normalizarNombre del resolver)
 const norm = s => (s || '').toString().toLowerCase().trim();
@@ -117,6 +117,49 @@ describe('cascadeRubroRename — renombrar un rubro propaga a todas las referenc
   it('tolera colecciones ausentes', () => {
     const { cambios } = cascadeRubroRename({ tareas: [{ id: 't1', rubroNombre: 'PINTURA' }] }, 'PINTURA', 'X');
     expect(cambios).toEqual([{ coll: 'tareas', id: 't1', patch: { rubroNombre: 'X' } }]);
+  });
+});
+
+// CAT-001 (cross-store): el nombre del rubro vive COPIADO en el presupuesto de
+// cada obra (detalle.rubros[].nombre) y se matchea por nombre con catalog.rubros
+// (generarTareasObra). Renombrar el rubro debe propagar al presupuesto también.
+const detalle = () => ({
+  fechaAprobacion: '2026-01-01',
+  rubros: [
+    { id: 'or1', nombre: 'PINTURA', tareas: [{ id: 'bt1', nombre: 'Pintar' }] },
+    { id: 'or2', nombre: 'ELECTRICIDAD', tareas: [] },
+  ],
+});
+
+describe('cascadeRubroRenameEnDetalle — propaga el rename al presupuesto de la obra', () => {
+  it('renombra detalle.rubros[].nombre que matchea, deja el resto intacto', () => {
+    const out = cascadeRubroRenameEnDetalle(detalle(), 'PINTURA', 'PINTURAS');
+    expect(out.rubros.find(r => r.id === 'or1').nombre).toBe('PINTURAS');
+    expect(out.rubros.find(r => r.id === 'or2').nombre).toBe('ELECTRICIDAD');
+  });
+
+  it('no toca las tareas internas del rubro (solo el nombre del header)', () => {
+    const out = cascadeRubroRenameEnDetalle(detalle(), 'PINTURA', 'PINTURAS');
+    expect(out.rubros.find(r => r.id === 'or1').tareas[0].nombre).toBe('Pintar');
+    expect(out.fechaAprobacion).toBe('2026-01-01');
+  });
+
+  it('devuelve el MISMO objeto si no hubo cambios (para que el caller no persista de gusto)', () => {
+    const d = detalle();
+    expect(cascadeRubroRenameEnDetalle(d, 'NO-EXISTE', 'X')).toBe(d);
+    expect(cascadeRubroRenameEnDetalle(d, 'PINTURA', 'PINTURA')).toBe(d);
+  });
+
+  it('no muta el detalle original', () => {
+    const d = detalle();
+    cascadeRubroRenameEnDetalle(d, 'PINTURA', 'PINTURAS');
+    expect(d.rubros[0].nombre).toBe('PINTURA');
+  });
+
+  it('tolera detalle vacío / sin rubros', () => {
+    expect(cascadeRubroRenameEnDetalle(null, 'A', 'B')).toBe(null);
+    const sinRubros = { rubros: undefined };
+    expect(cascadeRubroRenameEnDetalle(sinRubros, 'A', 'B')).toBe(sinRubros);
   });
 });
 

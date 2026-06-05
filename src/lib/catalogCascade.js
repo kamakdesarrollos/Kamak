@@ -67,6 +67,22 @@ export function cascadeRubroRename(catalog, oldName, newName) {
   return { patched, cambios };
 }
 
+// cascadeRubroRenameEnDetalle — el nombre del rubro NO vive solo en el catálogo:
+// está COPIADO en el presupuesto de cada obra (detalle.rubros[].nombre) y se
+// matchea POR NOMBRE con catalog.rubros para generar las tareas estándar
+// (generarTareasObra) e imputar gastos por rubro. Por eso, al renombrar un rubro
+// en el catálogo, hay que propagarlo también a los presupuestos. Pura: devuelve
+// el MISMO detalle si no cambió nada (así el caller no persiste de gusto).
+export function cascadeRubroRenameEnDetalle(detalle, oldName, newName) {
+  if (!detalle || !Array.isArray(detalle.rubros) || !oldName || !newName || oldName === newName) return detalle;
+  let changed = false;
+  const rubros = detalle.rubros.map(r => {
+    if (r && r.nombre === oldName) { changed = true; return { ...r, nombre: newName }; }
+    return r;
+  });
+  return changed ? { ...detalle, rubros } : detalle;
+}
+
 // syncFormItemNames — mantiene el editor de APU abierto MATCHEADO cuando otra
 // pestaña renombra un material/MO. El form del editor es una copia local con el
 // nombre viejo; al recargar el catálogo (por broadcast), adoptamos el nombre

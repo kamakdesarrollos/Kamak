@@ -3,6 +3,7 @@ import { loadSharedData, saveSharedData, appendItemInSharedArray, appendObjectIt
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 import { SAVE_DEBOUNCE_MS } from '../lib/constants';
+import { cascadeRubroRenameEnDetalle } from '../lib/catalogCascade';
 
 // Alerta global "obra iniciada" para todo el equipo (campana del Topbar +
 // dashboard). Se dispara cuando una obra pasa a 'activa' — sea confirmándola a
@@ -387,6 +388,22 @@ export function ObrasProvider({ children }) {
     dirtyDetalles.current.add(id);
   }, []);
 
+  // Renombrar un RUBRO en el catálogo debe llegar al presupuesto de TODAS las
+  // obras: el nombre vive copiado en detalle.rubros[].nombre y se matchea por
+  // nombre (generarTareasObra, imputación de gastos). Recorremos todos los
+  // detalles, propagamos con la función pura, y persistimos atómico SOLO las
+  // obras que cambiaron. Devuelve cuántas obras se tocaron. Lo dispara el editor
+  // de Rubros/Gremios (CAT-001 cross-store).
+  const renombrarRubroEnObras = useCallback((oldName, newName) => {
+    if (!oldName || !newName || oldName === newName) return 0;
+    let n = 0;
+    for (const [obraId, det] of Object.entries(detallesRef.current || {})) {
+      const next = cascadeRubroRenameEnDetalle(det, oldName, newName);
+      if (next !== det) { patchDetalle(obraId, () => next); n++; }
+    }
+    return n;
+  }, [patchDetalle]);
+
   // Permite forzar una recarga desde Supabase (usado por el portal del
   // cliente para garantizar que ve la misma info que el admin, sin depender
   // exclusivamente del broadcast de Realtime).
@@ -404,8 +421,8 @@ export function ObrasProvider({ children }) {
   // las obras / detalles no hayan cambiado. Era la causa principal de lentitud
   // al editar inputs (ObraPresupuesto consume 9 contexts).
   const value = useMemo(
-    () => ({ obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle, refetch }),
-    [obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle, refetch]
+    () => ({ obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch }),
+    [obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch]
   );
 
   return (

@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback, us
 import { loadSharedData, saveSharedData, patchItemInSharedArray, appendItemInSharedArray, removeItemInSharedArray } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
+import { cascadeRubroRenameEnDetalle } from '../lib/catalogCascade';
 
 const newId = () => `plt-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -595,7 +596,21 @@ export function PlantillasProvider({ children }) {
     patchItemInSharedArray('plantillas', id, { usosCount });
   }, []);
 
-  const value = useMemo(() => ({ plantillas, add, update, remove, duplicate, incrementUso }), [plantillas, add, update, remove, duplicate, incrementUso]);
+  // Renombrar un rubro del catálogo también tiene que llegar a las PLANTILLAS:
+  // son esqueletos de presupuesto con rubros copiados por nombre. Si no, un
+  // presupuesto nuevo armado desde una plantilla vieja arrastra el nombre
+  // anterior. Reusa la cascada pura por detalle. Devuelve cuántas cambió.
+  const renombrarRubroEnPlantillas = useCallback((oldName, newName) => {
+    if (!oldName || !newName || oldName === newName) return 0;
+    let n = 0;
+    for (const plt of (plantillasRef.current || [])) {
+      const next = cascadeRubroRenameEnDetalle(plt, oldName, newName);
+      if (next !== plt) { update(plt.id, { rubros: next.rubros }); n++; }
+    }
+    return n;
+  }, [update]);
+
+  const value = useMemo(() => ({ plantillas, add, update, remove, duplicate, incrementUso, renombrarRubroEnPlantillas }), [plantillas, add, update, remove, duplicate, incrementUso, renombrarRubroEnPlantillas]);
 
   return (
     <PlantillasContext.Provider value={value}>
