@@ -22,6 +22,13 @@ export const DOLAR_COMPRA_FALLBACK = 1060;
 // ── Estados ─────────────────────────────────────────────────────────────────
 export const ESTADOS_OBRA = ['en-presupuesto', 'activa', 'pausada', 'finalizada', 'archivada'];
 
+// ── Embudo de ventas (módulo Comercial) ─────────────────────────────────
+export const ETAPAS_VENTA = ['prospecto', 'cotizado', 'negociacion', 'ganado', 'perdido'];
+// Probabilidad de cierre por etapa (para el pipeline ponderado de los KPIs).
+export const PROBABILIDAD_POR_ETAPA = { prospecto: 0.10, cotizado: 0.40, negociacion: 0.70, ganado: 1.0, perdido: 0.0 };
+// Meses sin obra/actividad para considerar a un cliente "inactivo" (Fase 2).
+export const DEFAULT_MESES_INACTIVO = 6;
+
 export const ESTADOS_CHEQUE = ['cartera', 'depositado', 'endosado', 'rechazado', 'anulado'];
 
 // ── Roles ───────────────────────────────────────────────────────────────────
