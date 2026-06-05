@@ -1149,6 +1149,52 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                       );
                     }
 
+                    // (sub-rubro) Fila agrupadora SIN cantidad: no es una tarea
+                    // real, el usuario la usa como sub-rubro dentro del gremio
+                    // (ej. Iluminación, Tomas, Tablero). La mostramos como
+                    // ENCABEZADO con el subtotal de las tareas de abajo, no como
+                    // tarea rota (undefined/NaN).
+                    if (tarea.cantidad == null) {
+                      const arr = rubro.tareas || [];
+                      const idx = arr.findIndex(t => t.id === tarea.id);
+                      let sCosto = 0, sVenta = 0;
+                      for (let j = idx + 1; j < arr.length; j++) {
+                        const tt = arr[j];
+                        if (tt.tipo === 'seccion' || tt.cantidad == null) break; // próximo agrupador
+                        const cu = (rubro.materialesACargoComprador ? 0 : (tt.costoMat || 0)) + (tt.costoSub || 0);
+                        sCosto += cu * (tt.cantidad || 0);
+                        sVenta += tareaVentaUnit(tt, rubro) * (tt.cantidad || 0);
+                      }
+                      return (
+                        <div key={tarea.id}
+                          draggable
+                          onDragStart={e => onTaskDragStart(e, rubro.id, tarea.id)}
+                          onDragOver={e => onTaskDragOver(e, tarea.id)}
+                          onDrop={e => onTaskDrop(e, rubro.id, tarea.id)}
+                          onDragEnd={onTaskDragEnd}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px',
+                            background: '#dfeaf2', borderLeft: `3px solid ${T.accent}`,
+                            borderTop: dragOverTaskId === tarea.id ? `2px solid ${T.accent}` : `1px solid ${T.faint2}` }}>
+                          <span style={{ color: T.ink3, cursor: 'grab', fontSize: 10, userSelect: 'none' }}>⋮⋮</span>
+                          {ie?.field === 'nombre'
+                            ? <input autoFocus defaultValue={tarea.nombre}
+                                onClick={e => e.stopPropagation()}
+                                onBlur={e => { const val = e.target.value.trim(); if (val && val !== tarea.nombre) patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubro.id ? { ...r, tareas: r.tareas.map(t => t.id === tarea.id ? { ...t, nombre: val } : t) } : r) })); setInlineEdit(null); }}
+                                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setInlineEdit(null); }}
+                                style={{ flex: 1, fontSize: 11, fontWeight: 800, background: 'transparent', border: 'none', borderBottom: `1.5px solid ${T.accent}`, outline: 'none', color: T.ink, fontFamily: T.font, textTransform: 'uppercase', letterSpacing: 0.5 }} />
+                            : <span
+                                onClick={() => { if (puedeEditar) setInlineEdit({ taskId: tarea.id, field: 'nombre', value: tarea.nombre || '' }); }}
+                                style={{ flex: 1, fontSize: 11, fontWeight: 800, color: T.accent2, textTransform: 'uppercase', letterSpacing: 0.5, cursor: puedeEditar ? 'text' : 'default' }}>
+                                {tarea.nombre || 'Sub-rubro'}
+                              </span>}
+                          {verCostos && <span style={{ fontFamily: T.fontMono, fontSize: 10.5, color: T.ink2, whiteSpace: 'nowrap' }}>costo <b style={{ color: '#a85648' }}>{fmtVenta(sCosto)}</b></span>}
+                          {isAdmin && <span style={{ fontFamily: T.fontMono, fontSize: 10.5, color: T.ink2, whiteSpace: 'nowrap' }}>venta <b style={{ color: T.accent }}>{fmtVenta(sVenta)}</b></span>}
+                          {puedeEditar && <span style={{ color: T.accent, fontSize: 12, cursor: 'pointer' }}
+                            onClick={() => deleteTarea(rubro.id, tarea.id)}>🗑</span>}
+                        </div>
+                      );
+                    }
+
                     return (
                       <div key={tarea.id} className="k-tr presu-row"
                         draggable
@@ -1405,7 +1451,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
             onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>Guardar como plantilla</div>
             <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>
-              Se guardará una copia del presupuesto actual con {detalle.rubros.length} rubros y {detalle.rubros.reduce((s, r) => s + (r.tareas || []).filter(t => t.tipo !== 'seccion').length, 0)} tareas (incluyendo secciones y sub-secciones).
+              Se guardará una copia del presupuesto actual con {detalle.rubros.length} rubros y {detalle.rubros.reduce((s, r) => s + (r.tareas || []).filter(t => t.tipo !== 'seccion' && t.cantidad != null).length, 0)} tareas (incluyendo secciones y sub-secciones).
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <FRow label="Nombre de la plantilla">
@@ -1457,7 +1503,7 @@ function TabMateriales({ detalle, obra }) {
     const catalogByNombre = new Map((catalog.tareas || []).map(ct => [ct.nombre, ct]));
     const globalMap = new Map();
     for (const rubro of (detalle.rubros || [])) {
-      for (const t of (rubro.tareas || []).filter(t => t.tipo !== 'seccion')) {
+      for (const t of (rubro.tareas || []).filter(t => t.tipo !== 'seccion' && t.cantidad != null)) {
         const recipeMats = (t.receta?.materiales || []).length > 0
           ? t.receta.materiales
           : (catalogByNombre.get(t.nombre)?.materiales || []);
@@ -1690,7 +1736,7 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, l
   let ventaBase = 0;
   const rubroRows = rubros.map((rubro, ri) => {
     let rubroVenta = 0;
-    const tareaRows = rubro.tareas.filter(t => t.tipo !== 'seccion').map((t, ti) => {
+    const tareaRows = rubro.tareas.filter(t => t.tipo !== 'seccion' && t.cantidad != null).map((t, ti) => {
       const cu = t.costoMat + (t.costoSub || 0);
       const vu = t.margenLinea != null ? cu * (1 + t.margenLinea / 100) : t.costoMat * (1 + (rubro.margenMat || 0) / 100) + (t.costoSub || 0) * (1 + (rubro.margenMO || 0) / 100);
       const vt = Math.round(vu * t.cantidad);

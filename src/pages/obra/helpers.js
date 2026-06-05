@@ -233,7 +233,9 @@ export const calcRubro = (rubro) => {
   // Si los materiales van a cargo del comprador, NO los contamos como costo
   // nuestro (el cliente los compra) — solo la mano de obra.
   const sinMat = !!rubro.materialesACargoComprador;
-  const tareas = (rubro.tareas || []).filter(t => t.tipo !== 'seccion');
+  // Excluimos secciones Y filas agrupadoras (sub-rubros sin cantidad): no son
+  // tareas reales, no deben sumar costo/venta (sino meten NaN en el total).
+  const tareas = (rubro.tareas || []).filter(t => t.tipo !== 'seccion' && t.cantidad != null);
   let cMat = 0, cSub = 0, venta = 0;
   for (const t of tareas) {
     cMat += (sinMat ? 0 : t.costoMat) * t.cantidad;
