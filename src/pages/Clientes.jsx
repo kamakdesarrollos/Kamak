@@ -22,7 +22,8 @@ function Avatar({ nombre, size = 36 }) {
 }
 
 function NuevoClienteModal({ initial = null, onSave, onClose }) {
-  const [form, setForm] = useState(initial || { nombre: '', empresa: '', cuit: '', condicionIVA: 'CF', telefono: '', email: '', notas: '' });
+  const [form, setForm] = useState(initial || { nombre: '', empresa: '', cuit: '', condicionIVA: 'CF', telefono: '', email: '', notas: '', tags: [], responsableComercial: null, fechaProximoContacto: null, estado: 'prospecto' });
+  const { usuarios } = useUsuarios();
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const cuitInvalido = form.cuit && form.cuit.replace(/\D/g, '').length > 0 && !validarCUIT(form.cuit);
 
@@ -66,6 +67,26 @@ function NuevoClienteModal({ initial = null, onSave, onClose }) {
           <div>
             <label style={labelSt}>Notas</label>
             <textarea style={{ ...inputSt, height: 60, resize: 'vertical' }} value={form.notas} onChange={e => set('notas', e.target.value)} />
+          </div>
+          <div>
+            <div style={labelSt}>Responsable comercial</div>
+            <select style={inputSt} value={form.responsableComercial || ''}
+              onChange={e => setForm(f => ({ ...f, responsableComercial: e.target.value || null }))}>
+              <option value="">— Sin asignar —</option>
+              {(usuarios || []).map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={labelSt}>Próximo contacto</div>
+            <input type="date" style={inputSt} value={form.fechaProximoContacto || ''}
+              onChange={e => setForm(f => ({ ...f, fechaProximoContacto: e.target.value || null }))} />
+          </div>
+          <div>
+            <div style={labelSt}>Tags (separados por coma)</div>
+            <input style={inputSt}
+              value={(form.tags || []).join(', ')}
+              onChange={e => setForm(f => ({ ...f, tags: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
+              placeholder="VIP, Puma, recompra…" />
           </div>
         </div>
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
