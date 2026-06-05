@@ -27,6 +27,62 @@ function nombreMatch(a, b) {
   return !!A && !!B && A === B;
 }
 
+// ── Sanitización para el portal del cliente ──────────────────────────────────
+// El portal del cliente NO debe ver NINGÚN costo ni margen. Calculamos la venta
+// acá (server) y mandamos un detalle con whitelist estricta. Antes los rubros/
+// tareas viajaban crudos (costoMat, costoSub, margenLinea, margenMat, margenMO) y
+// el navegador del cliente los recibía en el JSON aunque no se "mostraran".
+function tareaVentaUnit(t, rubro) {
+  // Réplica EXACTA de tareaVentaUnit en src/pages/obra/helpers.js: respeta
+  // materialesACargoComprador y margen por línea o por rubro (mat / mano de obra).
+  const mat = rubro.materialesACargoComprador ? 0 : (t.costoMat || 0);
+  const sub = t.costoSub || 0;
+  if (t.margenLinea != null) return (mat + sub) * (1 + t.margenLinea / 100);
+  return mat * (1 + (rubro.margenMat || 0) / 100) + sub * (1 + (rubro.margenMO || 0) / 100);
+}
+function ventaRubro(rubro) {
+  return (rubro.tareas || [])
+    .filter(t => t.tipo !== 'seccion')
+    .reduce((s, t) => s + tareaVentaUnit(t, rubro) * (t.cantidad || 0), 0);
+}
+// Detalle SANITIZADO: whitelist. NO incluye costoMat/costoSub/costoGral/margen*
+// ni cantidades — solo venta ya calculada, avance, plan de pagos, docs y fotos.
+function sanitizeDetalle(detalle) {
+  if (!detalle) return null;
+  const rubros = (detalle.rubros || []).map(r => ({
+    id: r.id,
+    nombre: r.nombre,
+    proveedor: r.proveedor || null,
+    ventaPortal: ventaRubro(r),                 // venta del rubro YA calculada (ARS)
+    tareas: (r.tareas || []).map(t => ({
+      id: t.id,
+      tipo: t.tipo || null,
+      nombre: t.nombre || t.descripcion || '',
+      avance: t.avance || 0,
+    })),
+  }));
+  const adicionales = (detalle.adicionales || []).map(a => ({
+    id: a.id,
+    descripcion: a.descripcion,
+    fecha: a.fecha || null,
+    estado: a.estado || null,
+    aplicaACliente: a.aplicaACliente !== false,
+    // valor que se le COBRA al cliente, ya resuelto (sin exponer el costo interno)
+    valorVentaTotal: (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0),
+  }));
+  const fin = detalle.financiacion || {};
+  return {
+    rubros,
+    adicionales,
+    ventaBaseARS: rubros.reduce((s, r) => s + r.ventaPortal, 0),
+    precioVentaUSD: detalle.precioVentaUSD ?? null,   // precio de venta fijo en USD (NO es costo)
+    cuotas: detalle.cuotas || [],
+    documentos: (detalle.documentos || []).map(d => ({ id: d.id, nombre: d.nombre, tipo: d.tipo, fecha: d.fecha, url: d.url })),
+    fotos: (detalle.fotos || []).map(f => ({ id: f.id, label: f.label, rubro: f.rubro, fecha: f.fecha, url: f.url })),
+    financiacion: { interes: fin.interes ?? 0, notaPortal: fin.notaPortal || '' },
+  };
+}
+
 export default async function handler(req, res) {
   // PORTAL-DATA-003: CORS restringido a los dominios kamak (el token sigue siendo
   // el gate real, pero esto evita que cualquier sitio lea la respuesta desde un
@@ -98,16 +154,13 @@ export default async function handler(req, res) {
       .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
     const cobradoUSD = ingresos.reduce((s, i) => s + i.monto, 0);
 
-    // PORTAL-DATA-003: no exponer datos internos que el portal NO usa: lo gastado
-    // y el margen de la obra, los contratos de subcontratistas (lo que les pagamos)
-    // ni los movimientos internos de la obra. (Los costos/márgenes por tarea siguen
-    // porque el portal calcula la venta con ellos — moverlo al server es aparte.)
+    // PORTAL-DATA-004: el portal del cliente NO debe ver NINGÚN costo ni margen.
+    // De la obra sacamos gastado y margen. Los costos por tarea (costoMat/costoSub/
+    // margen*) vivían en los rubros del detalle y viajaban al navegador del cliente:
+    // ahora el detalle se SANITIZA con whitelist (venta ya calculada en server, sin
+    // contratos ni movimientos internos). Ver sanitizeDetalle().
     const { gastado, margen, ...obraPublica } = obra;
-    let detallePublico = detalle;
-    if (detalle) {
-      const { contratos, movimientos, ...restoDetalle } = detalle;
-      detallePublico = restoDetalle;
-    }
+    const detallePublico = sanitizeDetalle(detalle);
 
     return res.status(200).json({
       obra: obraPublica,

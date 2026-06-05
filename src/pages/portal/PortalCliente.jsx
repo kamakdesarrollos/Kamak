@@ -272,7 +272,9 @@ export default function PortalCliente() {
   // Total acordado al cliente: venta del presupuesto (costos *en ARS* +
   // margen) + adicionales (en ARS) + interes de financiacion. Convertido a
   // USD para el display.
-  const { venta: ventaBaseARS } = calcObra(rubros);
+  // En modo CLIENTE la venta base viene YA calculada del server (detalle.ventaBaseARS)
+  // porque el portal NO recibe costos; en admin-preview se calcula con calcObra.
+  const ventaBaseARS = detalle.ventaBaseARS != null ? detalle.ventaBaseARS : calcObra(rubros).venta;
   const adicionalClienteARS = (detalle.adicionales || [])
     .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
     .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
@@ -380,14 +382,19 @@ export default function PortalCliente() {
           // Se nutre de los avances cargados en el Gantt — única fuente de
           // verdad del progreso real de obra.
           const rubrosConVenta = (rubros || []).map(r => {
-            // Calcular venta del rubro (suma de tareas con su margen)
-            let venta = 0;
-            (r.tareas || []).filter(t => t.tipo !== 'seccion').forEach(t => {
-              const ventaUnit = t.margenLinea != null
-                ? (t.costoMat + (t.costoSub || 0)) * (1 + t.margenLinea / 100)
-                : t.costoMat * (1 + (r.margenMat || 0) / 100) + (t.costoSub || 0) * (1 + (r.margenMO || 0) / 100);
-              venta += ventaUnit * (t.cantidad || 0);
-            });
+            // Venta del rubro: en modo CLIENTE viene YA calculada del server
+            // (r.ventaPortal) — el portal nunca recibe costos. En admin-preview
+            // (detalle completo) se calcula de las tareas.
+            let venta = r.ventaPortal;
+            if (venta == null) {
+              venta = 0;
+              (r.tareas || []).filter(t => t.tipo !== 'seccion').forEach(t => {
+                const ventaUnit = t.margenLinea != null
+                  ? (t.costoMat + (t.costoSub || 0)) * (1 + t.margenLinea / 100)
+                  : t.costoMat * (1 + (r.margenMat || 0) / 100) + (t.costoSub || 0) * (1 + (r.margenMO || 0) / 100);
+                venta += ventaUnit * (t.cantidad || 0);
+              });
+            }
             return { ...r, venta, avance: rubroAvance(r) };
           });
           const ventaTotalRubros = rubrosConVenta.reduce((s, r) => s + r.venta, 0);
