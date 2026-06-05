@@ -9,6 +9,7 @@ import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { CONDICIONES_IVA, validarCUIT } from '../lib/afip';
+import ClienteFicha360Modal from './Clientes/ClienteFicha360Modal';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -120,6 +121,7 @@ export default function Clientes() {
   const [searchParams] = useSearchParams();
   const [modal, setModal] = useState(false);
   const [editCliente, setEditCliente] = useState(null);
+  const [ficha, setFicha] = useState(null);
   const [search, setSearch] = useState(() => searchParams.get('q') || '');
   const [filtroKPI, setFiltroKPI] = useState(null); // null | 'conObras' | 'sinObras'
 
@@ -294,6 +296,7 @@ export default function Clientes() {
                   {obrasCount[c.id] > 0 && (
                     <Btn sm onClick={() => navigate(`/obras?q=${encodeURIComponent(c.nombre)}`)}>🏗</Btn>
                   )}
+                  <Btn sm onClick={() => setFicha(c)}>360</Btn>
                   <Btn sm onClick={() => setEditCliente(c)}>✏</Btn>
                   <span style={{ color: T.warn, cursor: 'pointer', fontSize: 16, padding: '0 2px', lineHeight: 1 }}
                     onClick={() => { if (confirm(`¿Eliminar ${c.nombre}?`)) removeCliente(c.id); }}>×</span>
@@ -311,6 +314,7 @@ export default function Clientes() {
           onClose={() => setEditCliente(null)}
           onSave={(data) => saveCliente(editCliente, data)} />
       )}
+      {ficha && <ClienteFicha360Modal cliente={ficha} onClose={() => setFicha(null)} />}
     </PageLayout>
   );
 }
