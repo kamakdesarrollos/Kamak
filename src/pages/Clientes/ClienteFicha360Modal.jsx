@@ -136,7 +136,7 @@ export default function ClienteFicha360Modal({ cliente, onClose }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, color: T.ink }}>{a.texto}</div>
                 <div style={{ fontSize: 10.5, color: T.ink3, fontFamily: T.fontMono }}>
-                  {fmtFecha(a.fecha || a.creadoAt)} · {nombreUsuario(a.usuario)}{a.obraId ? ` · ${(obras.find(o => o.id === a.obraId)?.nombre) || ''}` : ''}
+                  {fmtFecha((a.fecha || a.creadoAt || '').slice(0, 10))} · {nombreUsuario(a.usuario)}{a.obraId ? ` · ${(obras.find(o => o.id === a.obraId)?.nombre) || ''}` : ''}
                 </div>
               </div>
             </div>
