@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { isChunkError, tryReloadForChunk } from '../lib/chunkReload';
 
 // ErrorBoundary: captura cualquier error de render que pase debajo de el
 // y muestra un mensaje util en lugar de la pantalla en blanco (default
@@ -14,29 +15,18 @@ export default class ErrorBoundary extends Component {
   }
 
   static getDerivedStateFromError(error) {
-    return { error };
+    return { error, isChunk: isChunkError(error) };
   }
 
   componentDidCatch(error, info) {
     console.error('[ErrorBoundary] Error capturado:', error);
     console.error('[ErrorBoundary] Stack:', info?.componentStack);
 
-    // Si el error es por un chunk/módulo que ya no existe (típico después de
-    // un deploy: el index cacheado apunta a JS viejo con otro hash), React lo
-    // atrapa acá y NO llega al window.onerror de main.jsx. Auto-recargamos
-    // UNA vez para tomar la versión nueva — así el usuario no tiene que F5.
-    const msg = error?.message || String(error);
-    const isChunkError = /Failed to fetch dynamically imported module|Failed to load module script|Importing a module script failed|error loading dynamically imported module|ChunkLoadError/i.test(msg);
-    if (isChunkError) {
-      try {
-        if (!sessionStorage.getItem('kamak_chunk_reload_done')) {
-          sessionStorage.setItem('kamak_chunk_reload_done', '1');
-          console.warn('[ErrorBoundary] chunk faltante (deploy nuevo). Recargando...');
-          window.location.reload();
-          return;
-        }
-      } catch { /* sin sessionStorage */ }
-    }
+    // Chunk/módulo que ya no existe (típico tras un deploy: el index apunta a JS
+    // con otro hash). React lo atrapa acá y NO llega al window.onerror de
+    // main.jsx. Recargamos (reintentos acotados, lib/chunkReload) — el usuario ve
+    // la pantalla amable "Actualizando…", nunca el cartel de error técnico.
+    if (isChunkError(error)) { tryReloadForChunk(); return; }
 
     this.setState({ info });
   }
@@ -51,6 +41,27 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (!this.state.error) return this.props.children;
+
+    // Chunk faltante tras un deploy: pantalla amable de "actualizando" (se está
+    // recargando solo). NUNCA el cartel de error técnico — no es un error real.
+    if (this.state.isChunk) {
+      return (
+        <div style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Montserrat, system-ui, sans-serif', textAlign: 'center', gap: 12 }}>
+          <div style={{ fontSize: 40 }}>🔄</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#2d2d2d' }}>Actualizando Kamak…</div>
+          <div style={{ fontSize: 13, color: '#5a5a58', maxWidth: 420 }}>
+            Salió una versión nueva. La estamos cargando, esperá un segundo.
+          </div>
+          <button onClick={this.reload}
+            style={{ padding: '8px 16px', border: 'none', background: '#1a9b9c', color: '#fff', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 700, marginTop: 6 }}>
+            Recargar ahora
+          </button>
+          <div style={{ fontSize: 11, color: '#9a9892', maxWidth: 420 }}>
+            Si no carga en unos segundos, recargá con Ctrl+Shift+R o borrá los datos del sitio.
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div style={{
