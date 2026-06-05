@@ -473,6 +473,11 @@ async function uploadToStorage(base64Data, mimeType, filepath) {
     const r = await fetch(`${SUPABASE_URL}/storage/v1/object/kamak-fotos/${filepath}`, {
       method: 'POST',
       headers: {
+        // apikey OBLIGATORIO: con las service keys NUEVAS (sb_secret_) el API de
+        // Storage rechaza el Authorization Bearer como JWT ("Invalid Compact JWS").
+        // Con el header apikey acepta la clave nueva (y también la legacy eyJ). Sin
+        // esto el upload devolvía null → el bot anotaba el gasto SIN el comprobante.
+        'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`,
         'Content-Type': mimeType,
         'x-upsert': 'true',
@@ -3825,7 +3830,9 @@ export default async function handler(req, res) {
     } else if (messageType === 'document') {
       mediaId  = message.document?.id;
       mimeType = message.document?.mime_type || 'application/pdf';
-      text     = message.document?.filename || '';
+      // Preferimos el caption (lo que escribió el usuario al mandar el PDF) sobre
+      // el nombre del archivo, que suele ser inútil ("Factura_001.pdf").
+      text     = message.document?.caption || message.document?.filename || '';
     } else if (messageType === 'interactive') {
       // Respuesta a botón o lista. El id que mandamos vuelve acá. Lo
       // tratamos como texto para que el resto del flujo lo procese igual:
