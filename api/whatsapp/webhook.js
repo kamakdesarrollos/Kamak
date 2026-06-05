@@ -960,6 +960,35 @@ async function clearConversation(phone) {
   await saveConversation(phone, { state: 'idle', data: {}, slots: {} });
 }
 
+// ── Lock por teléfono (serializa comprobantes simultáneos) ───────────────────
+// Si llegan varios media casi al mismo tiempo (ej. 3 fotos/PDF juntos), Meta
+// dispara webhooks en paralelo que se pisan: duplicaban el gasto y guardaban un
+// solo archivo. Lock best-effort en defaults.lockUntil, con TTL anti-deadlock y
+// espera acotada: cada invocación espera su turno y procesa de a UNA, así cada
+// comprobante queda como su propio gasto con su archivo.
+const LOCK_TTL_MS  = 30000;  // un lock tomado vence a los 30s (por si la función murió)
+const LOCK_WAIT_MS = 9000;   // espera máxima por el turno
+const LOCK_POLL_MS = 700;
+
+async function acquireLock(phone) {
+  const start = Date.now();
+  for (;;) {
+    const conv = await loadConversation(phone);
+    const until = Number(conv.defaults?.lockUntil) || 0;
+    if (until < Date.now()) {
+      await saveConversation(phone, { defaults: { ...(conv.defaults || {}), lockUntil: Date.now() + LOCK_TTL_MS } });
+      return true;
+    }
+    if (Date.now() - start >= LOCK_WAIT_MS) return false; // no conseguí turno → proceso igual (best-effort)
+    await new Promise(r => setTimeout(r, LOCK_POLL_MS));
+  }
+}
+
+async function releaseLock(phone) {
+  const conv = await loadConversation(phone);
+  await saveConversation(phone, { defaults: { ...(conv.defaults || {}), lockUntil: 0 } });
+}
+
 // ── Usuario vinculado ─────────────────────────────────────────────────────────
 async function getLinkedUser(phone) {
   const rows = await sbGet('whatsapp_users', `?phone=eq.${phone}`);
@@ -3871,6 +3900,11 @@ export default async function handler(req, res) {
       conv.defaults = nuevosDefaults;
     }
 
+    // Serializar por teléfono cuando hay media (comprobantes): si llegan varios
+    // casi simultáneos, evita que se pisen (antes duplicaba el gasto y guardaba
+    // un solo archivo). Lock best-effort con TTL (ver acquireLock).
+    const lockAdq = mediaId ? await acquireLock(phone) : false;
+    try {
     const user = await getLinkedUser(phone);
     const cliente = !user ? await getLinkedCliente(phone) : null;
     console.log(`USER linked=${!!user} cliente=${!!cliente} state=${conv?.state}`);
@@ -3904,6 +3938,9 @@ export default async function handler(req, res) {
           await handleLinkingFlow(phone, text, conv);
         }
       }
+    }
+    } finally {
+      if (lockAdq) await releaseLock(phone);
     }
 
     console.log('DONE');
