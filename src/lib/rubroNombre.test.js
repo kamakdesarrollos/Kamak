@@ -6,8 +6,9 @@ describe('formatRubroNombre — rubros en minúscula con la primera letra en may
     expect(formatRubroNombre('LOGISTICA')).toBe('Logistica');
     expect(formatRubroNombre('MOBILIARIO SHOP EXPRESS')).toBe('Mobiliario shop express');
   });
-  it('capitaliza la primera LETRA aunque empiece con código/número', () => {
-    expect(formatRubroNombre('47 - LOGISTICA')).toBe('47 - Logistica');
+  it('si empieza con código/número queda TODO en minúscula (la inicial es la del char 0)', () => {
+    expect(formatRubroNombre('47 - LOGISTICA')).toBe('47 - logistica');
+    expect(formatRubroNombre('48 - SUPERVISIÓN DE OBRA:')).toBe('48 - supervisión de obra:');
   });
   it('respeta acentos y ñ', () => {
     expect(formatRubroNombre('ÁRIDOS')).toBe('Áridos');
