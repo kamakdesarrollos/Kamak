@@ -9,7 +9,7 @@ import { useDolar } from '../store/DolarContext';
 import { useAlertas } from '../store/AlertasContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
-import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, ccObra } from './obra/helpers';
+import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, ccObra, obraConfirmada } from './obra/helpers';
 import { montoEnARS } from '../lib/caja';
 import { cajasDelUsuario } from '../lib/permisosCaja';
 
@@ -127,7 +127,8 @@ export default function Dashboard() {
     const now = new Date(); now.setHours(0,0,0,0);
     const limit = new Date(now); limit.setDate(limit.getDate() + 45);
     const items = [];
-    obras.forEach(o => {
+    // Solo obras CONFIRMADAS: las cuotas de una propuesta (en-presupuesto) no son cobros reales.
+    obras.filter(obraConfirmada).forEach(o => {
       const det = getDetalle(o.id);
       const reparto = repartirCobroEnCuotas(det.cuotas || [], cobradoObraUSD(movimientos, cajas, o.id, tc), o.moneda || 'ARS', tc);
       (det.cuotas || []).forEach(c => {
@@ -168,8 +169,8 @@ export default function Dashboard() {
       else if (o.presupuesto > 0 && o.gastado / o.presupuesto > 0.9)
         list.push({ tipo: 'warn', texto: `${o.nombre}: gastado > ${Math.round(o.gastado / o.presupuesto * 100)}% del presupuesto`, obraId: o.id });
     });
-    // Cuotas vencidas
-    obras.forEach(o => {
+    // Cuotas vencidas — solo de obras CONFIRMADAS (no propuestas en-presupuesto)
+    obras.filter(obraConfirmada).forEach(o => {
       const det = getDetalle(o.id);
       const reparto = repartirCobroEnCuotas(det.cuotas || [], cobradoObraUSD(movimientos, cajas, o.id, tc), o.moneda || 'ARS', tc);
       const vencidas = (det.cuotas || []).filter(c => {
@@ -320,11 +321,11 @@ export default function Dashboard() {
                   <div style={{ padding: '12px 16px 13px 18px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, marginBottom: 10 }}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 9, color: '#9a3412', fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.2, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          💸 ME DEBEN · OBRAS TERMINADAS
+                        <div style={{ fontSize: 14, color: T.ink, fontWeight: 800, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: 15 }}>💸</span> Saldo de obras
                         </div>
                         <div style={{ fontSize: 11, color: T.ink2, marginTop: 4, fontWeight: 600 }}>
-                          saldo a cobrar · {deudaTerminadas.n} obra{deudaTerminadas.n === 1 ? '' : 's'} entregada{deudaTerminadas.n === 1 ? '' : 's'}
+                          {deudaTerminadas.n} obra{deudaTerminadas.n === 1 ? '' : 's'} entregada{deudaTerminadas.n === 1 ? '' : 's'}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -354,7 +355,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div style={{ borderBottom: `1px solid ${T.faint2}`, padding: '11px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.faint }}>
-                  <div style={{ fontSize: 9, color: T.ink2, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.2, fontWeight: 800 }}>💸 ME DEBEN · OBRAS TERMINADAS</div>
+                  <div style={{ fontSize: 13, color: T.ink, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 14 }}>💸</span> Saldo de obras</div>
                   <div style={{ fontSize: 11, color: T.ok, fontWeight: 700 }}>✓ Todo cobrado</div>
                 </div>
               )}

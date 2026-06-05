@@ -182,7 +182,9 @@ export default async function handler(req, res) {
     const resultados = [];
 
     for (const obra of obras) {
-      if (obra.estado !== 'activa' && obra.estado !== 'en-presupuesto') continue;
+      // Solo obras CONFIRMADAS: el plan de pagos de una propuesta (en-presupuesto)
+      // NO genera recordatorios de cobro al cliente. Recibir un pago la confirma.
+      if (obra.estado !== 'activa' && obra.estado !== 'finalizada') continue;
       const det = detalles[obra.id];
       const cuotas = det?.cuotas || [];
       if (!cuotas.length) continue;

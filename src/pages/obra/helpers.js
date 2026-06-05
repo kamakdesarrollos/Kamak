@@ -253,6 +253,13 @@ export const calcObra = (rubros) => {
  * Mismo criterio que la tab Cuenta corriente y la card de Obras (saldo "naranja").
  * `saldada` = saldoUSD <= 1. Para obras de arrastre el total sale de precioVentaUSD.
  */
+// Una obra está CONFIRMADA cuando dejó de ser una propuesta: estado 'activa' o
+// 'finalizada'. 'en-presupuesto' = propuesta/borrador. Recibir un pago la
+// auto-confirma (pasa a 'activa'). MIENTRAS ES PROPUESTA, su plan de pagos
+// (detalle.cuotas) NO debe contar como cobros reales: nada de vencimientos,
+// alertas, recordatorios ni "próximas cuotas a cobrar".
+export const obraConfirmada = (obra) => !!obra && obra.estado !== 'en-presupuesto';
+
 export const ccObra = (obra, detalle, movimientos, cajas, tc) => {
   const { venta: ventaBaseARS } = calcObra((detalle && detalle.rubros) || []);
   const adicionalARS = ((detalle && detalle.adicionales) || [])

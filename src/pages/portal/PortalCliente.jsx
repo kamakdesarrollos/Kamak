@@ -217,7 +217,10 @@ export default function PortalCliente() {
     : (clienteActual?.nombre || obra.cliente || '');
 
   const rubros    = detalle.rubros    || [];
-  const cuotas    = detalle.cuotas    || [];
+  // Solo obras CONFIRMADAS tienen plan de pagos "real". Si la obra es una
+  // PROPUESTA (en-presupuesto), no le mostramos cuotas/vencimientos al cliente
+  // (el plan todavía no está acordado; recibir un pago la confirma).
+  const cuotas    = obra.estado === 'en-presupuesto' ? [] : (detalle.cuotas || []);
   const documentos = detalle.documentos || [];
   const fotos     = detalle.fotos     || [];
   const fin       = detalle.financiacion || {};

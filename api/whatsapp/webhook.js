@@ -832,7 +832,11 @@ async function handleClienteFlow(phone, cliente, text) {
   // para coincidir con el portal. Antes leía cuota.pagos[] y mostraba un número
   // distinto al portal cuando el cobro venía del bot. Las cuotas marcadas
   // pagadas a mano (estado 'pagado' sin pagos) se respetan.
-  const cuotas = detalle.cuotas || [];
+  // Solo obras CONFIRMADAS tienen cuotas "reales". Si la obra es una PROPUESTA
+  // (en-presupuesto), su plan de pagos no es un cobro acordado todavía → no se le
+  // muestran cuotas/vencimientos al cliente (recibir un pago la confirma).
+  const obraEsPropuesta = obra.estado === 'en-presupuesto';
+  const cuotas = obraEsPropuesta ? [] : (detalle.cuotas || []);
   const movDataCli = await loadSharedData('movimientos');
   const cajasCli   = movDataCli?.cajas || [];
   const cobradoUSD = (movDataCli?.movimientos || [])
@@ -1378,7 +1382,7 @@ async function callClaude(user, messageText, base64Media, mimeType, conv, ctx, m
         : '';
       return `    RUBRO:${r.id}|${r.nombre}|prov:${r.proveedor||'—'}${tsStr}`;
     }).join('\n');
-    return `  OBRA:${o.id}|${o.nombre}${isCtx ? ' ← CONTEXTO ACTUAL' : ''}\n${rubStr}`;
+    return `  OBRA:${o.id}|${o.nombre}|estado:${o.estado || '—'}${o.estado === 'en-presupuesto' ? ' (PROPUESTA: sin cobros/cuotas confirmados)' : ''}${isCtx ? ' ← CONTEXTO ACTUAL' : ''}\n${rubStr}`;
   }).filter(Boolean).join('\n') || 'sin rubros cargados';
 
   // ── SLOTS YA CONOCIDOS — bloque crítico anti-repreguntas ────────────────────

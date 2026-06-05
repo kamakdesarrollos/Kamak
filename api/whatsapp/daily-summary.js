@@ -94,7 +94,9 @@ function armarResumen(adminUserId, ctx) {
   // ── Cuotas que vencen hoy/mañana ──
   const cuotasUrg = [];
   (obras || []).forEach(o => {
-    if (o.estado !== 'activa' && o.estado !== 'en-presupuesto') return;
+    // Solo obras CONFIRMADAS: las cuotas de una propuesta (en-presupuesto) no son
+    // cobros reales, no van al resumen "a cobrar".
+    if (o.estado !== 'activa' && o.estado !== 'finalizada') return;
     const det = detalles?.[o.id];
     (det?.cuotas || []).forEach(c => {
       if (c.cobrado || c.pagado) return;

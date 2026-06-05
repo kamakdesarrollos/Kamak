@@ -263,7 +263,9 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
     const hoy = new Date();
     const hoyStr = hoy.toISOString().slice(0, 10);
     (obras || []).forEach(o => {
-      if (o.estado !== 'activa' && o.estado !== 'en-presupuesto') return;
+      // Solo obras CONFIRMADAS: las cuotas de una propuesta (en-presupuesto) no
+      // son cobros reales, no deben notificar vencimientos.
+      if (o.estado !== 'activa' && o.estado !== 'finalizada') return;
       const det = detalles?.[o.id];
       if (!det || !det.cuotas) return;
       const reparto = repartirCobroEnCuotas(det.cuotas, cobradoObraUSD(movimientos, cajas, o.id, tcAhora), o.moneda || 'ARS', tcAhora);

@@ -3,8 +3,22 @@ import {
   cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
   tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
   ingresosObraUSD, detallePagosCuotas, repartirCobroEnCuotas, cobradoObraUSD,
-  calcTotalClienteUSD,
+  calcTotalClienteUSD, obraConfirmada,
 } from './helpers';
+
+describe('obraConfirmada (gate: el plan de pagos solo cuenta si la obra dejó de ser propuesta)', () => {
+  it('en-presupuesto = propuesta → NO confirmada', () => {
+    expect(obraConfirmada({ estado: 'en-presupuesto' })).toBe(false);
+  });
+  it('activa y finalizada = confirmadas', () => {
+    expect(obraConfirmada({ estado: 'activa' })).toBe(true);
+    expect(obraConfirmada({ estado: 'finalizada' })).toBe(true);
+  });
+  it('tolera null/undefined', () => {
+    expect(obraConfirmada(null)).toBe(false);
+    expect(obraConfirmada(undefined)).toBe(false);
+  });
+});
 
 describe('calcTotalClienteUSD (deuda del cliente en USD)', () => {
   it('usa el precio fijo USD si está cargado y NO depende del tipo de cambio', () => {

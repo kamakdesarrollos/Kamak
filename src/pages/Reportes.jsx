@@ -9,7 +9,7 @@ import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useDolar } from '../store/DolarContext';
-import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado } from './obra/helpers';
+import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, obraConfirmada } from './obra/helpers';
 import { montoEnARS } from '../lib/caja';
 
 const CY = new Date().getFullYear();
@@ -116,7 +116,8 @@ export default function Reportes() {
     const hoy = new Date().toISOString().split('T')[0];
     const limite = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const all = [];
-    obras.forEach(o => {
+    // Solo obras CONFIRMADAS: el plan de pagos de una propuesta no son cobros reales.
+    obras.filter(obraConfirmada).forEach(o => {
       const reparto = repartirCobroEnCuotas(detalles[o.id]?.cuotas || [], cobradoObraUSD(movimientos, cajas, o.id, tc), o.moneda || 'ARS', tc);
       (detalles[o.id]?.cuotas || [])
         .filter(c => cuotaEstadoDesdeCobrado(c, reparto[c.id], o.moneda || 'ARS', tc) !== 'pagado' && c.fecha >= hoy && c.fecha <= limite)
@@ -126,11 +127,11 @@ export default function Reportes() {
   }, [obras, detalles, tc, movimientos, cajas]);
 
   const cuotasTotalesMonto = useMemo(() =>
-    obras.reduce((s, o) => s + (detalles[o.id]?.cuotas || []).reduce((ss, c) => ss + (c.monto || 0), 0), 0),
+    obras.filter(obraConfirmada).reduce((s, o) => s + (detalles[o.id]?.cuotas || []).reduce((ss, c) => ss + (c.monto || 0), 0), 0),
     [obras, detalles]);
 
   const cuotasCobradas = useMemo(() =>
-    obras.reduce((s, o) => {
+    obras.filter(obraConfirmada).reduce((s, o) => {
       const reparto = repartirCobroEnCuotas(detalles[o.id]?.cuotas || [], cobradoObraUSD(movimientos, cajas, o.id, tc), o.moneda || 'ARS', tc);
       return s + (detalles[o.id]?.cuotas || []).filter(c => cuotaEstadoDesdeCobrado(c, reparto[c.id], o.moneda || 'ARS', tc) === 'pagado').reduce((ss, c) => ss + (c.monto || 0), 0);
     }, 0),
