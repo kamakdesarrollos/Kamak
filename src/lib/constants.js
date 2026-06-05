@@ -43,4 +43,6 @@ export const ROL_CONTADOR       = 'Contador externo';
 // Numero del bot de WA Business de Kamak. Formato E.164 sin "+".
 // Se lee del env var VITE_META_PHONE_NUMBER; si no esta seteado, fallback al
 // numero conocido para que no rompa el build local.
-export const META_PHONE_NUMBER = import.meta.env.VITE_META_PHONE_NUMBER || '5492262223704';
+// Guarda import.meta.env para que el archivo funcione también en Node ESM
+// (los scripts de backfill importan lib puras que a su vez importan constants.js).
+export const META_PHONE_NUMBER = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_META_PHONE_NUMBER) || '5492262223704';
