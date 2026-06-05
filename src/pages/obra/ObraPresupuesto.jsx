@@ -435,10 +435,13 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const [addingTask, setAddingTask] = useState(null);
   const [addingRubro, setAddingRubro] = useState(false);
   const [newTask, setNewTask] = useState({ codigo: '', nombre: '', unidad: 'u', cantidad: 1, costoMat: 0, costoSub: 0 });
-  const [newRubro, setNewRubro] = useState({ rubroId: '', margenMat: 20, margenMO: 35, proveedor: '' });
+  const [newRubro, setNewRubro] = useState({ rubroId: '', margenMat: detalle.margenDefault?.mat ?? 20, margenMO: detalle.margenDefault?.mo ?? 35, proveedor: '' });
+  const [margenGlobal, setMargenGlobal] = useState({ mat: detalle.margenDefault?.mat ?? 20, mo: detalle.margenDefault?.mo ?? 35 });
   const [selectedTareas, setSelectedTareas] = useState(new Set());
   const [showPlantillas, setShowPlantillas] = useState(false);
   const [inlineEdit, setInlineEdit] = useState(null);
+  // (6-rubro) Edición de márgenes por gremio: { rubroId } del rubro cuyo header está en modo edición.
+  const [editRubroMargen, setEditRubroMargen] = useState(null);
   const [editSeccionId, setEditSeccionId] = useState(null);
   const [editSeccionNombre, setEditSeccionNombre] = useState('');
   const [collapsedSections, setCollapsedSections] = useState(new Set());
@@ -622,6 +625,33 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   // Toggle "materiales a cargo del comprador": no se cobran/cuentan los materiales
   // del rubro (solo la mano de obra) y en el export figura la nota.
   const toggleMaterialesComprador = (rubroId) => patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, materialesACargoComprador: !r.materialesACargoComprador } : r) }));
+  // (6-rubro) Patch del margen de UN rubro (margenMat / margenMO) desde el header.
+  // campo = 'margenMat' | 'margenMO'. Vacío → 0.
+  const setRubroMargen = (rubroId, campo, valor) => {
+    const n = valor === '' || valor == null ? 0 : Number(valor);
+    if (Number.isNaN(n)) return;
+    patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, [campo]: n } : r) }));
+  };
+  // Toggle GLOBAL: si TODOS los rubros ya tienen los materiales a cargo del
+  // comprador → vuelve a incluirlos en todos; si alguno los incluye → los saca
+  // de todos. Un solo patch que itera detalle.rubros.
+  const toggleMaterialesGlobal = () => {
+    const nuevoVal = !detalle.rubros.every(r => r.materialesACargoComprador);
+    patch(d => ({ ...d, rubros: d.rubros.map(r => ({ ...r, materialesACargoComprador: nuevoVal })) }));
+  };
+  // Margen GLOBAL: pisa margenMat/margenMO de TODOS los rubros con los valores
+  // del control y los deja como default (detalle.margenDefault) para los rubros
+  // nuevos. Un solo patch.
+  const aplicarMargenGlobal = () => {
+    const mat = +margenGlobal.mat || 0;
+    const mo = +margenGlobal.mo || 0;
+    patch(d => ({
+      ...d,
+      margenDefault: { mat, mo },
+      rubros: d.rubros.map(r => ({ ...r, margenMat: mat, margenMO: mo })),
+    }));
+    setNewRubro(p => ({ ...p, margenMat: mat, margenMO: mo }));
+  };
 
   // ── Actualizar desde el catálogo (base de datos) ───────────────────────────
   // Trae nombre + unidad + código + costos del catálogo, igual que re-agregar la
@@ -700,7 +730,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
       });
     patch(d => ({ ...d, rubros: [...d.rubros, { id: newId(), nombre: catalogRubro.nombre, proveedor: newRubro.proveedor, margenMat: +newRubro.margenMat, margenMO: +newRubro.margenMO, orden: d.rubros.length, abierto: true, tareas: tareasIniciales }] }));
     setAddingRubro(false);
-    setNewRubro({ rubroId: '', margenMat: 20, margenMO: 35, proveedor: '' });
+    setNewRubro({ rubroId: '', margenMat: detalle.margenDefault?.mat ?? 20, margenMO: detalle.margenDefault?.mo ?? 35, proveedor: '' });
     setSelectedTareas(new Set());
   };
 
@@ -824,9 +854,47 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
       {/* ── Barra de totales + moneda ───────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexShrink: 0, flexWrap: 'wrap', padding: '6px 10px', background: T.faint, borderRadius: 6, border: `1px solid ${T.faint2}` }}>
         {isAdmin && <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.accent }}>Venta: {fmtVenta(venta)}</span>}
+        {verCostos && <><span style={{ color: T.faint2 }}>·</span><span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#a85648' }}>Mat: {fmtVenta(cMat)}</span></>}
+        {verCostos && <><span style={{ color: T.faint2 }}>·</span><span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: T.accent }}>MO: {fmtVenta(cSub)}</span></>}
         {verCostos && <><span style={{ color: T.faint2 }}>·</span><span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: '#a85648' }}>Costo: {fmtVenta(costo)}</span></>}
         {verMargenes && <><span style={{ color: T.faint2 }}>·</span><span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: venta - costo < 0 ? '#dc2626' : T.ok }}>Ganancia: {fmtVenta(venta - costo)}</span></>}
         <div style={{ flex: 1 }} />
+
+        {/* (6-global) Margen global: pisa margenMat/margenMO de TODOS los rubros y
+            guarda el default para rubros nuevos. */}
+        {puedeEditar && detalle.rubros.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 6px', borderRadius: 6, border: `1px solid ${T.faint2}`, background: T.paper }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: T.ink3, fontFamily: T.fontMono }}>MAT%</span>
+            <input type="number" value={margenGlobal.mat}
+              onChange={e => setMargenGlobal(p => ({ ...p, mat: e.target.value }))}
+              style={{ width: 38, fontSize: 11, padding: '2px 4px', textAlign: 'center', border: `1px solid ${T.faint2}`, borderRadius: 3, background: T.paper, color: T.ink, fontFamily: T.fontMono }} />
+            <span style={{ fontSize: 9, fontWeight: 700, color: T.ink3, fontFamily: T.fontMono }}>MO%</span>
+            <input type="number" value={margenGlobal.mo}
+              onChange={e => setMargenGlobal(p => ({ ...p, mo: e.target.value }))}
+              style={{ width: 38, fontSize: 11, padding: '2px 4px', textAlign: 'center', border: `1px solid ${T.faint2}`, borderRadius: 3, background: T.paper, color: T.ink, fontFamily: T.fontMono }} />
+            <span onClick={aplicarMargenGlobal}
+              title="Aplicar estos márgenes a TODOS los rubros y dejarlos como default para los nuevos"
+              style={{ padding: '2px 8px', borderRadius: 6, fontSize: 10, cursor: 'pointer', userSelect: 'none', fontWeight: 700, border: `1px solid ${T.accent}`, background: T.accentSoft, color: T.accent, fontFamily: T.fontMono }}>
+              Aplicar a todos
+            </span>
+          </div>
+        )}
+
+        {/* (4) Toggle global de materiales: alterna materialesACargoComprador en TODO. */}
+        {puedeEditar && detalle.rubros.length > 0 && (() => {
+          const todosACargo = detalle.rubros.every(r => r.materialesACargoComprador);
+          return (
+            <span onClick={toggleMaterialesGlobal}
+              title={todosACargo ? 'Volver a incluir los materiales en todos los rubros' : 'Sacar los materiales de todos los rubros (a cargo del comprador)'}
+              style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none', fontWeight: 700, fontFamily: T.fontMono,
+                border: `1px solid ${todosACargo ? '#a85648' : T.accent}`,
+                background: todosACargo ? '#f3e3df' : T.accentSoft,
+                color: todosACargo ? '#a85648' : T.accent }}>
+              {todosACargo ? 'Incluir materiales en todos' : 'Sacar materiales de todos'}
+            </span>
+          );
+        })()}
+
         <span onClick={() => setViewUSD(v => !v)}
           style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none', fontWeight: 700, border: `1px solid ${T.accent}`, background: T.accentSoft, color: T.accent }}>
           {viewUSD ? 'U$S' : '$'}
@@ -907,7 +975,36 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                 <span style={{ color: 'rgba(255,255,255,0.4)', cursor: 'grab', userSelect: 'none' }}>⋮⋮</span>
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>{isRubroAbierto(rubro.id) ? '▾' : '▸'}</span>
                 <div className="k-h" style={{ fontSize: 15, color: '#fff', fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>{rubro.nombre}</div>
-                <span style={{ fontSize: 10, fontFamily: T.fontMono, color: '#5fcf8a', whiteSpace: 'nowrap' }}>mat {rubro.margenMat}% · MO {rubro.margenMO}%</span>
+                {/* (6-rubro) Márgenes por gremio: texto mat/MO; al clickear (si puedeEditar)
+                    se vuelve dos inputs chiquitos que patchean margenMat/margenMO del rubro.
+                    stopPropagation para no colapsar/expandir el rubro al editar. */}
+                {puedeEditar && editRubroMargen === rubro.id ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontFamily: T.fontMono, color: '#5fcf8a', whiteSpace: 'nowrap' }}
+                    onClick={e => e.stopPropagation()}>
+                    mat
+                    <input type="number" autoFocus defaultValue={rubro.margenMat}
+                      onClick={e => e.stopPropagation()}
+                      onBlur={e => { setRubroMargen(rubro.id, 'margenMat', e.target.value); }}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditRubroMargen(null); }}
+                      style={{ width: 36, fontSize: 10, padding: '1px 3px', textAlign: 'center', fontFamily: T.fontMono, color: T.ink, background: '#fff', border: '1px solid rgba(255,255,255,0.5)', borderRadius: 3 }} />
+                    % · MO
+                    <input type="number" defaultValue={rubro.margenMO}
+                      onClick={e => e.stopPropagation()}
+                      onBlur={e => { setRubroMargen(rubro.id, 'margenMO', e.target.value); }}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditRubroMargen(null); }}
+                      style={{ width: 36, fontSize: 10, padding: '1px 3px', textAlign: 'center', fontFamily: T.fontMono, color: T.ink, background: '#fff', border: '1px solid rgba(255,255,255,0.5)', borderRadius: 3 }} />
+                    %
+                    <span onClick={e => { e.stopPropagation(); setEditRubroMargen(null); }}
+                      title="Listo" style={{ cursor: 'pointer', color: '#5fcf8a', fontWeight: 700, paddingLeft: 2 }}>✓</span>
+                  </span>
+                ) : (
+                  <span
+                    onClick={puedeEditar ? (e => { e.stopPropagation(); setEditRubroMargen(rubro.id); }) : undefined}
+                    title={puedeEditar ? 'Editar márgenes de este gremio' : undefined}
+                    style={{ fontSize: 10, fontFamily: T.fontMono, color: '#5fcf8a', whiteSpace: 'nowrap', cursor: puedeEditar ? 'pointer' : 'default' }}>
+                    mat {rubro.margenMat}% · MO {rubro.margenMO}%{puedeEditar ? ' ✏' : ''}
+                  </span>
+                )}
                 {rubro.proveedor && (() => {
                   const prov = provListPresu.find(p => p.nombre === rubro.proveedor);
                   return prov
@@ -916,6 +1013,10 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                 })()}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 14, alignItems: 'center', fontFamily: T.fontMono, fontSize: 11 }}>
                   {!isRubroAbierto(rubro.id) && <>
+                    {/* (5) Desglose mat/MO en header colapsado. Tonos legibles sobre fondo oscuro:
+                        mat marrón claro, MO teal (acento del header). */}
+                    {verCostos   && <span style={{ color: '#e0a89c' }}>mat <b>{fmtVenta(rubro.cMat)}</b></span>}
+                    {verCostos   && <span style={{ color: '#7fd3d4' }}>mo <b>{fmtVenta(rubro.cSub)}</b></span>}
                     {verCostos   && <span style={{ color: 'rgba(255,255,255,0.55)' }}>costo <b>{fmtVenta(rubro.costo)}</b></span>}
                     <span style={{ color: 'rgba(255,255,255,0.85)' }}>venta <b style={{ color: '#5fcf8a' }}>{fmtVenta(rubro.venta)}</b></span>
                     {verMargenes && <span style={{ color: rubro.margen > 0 ? '#5fcf8a' : '#ff9b8a' }}><b>{rubro.margen > 0 ? '+' : ''}{rubro.margen}%</b></span>}
@@ -1152,6 +1253,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '7px 14px', background: T.faint, borderTop: `1.5px solid ${T.faint2}`, fontFamily: T.fontMono, fontSize: 11 }}>
                     <span style={{ color: T.ink3, fontSize: 9.5, letterSpacing: 0.5, marginRight: 'auto', textTransform: 'uppercase' }}>Total {rubro.nombre}</span>
+                    {/* (5) Desglose costo del rubro: materiales (marrón) y MO (acento), igual que la barra global. */}
+                    {verCostos   && <span style={{ color: '#a85648' }}>mat <b style={{ color: '#a85648' }}>{fmtVenta(rubro.cMat)}</b></span>}
+                    {verCostos   && <span style={{ color: T.accent }}>mo <b style={{ color: T.accent }}>{fmtVenta(rubro.cSub)}</b></span>}
                     {verCostos   && <span style={{ color: T.ink2 }}>costo <b style={{ color: T.ink }}>{fmtVenta(rubro.costo)}</b></span>}
                     <span style={{ color: T.ink2 }}>venta <b style={{ color: T.ok }}>{fmtVenta(rubro.venta)}</b></span>
                     {verMargenes && <span style={{ color: rubro.margen > 0 ? T.ok : '#a85648' }}><b>{rubro.margen > 0 ? '+' : ''}{rubro.margen}%</b></span>}
@@ -1203,7 +1307,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
               : [];
             const toggleTarea = (id) => setSelectedTareas(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
             return (
-              <FormPanel title="Nuevo rubro" onSave={saveRubro} onCancel={() => { setAddingRubro(false); setNewRubro({ rubroId: '', margenMat: 20, margenMO: 35, proveedor: '' }); setSelectedTareas(new Set()); }}>
+              <FormPanel title="Nuevo rubro" onSave={saveRubro} onCancel={() => { setAddingRubro(false); setNewRubro({ rubroId: '', margenMat: detalle.margenDefault?.mat ?? 20, margenMO: detalle.margenDefault?.mo ?? 35, proveedor: '' }); setSelectedTareas(new Set()); }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1.5fr', gap: 10 }}>
                   <FRow label="Rubro">
                     <select style={{ ...inputSt, cursor: 'pointer' }} value={newRubro.rubroId}
@@ -3589,6 +3693,11 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                   <option value="">— Seleccionar rubro —</option>
                   {rubros.filter(r => {
                     if (editingRubroId && r.id === editingRubroId) return true;
+                    // El rubro actualmente elegido SIEMPRE queda en la lista: si un
+                    // broadcast realtime reemplaza 'detalle' y este rubro pasara a
+                    // estar "completo" o se recalculara fuera, se caía del <select> y
+                    // el formulario se vaciaba solo. Igual guard que editingRubroId.
+                    if (rubroForm.rubroId && r.id === rubroForm.rubroId) return true;
                     if (form.rubrosAgregados.find(ra => ra.rubroId === r.id)) return false;
                     const tareasSinSec = (r.tareas || []).filter(t => t.tipo !== 'seccion' && (t.cantidad || 0) > 0);
                     return tareasSinSec.some(t => calcTareaContratada(t.id, contratos) < t.cantidad);
@@ -3598,7 +3707,17 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                 </select>
               </FRow>
 
-              {rubroSel && (
+              {/* El cuerpo del panel se renderiza en base al rubro ELEGIDO en el
+                  form (rubroForm.rubroId), NO en base a rubroSel (derivado de
+                  detalle.rubros). Si un broadcast realtime reemplaza 'detalle' a
+                  mitad de carga, rubroSel podía quedar null por un instante y el
+                  panel se vaciaba/colapsaba aunque addingRubro siguiera true. Si
+                  el rubro no se puede resolver momentáneamente mostramos un estado
+                  vacío en lugar de cerrar el panel. */}
+              {rubroForm.rubroId && !rubroSel && (
+                <div style={{ fontSize: 12, color: T.ink3, padding: '10px 0' }}>Cargando tareas del rubro…</div>
+              )}
+              {rubroForm.rubroId && rubroSel && (
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, marginTop: 8 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
