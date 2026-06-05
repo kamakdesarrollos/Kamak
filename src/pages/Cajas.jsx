@@ -15,6 +15,9 @@ import { puedeVerCaja } from '../lib/permisosCaja';
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
 const fmtN = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
+// Monto CON signo: un saldo negativo se muestra "-$ 1.212" (no se le come el signo).
+const fmtMonto = (n, sym = '$') => `${(n || 0) < 0 ? '-' : ''}${sym} ${fmtN(n)}`;
+const NEG = '#dc2626'; // rojo inequívoco para saldos en negativo
 
 const TIPO_LABEL = { efectivo: 'Efectivo', banco: 'Banco', billetera: 'Billetera', obra: 'Caja de obra', rendicion: 'Rendición' };
 const fmtFecha = (iso) => { if (!iso) return ''; const [, m, d] = iso.split('-'); return `${d}/${m}`; };
@@ -59,8 +62,8 @@ function CajaMovimientosModal({ caja, onClose }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 10, opacity: 0.6 }}>Saldo</div>
-              <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: (caja.saldo || 0) < 0 ? '#ef4444' : T.accent }}>
-                {simbolo} {fmtN(caja.saldo || 0)}
+              <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 18, color: (caja.saldo || 0) < 0 ? NEG : T.accent }}>
+                {fmtMonto(caja.saldo || 0, simbolo)}
               </div>
             </div>
             {chequesEnCaja.length > 0 && (
@@ -292,8 +295,8 @@ function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0, canRe
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr', alignItems: 'stretch', marginBottom: 10 }}>
           <div style={{ paddingRight: 12 }}>
             <div style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Efectivo</div>
-            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 16, color: efectivo < 0 ? T.warn : T.ink, lineHeight: 1 }}>
-              {efectivo < 0 ? '-' : ''}$ {fmtN(efectivo)}
+            <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 16, color: efectivo < 0 ? NEG : T.ink, lineHeight: 1 }}>
+              {fmtMonto(efectivo, '$')}
             </div>
           </div>
           <div style={{ background: T.faint2 }} />
@@ -306,8 +309,8 @@ function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0, canRe
         </div>
       ) : (
         <div style={{ marginBottom: 10 }}>
-          <div className="k-stat-sm" style={{ color: saldo < 0 ? T.warn : T.ink }}>
-            {isARS ? '$' : 'U$S'} {fmtN(saldo)}
+          <div className="k-stat-sm" style={{ color: saldo < 0 ? NEG : T.ink }}>
+            {fmtMonto(saldo, isARS ? '$' : 'U$S')}
           </div>
           {!isARS && <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono, marginTop: 2 }}>{caja.moneda}</div>}
         </div>
@@ -383,10 +386,10 @@ export default function Cajas() {
           </>
         }
         kpis={isAdmin ? [
-          { label: 'Total ARS',         value: `$ ${fmtN(totalARS)}`,                 color: T.ink },
-          { label: 'Total USD',         value: `U$S ${fmtN(totalUSD)}`,               color: T.ink },
-          { label: 'Equiv. total USD',  value: `U$S ${fmtN(equivTotalUSD)}`,          color: T.accent },
-          { label: 'Equiv. total ARS',  value: `$ ${fmtN(totalARS + totalUSDenARS)}`, color: T.accent },
+          { label: 'Total ARS',         value: fmtMonto(totalARS, '$'),                color: totalARS < 0 ? NEG : T.ink },
+          { label: 'Total USD',         value: fmtMonto(totalUSD, 'U$S'),              color: totalUSD < 0 ? NEG : T.ink },
+          { label: 'Equiv. total USD',  value: fmtMonto(equivTotalUSD, 'U$S'),         color: equivTotalUSD < 0 ? NEG : T.accent },
+          { label: 'Equiv. total ARS',  value: fmtMonto(totalARS + totalUSDenARS, '$'), color: (totalARS + totalUSDenARS) < 0 ? NEG : T.accent },
         ] : []}
       />
 

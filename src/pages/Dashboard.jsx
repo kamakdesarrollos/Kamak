@@ -308,32 +308,56 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Me deben: saldo de obras terminadas + aging por antigüedad */}
-              <div style={{ borderBottom: `1px solid ${T.faint2}` }}>
+              {/* Me deben · obras terminadas — saldo a cobrar + aging por antigüedad.
+                  Card con impronta: barra de acento ámbar, número grande, barra de
+                  aging proporcional (verde/ámbar/rojo) y pills por tramo. */}
+              {deudaTerminadas.total > 0 ? (
                 <div onClick={() => navigate('/obras')}
-                  style={{ padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: T.faint }}
-                  onMouseEnter={e => e.currentTarget.style.background = T.accentSoft}
-                  onMouseLeave={e => e.currentTarget.style.background = T.faint}>
-                  <div>
-                    <div style={{ fontSize: 8, color: T.ink3, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.5, fontWeight: 700 }}>💸 ME DEBEN · OBRAS TERMINADAS</div>
-                    <div style={{ fontSize: 9, color: T.ink3 }}>saldo a cobrar · {deudaTerminadas.n} obra{deudaTerminadas.n === 1 ? '' : 's'}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div className="k-mono" style={{ fontSize: 18, fontWeight: 800, color: deudaTerminadas.total > 0 ? '#d97706' : T.ink }}>U$S {fmtN(deudaTerminadas.total)}</div>
-                    <div style={{ fontSize: 10, color: T.ink3 }}>≈ $ {fmtN(Math.round(deudaTerminadas.total * tc))} ARS</div>
+                  style={{ borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer', position: 'relative', overflow: 'hidden', background: 'linear-gradient(180deg,#fff8ef 0%,#ffffff 70%)' }}
+                  onMouseEnter={e => e.currentTarget.style.filter = 'brightness(0.985)'}
+                  onMouseLeave={e => e.currentTarget.style.filter = ''}>
+                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: 'linear-gradient(180deg,#f59e0b,#ea580c)' }} />
+                  <div style={{ padding: '12px 16px 13px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 11 }}>
+                      <div>
+                        <div style={{ fontSize: 8.5, color: '#b8651a', fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.8, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <span style={{ fontSize: 11 }}>💸</span> ME DEBEN · OBRAS TERMINADAS
+                        </div>
+                        <div style={{ fontSize: 9.5, color: T.ink3, marginTop: 4 }}>
+                          saldo a cobrar de {deudaTerminadas.n} obra{deudaTerminadas.n === 1 ? '' : 's'} entregada{deudaTerminadas.n === 1 ? '' : 's'}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 10 }}>
+                        <div className="k-mono" style={{ fontSize: 25, fontWeight: 900, color: '#ea580c', lineHeight: 1, letterSpacing: '-0.02em' }}>U$S {fmtN(deudaTerminadas.total)}</div>
+                        <div style={{ fontSize: 9.5, color: T.ink3, marginTop: 3, fontFamily: `'JetBrains Mono', monospace` }}>≈ $ {fmtN(Math.round(deudaTerminadas.total * tc))} ARS</div>
+                      </div>
+                    </div>
+                    {/* Barra de aging proporcional */}
+                    <div style={{ display: 'flex', height: 6, borderRadius: 4, overflow: 'hidden', background: T.faint2, marginBottom: 8 }}>
+                      {[['d15', T.ok], ['d30', '#e0a020'], ['dmas', '#dc2626']].map(([k, c]) =>
+                        deudaTerminadas[k] > 0 ? <div key={k} style={{ width: `${(deudaTerminadas[k] / deudaTerminadas.total) * 100}%`, background: c }} /> : null
+                      )}
+                    </div>
+                    {/* Pills por tramo de antigüedad */}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {[['1–15 días', 'd15', T.ok], ['15–30 días', 'd30', '#c98a1a'], ['+30 días', 'dmas', '#dc2626']].map(([lab, k, c]) => (
+                        <div key={k} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 6, background: '#fff', border: `1px solid ${T.faint2}` }}>
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: deudaTerminadas[k] > 0 ? c : T.faint2, flexShrink: 0 }} />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 7.5, color: T.ink3, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.3, whiteSpace: 'nowrap' }}>{lab}</div>
+                            <div className="k-mono" style={{ fontSize: 11.5, fontWeight: 800, color: deudaTerminadas[k] > 0 ? c : T.ink3 }}>{fmtN(deudaTerminadas[k])}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-                {deudaTerminadas.total > 0 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderTop: `1px solid ${T.faint2}` }}>
-                    {[['1-15 días', deudaTerminadas.d15, T.ink2], ['15-30 días', deudaTerminadas.d30, '#d97706'], ['+30 días', deudaTerminadas.dmas, '#dc2626']].map(([lab, val, col], i) => (
-                      <div key={lab} style={{ padding: '5px 8px', textAlign: 'center', borderLeft: i ? `1px solid ${T.faint2}` : 'none' }}>
-                        <div style={{ fontSize: 8, color: T.ink3, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.5 }}>{lab}</div>
-                        <div className="k-mono" style={{ fontSize: 12, fontWeight: 700, color: col }}>U$S {fmtN(Math.round(val))}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              ) : (
+                <div style={{ borderBottom: `1px solid ${T.faint2}`, padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.faint }}>
+                  <div style={{ fontSize: 8.5, color: T.ink3, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.8, fontWeight: 800 }}>💸 ME DEBEN · OBRAS TERMINADAS</div>
+                  <div style={{ fontSize: 11, color: T.ok, fontWeight: 700 }}>✓ Todo cobrado</div>
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
                 {/* ARS */}
@@ -352,8 +376,8 @@ export default function Dashboard() {
                         <div style={{ width: 7, height: 7, borderRadius: '50%', background: c.color || T.ink2, flexShrink: 0 }} />
                         <span style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</span>
                       </div>
-                      <span style={{ fontSize: 11, fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, flexShrink: 0, marginLeft: 8, color: (c.saldo || 0) < 0 ? T.accent : (c.saldo || 0) < 50000 ? T.warn : T.ink }}>
-                        $ {fmtN(c.saldo || 0)}
+                      <span style={{ fontSize: 11, fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, flexShrink: 0, marginLeft: 8, color: (c.saldo || 0) < 0 ? '#dc2626' : (c.saldo || 0) < 50000 ? T.warn : T.ink }}>
+                        {(c.saldo || 0) < 0 ? '-' : ''}$ {fmtN(c.saldo || 0)}
                       </span>
                     </div>
                   ))}
@@ -375,8 +399,8 @@ export default function Dashboard() {
                         <div style={{ width: 7, height: 7, borderRadius: '50%', background: c.color || T.ink2, flexShrink: 0 }} />
                         <span style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</span>
                       </div>
-                      <span style={{ fontSize: 11, fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, flexShrink: 0, marginLeft: 8, color: (c.saldo || 0) < 0 ? T.accent : (c.saldo || 0) < 100 ? T.warn : T.ink }}>
-                        U$S {fmtN(c.saldo || 0)}
+                      <span style={{ fontSize: 11, fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, flexShrink: 0, marginLeft: 8, color: (c.saldo || 0) < 0 ? '#dc2626' : (c.saldo || 0) < 100 ? T.warn : T.ink }}>
+                        {(c.saldo || 0) < 0 ? '-' : ''}U$S {fmtN(c.saldo || 0)}
                       </span>
                     </div>
                   ))}
