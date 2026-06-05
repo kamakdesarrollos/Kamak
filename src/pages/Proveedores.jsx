@@ -8,6 +8,7 @@ import { useProveedores, calcSaldoProveedorMov } from '../store/ProveedoresConte
 import { useMovimientos } from '../store/MovimientosContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
+import { facturasPendientesDeProveedor, totalPendiente } from '../lib/facturasPendientes';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -149,8 +150,16 @@ export default function Proveedores() {
   // En Proveedores, "Administración" tiene el mismo acceso que Admin: gestiona pagos
   // y cuenta corriente de proveedores (de mano de obra y de materiales).
   const isAdmin = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
-  const { proveedores, addProveedor, updateProveedor, removeProveedor, getObrasProveedor, ccEntries: ccRaw } = useProveedores();
+  const { proveedores, addProveedor, updateProveedor, removeProveedor, getObrasProveedor, ccEntries: ccRaw, facturasPendientes } = useProveedores();
   const { movimientos } = useMovimientos();
+  // Deuda en facturas pendientes de pago (cuentas por pagar) por proveedor.
+  // Total de saldos de sus facturas abiertas. Independiente del saldo CC clásico.
+  const deudaFacturas = useMemo(() => {
+    const map = {};
+    proveedores.forEach(p => { map[p.id] = totalPendiente(facturasPendientesDeProveedor(facturasPendientes, p)); });
+    return map;
+  }, [proveedores, facturasPendientes]);
+  const totalDeudaFacturas = useMemo(() => Object.values(deudaFacturas).reduce((s, v) => s + v, 0), [deudaFacturas]);
   // Saldo DERIVADO: lo que debemos (debe de ccEntries) − lo que pagamos (gastos
   // a ese proveedor en movimientos). Libro único: los pagos son movimientos.
   const getSaldo = (pid, obraId = null) => calcSaldoProveedorMov(proveedores.find(p => p.id === pid), ccRaw, movimientos, obraId);
@@ -205,7 +214,7 @@ export default function Proveedores() {
         label="GESTIÓN DE PROVEEDORES"
         title="Proveedores"
         subtitle={isAdmin
-          ? `$ ${fmtN(totalDeuda)} en deuda · $ ${fmtN(totalPagadoSum)} pagado histórico`
+          ? `$ ${fmtN(totalDeuda)} en deuda CC · $ ${fmtN(totalDeudaFacturas)} en facturas pendientes · $ ${fmtN(totalPagadoSum)} pagado histórico`
           : `${proveedores.length} proveedores · ${moCount} mano de obra · ${matCount} materiales`}
         actions={
           <>
@@ -316,10 +325,19 @@ export default function Proveedores() {
                     {totalPagado[p.id] > 0 ? `$ ${fmtN(totalPagado[p.id])}` : '—'}
                   </span>
                 )}
-                {/* Saldo — solo admin */}
+                {/* Saldo — solo admin. Debajo, deuda en facturas pendientes (cuentas
+                    por pagar) si la hay: es independiente del saldo CC. */}
                 {isAdmin && (
-                  <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.warn : T.ok }}>
-                    {saldo > 0 ? `$ ${fmtN(saldo)}` : '—'}
+                  <span style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.warn : T.ok }}>
+                      {saldo > 0 ? `$ ${fmtN(saldo)}` : '—'}
+                    </span>
+                    {deudaFacturas[p.id] > 0 && (
+                      <span style={{ fontSize: 9, fontFamily: T.fontMono, color: T.accent, fontWeight: 700 }}
+                        title="Facturas pendientes de pago">
+                        + $ {fmtN(deudaFacturas[p.id])} fact.
+                      </span>
+                    )}
                   </span>
                 )}
                 {/* Condición */}
@@ -378,6 +396,12 @@ export default function Proveedores() {
                     <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 15, color: saldo > 0 ? T.warn : T.ok }}>
                       {saldo > 0 ? `$ ${fmtN(saldo)}` : 'Al día'}
                     </div>
+                    {deudaFacturas[p.id] > 0 && (
+                      <div style={{ fontSize: 10, fontFamily: T.fontMono, color: T.accent, fontWeight: 700, marginTop: 2 }}
+                        title="Facturas pendientes de pago">
+                        + $ {fmtN(deudaFacturas[p.id])} en fact. pendientes
+                      </div>
+                    )}
                   </div>
                 )}
                 {/* Acciones */}

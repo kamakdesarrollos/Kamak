@@ -397,6 +397,27 @@ describe('buscarDuplicadoRecibido', () => {
     }];
     expect(buscarDuplicadoRecibido(cand, { pendings })?.en).toBe('pending');
   });
+  it('encuentra match en facturasPendientes con comprobanteRecibido (cuentas por pagar)', () => {
+    const facturasPendientes = [{
+      id: 'fp1', proveedor: 'YPF', fecha: '2026-05-30', estado: 'pendiente',
+      comprobanteRecibido: { tipo: 'B', numero: '1-12345', cuit: '30717953858', total: 12000 },
+    }];
+    expect(buscarDuplicadoRecibido(cand, { facturasPendientes })?.en).toBe('factura_pendiente');
+  });
+  it('matchea factura pendiente por tipoLetra/numero/cuit/monto aunque no tenga comprobanteRecibido', () => {
+    const facturasPendientes = [{
+      id: 'fp2', proveedor: 'YPF', fecha: '2026-05-30', estado: 'pendiente',
+      tipoLetra: 'B', numero: '1-12345', cuit: '30717953858', monto: 12000,
+    }];
+    expect(buscarDuplicadoRecibido(cand, { facturasPendientes })?.en).toBe('factura_pendiente');
+  });
+  it('ignora facturas pendientes anuladas', () => {
+    const facturasPendientes = [{
+      id: 'fp3', proveedor: 'YPF', fecha: '2026-05-30', estado: 'anulada',
+      comprobanteRecibido: { tipo: 'B', numero: '1-12345', cuit: '30717953858', total: 12000 },
+    }];
+    expect(buscarDuplicadoRecibido(cand, { facturasPendientes })).toBe(null);
+  });
   it('legacy fallback: mov viejo con referencia + proveedor parecido → match', () => {
     const movs = [{ id: 'mLegacy', referencia: '0001-12345', proveedor: 'YPF SA', monto: 12000, fecha: '2026-05-29' }];
     expect(buscarDuplicadoRecibido(cand, { movimientos: movs })?.en).toBe('movimiento');

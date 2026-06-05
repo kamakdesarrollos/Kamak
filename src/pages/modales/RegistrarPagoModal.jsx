@@ -1,50 +1,100 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Btn, Divider } from '../../components/ui';
 import { T } from '../../theme';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useObras } from '../../store/ObrasContext';
 import { useConfiguracion } from '../../store/ConfiguracionContext';
+import { useProveedores } from '../../store/ProveedoresContext';
+import { facturasPendientesDeProveedor, saldoFacturaPendiente } from '../../lib/facturasPendientes';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
+const fmtFecha = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y.slice(2)}`; };
 
 const DEFAULT_MEDIOS = ['Transferencia', 'Cheque', 'E-cheq', 'Efectivo', 'Tarjeta'];
 
-export default function RegistrarPagoModal({ proveedor = '', proveedorId = null, onClose }) {
+// `facturaPendiente` (opcional): si viene, el modal salda esa factura puntual
+// (preselecciona proveedor + sugiere monto = saldo). Si NO viene pero hay un
+// proveedor seleccionado, se ofrece vincular el pago a una de sus facturas
+// pendientes (o dejarlo "sin vincular", comportamiento histórico).
+export default function RegistrarPagoModal({ proveedor = '', proveedorId = null, facturaPendiente = null, onClose }) {
   const { cajas, addMovimiento } = useMovimientos();
   const { obras } = useObras();
   const { config } = useConfiguracion();
+  const { proveedores, facturasPendientes, registrarPagoFactura } = useProveedores();
   const mediosDePago = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
 
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
   const cajasARS = cajas.filter(c => c.moneda === 'ARS' && c.activa);
 
+  // Proveedor efectivo: el de la factura a saldar (si vino) tiene prioridad.
+  const provNombre = facturaPendiente?.proveedor || proveedor;
+  const provId     = facturaPendiente?.proveedorId || proveedorId || null;
+  // Proveedor resuelto (para listar sus facturas abiertas). Por id, sino por nombre.
+  const provObj = useMemo(() => {
+    if (provId) return proveedores.find(p => p.id === provId) || (provNombre ? { id: provId, nombre: provNombre } : null);
+    if (provNombre) return proveedores.find(p => p.nombre === provNombre) || { id: null, nombre: provNombre };
+    return null;
+  }, [proveedores, provId, provNombre]);
+
+  // Facturas pendientes (abiertas) del proveedor para el selector de vínculo.
+  const facturasDelProv = useMemo(
+    () => provObj ? facturasPendientesDeProveedor(facturasPendientes, provObj) : [],
+    [facturasPendientes, provObj]
+  );
+
   const today = new Date().toISOString().split('T')[0];
-  const [monto, setMonto] = useState('');
+  // Factura vinculada: si vino por prop, fija; sino el usuario la elige ('' = sin vincular).
+  const [facturaVincId, setFacturaVincId] = useState(facturaPendiente?.id || '');
+  const facturaVinc = facturaPendiente || facturasDelProv.find(f => f.id === facturaVincId) || null;
+  const saldoVinc = facturaVinc ? saldoFacturaPendiente(facturaVinc) : 0;
+
+  const [monto, setMonto] = useState(facturaPendiente ? String(saldoFacturaPendiente(facturaPendiente)) : '');
   const [fecha, setFecha] = useState(today);
-  const [imputar, setImputar] = useState('obra');
-  const [obraId, setObraId] = useState(obrasActivas[0]?.id || '');
+  // Si la factura está imputada a una obra, arrancamos imputando a esa obra (sino
+  // 'general'); si no hay factura, el default histórico es 'obra'.
+  const [imputar, setImputar] = useState(facturaPendiente ? (facturaPendiente.obraId ? 'obra' : 'general') : 'obra');
+  const [obraId, setObraId] = useState(facturaPendiente?.obraId || obrasActivas[0]?.id || '');
   const [cajaId, setCajaId] = useState(cajasARS[0]?.id || '');
   const [medio, setMedio] = useState('Transferencia');
-  const [referencia, setReferencia] = useState('');
+  const [referencia, setReferencia] = useState(facturaPendiente?.numero || '');
   const [fondoReparo] = useState(false); // retención fondo de reparo: aún no implementada (ver checkbox deshabilitado)
   const [concepto, setConcepto] = useState('');
 
   const obraNombre = obras.find(o => o.id === obraId)?.nombre || '';
   const cajaNombre = cajas.find(c => c.id === cajaId)?.nombre || '';
   const montoNum = Math.round(parseFloat(monto.replace(/[^0-9.]/g, '')) || 0);
+  // Pago parcial: el monto cubre menos que el saldo de la factura vinculada.
+  const esParcial = facturaVinc && montoNum > 0 && montoNum < saldoVinc;
+
+  // Al elegir una factura del selector, sugerimos su saldo como monto (si el
+  // usuario no tocó el campo o estaba en otra factura). Mantiene UX simple.
+  const onPickFactura = (id) => {
+    setFacturaVincId(id);
+    const f = facturasDelProv.find(x => x.id === id);
+    if (f) {
+      setMonto(String(saldoFacturaPendiente(f)));
+      if (f.obraId) { setImputar('obra'); setObraId(f.obraId); }
+      if (f.numero && !referencia) setReferencia(f.numero);
+    }
+  };
 
   const confirmar = () => {
     if (!montoNum || montoNum <= 0) return;
 
-    const concFinal = concepto.trim() || `Pago a ${proveedor}${obraNombre ? ` · ${obraNombre}` : ''}`;
+    const concFinal = concepto.trim()
+      || (facturaVinc ? `Pago factura ${facturaVinc.numero || ''} · ${provNombre}`.trim().replace(/ · $/, '')
+                      : `Pago a ${provNombre}${obraNombre ? ` · ${obraNombre}` : ''}`);
 
     // Libro único: el pago al proveedor queda SOLO como movimiento de gasto.
     // La cuenta corriente del proveedor (lo pagado) se DERIVA de los movimientos
     // (por proveedorId o nombre), así que no escribimos un asiento 'haber' en
     // ccEntries (sería duplicar el pago). Los 'debe' (deuda) sí viven en ccEntries.
-    addMovimiento({
+    // Si hay factura vinculada, el movimiento NO lleva comprobanteRecibido (el
+    // dato fiscal ya vive en la factura pendiente → no se duplica el IVA) y se
+    // marca con facturaPendienteId para trazar el pago.
+    const movId = addMovimiento({
       fecha,
       tipo: 'gasto',
       descripcion: concFinal,
@@ -53,13 +103,19 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
       obraNombre: imputar === 'obra' ? obraNombre : 'General',
       cajaId,
       cajaDestinoId: null,
-      proveedor,
-      proveedorId: proveedorId || null,
+      proveedor: provNombre,
+      proveedorId: provId,
+      facturaPendienteId: facturaVinc ? facturaVinc.id : undefined,
       categoria: 'subcontrato',
       medioPago: medio,
       referencia,
       fondoReparo,
     });
+
+    // Registra el pago contra la factura pendiente (recalcula estado/saldo).
+    if (facturaVinc) {
+      registrarPagoFactura(facturaVinc.id, { movimientoId: movId, monto: montoNum, fecha, cajaId });
+    }
 
     onClose();
   };
@@ -69,13 +125,42 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
       <div className="k-modal" style={{ width: 440 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontFamily: T.font, fontWeight: 800, fontSize: 17 }}>Registrar pago</div>
-            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 2 }}>{proveedor || 'Proveedor'}</div>
+            <div style={{ fontFamily: T.font, fontWeight: 800, fontSize: 17 }}>{facturaPendiente ? 'Saldar factura' : 'Registrar pago'}</div>
+            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 2 }}>
+              {provNombre || 'Proveedor'}
+              {facturaPendiente && facturaPendiente.numero ? ` · Factura ${facturaPendiente.numero}` : ''}
+            </div>
           </div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
         </div>
 
         <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Vincular a factura pendiente. Si vino por prop, queda fija (solo se
+              muestra el resumen). Sino, selector con las facturas abiertas del
+              proveedor (o "sin vincular" = pago suelto, comportamiento histórico). */}
+          {facturaPendiente ? (
+            <div style={{ background: T.accentSoft, border: `1px solid ${T.accent}55`, borderRadius: 4, padding: '8px 10px', fontSize: 11 }}>
+              <div style={{ fontWeight: 700, color: T.accent, marginBottom: 2 }}>
+                Saldando factura {facturaPendiente.numero || ''} {facturaPendiente.tipoLetra ? `(${facturaPendiente.tipoLetra})` : ''}
+              </div>
+              <div style={{ color: T.ink2, fontFamily: T.fontMono }}>
+                Total $ {fmtN(facturaPendiente.monto || 0)} · Saldo $ {fmtN(saldoVinc)}
+              </div>
+            </div>
+          ) : facturasDelProv.length > 0 && (
+            <div>
+              <label style={labelSt}>Vincular a factura pendiente</label>
+              <select style={{ ...inputSt, cursor: 'pointer' }} value={facturaVincId} onChange={e => onPickFactura(e.target.value)}>
+                <option value="">— Sin vincular (pago suelto) —</option>
+                {facturasDelProv.map(f => (
+                  <option key={f.id} value={f.id}>
+                    {fmtFecha(f.fecha)} · {f.numero || 's/n'} · saldo $ {fmtN(saldoFacturaPendiente(f))}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label style={labelSt}>Fecha</label>
             <input type="date" style={inputSt} value={fecha} onChange={e => setFecha(e.target.value)} />
@@ -86,6 +171,13 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
             <input style={{ ...inputSt, fontFamily: T.fontMono, fontWeight: 700, fontSize: 14 }}
               type="number" min="0" placeholder="0"
               value={monto} onChange={e => setMonto(e.target.value)} />
+            {facturaVinc && montoNum > 0 && (
+              <div style={{ fontSize: 10.5, marginTop: 4, color: esParcial ? '#b45309' : T.ok }}>
+                {esParcial
+                  ? `Pago parcial: quedan $ ${fmtN(saldoVinc - montoNum)} de saldo en la factura.`
+                  : montoNum >= saldoVinc ? 'Cubre el saldo completo de la factura.' : ''}
+              </div>
+            )}
           </div>
 
           <Divider />
@@ -157,7 +249,7 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
 
           <div>
             <label style={labelSt}>Concepto / nota</label>
-            <input style={inputSt} value={concepto} onChange={e => setConcepto(e.target.value)} placeholder={`Pago a ${proveedor}${obraNombre ? ` · ${obraNombre}` : ''}`} />
+            <input style={inputSt} value={concepto} onChange={e => setConcepto(e.target.value)} placeholder={`Pago a ${provNombre}${obraNombre ? ` · ${obraNombre}` : ''}`} />
           </div>
         </div>
 

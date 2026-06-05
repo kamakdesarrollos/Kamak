@@ -19,7 +19,7 @@ import {
   formatCUIT, getTipoComprobante, getCondicionIVA, validarCUIT,
   buscarDuplicadoEmitido, buscarDuplicadoRecibido, esJurisdiccionPBA,
   signoComprobanteRecibido, CONCEPTOS_AFIP, CONCEPTO_AFIP_DEFAULT, getConceptoAfip,
-  resolverComprobanteAsociado,
+  resolverComprobanteAsociado, facturaPendienteACompraLibroIva,
 } from '../lib/afip';
 import { generarLibroIvaDigital, NOMBRES_ARCHIVO_LIBRO_IVA } from '../lib/libroIvaDigital';
 import { feCaeSolicitarPayload } from '../lib/wsfe';
@@ -379,7 +379,7 @@ export default function Facturacion() {
   const { obras } = useObras();
   const { config } = useConfiguracion();
   const { movimientos } = useMovimientos();
-  const { proveedores } = useProveedores();
+  const { proveedores, facturasPendientes } = useProveedores();
   const { data: financiero, setMesField } = useFinanciero();
   const empresa = config?.empresa || {};
 
@@ -408,12 +408,26 @@ export default function Facturacion() {
   // error a una categoría que no es factura comercial — no lo contamos en
   // Compras del Libro IVA, sí lo suma su columna del Financiero.
   const SIN_IVA_CREDITO = new Set(['sueldo', 'cs-soc', 'sind', 'iibb']);
-  const comprasMes = useMemo(() => (movimientos || [])
-    .filter(m => m.comprobanteRecibido
-              && !SIN_IVA_CREDITO.has(m.categoriaFiscal)
-              && (m.fecha || '').slice(0, 7) === mes)
-    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
-    [movimientos, mes]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Compras del mes para el Libro IVA = movimientos con comprobanteRecibido +
+  // FACTURAS PENDIENTES con comprobanteRecibido (IVA crédito devengado por la
+  // factura, esté paga o no). El pago de una factura pendiente es un movimiento
+  // SIN comprobanteRecibido → ya queda fuera del primer filtro, no se duplica.
+  // Guarda extra: si un movimiento con comprobanteRecibido está linkeado a una
+  // factura pendiente (m.facturaPendienteId), es el PAGO y NO debería traer
+  // comprobante; lo excluimos para que el crédito viva sólo en la factura.
+  const comprasMes = useMemo(() => {
+    const movs = (movimientos || [])
+      .filter(m => m.comprobanteRecibido
+                && !m.facturaPendienteId
+                && !SIN_IVA_CREDITO.has(m.categoriaFiscal)
+                && (m.fecha || '').slice(0, 7) === mes);
+    const fps = (facturasPendientes || [])
+      .map(facturaPendienteACompraLibroIva)
+      .filter(c => c
+                && !SIN_IVA_CREDITO.has(c.categoriaFiscal)
+                && (c.fecha || '').slice(0, 7) === mes);
+    return [...movs, ...fps].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  }, [movimientos, facturasPendientes, mes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── IVA Débito (ventas, restando notas de crédito) ───────────────────────────
   const debito = useMemo(() => ventasMes.reduce((s, c) => {
@@ -442,7 +456,11 @@ export default function Facturacion() {
   // Helper: posición IVA de un mes (YYYY-MM) cualquiera, mismo cálculo.
   const compFor = (mesKey) => {
     const v = comprobantes.filter(c => c.estado !== 'anulado' && (c.fecha || '').slice(0, 7) === mesKey);
-    const c = (movimientos || []).filter(m => m.comprobanteRecibido && (m.fecha || '').slice(0, 7) === mesKey);
+    // Mismo criterio que comprasMes: movimientos con comprobanteRecibido (excluido
+    // el pago de una factura pendiente) + facturas pendientes con comprobanteRecibido.
+    const cMovs = (movimientos || []).filter(m => m.comprobanteRecibido && !m.facturaPendienteId && (m.fecha || '').slice(0, 7) === mesKey);
+    const cFps  = (facturasPendientes || []).map(facturaPendienteACompraLibroIva).filter(x => x && (x.fecha || '').slice(0, 7) === mesKey);
+    const c = [...cMovs, ...cFps];
     const deb = v.reduce((s, x) => s + (getTipoComprobante(x.tipoId)?.signo ?? 1) * (x.iva || 0), 0);
     const cre = c.reduce((s, m) => s + signoComprobanteRecibido(m.comprobanteRecibido) * (m.comprobanteRecibido?.iva || 0), 0);
     // Percepción IVA del mes: pago a cuenta que reduce la posición (ver arriba).
@@ -458,7 +476,7 @@ export default function Facturacion() {
     const d = new Date(y, m - 2, 1); // m-1 (cero-base) - 1
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   }, [mes]);
-  const datosMesAnt = useMemo(() => mesAnterior ? compFor(mesAnterior) : null, [mesAnterior, comprobantes, movimientos]); // eslint-disable-line react-hooks/exhaustive-deps
+  const datosMesAnt = useMemo(() => mesAnterior ? compFor(mesAnterior) : null, [mesAnterior, comprobantes, movimientos, facturasPendientes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Saldo a favor acumulado al inicio del mes seleccionado: caminamos cada mes
   // anterior en orden. Si un mes dio "a favor" → suma al saldo. Si dio "a pagar"
@@ -468,6 +486,13 @@ export default function Facturacion() {
     const set = new Set();
     comprobantes.forEach(c => { const k = (c.fecha || '').slice(0, 7); if (k && k < mes) set.add(k); });
     (movimientos || []).forEach(m => { if (m.comprobanteRecibido || Number(m.percepcionIVA) > 0) { const k = (m.fecha || '').slice(0, 7); if (k && k < mes) set.add(k); } });
+    // Meses que sólo tienen una factura pendiente con comprobante también cuentan.
+    (facturasPendientes || []).forEach(f => {
+      const c = facturaPendienteACompraLibroIva(f);
+      if (!c) return;
+      const k = (c.fecha || '').slice(0, 7);
+      if (k && k < mes) set.add(k);
+    });
     let saldo = 0;
     [...set].sort().forEach(mk => {
       const { posicion: p } = compFor(mk);
@@ -475,7 +500,7 @@ export default function Facturacion() {
       else if (p < 0) saldo += -p;
     });
     return Math.round(saldo * 100) / 100;
-  }, [comprobantes, movimientos, mes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [comprobantes, movimientos, facturasPendientes, mes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Posición efectiva del mes seleccionado: consume del saldo a favor previo.
   const efectivaAPagar = posicion > 0 ? Math.max(0, posicion - saldoAFavorPrevio) : 0;
@@ -914,6 +939,10 @@ export default function Facturacion() {
           if (m.comprobanteRecibido && m.fecha) setM.add(String(m.fecha).slice(0, 7));
           if (m.categoriaFiscal && m.fecha)     setM.add(String(m.fecha).slice(0, 7));
         });
+        (facturasPendientes || []).forEach(f => {
+          const c = facturaPendienteACompraLibroIva(f);
+          if (c && c.fecha) setM.add(String(c.fecha).slice(0, 7));
+        });
         Object.keys(financiero || {}).forEach(k => setM.add(k));
         setM.add(mesActual());
         const meses = [...setM].sort();
@@ -928,8 +957,15 @@ export default function Facturacion() {
           // FAC-001: el IIBB devengado va sobre el NETO gravado, no el total c/IVA.
           const ventasNeto = ventasComps
             .reduce((s, c) => s + (getTipoComprobante(c.tipoId)?.signo ?? 1) * (c.neto ?? c.total ?? 0), 0);
-          const compras = (movimientos || [])
-            .filter(m => m.comprobanteRecibido && !SIN_IVA_CREDITO.has(m.categoriaFiscal) && String(m.fecha || '').slice(0, 7) === mk)
+          // Compras del mes = movimientos con comprobanteRecibido (excluido el pago
+          // de una factura pendiente) + facturas pendientes con comprobanteRecibido,
+          // mismo criterio que el Libro IVA (devengado, esté paga o no).
+          const comprasMovs = (movimientos || [])
+            .filter(m => m.comprobanteRecibido && !m.facturaPendienteId && !SIN_IVA_CREDITO.has(m.categoriaFiscal) && String(m.fecha || '').slice(0, 7) === mk);
+          const comprasFps = (facturasPendientes || [])
+            .map(facturaPendienteACompraLibroIva)
+            .filter(c => c && !SIN_IVA_CREDITO.has(c.categoriaFiscal) && String(c.fecha || '').slice(0, 7) === mk);
+          const compras = [...comprasMovs, ...comprasFps]
             .reduce((s, m) => s + signoComprobanteRecibido(m.comprobanteRecibido) * (m.comprobanteRecibido?.total || m.monto || 0), 0);
           const cargas      = financiero[mk] || {};
           // Retenciones (sufridas en cobros) + percepciones (sufridas en gastos,

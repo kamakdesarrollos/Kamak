@@ -98,6 +98,56 @@ export function desglosarCompraBot({ total, tipoLetra, percepcionIIBB = 0, perce
   return { neto, iva: round2(baseFiscal - neto), alicuota: 21, baseFiscal, total: tot };
 }
 
+// ── Cuentas por pagar — helpers PUROS replicados de src/lib/facturasPendientes.js
+// El bot corre en Node SIN imports de src/, así que duplicamos inline la lógica de
+// saldo/estado/match (mismo criterio que la app: saldo = monto − Σpagos; abierta =
+// saldo>1 y no 'anulada'; match por proveedor + |saldo−monto| ≤ máx(0, 0,5%)).
+// Mantené sincronizado con src/lib/facturasPendientes.js (es el contrato de Fase 1).
+const _normProvFP = s => (s || '').toString().toLowerCase().trim();
+
+// Saldo pendiente = monto − Σ pagos (nunca negativo).
+function saldoFacturaPendienteBot(f) {
+  if (!f) return 0;
+  const pagado = (f.pagos || []).reduce((s, p) => s + (Number(p.monto) || 0), 0);
+  return Math.max(0, (Number(f.monto) || 0) - pagado);
+}
+
+// Estado derivado de los pagos. 'anulada' es el único estado que se guarda y no se deriva.
+function estadoFacturaPendienteBot(f) {
+  if (!f) return 'pendiente';
+  if (f.estado === 'anulada') return 'anulada';
+  const saldo = saldoFacturaPendienteBot(f);
+  const pagado = (Number(f.monto) || 0) - saldo;
+  if (saldo <= 1) return 'pagada';
+  if (pagado > 0) return 'parcial';
+  return 'pendiente';
+}
+
+// ¿La factura está abierta (cobrable)? = pendiente o parcial.
+function esFacturaAbiertaBot(f) {
+  const e = estadoFacturaPendienteBot(f);
+  return e === 'pendiente' || e === 'parcial';
+}
+
+// ¿La factura es de este proveedor? Por proveedorId si lo tiene; sino por nombre.
+function matcheaProveedorFP(f, proveedorId, nombreN) {
+  return f.proveedorId ? f.proveedorId === proveedorId : (f.proveedor && _normProvFP(f.proveedor) === nombreN);
+}
+
+// Facturas ABIERTAS de un proveedor cuyo SALDO ≈ monto del pago (tolerancia =
+// máx(tolerancia fija, ±0,5%)). Ordenadas por cercanía. Lo usa pago_proveedor:
+// 1 resultado → confirmar; >1 → listar; 0 → pago normal.
+function matchFacturasPorPagoBot(facturas, { proveedorId, proveedor, monto, tolerancia = 0 }) {
+  const m = Number(monto) || 0;
+  const nombreN = _normProvFP(proveedor);
+  const tol = Math.max(tolerancia, Math.round(m * 0.005));
+  return (facturas || [])
+    .filter(f => esFacturaAbiertaBot(f) && matcheaProveedorFP(f, proveedorId, nombreN) && Math.abs(saldoFacturaPendienteBot(f) - m) <= tol)
+    .map(f => ({ f, diff: Math.abs(saldoFacturaPendienteBot(f) - m) }))
+    .sort((a, b) => a.diff - b.diff)
+    .map(x => x.f);
+}
+
 // Rediseño "libro único": el bot SOLO entrega el movimiento. Lo agrega de forma
 // ATÓMICA con la función append_movimiento de Postgres (no lee-y-reescribe el
 // bloque entero, así nunca pisa lo que escribió la app). El saldo de la caja lo
@@ -174,6 +224,36 @@ async function sbAppendCCEntry(entry) {
   await broadcastChange('proveedores');
 }
 
+// Agrega un ítem a un campo ARRAY dentro de un blob OBJETO (ej.
+// proveedores.facturasPendientes) sin pisar el resto. Espejo de appendObjectItem
+// (src/lib/dbHelpers.js) → RPC append_shared_object_item. Lo usa Cuentas por Pagar.
+async function sbAppendArray2(key, collection, item) {
+  try { await sbRpc('append_shared_object_item', { p_key: key, p_collection: collection, p_item: item }); }
+  catch (e) {
+    console.error(`[sbAppendArray2 ${key}.${collection}] fallback:`, e.message);
+    const data = await loadSharedData(key);
+    const arr = Array.isArray(data?.[collection]) ? data[collection] : [];
+    await saveSharedData(key, { ...(data || {}), [collection]: [...arr, item] });
+    return;
+  }
+  await broadcastChange(key);
+}
+
+// Mergea un patch en el ítem (por id) de un campo ARRAY dentro de un blob OBJETO
+// (ej. proveedores.facturasPendientes) sin pisar el resto. Espejo de
+// patchObjectItem (src/lib/dbHelpers.js) → RPC patch_shared_object_item.
+async function sbPatchObjectItem(key, collection, id, patch) {
+  try { await sbRpc('patch_shared_object_item', { p_key: key, p_collection: collection, p_id: id, p_patch: patch }); }
+  catch (e) {
+    console.error(`[sbPatchObjectItem ${key}.${collection}] fallback:`, e.message);
+    const data = await loadSharedData(key);
+    const arr = Array.isArray(data?.[collection]) ? data[collection] : [];
+    await saveSharedData(key, { ...(data || {}), [collection]: arr.map(x => x.id === id ? { ...x, ...patch } : x) });
+    return;
+  }
+  await broadcastChange(key);
+}
+
 // Mergea un patch en el detalle de UNA obra (obras.detalles[obraId]) sin pisar
 // las demás obras ni el resto del bloque.
 async function sbPatchDetalleObra(obraId, patch) {
@@ -215,12 +295,25 @@ export function fingerprintRecibidoBot({ tipo, numero, cuit, total, proveedor, f
 async function buscarDuplicadoRecibidoBot(candidato) {
   const fp = fingerprintRecibidoBot(candidato);
   if (!fp) return null;
-  const [movData, pendingRows] = await Promise.all([
+  const [movData, pendingRows, provData] = await Promise.all([
     loadSharedData('movimientos'),
     sbGet('shared_data', '?key=eq.whatsapp_pending&select=data'),
+    loadSharedData('proveedores'),
   ]);
   const movs = movData?.movimientos || [];
   const pendings = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
+  // Facturas pendientes de pago (Cuentas por Pagar): llevan comprobanteRecibido
+  // fiscal → mismo fingerprint que un movimiento/pending. Evita cargar dos veces
+  // la misma factura (una como pendiente de pago y otra como gasto/factura).
+  const facturasPend = provData?.facturasPendientes || [];
+  for (const fp_ of facturasPend) {
+    const cr = fp_?.comprobanteRecibido;
+    const fpF = fingerprintRecibidoBot({
+      tipo: cr?.tipo || fp_.tipoLetra, numero: cr?.numero || fp_.numero, cuit: cr?.cuit || fp_.cuit,
+      total: cr?.total != null ? cr.total : fp_.monto, proveedor: fp_.proveedor, fecha: fp_.fecha, clase: cr?.clase,
+    });
+    if (fpF === fp) return { en: 'factura_pendiente', ref: fp_ };
+  }
   for (const m of movs) {
     const cr = m?.comprobanteRecibido;
     if (cr) {
@@ -507,6 +600,9 @@ async function getSystemContext() {
     cajas:       movData?.cajas       || [],
     movimientos: movData?.movimientos || [],
     proveedores: provData?.proveedores || [],
+    // Facturas de proveedor PENDIENTES DE PAGO (Cuentas por Pagar). Las usa
+    // pago_proveedor (match pago→factura) y el resumen del prompt.
+    facturasPendientes: provData?.facturasPendientes || [],
     obras:       obrasData?.obras?.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto') || [],
     detalles:    obrasData?.detalles  || {},
     clientes:    Array.isArray(cliData) ? cliData : [],
@@ -1299,6 +1395,18 @@ async function callClaude(user, messageText, base64Media, mimeType, conv, ctx, m
     ? `\n\n📌 DEFAULTS DEL USUARIO (usá si el mensaje no especifica obra/caja/etc):\n${defaultsEntries.map(([k, v]) => `  ${k}: ${v}`).join('\n')}`
     : '';
 
+  // Resumen de FACTURAS PENDIENTES DE PAGO (abiertas) para que Claude pueda
+  // responder "¿qué facturas tengo pendientes?" y matchear pagos. Solo abiertas.
+  const facturasAbiertas = (ctx.facturasPendientes || []).filter(f => esFacturaAbiertaBot(f));
+  const facturasPendientesBlock = facturasAbiertas.length > 0
+    ? `\n\nFACTURAS PENDIENTES DE PAGO (deuda devengada, todavía sin pagar):\n` +
+      facturasAbiertas.slice(0, 20).map(f =>
+        `- ${f.proveedor || '—'}${f.numero ? ` · N° ${f.numero}` : ''} · saldo $${Math.round(saldoFacturaPendienteBot(f)).toLocaleString('es-AR')}${f.fecha ? ` · ${f.fecha}` : ''}`
+      ).join('\n') +
+      (facturasAbiertas.length > 20 ? `\n  (+${facturasAbiertas.length - 20} facturas más — pedile al usuario que filtre por proveedor)` : '') +
+      `\n→ Si el usuario pregunta "¿qué facturas tengo pendientes?" / "qué debo pagar" / "facturas impagas", listale esto (proveedor, número, saldo). Total pendiente: $${Math.round(facturasAbiertas.reduce((s, f) => s + saldoFacturaPendienteBot(f), 0)).toLocaleString('es-AR')}.`
+    : `\n\nFACTURAS PENDIENTES DE PAGO: no hay facturas impagas cargadas.`;
+
   const systemPrompt = `Sos el asistente de WhatsApp de Kamak Desarrollos, una constructora argentina.
 Ayudás al equipo interno a registrar información en el sistema de gestión.
 ${slotsBlock}${defaultsBlock}
@@ -1322,6 +1430,7 @@ ${allRubrosStr}
 
 PROVEEDORES:
 ${ctx.proveedores.slice(0, 30).map(p => `- ${p.id}|${p.nombre}(${p.tipo})`).join('\n')}
+${facturasPendientesBlock}
 
 MATCHING DE CAJAS Y OBRAS — MUY IMPORTANTE:
 - Ignorá mayúsculas/minúsculas siempre. "baradero" = "Baradero", "franco" = "Franco".
@@ -1441,11 +1550,13 @@ ACCIONES DISPONIBLES:
    Son impuestos DISTINTOS: NO las sumes juntas, NO las confundas entre sí, y NO las confundas con el IVA del comprobante ni con el neto. Si el ticket discrimina las dos, completá AMBOS campos con sus montos en pesos. Si solo aparece una, completá solo esa. Si no aparece ninguna discriminada, no completes ninguno. El total del gasto ya las incluye (son lo que pagaste); el sistema las resta de la base del IVA y las descuenta del impuesto que corresponde (IIBB o IVA del mes).
    RECIBO DE SUELDO / CARGAS / SINDICATO / ALQUILER / SERVICIOS: si el texto o la foto refieren a "recibo de sueldo", "haberes", "liquidación", "sueldo de X", "F.931" (cargas sociales), "boleta UOCRA"/"sindicato", "alquiler", o servicios (luz/gas/internet) — completá el campo categoriaFiscal con la opción que corresponda y NO incluyas tipoFactura/numeroFactura/cuit/montoNeto (estos comprobantes NO generan IVA crédito y no van al Libro IVA Compras; el panel Financiero los suma a su columna por categoría). El gasto sigue siendo un GASTO normal con su monto y su foto.
 2. INGRESO: monto, descripción, obraId, cajaId
-3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(TOTAL del comprobante con IVA y percepciones — lo que paga la empresa, NUNCA el neto), montoNeto(opcional, solo si la foto discrimina el neto sin IVA), percepcionIIBB(opcional), jurisdiccionIIBB(opcional: 'PBA'|'CABA'|'CBA'|'OTRA', default PBA), percepcionIVA(opcional), claseComprobante('factura'|'nota_credito'), concepto
+3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(TOTAL del comprobante con IVA y percepciones — lo que paga la empresa, NUNCA el neto), montoNeto(opcional, solo si la foto discrimina el neto sin IVA), percepcionIIBB(opcional), jurisdiccionIIBB(opcional: 'PBA'|'CABA'|'CBA'|'OTRA', default PBA), percepcionIVA(opcional), claseComprobante('factura'|'nota_credito'), concepto, yaPagada(opcional, booleano)
+   IMPORTANTE — FACTURA PENDIENTE DE PAGO (default): por DEFECTO una factura de proveedor que llega se carga como PENDIENTE DE PAGO (deuda devengada: cuenta para el Libro IVA desde su fecha aunque todavía no se haya pagado). NO pongas yaPagada salvo que el usuario aclare explícitamente que la factura YA SE PAGÓ ("ya la pagué", "esta ya está paga", "la abonamos", "pagada"). Si el usuario lo aclara → yaPagada=true (el sistema la carga como gasto debitando la caja). Si solo manda la factura sin decir nada de pago → dejá yaPagada sin completar (queda pendiente). OJO: si el mensaje es "le pagué $X a [proveedor]" eso NO es factura_compra, es PAGO_PROVEEDOR (acción 10).
    NOTA DE CRÉDITO DE PROVEEDOR: si la foto/PDF dice "Nota de Crédito" / "NOTA DE CREDITO A/B/C" / "NC" (no confundir con "Nota de Débito") → poné claseComprobante='nota_credito'. Es un comprobante que el proveedor emite para REVERTIR (total o parcial) una factura anterior — devolución, bonificación, error. El monto sigue siendo el total del comprobante (positivo); el sistema lo registra en negativo en el Libro IVA Compras. Para facturas/tickets normales, claseComprobante='factura' o dejalo vacío.
 4. AVANCE_OBRA: obraId(ID exacto de la lista), rubroId(ID del rubro), tareaId(ID de la tarea), cantidadAvance(unidades completadas, ej:75), unidad(ej:'m²'), porcentajeAvance(% a sumar si no hay cantidad), descripcion
 5. CHEQUE_RECIBIDO: obraId, cajaDestinoId
 6. COMANDOS: ayuda | saldo | pendientes | cheques | resumen [obraId] [fecha YYYY-MM-DD] | como_va_obra (datos.obra=nombre) | cc_proveedor (datos.proveedor=nombre) | contacto_proveedor (datos.proveedor=nombre)
+   NOTA: el comando "pendientes" es SOLO para movimientos/facturas esperando APROBACIÓN en el buzón. Si el usuario pregunta por FACTURAS PENDIENTES DE PAGO / impagas / "qué facturas debo pagar" / "qué le debo pagar a [proveedor]", NO uses el comando "pendientes": respondé como texto (estado:"conversando") listando las FACTURAS PENDIENTES DE PAGO del bloque de contexto (proveedor, número, saldo).
 7. TAREAS — comandos: tareas (lista mis pendientes), tarea_detalle (con datos.numero=N), completar_item (con datos.numero=N — marca item N de la última tarea vista)
 8. NUEVA_TAREA (solo Admin): si el admin dice "creale tarea a Juan: comprar cemento" o similar, accion.tipo='nueva_tarea' con datos: { titulo, descripcion?, asignadoNombre (nombre del usuario destinatario), prioridad?('baja'|'media'|'alta'), fechaLimite?(YYYY-MM-DD), checklist?[textos] }. Si falta el asignado, preguntar a quién. Si no es admin, responder que solo el admin puede crear tareas para otros — pero cualquier user puede pedir "crear tarea para mí" (auto-asignación).
 9. TRASPASO (solo Admin): si el admin dice "pasá $200k de Caja Franco a Banco Galicia" o similar, accion.tipo='traspaso' con datos: { monto, cajaId (ID de la caja origen), cajaDestinoId (ID de la caja destino), montoDestino?(opcional para cross-moneda con TC distinto), descripcion? }. Matchear nombre de caja por nombre parcial. Si las cajas son de moneda distinta y el user no aclaró tipo de cambio, preguntá.
@@ -1641,7 +1752,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       if (dupGasto) {
         const fmtD = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
         const refD = dupGasto.ref;
-        const cuandoD = dupGasto.en === 'movimiento' ? `el ${refD.fecha}` : `pendiente de aprobar`;
+        const cuandoD = dupGasto.en === 'movimiento' ? `el ${refD.fecha}`
+                      : dupGasto.en === 'factura_pendiente' ? `como factura PENDIENTE DE PAGO` : `pendiente de aprobar`;
         const montoRef = refD.comprobanteRecibido?.total
                       || (refD.movimiento && (refD.movimiento.comprobanteRecibido?.total || refD.movimiento.monto))
                       || refD.montoTotal || refD.monto || 0;
@@ -1769,6 +1881,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       const ref = dup.ref;
       const cuando = dup.en === 'movimiento'
         ? `ya está cargada como gasto el ${ref.fecha}`
+        : dup.en === 'factura_pendiente'
+        ? `ya está cargada como factura PENDIENTE DE PAGO`
         : `ya está en el buzón pendiente de aprobar`;
       const montoRef = ref.comprobanteRecibido?.total
                     || (ref.movimiento && (ref.movimiento.comprobanteRecibido?.total || ref.movimiento.monto))
@@ -1794,6 +1908,70 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     const totalGastoBot = datos.monto != null && Number(datos.monto) > 0
       ? Math.round(Number(datos.monto))
       : (datos.montoTotal != null ? Math.round(Number(datos.montoTotal)) : 0);
+
+    // ── CUENTAS POR PAGAR (default): la factura llega → la cargamos como FACTURA
+    // PENDIENTE DE PAGO (proveedores.facturasPendientes), NO debitamos la caja.
+    // Lleva comprobanteRecibido fiscal → cuenta para el Libro IVA desde su fecha
+    // (devengado, aunque no esté paga). El pago se registra después con
+    // pago_proveedor y ahí se debita la caja. SOLO si el admin aclara que YA la
+    // pagó (datos.yaPagada=true), sigue al flujo de auto-carga como gasto (abajo).
+    const yaPagada = datos.yaPagada === true || datos.yaPagada === 'true';
+    if (user.user_rol === 'Admin' && totalGastoBot > 0 && !SIN_IVA_CREDITO_FACT.has(datos.categoriaFiscal) && !esNotaCredito && !yaPagada) {
+      const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A' / 'B' / 'C'
+      const total = totalGastoBot;
+      const perc = (datos.percepcionIIBB != null && Number(datos.percepcionIIBB) > 0)
+                     ? Math.round(Number(datos.percepcionIIBB)) : 0;
+      const percIVA = (datos.percepcionIVA != null && Number(datos.percepcionIVA) > 0)
+                     ? Math.round(Number(datos.percepcionIVA)) : 0;
+      const { neto, iva, alicuota } = desglosarCompraBot({
+        total, tipoLetra, percepcionIIBB: perc, percepcionIVA: percIVA, montoNeto: datos.montoNeto,
+      });
+      // Resolver el proveedor (por id o nombre) para linkear la factura a su ficha.
+      const provFP = (datos.proveedorId && ctx.proveedores.find(p => p.id === datos.proveedorId))
+                  || (datos.proveedor && ctx.proveedores.find(p => p.nombre && (
+                       p.nombre.toLowerCase().includes(datos.proveedor.toLowerCase()) ||
+                       datos.proveedor.toLowerCase().includes(p.nombre.toLowerCase()))));
+      const fechaFP = datos.fecha || new Date().toISOString().split('T')[0];
+      const obraFP = datos.obraId ? ctx.obras.find(o => o.id === datos.obraId) : null;
+      const facturaPendiente = {
+        id: `fp-${Date.now()}`,
+        proveedorId: provFP?.id || null,
+        proveedor: provFP?.nombre || datos.proveedor || '',
+        fecha: fechaFP,
+        numero: datos.numeroFactura || '',
+        tipoLetra,
+        cuit: datos.cuit || '',
+        monto: total,
+        comprobanteRecibido: {
+          tipo: tipoLetra, numero: datos.numeroFactura || '', cuit: datos.cuit || '',
+          fecha: fechaFP, neto, iva, alicuota, total,
+        },
+        percepcionIIBB: perc > 0 ? perc : undefined,
+        jurisdiccionIIBB: (perc > 0 && datos.jurisdiccionIIBB && datos.jurisdiccionIIBB !== 'PBA') ? datos.jurisdiccionIIBB : undefined,
+        percepcionIVA: percIVA > 0 ? percIVA : undefined,
+        obraId: obraFP?.id || null,
+        obraNombre: obraFP?.nombre || undefined,
+        concepto: datos.concepto || `Factura ${tipoLetra}${datos.numeroFactura ? ` ${datos.numeroFactura}` : ''}`.trim(),
+        comprobanteUrl: mediaUrl || null,
+        estado: 'pendiente',
+        pagos: [],
+        saldoPendiente: total,
+        createdAt: new Date().toISOString(),
+        createdBy: user.user_name,
+      };
+      // Atómico: append a proveedores.facturasPendientes sin pisar el resto del blob.
+      await sbAppendArray2('proveedores', 'facturasPendientes', facturaPendiente);
+      const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
+      const lineaPerc = perc > 0 ? `\nPercep. IIBB: ${fmt(perc)}` : '';
+      const lineaPercIVA = percIVA > 0 ? `\nPercep. IVA: ${fmt(percIVA)}` : '';
+      return `✅ Factura ${tipoLetra} ${datos.numeroFactura || ''} de *${facturaPendiente.proveedor || 'proveedor'}* cargada como *PENDIENTE DE PAGO* (${fmt(total)}).\n` +
+        `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}${lineaPerc}${lineaPercIVA}\n` +
+        `Ya cuenta para tu Libro IVA Compras del mes.\n\n` +
+        `Avisame cuando la pagues y la marco saldada.`;
+    }
+
+    // ── Flujo "ya pagada": el admin aclaró que la factura YA se pagó → la
+    // cargamos DIRECTO como gasto debitando la caja (comportamiento original).
     if (user.user_rol === 'Admin' && totalGastoBot > 0 && !SIN_IVA_CREDITO_FACT.has(datos.categoriaFiscal) && !esNotaCredito) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A' / 'B' / 'C'
       const total = totalGastoBot;
@@ -1927,7 +2105,51 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       return '⚠️ Los pagos a proveedor los registra un Admin.';
     }
 
+    // ── Match pago → factura pendiente de pago (Cuentas por Pagar) ────────────
+    // ANTES de crear el movimiento: ¿hay alguna factura ABIERTA de este proveedor
+    // cuyo saldo ≈ monto del pago (tolerancia 0,5%)? Si la factura ya viene
+    // resuelta (datos.facturaPendienteId, vía el flujo de confirmación) o se pidió
+    // saltear el match (datos._skipMatch), no buscamos de nuevo.
+    let facturaSaldar = null;
+    if (datos.facturaPendienteId) {
+      facturaSaldar = (ctx.facturasPendientes || []).find(f => f.id === datos.facturaPendienteId) || null;
+    } else if (!datos._skipMatch && user.phone) {
+      const matches = matchFacturasPorPagoBot(ctx.facturasPendientes || [], {
+        proveedorId: prov.id, proveedor: prov.nombre, monto, tolerancia: 1,
+      });
+      if (matches.length === 1) {
+        // 1 factura calza → pedir confirmación al admin (estado dedicado).
+        const f = matches[0];
+        await saveConversation(user.phone, {
+          state: 'awaiting_factura_pago_confirm',
+          data: { pagoDatos: { ...datos, proveedorId: prov.id, cajaId: caja.id }, facturaId: f.id },
+        });
+        return `🧾 Tenés una factura PENDIENTE que coincide:\n*${f.proveedor || prov.nombre}*${f.numero ? ` · N° ${f.numero}` : ''} · saldo ${fmt(saldoFacturaPendienteBot(f))}\n\n¿Este pago de ${fmt(monto)} es de esa factura? (sí/no)\nSi decís *no*, lo registro como pago suelto.`;
+      }
+      if (matches.length > 1) {
+        // Varias calzan → listar para que el admin elija. Los ids llevan prefijo
+        // 'pick:' para que el handler de interactive los devuelva como messageText
+        // limpio (= el id de la factura), igual que el resto de las listas del bot.
+        const opciones = matches.slice(0, 9).map(f => ({
+          id: `pick:${f.id}`,
+          title: `${(f.proveedor || prov.nombre).slice(0, 14)}${f.numero ? ` N°${f.numero}` : ''}`,
+          description: `saldo ${fmt(saldoFacturaPendienteBot(f))}${f.fecha ? ` · ${f.fecha}` : ''}`,
+        }));
+        await saveConversation(user.phone, {
+          state: 'awaiting_factura_pago_pick',
+          data: { pagoDatos: { ...datos, proveedorId: prov.id, cajaId: caja.id }, opcionesFacturas: matches.slice(0, 9).map(f => f.id) },
+        });
+        const lineas = matches.slice(0, 9).map((f, i) => `${i + 1}. ${f.proveedor || prov.nombre}${f.numero ? ` · N° ${f.numero}` : ''} · saldo ${fmt(saldoFacturaPendienteBot(f))}`).join('\n');
+        await sendWAList(user.phone, `🧾 Hay varias facturas pendientes que coinciden con ${fmt(monto)}. ¿Cuál estás pagando?\n\n${lineas}\n\nO escribí *ninguna* para registrarlo como pago suelto.`, 'Elegir factura', opciones);
+        return null; // la lista ya se envió; el caller no debe mandar otro texto
+      }
+      // 0 matches → sigue abajo: pago suelto (comportamiento actual intacto).
+    }
+
     // Movimiento gasto (categoria subcontrato). La CC del proveedor se deriva.
+    // Si salda una factura pendiente, linkeamos con facturaPendienteId (igual que
+    // RegistrarPagoModal en la app) — ese pago NO lleva comprobanteRecibido (no se
+    // duplica el IVA: el comprobante fiscal ya vive en la factura pendiente).
     const mov = {
       id: `mov-${Date.now()}`,
       tipo: 'gasto',
@@ -1942,10 +2164,29 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       proveedorId: prov.id,
       categoria: 'subcontrato',
       medioPago: datos.medioPago || 'Transferencia',
+      facturaPendienteId: facturaSaldar?.id || undefined,
+      referencia: facturaSaldar?.numero || datos.numeroFactura || '',
       creadoPorWA: true,
       creadoPor: user.user_name,
     };
     await appendMovimiento(mov);
+
+    // Si el pago salda una factura pendiente → registrar el pago en la factura
+    // (agregarlo a pagos[] y recalcular estado/saldo) de forma atómica.
+    if (facturaSaldar) {
+      const pago = { movimientoId: mov.id, monto, fecha: mov.fecha, cajaId: caja.id };
+      const pagos = [...(facturaSaldar.pagos || []), pago];
+      const facturaActualizada = { ...facturaSaldar, pagos };
+      const nuevoSaldo = saldoFacturaPendienteBot(facturaActualizada);
+      const nuevoEstado = estadoFacturaPendienteBot(facturaActualizada);
+      await sbPatchObjectItem('proveedores', 'facturasPendientes', facturaSaldar.id, {
+        pagos, saldoPendiente: nuevoSaldo, estado: nuevoEstado,
+      });
+      const lineaEstado = nuevoEstado === 'pagada'
+        ? `✅ Factura *${facturaSaldar.numero || facturaSaldar.proveedor}* SALDADA.`
+        : `🟡 Factura *${facturaSaldar.numero || facturaSaldar.proveedor}* abonada parcialmente · saldo restante ${fmt(nuevoSaldo)}.`;
+      return `✅ *Pago registrado*\n${fmt(monto)} a *${prov.nombre}*${obra ? ` · ${obra.nombre}` : ''}\nSale de: ${caja.nombre}\n${lineaEstado}`;
+    }
 
     // Libro único: NO escribimos asiento 'haber' en la CC del proveedor. Lo
     // pagado se DERIVA del movimiento de gasto (por proveedorId/nombre) tanto en
@@ -3471,12 +3712,15 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     if (confirma) {
       const resultado = await ejecutarAccion(conv.data.accion.tipo, conv.data.accion.datos, { ...user, phone }, ctx, mediaUrl || conv.data.pendingMediaUrl);
       // Si la acción dejó la conv en un estado posterior (ej. awaiting_client_notice
-      // tras un ingreso de admin), respetarlo en vez de limpiar.
+      // tras un ingreso de admin, o awaiting_factura_pago_* tras un pago a
+      // proveedor con factura pendiente coincidente), respetarlo en vez de limpiar.
       const newConv = await loadConversation(phone);
       if (newConv.state === 'idle' || newConv.state === 'confirmando') {
         await clearConversation(phone);
       }
-      await sendWA(phone, resultado);
+      // resultado === null cuando la acción ya envió su propio mensaje (ej. lista
+      // de facturas pendientes para elegir) — no mandar texto vacío.
+      if (resultado) await sendWA(phone, resultado);
       return;
     }
     if (cancela) {
@@ -3634,6 +3878,60 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     return;
   }
 
+  // ── Estado: confirmando si un pago a proveedor salda una factura pendiente ──
+  // Hay UNA factura abierta cuyo saldo ≈ el monto del pago. Si confirma, re-ejecuta
+  // el pago linkeado a esa factura; si dice "no", lo registra como pago suelto.
+  if (conv.state === 'awaiting_factura_pago_confirm' && conv.data?.pagoDatos) {
+    const respLower = (messageText || '').trim().toLowerCase();
+    const confirma = ['sí', 'si', 'dale', 'ok', 'confirmo', 'correcto', 's', 'esa', 'esta'].some(p => respLower.startsWith(p));
+    const cancela  = ['no', 'n', 'pago suelto', 'suelto', 'ninguna'].some(p => respLower === p || respLower.startsWith(p));
+    const datosPago = conv.data.pagoDatos;
+    if (confirma) {
+      await clearConversation(phone);
+      const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, facturaPendienteId: conv.data.facturaId }, { ...user, phone }, ctx);
+      if (resultado) await sendWA(phone, resultado);
+      return;
+    }
+    if (cancela) {
+      await clearConversation(phone);
+      const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, _skipMatch: true }, { ...user, phone }, ctx);
+      if (resultado) await sendWA(phone, resultado);
+      return;
+    }
+    await sendWA(phone, 'Decime *sí* si el pago es de esa factura, o *no* para registrarlo como pago suelto.');
+    return;
+  }
+
+  // ── Estado: eligiendo cuál de varias facturas pendientes salda el pago ──────
+  // El admin recibió una lista. Puede elegir por número, por la lista interactiva
+  // (button/list reply trae el id de la factura como messageText), o decir "ninguna".
+  if (conv.state === 'awaiting_factura_pago_pick' && conv.data?.pagoDatos) {
+    const respLower = (messageText || '').trim().toLowerCase();
+    const opciones = conv.data.opcionesFacturas || [];
+    const datosPago = conv.data.pagoDatos;
+    if (['ninguna', 'ningun', 'no', 'suelto', 'pago suelto'].some(p => respLower === p || respLower.startsWith(p))) {
+      await clearConversation(phone);
+      const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, _skipMatch: true }, { ...user, phone }, ctx);
+      if (resultado) await sendWA(phone, resultado);
+      return;
+    }
+    // ¿Vino el id directo de la lista interactiva?
+    let facturaId = opciones.find(id => id === (messageText || '').trim()) || null;
+    // ¿O un número (1..N)?
+    if (!facturaId) {
+      const n = parseInt(respLower, 10);
+      if (n >= 1 && n <= opciones.length) facturaId = opciones[n - 1];
+    }
+    if (!facturaId) {
+      await sendWA(phone, 'No te entendí. Decime el *número* de la factura (1, 2, …) o *ninguna* para registrarlo como pago suelto.');
+      return;
+    }
+    await clearConversation(phone);
+    const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, facturaPendienteId: facturaId }, { ...user, phone }, ctx);
+    if (resultado) await sendWA(phone, resultado);
+    return;
+  }
+
   const updatedHistory = [
     ...conv.history,
     { rol: 'usuario', texto: messageText || '(foto)', ts: Date.now() },
@@ -3708,8 +4006,9 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
   if (claudeRes.estado === 'ejecutar') {
     const resultado = await ejecutarAccion(claudeRes.accion.tipo, claudeRes.accion.datos, { ...user, phone }, ctx, mediaUrl);
     // ejecutarAccion puede dejar la conv en un estado posterior (ej.
-    // awaiting_client_notice tras un ingreso de admin). Solo limpiamos
-    // si quedo en idle/confirmando.
+    // awaiting_client_notice tras un ingreso de admin, o awaiting_factura_pago_*
+    // tras un pago a proveedor con factura pendiente). Solo limpiamos si quedó
+    // en idle/confirmando.
     const afterExec = await loadConversation(phone);
     if (afterExec.state === 'idle' || afterExec.state === 'confirmando') {
       // Persist defaults: lo último usado queda como sugerencia para próxima
@@ -3728,7 +4027,9 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
         defaults: nuevosDefaults, history: newHistory,
       });
     }
-    await sendWA(phone, resultado);
+    // resultado === null cuando la acción ya envió su propio mensaje (lista de
+    // facturas pendientes para elegir) — no mandar texto vacío.
+    if (resultado) await sendWA(phone, resultado);
     return;
   }
 

@@ -1,0 +1,230 @@
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import PageLayout from '../components/layout/PageLayout';
+import PageHero from '../components/ui/PageHero';
+import { Box, Btn } from '../components/ui';
+import { T } from '../theme';
+import { useProveedores } from '../store/ProveedoresContext';
+import { useUsuarios } from '../store/UsuariosContext';
+import { saldoFacturaPendiente, estadoFacturaPendiente, totalPendiente } from '../lib/facturasPendientes';
+import RegistrarPagoModal from './modales/RegistrarPagoModal';
+import FacturaPendienteModal from './modales/FacturaPendienteModal';
+
+// Cuentas por pagar: facturas de proveedor cargadas (devengadas para Libro IVA)
+// que todavía no se pagaron del todo. El pago se registra desde acá vía
+// RegistrarPagoModal (crea el movimiento de caja + linkea con registrarPagoFactura).
+
+const fmtN = (n) => Math.round(Math.abs(n || 0)).toLocaleString('es-AR');
+const fmtFecha = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
+
+const ESTADO_CHIP = {
+  pendiente: { label: 'Pendiente', bg: '#fff3e0', color: '#d4923a' },
+  parcial:   { label: 'Parcial',   bg: '#e0f0ff', color: '#0066cc' },
+  pagada:    { label: 'Pagada',    bg: '#e8f4e8', color: '#3d7a4a' },
+  anulada:   { label: 'Anulada',   bg: T.faint2,  color: T.ink3 },
+};
+
+function EstadoChip({ estado }) {
+  const c = ESTADO_CHIP[estado] || ESTADO_CHIP.pendiente;
+  return (
+    <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 3, background: c.bg, color: c.color, fontWeight: 700, whiteSpace: 'nowrap' }}>
+      {c.label}
+    </span>
+  );
+}
+
+export default function CuentasPorPagar() {
+  const navigate = useNavigate();
+  const { currentUser } = useUsuarios();
+  // Mismo criterio que el resto de la app: Admin y Administración gestionan
+  // cuentas por pagar (cargan, pagan y anulan facturas de proveedor).
+  const puede = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
+  useEffect(() => {
+    if (currentUser && !puede) navigate('/', { replace: true });
+  }, [currentUser, puede, navigate]);
+
+  const { proveedores, facturasPendientes, updateFacturaPendiente } = useProveedores();
+
+  const [filtroProv, setFiltroProv]   = useState('todos');
+  const [filtroEstado, setFiltroEstado] = useState('abiertas');
+  const [modalAlta, setModalAlta]     = useState(false);
+  const [pagoFactura, setPagoFactura] = useState(null); // factura a saldar
+
+  // KPI global: total adeudado (saldos de facturas abiertas) + cantidad abiertas.
+  const totalAdeudado = useMemo(() => totalPendiente(facturasPendientes), [facturasPendientes]);
+  const cantAbiertas = useMemo(
+    () => facturasPendientes.filter(f => { const e = estadoFacturaPendiente(f); return e === 'pendiente' || e === 'parcial'; }).length,
+    [facturasPendientes]
+  );
+
+  // Filtrado.
+  const filtradas = useMemo(() => {
+    return facturasPendientes.filter(f => {
+      if (filtroProv !== 'todos') {
+        const matchProv = f.proveedorId === filtroProv;
+        if (!matchProv) return false;
+      }
+      const est = estadoFacturaPendiente(f);
+      if (filtroEstado === 'abiertas') return est === 'pendiente' || est === 'parcial';
+      if (filtroEstado !== 'todas') return est === filtroEstado;
+      return true;
+    });
+  }, [facturasPendientes, filtroProv, filtroEstado]);
+
+  // Agrupar por proveedor (nombre, con fallback al campo proveedor de la factura).
+  const grupos = useMemo(() => {
+    const map = new Map();
+    filtradas.forEach(f => {
+      const key = f.proveedorId || f.proveedor || 'sin-proveedor';
+      const nombre = proveedores.find(p => p.id === f.proveedorId)?.nombre || f.proveedor || 'Sin proveedor';
+      if (!map.has(key)) map.set(key, { key, nombre, facturas: [] });
+      map.get(key).facturas.push(f);
+    });
+    const arr = [...map.values()];
+    arr.forEach(g => {
+      g.subtotal = g.facturas.reduce((s, f) => {
+        const e = estadoFacturaPendiente(f);
+        return (e === 'pendiente' || e === 'parcial') ? s + saldoFacturaPendiente(f) : s;
+      }, 0);
+      g.facturas.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    });
+    return arr.sort((a, b) => b.subtotal - a.subtotal || a.nombre.localeCompare(b.nombre));
+  }, [filtradas, proveedores]);
+
+  const anular = (f) => {
+    if (window.confirm(`¿Anular la factura ${f.numero || ''} de ${f.proveedor || ''}?\n\nDejará de contar como deuda.`)) {
+      updateFacturaPendiente(f.id, { estado: 'anulada' });
+    }
+  };
+
+  const proveedoresOrden = [...proveedores].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
+  if (currentUser && !puede) return null;
+
+  return (
+    <PageLayout breadcrumb={['Cuentas por Pagar']} active="Cuentas por Pagar">
+      <PageHero
+        label="CUENTAS POR PAGAR"
+        title="Cuentas por Pagar"
+        subtitle="Facturas de proveedor pendientes de pago"
+        actions={<Btn fill onClick={() => setModalAlta(true)} style={{ gap: 6 }}>+ Subir factura</Btn>}
+        kpis={[
+          { label: 'Total adeudado', value: `$ ${fmtN(totalAdeudado)}`, color: totalAdeudado > 0 ? T.warn : T.ok },
+          { label: 'Facturas abiertas', value: cantAbiertas, color: T.ink },
+        ]}
+      />
+
+      {/* Filtros */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div>
+          <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Proveedor</div>
+          <select value={filtroProv} onChange={e => setFiltroProv(e.target.value)}
+            style={{ padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, cursor: 'pointer', minWidth: 180 }}>
+            <option value="todos">Todos los proveedores</option>
+            {proveedoresOrden.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Estado</div>
+          <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
+            style={{ padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, cursor: 'pointer' }}>
+            <option value="abiertas">Abiertas (pendiente + parcial)</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="parcial">Parcial</option>
+            <option value="pagada">Pagada</option>
+            <option value="anulada">Anulada</option>
+            <option value="todas">Todas</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Listado agrupado por proveedor */}
+      {grupos.length === 0 ? (
+        <Box style={{ padding: 32, textAlign: 'center', color: T.ink3, fontSize: 13 }}>
+          No hay facturas en esta vista
+        </Box>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {grupos.map(g => (
+            <Box key={g.key} style={{ padding: 0, overflow: 'hidden' }}>
+              {/* Header del proveedor */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, gap: 8 }}>
+                <span style={{ fontWeight: 800, fontSize: 13 }}>{g.nombre}</span>
+                <span style={{ fontSize: 11, color: T.ink2 }}>
+                  Pendiente <b style={{ fontFamily: T.fontMono, color: g.subtotal > 0 ? T.warn : T.ok }}>$ {fmtN(g.subtotal)}</b>
+                </span>
+              </div>
+
+              {/* Encabezado de columnas */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.9fr 2fr 1.3fr 1fr 1fr 0.9fr 1.4fr', padding: '7px 14px', borderBottom: `1px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                <span>N°</span>
+                <span>Fecha</span>
+                <span>Concepto</span>
+                <span>Obra</span>
+                <span style={{ textAlign: 'right' }}>Monto</span>
+                <span style={{ textAlign: 'right' }}>Saldo</span>
+                <span style={{ textAlign: 'center' }}>Estado</span>
+                <span style={{ textAlign: 'right' }}>Acciones</span>
+              </div>
+
+              {/* Filas */}
+              {g.facturas.map(f => {
+                const est = estadoFacturaPendiente(f);
+                const saldo = saldoFacturaPendiente(f);
+                const abierta = est === 'pendiente' || est === 'parcial';
+                return (
+                  <div key={f.id}
+                    style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.9fr 2fr 1.3fr 1fr 1fr 0.9fr 1.4fr', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12 }}>
+                    <span style={{ fontFamily: T.fontMono, fontSize: 11 }}>
+                      {f.tipoLetra && <span style={{ fontWeight: 700, marginRight: 4 }}>{f.tipoLetra}</span>}
+                      {f.numero || '—'}
+                    </span>
+                    <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink2 }}>{fmtFecha(f.fecha)}</span>
+                    <span style={{ color: T.ink2, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.concepto || ''}>
+                      {f.concepto || '—'}
+                    </span>
+                    <span style={{ fontSize: 11 }}>
+                      {f.obraNombre
+                        ? (f.obraId
+                            ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/obras/${f.obraId}/presupuesto`)}>{f.obraNombre}</span>
+                            : <span>{f.obraNombre}</span>)
+                        : <span style={{ color: T.ink3 }}>—</span>}
+                    </span>
+                    <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700 }}>$ {fmtN(f.monto)}</span>
+                    <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 && abierta ? T.warn : T.ink3 }}>
+                      {abierta ? `$ ${fmtN(saldo)}` : '—'}
+                    </span>
+                    <span style={{ textAlign: 'center' }}><EstadoChip estado={est} /></span>
+                    <span style={{ display: 'flex', gap: 5, justifyContent: 'flex-end', alignItems: 'center' }}>
+                      {f.comprobanteUrl && (
+                        <Btn sm onClick={() => window.open(f.comprobanteUrl, '_blank', 'noopener')} style={{ fontSize: 10 }}>Ver</Btn>
+                      )}
+                      {abierta && (
+                        <Btn sm accent onClick={() => setPagoFactura(f)} style={{ fontSize: 10 }}>Registrar pago</Btn>
+                      )}
+                      {est !== 'anulada' && est !== 'pagada' && (
+                        <span style={{ color: T.warn, cursor: 'pointer', fontSize: 15, padding: '0 2px', lineHeight: 1 }}
+                          title="Anular factura"
+                          onClick={() => anular(f)}>×</span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </Box>
+          ))}
+        </div>
+      )}
+
+      {/* Modales */}
+      {modalAlta && <FacturaPendienteModal onClose={() => setModalAlta(false)} />}
+      {pagoFactura && (
+        <RegistrarPagoModal
+          facturaPendiente={pagoFactura}
+          proveedor={pagoFactura.proveedor || proveedores.find(p => p.id === pagoFactura.proveedorId)?.nombre || ''}
+          proveedorId={pagoFactura.proveedorId || null}
+          onClose={() => setPagoFactura(null)} />
+      )}
+    </PageLayout>
+  );
+}

@@ -17,6 +17,7 @@ const ALL_ITEMS = [
   { icon: '⇄', label: 'Movimientos',    path: '/movimientos',  perm: 'verCaja' },
   { icon: '$', label: 'Cajas',          path: '/cajas',        perm: 'verCaja' },
   { icon: '✓', label: 'Cheques',        path: '/cheques',      allowedRoles: ['Admin', 'Administración'] },
+  { icon: '📥', label: 'Cuentas por Pagar', path: '/cuentas-por-pagar', allowedRoles: ['Admin', 'Administración'] },
   { icon: '🧾', label: 'Facturación',    path: '/facturacion',  allowedRoles: ['Admin', 'Administración', 'Contador externo'] },
   { icon: '⌗', label: 'Gastos Fijos',   path: '/prorrateo',    allowedRoles: ['Admin', 'Administración'] },
   { section: 'Datos' },

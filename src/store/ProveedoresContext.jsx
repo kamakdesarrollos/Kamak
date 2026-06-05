@@ -2,13 +2,16 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, us
 import { loadSharedData, saveSharedData, patchObjectItem, appendObjectItem, removeObjectItem } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
+import { aplicarPagoAFactura, saldoFacturaPendiente } from '../lib/facturasPendientes';
 
 const CTX = createContext(null);
 const LS_PROVS = 'kamak_proveedores_v1';
 const LS_CC    = 'kamak_cc_v1';
+const LS_FAC   = 'kamak_facturas_pend_v1';
 
 const newId = () => `pv-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const ccId  = () => `cc-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+const facId = () => `fp-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
 
 // ── Seed proveedores ──────────────────────────────────────────────────────────
@@ -85,10 +88,12 @@ export function calcSaldoProveedorMov(prov, ccEntries, movimientos, obraId = nul
 export function ProveedoresProvider({ children }) {
   const [proveedores, setProveedores] = useState(() => load(LS_PROVS, SEED_PROVS));
   const [ccEntries,   setCCEntries]   = useState(() => load(LS_CC,    SEED_CC));
+  const [facturasPendientes, setFacturasPendientes] = useState(() => load(LS_FAC, []));
   const sbLoaded   = useRef(false);
   const fromRemote = useRef(false);
   const provsRef   = useRef(proveedores);
   const ccRef      = useRef(ccEntries);
+  const facRef     = useRef(facturasPendientes);
   // Marca true si el usuario edita ANTES del primer fetch a Supabase (sino el
   // remoto pisaría sus cambios tempranos). Mismo guard que Obras/Movimientos.
   const userEditedBeforeFirstLoad = useRef(false);
@@ -99,6 +104,7 @@ export function ProveedoresProvider({ children }) {
   const { markReady } = useAppLoading();
   useEffect(() => { provsRef.current = proveedores; }, [proveedores]);
   useEffect(() => { ccRef.current = ccEntries; }, [ccEntries]);
+  useEffect(() => { facRef.current = facturasPendientes; }, [facturasPendientes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,14 +119,15 @@ export function ProveedoresProvider({ children }) {
         // El usuario ya editó antes del fetch → sus cambios YA se persistieron
         // atómicamente (append/patch/remove por ítem). No pisamos su estado local
         // con el remoto. Si el key todavía no existía (fresh install), lo creamos.
-        if (data === null) saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
+        if (data === null) saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current, facturasPendientes: facRef.current });
       } else if (data) {
         fromRemote.current = true;
         if (data.proveedores) { setProveedores(data.proveedores); save(LS_PROVS, data.proveedores); }
         if (data.ccEntries)   { setCCEntries(data.ccEntries);     save(LS_CC,    data.ccEntries); }
+        if (data.facturasPendientes) { setFacturasPendientes(data.facturasPendientes); save(LS_FAC, data.facturasPendientes); }
         setTimeout(() => { fromRemote.current = false; }, 0);
       } else {
-        saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current });
+        saveSharedData('proveedores', { proveedores: provsRef.current, ccEntries: ccRef.current, facturasPendientes: facRef.current });
       }
       sbLoaded.current = true;
       markReady();
@@ -136,6 +143,7 @@ export function ProveedoresProvider({ children }) {
         fromRemote.current = true;
         if (d.proveedores) { setProveedores(d.proveedores); save(LS_PROVS, d.proveedores); }
         if (d.ccEntries)   { setCCEntries(d.ccEntries);     save(LS_CC,    d.ccEntries); }
+        if (d.facturasPendientes) { setFacturasPendientes(d.facturasPendientes); save(LS_FAC, d.facturasPendientes); }
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
@@ -203,6 +211,53 @@ export function ProveedoresProvider({ children }) {
     removeObjectItem('proveedores', 'ccEntries', id);
   }, []);
 
+  // ── Facturas pendientes (cuentas por pagar) ───────────────────────────────
+  // Una factura de proveedor que aún NO se pagó. Lleva sus datos fiscales
+  // (comprobanteRecibido) → cuenta para Libro IVA. El pago se registra aparte
+  // (movimiento de caja) y se linkea vía registrarPagoFactura. Mismo patrón
+  // atómico que ccEntries (append/patch/remove por ítem en key 'proveedores').
+  const addFacturaPendiente = useCallback((data) => {
+    mark();
+    const pagos = data.pagos || [];
+    const nuevo = {
+      ...data,
+      id: facId(),
+      estado: data.estado || 'pendiente',
+      pagos,
+      createdAt: new Date().toISOString(),
+    };
+    nuevo.saldoPendiente = saldoFacturaPendiente(nuevo);
+    setFacturasPendientes(prev => { const next = [...prev, nuevo]; save(LS_FAC, next); return next; });
+    appendObjectItem('proveedores', 'facturasPendientes', nuevo);
+    return nuevo.id;
+  }, []);
+
+  const updateFacturaPendiente = useCallback((id, changes) => {
+    mark();
+    setFacturasPendientes(prev => { const next = prev.map(f => f.id === id ? { ...f, ...changes } : f); save(LS_FAC, next); return next; });
+    patchObjectItem('proveedores', 'facturasPendientes', id, changes);
+  }, []);
+
+  const removeFacturaPendiente = useCallback((id) => {
+    mark();
+    setFacturasPendientes(prev => { const next = prev.filter(f => f.id !== id); save(LS_FAC, next); return next; });
+    removeObjectItem('proveedores', 'facturasPendientes', id);
+  }, []);
+
+  // Registra un pago contra una factura: lee la factura FRESCA del ref (robusto si
+  // el bot/otra pestaña la tocó), agrega el pago, recalcula estado/saldo y persiste
+  // SOLO esa factura. El movimiento de caja (gasto) se crea aparte y su id viene en
+  // pago.movimientoId. Devuelve la factura actualizada (o null si no existe).
+  const registrarPagoFactura = useCallback((facturaId, pago) => {
+    const actual = (facRef.current || []).find(f => f.id === facturaId);
+    if (!actual) return null;
+    const next = aplicarPagoAFactura(actual, pago);
+    mark();
+    setFacturasPendientes(prev => { const n = prev.map(f => f.id === facturaId ? next : f); save(LS_FAC, n); return n; });
+    patchObjectItem('proveedores', 'facturasPendientes', facturaId, { pagos: next.pagos, estado: next.estado, saldoPendiente: next.saldoPendiente });
+    return next;
+  }, []);
+
   const getObrasProveedor = useCallback((proveedorId) => {
     const map = {};
     ccEntries
@@ -212,13 +267,15 @@ export function ProveedoresProvider({ children }) {
   }, [ccEntries]);
 
   const value = useMemo(() => ({
-    proveedores, ccEntries,
+    proveedores, ccEntries, facturasPendientes,
     addProveedor, updateProveedor, removeProveedor,
     addCC, updateCC, removeCC, getObrasProveedor,
+    addFacturaPendiente, updateFacturaPendiente, removeFacturaPendiente, registrarPagoFactura,
   }), [
-    proveedores, ccEntries,
+    proveedores, ccEntries, facturasPendientes,
     addProveedor, updateProveedor, removeProveedor,
     addCC, updateCC, removeCC, getObrasProveedor,
+    addFacturaPendiente, updateFacturaPendiente, removeFacturaPendiente, registrarPagoFactura,
   ]);
 
   return (

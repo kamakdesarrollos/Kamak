@@ -51,6 +51,7 @@ const Usuarios           = lazy(() => import('./pages/Usuarios'));
 const Configuracion      = lazy(() => import('./pages/Configuracion'));
 const Perfil             = lazy(() => import('./pages/Perfil'));
 const Cheques            = lazy(() => import('./pages/Cheques'));
+const CuentasPorPagar    = lazy(() => import('./pages/CuentasPorPagar'));
 // WhatsappBuzon eliminado — /whatsapp ahora redirige a /autorizaciones?origen=whatsapp.
 const MobileComprador    = lazy(() => import('./pages/mobile/MobileComprador'));
 const MobileDirector     = lazy(() => import('./pages/mobile/MobileDirector'));
@@ -245,6 +246,7 @@ function AppShell() {
                   <Route path="/cajas" element={<Cajas />} />
                   <Route path="/cajas/conciliacion" element={<Conciliacion />} />
                   <Route path="/cheques" element={<Cheques />} />
+                  <Route path="/cuentas-por-pagar" element={<CuentasPorPagar />} />
                   <Route path="/facturacion" element={<Facturacion />} />
                   {/* /whatsapp queda como atajo a la seccion WhatsApp de /autorizaciones */}
                   <Route path="/whatsapp" element={<Navigate to="/autorizaciones?origen=whatsapp" replace />} />

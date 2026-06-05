@@ -4,6 +4,7 @@ import { T } from '../../theme';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useObras } from '../../store/ObrasContext';
 import { useProveedores } from '../../store/ProveedoresContext';
+import { useUsuarios } from '../../store/UsuariosContext';
 import { ALICUOTAS_IVA, buscarDuplicadoRecibido, parseMoneyAR, desglosarCompra, JURISDICCIONES_IIBB } from '../../lib/afip';
 
 // Modal de revisión y aprobación de una factura recibida por WhatsApp.
@@ -22,7 +23,8 @@ const newAdicId = () => `adic-${Date.now()}-${Math.random().toString(36).slice(2
 export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
   const { cajas, addMovimiento, movimientos } = useMovimientos();
   const { obras, patchDetalle }  = useObras();
-  const { proveedores }          = useProveedores();
+  const { proveedores, addFacturaPendiente, facturasPendientes } = useProveedores();
+  const { currentUser } = useUsuarios();
 
   const cajasARS   = cajas.filter(c => c.activa && c.moneda === 'ARS');
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
@@ -54,6 +56,11 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
   const [obraId,      setObraId]     = useState('');
   const [cajaId,      setCajaId]     = useState(cajasARS[0]?.id || '');
   const [esAdicional, setEsAdicional] = useState(false);
+  // Destino del comprobante: 'gasto' debita una caja ahora (flujo histórico);
+  // 'pendiente' lo carga como cuenta por pagar (Libro IVA desde su fecha, sin
+  // tocar caja — el pago se registra después). Una NC no aplica al modo pendiente.
+  const [destino, setDestino] = useState('gasto');
+  const esPendiente = !esNC && destino === 'pendiente';
 
   // Datos fiscales para Libro IVA Compras. Se persisten en el movimiento como
   // `comprobanteRecibido` para que el Resumen IVA pueda calcular el crédito fiscal.
@@ -89,7 +96,8 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
   const fiscal = desglosarCompra({ total: montoNum, tipoLetra, percepcionIIBB: percIIBBNum, percepcionIVA: percIVANum, alicuota });
   const baseFiscal = fiscal.baseFiscal;
   // Una NC solo-fiscal no necesita caja; solo la exige si el admin marcó que devolvió plata.
-  const cajaRequerida = !esNC || afectaCaja;
+  // Una factura PENDIENTE de pago tampoco toca caja (el egreso se registra al pagar).
+  const cajaRequerida = !esPendiente && (!esNC || afectaCaja);
   const canSave  = montoNum > 0 && proveedor.trim() && (!cajaRequerida || cajaId);
 
   const guardar = () => {
@@ -101,10 +109,13 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
       tipo: tipoLetra, numero: item.numeroFactura, cuit: item.cuit,
       total: montoNum, proveedor: proveedor.trim(), fecha,
       clase: esNC ? 'nota_credito' : 'factura',
-    }, { movimientos });
-    if (dup?.en === 'movimiento') {
+    }, { movimientos, facturasPendientes });
+    if (dup?.en === 'movimiento' || dup?.en === 'factura_pendiente') {
       const ref = dup.ref;
-      alert(`⚠️ Ya hay un ${esNC ? 'una nota de crédito' : 'gasto con esta misma factura'} cargado el ${ref.fecha} ($${Math.round(ref.monto || ref.comprobanteRecibido?.total || 0).toLocaleString('es-AR')}). No lo cargo dos veces.`);
+      const dondeYa = dup.en === 'factura_pendiente'
+        ? 'una factura pendiente de pago'
+        : (esNC ? 'una nota de crédito' : 'un gasto con esta misma factura');
+      alert(`⚠️ Ya hay ${dondeYa} cargada el ${ref.fecha} ($${Math.round(ref.monto || ref.comprobanteRecibido?.total || 0).toLocaleString('es-AR')}). No la cargo dos veces.`);
       return;
     }
     const obra    = obrasActivas.find(o => o.id === obraId);
@@ -145,6 +156,45 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
       return;
     }
     const descripcion = concepto.trim() || `Factura ${item.tipoFactura || ''} ${item.numeroFactura || ''} · ${proveedor}`.trim();
+    // ── Cuenta por pagar: la factura se carga PENDIENTE de pago. NO debita caja
+    //    (eso ocurre al registrar el pago). Lleva los datos fiscales en
+    //    comprobanteRecibido → cuenta para el Libro IVA desde su fecha (devengado).
+    //    El pago se registrará después y se linkeará vía registrarPagoFactura. ──
+    if (esPendiente) {
+      const provMatch = proveedores.find(p => p.nombre === proveedor.trim());
+      addFacturaPendiente({
+        proveedorId: provMatch?.id || null,
+        proveedor:   proveedor.trim(),
+        fecha,
+        numero:      item.numeroFactura || '',
+        tipoLetra,
+        cuit:        item.cuit || '',
+        monto:       montoNum,
+        // Comprobante fiscal (Libro IVA Compras), salvo recibo no comercial.
+        ...(esNoIvaCredito ? {} : {
+          comprobanteRecibido: {
+            tipo:     tipoLetra,
+            numero:   item.numeroFactura || '',
+            cuit:     item.cuit || '',
+            fecha,
+            neto:     fiscal.neto,
+            iva:      fiscal.iva,
+            alicuota: fiscal.alicuota,
+            total:    fiscal.total,
+          },
+        }),
+        percepcionIIBB:   (!esNoIvaCredito && percIIBBNum > 0) ? percIIBBNum : undefined,
+        jurisdiccionIIBB: (!esNoIvaCredito && percIIBBNum > 0 && jurisdiccionIIBB !== 'PBA') ? jurisdiccionIIBB : undefined,
+        percepcionIVA:    (!esNoIvaCredito && percIVANum > 0) ? percIVANum : undefined,
+        obraId:     obraId || null,
+        obraNombre: obra?.nombre || 'General',
+        concepto:   descripcion,
+        comprobanteUrl: item.mediaUrl || null,
+        createdBy:  currentUser?.id || currentUser?.nombre || null,
+      });
+      onConfirm();
+      return;
+    }
     addMovimiento({
       tipo:           'gasto',
       descripcion,
@@ -253,6 +303,29 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
               placeholder={`Factura ${item.tipoFactura || ''} · ${proveedor || 'proveedor'}`} />
           </div>
 
+          {/* Destino del comprobante (no aplica a notas de crédito). 'gasto' debita
+              caja ahora; 'pendiente' lo guarda como cuenta por pagar (sin tocar caja,
+              pero sumando al Libro IVA desde su fecha). El pago se registra después. */}
+          {!esNC && (
+            <div>
+              <label style={labelSt}>¿Cómo se registra?</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                {[
+                  { key: 'gasto', label: 'Pagada / pagar ahora', sub: 'Debita una caja en el momento' },
+                  { key: 'pendiente', label: 'Pendiente de pago', sub: 'Cuenta por pagar — no toca caja, suma al Libro IVA desde su fecha' },
+                ].map(opt => (
+                  <label key={opt.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, cursor: 'pointer', padding: '7px 10px', borderRadius: 4, border: `1.5px solid ${destino === opt.key ? '#25803a' : T.faint2}`, background: destino === opt.key ? '#eaf4eb' : 'transparent' }}>
+                    <input type="radio" name="destino" checked={destino === opt.key} onChange={() => setDestino(opt.key)} style={{ accentColor: '#25803a', marginTop: 2 }} />
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</div>
+                      <div style={{ fontSize: 10, color: T.ink2 }}>{opt.sub}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>Obra (opcional)</label>
@@ -261,7 +334,14 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
                 {obrasActivas.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
               </select>
             </div>
-            {!esNC ? (
+            {esPendiente ? (
+              <div>
+                <label style={labelSt}>Caja de egreso</label>
+                <div style={{ fontSize: 11, color: T.ink2, padding: '7px 0' }}>
+                  No aplica — se elige al registrar el pago.
+                </div>
+              </div>
+            ) : !esNC ? (
               <div>
                 <label style={labelSt}>Caja de egreso *</label>
                 <select style={{ ...inputSt, cursor: 'pointer' }} value={cajaId} onChange={e => setCajaId(e.target.value)}>
@@ -409,7 +489,7 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
           <Btn sm onClick={onClose}>Cancelar</Btn>
           <Btn sm fill onClick={guardar}
             style={{ background: canSave ? (esNC ? '#b45309' : '#25803a') : T.faint2, color: canSave ? '#fff' : T.ink3, opacity: 1 }}>
-            {esNC ? 'Guardar nota de crédito' : 'Guardar como gasto'}
+            {esNC ? 'Guardar nota de crédito' : esPendiente ? 'Registrar como pendiente' : 'Guardar como gasto'}
           </Btn>
         </div>
       </div>

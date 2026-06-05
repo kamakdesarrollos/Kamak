@@ -212,6 +212,49 @@ export function desglosarCompra({
 // que computa en negativo; cualquier otro comprobante (factura/ticket) suma.
 export const signoComprobanteRecibido = (cr) => (cr?.clase === 'nota_credito' ? -1 : 1);
 
+// ── Factura PENDIENTE de pago → fila de COMPRA del Libro IVA ───────────────────
+// El IVA crédito es por la FACTURA (devengado), independiente de si está paga: la
+// factura pendiente lleva su comprobanteRecibido fiscal y debe figurar en el Libro
+// IVA Compras desde su fecha, aunque el pago (un movimiento de caja SIN
+// comprobanteRecibido) caiga después o nunca.
+//
+// Adaptamos la factura pendiente a la MISMA forma de "fila de compra" que ya
+// consumen el Libro IVA Digital (registroCompraCabecera/Alícuota), el CSV y el
+// resumen impreso: un objeto con { fecha, proveedor, monto, comprobanteRecibido,
+// percepcionIVA, percepcionIIBB, ... }. Así no hay que tocar los builders ni sus
+// tests: la fila adaptada entra por el mismo carril que un movimiento.
+//
+// Devuelve null si la factura no tiene comprobanteRecibido (sin datos fiscales no
+// hay crédito que computar) o está anulada (no integra el Libro IVA).
+export function facturaPendienteACompraLibroIva(f) {
+  if (!f || f.estado === 'anulada') return null;
+  if (!f.comprobanteRecibido) return null;
+  // La letra (A/B/C) y el N° pueden estar en el comprobante o sólo a nivel factura;
+  // normalizamos para que los builders del Libro IVA tengan siempre tipo/numero.
+  const cr = {
+    ...f.comprobanteRecibido,
+    tipo: f.comprobanteRecibido.tipo || f.tipoLetra || '',
+    numero: f.comprobanteRecibido.numero || f.numero || '',
+    cuit: f.comprobanteRecibido.cuit || f.cuit || '',
+  };
+  return {
+    // id/origen para keys de React y para distinguirla de un movimiento real.
+    id: `fp:${f.id}`,
+    _facturaPendienteId: f.id,
+    fecha: cr.fecha || f.fecha,            // devengado: la fecha del comprobante
+    proveedor: f.proveedor || '',
+    monto: cr.total != null ? cr.total : f.monto,
+    referencia: cr.numero || f.numero || '',
+    descripcion: f.concepto || '',
+    obraNombre: f.obraNombre || '',
+    comprobanteUrl: f.comprobanteUrl || null,
+    percepcionIVA: Number(f.percepcionIVA) || 0,
+    percepcionIIBB: Number(f.percepcionIIBB) || 0,
+    categoriaFiscal: f.categoriaFiscal,    // respeta el filtro SIN_IVA_CREDITO
+    comprobanteRecibido: cr,
+  };
+}
+
 // ── Tipo de factura sugerido (emisor Responsable Inscripto) ───────────────────
 // A si el receptor es Responsable Inscripto; B en cualquier otro caso.
 export function tipoFacturaSugerido(condReceptorId) {
@@ -262,7 +305,7 @@ export function fingerprintRecibido({ tipo, numero, cuit, total, proveedor, fech
 // { en: 'movimiento'|'pending', ref } o null. Incluye un fallback "legacy" por
 // si hay movimientos viejos sin `comprobanteRecibido` pero con `referencia` y
 // `proveedor` (carga previa al rediseño del libro IVA).
-export function buscarDuplicadoRecibido(candidato, { movimientos, pendings } = {}) {
+export function buscarDuplicadoRecibido(candidato, { movimientos, pendings, facturasPendientes } = {}) {
   const fp = fingerprintRecibido(candidato);
   if (!fp) return null;
   // 1) Movimientos con comprobanteRecibido (fingerprint match).
@@ -293,6 +336,17 @@ export function buscarDuplicadoRecibido(candidato, { movimientos, pendings } = {
       });
       if (fpP === fp) return { en: 'pending', ref: p };
     }
+  }
+  // 2b) Facturas PENDIENTES de pago (cuentas por pagar) ya cargadas con datos
+  //     fiscales: evita doble crédito IVA si el mismo comprobante se intenta
+  //     cargar de nuevo (ej. el bot ya lo dejó pendiente y se aprueba a mano).
+  for (const f of (facturasPendientes || [])) {
+    if (f?.estado === 'anulada') continue;
+    const cr = f.comprobanteRecibido;
+    const fpF = fingerprintRecibido(cr
+      ? { tipo: cr.tipo, numero: cr.numero, cuit: cr.cuit, total: cr.total, proveedor: f.proveedor, fecha: f.fecha, clase: cr.clase }
+      : { tipo: f.tipoLetra, numero: f.numero, cuit: f.cuit, total: f.monto, proveedor: f.proveedor, fecha: f.fecha });
+    if (fpF === fp) return { en: 'factura_pendiente', ref: f };
   }
   // 3) Legacy fallback (movs viejos sin comprobanteRecibido) — match por
   //    referencia (= N° factura) + proveedor parecido. Cubre data antes del fix.

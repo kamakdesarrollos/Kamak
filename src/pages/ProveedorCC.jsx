@@ -7,6 +7,7 @@ import { useProveedores, debeEntriesProveedor, pagosProveedorDesdeMovs, calcSald
 import { useMovimientos } from '../store/MovimientosContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
+import { facturasPendientesDeProveedor, saldoFacturaPendiente, estadoFacturaPendiente, totalPendiente } from '../lib/facturasPendientes';
 
 const fmtN = (n) => Math.abs(Math.round(n)).toLocaleString('es-AR');
 const fmtFecha = (iso) => {
@@ -15,8 +16,8 @@ const fmtFecha = (iso) => {
   return `${d}/${m}/${y.slice(2)}`;
 };
 
-const TIPO_LABEL = { contrato: 'Contrato', pago: 'Pago', cert: 'Certif.', factura: 'Factura', adicional: 'Adicional', echeq: 'ECHEQ', fondo: 'Fondo rep.' };
-const TIPO_COLOR = { contrato: T.ink, pago: T.ok, cert: T.ok, factura: T.warn, adicional: T.warn, echeq: T.ink2, fondo: T.accent };
+const TIPO_LABEL = { contrato: 'Contrato', pago: 'Pago', cert: 'Certif.', factura: 'Factura', facturaPend: 'Fact. pend.', adicional: 'Adicional', echeq: 'ECHEQ', fondo: 'Fondo rep.' };
+const TIPO_COLOR = { contrato: T.ink, pago: T.ok, cert: T.ok, factura: T.warn, facturaPend: T.accent, adicional: T.warn, echeq: T.ink2, fondo: T.accent };
 
 function Avatar({ nombre, size = 50 }) {
   return (
@@ -36,33 +37,62 @@ export default function ProveedorCC() {
   }, [currentUser, isAdmin, navigate]);
 
   const { id } = useParams();
-  const { proveedores, getObrasProveedor, removeCC, ccEntries: ccRaw } = useProveedores();
+  const { proveedores, getObrasProveedor, removeCC, ccEntries: ccRaw, facturasPendientes } = useProveedores();
   const { movimientos } = useMovimientos();
   const [pagoOpen, setPagoOpen] = useState(false);
+  const [pagarFactura, setPagarFactura] = useState(null); // factura pendiente a saldar
   const [selectedObraId, setSelectedObraId] = useState(null);
   const [tab, setTab] = useState('cc');
 
   const proveedor = proveedores.find(p => p.id === id);
 
+  // Facturas pendientes (cuentas por pagar) de este proveedor — TODAS (también las
+  // ya saldadas, para historial) y solo las abiertas (para el saldo y los DEBE).
+  const facturasProv      = useMemo(() => proveedor ? facturasPendientesDeProveedor(facturasPendientes, proveedor, { soloAbiertas: false }) : [], [facturasPendientes, proveedor]);
+  const facturasAbiertas  = useMemo(() => facturasProv.filter(f => estadoFacturaPendiente(f) === 'pendiente' || estadoFacturaPendiente(f) === 'parcial'), [facturasProv]);
+  const totalPendienteProv = useMemo(() => totalPendiente(facturasProv), [facturasProv]);
+
   const obras = useMemo(() => getObrasProveedor(id), [getObrasProveedor, id]);
 
   // CC DERIVADA (libro único): asientos DEBE de ccEntries (lo que debemos:
-  // certificaciones, facturas, contratos) + PAGOS de los movimientos (gastos a
-  // este proveedor). Los 'haber' de ccEntries quedan vestigiales (los pagos
-  // ahora son movimientos), así un pago del bot o de la app aparece solo.
+  // certificaciones, facturas, contratos) + DEBE de las facturas PENDIENTES de
+  // pago (su monto total) + PAGOS de los movimientos (gastos a este proveedor).
+  // Los pagos de una factura pendiente YA son movimientos → entran como haber
+  // por la vía de pagosProveedorDesdeMovs; NO se duplican acá (la factura aporta
+  // su monto bruto como debe, no su saldo). Los 'haber' de ccEntries quedan
+  // vestigiales (los pagos ahora son movimientos).
   const buildEntries = (obraId) => {
     const debe = debeEntriesProveedor(id, ccRaw, obraId);
+    // Cada factura pendiente abierta = un asiento DEBE por su monto bruto. Solo
+    // las abiertas: una factura ya saldada no debe nada (su pago la canceló).
+    const debeFacturas = facturasAbiertas
+      .filter(f => !obraId || f.obraId === obraId)
+      .map(f => ({
+        id: `fp-${f.id}`, proveedorId: id, obraId: f.obraId || null, obraNombre: f.obraNombre || 'General',
+        fecha: f.fecha, concepto: `Factura ${f.numero || ''} ${f.tipoLetra ? `(${f.tipoLetra})` : ''} · pendiente`.replace(/\s+/g, ' ').trim(),
+        tipo: 'facturaPend', debe: Number(f.monto) || 0, haber: 0, _facturaId: f.id,
+      }));
     const pagos = pagosProveedorDesdeMovs(proveedor, movimientos, obraId).map(m => ({
       id: m.id, proveedorId: id, obraId: m.obraId, obraNombre: m.obraNombre,
       fecha: m.fecha, concepto: m.descripcion || `Pago${m.medioPago ? ' · ' + m.medioPago : ''}`,
       tipo: 'pago', debe: 0, haber: m.monto || 0, _esMov: true,
     }));
-    return [...debe, ...pagos].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+    return [...debe, ...debeFacturas, ...pagos].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
   };
 
-  const allEntries  = useMemo(() => buildEntries(null), [ccRaw, movimientos, id, proveedor]); // eslint-disable-line react-hooks/exhaustive-deps
-  const saldoTotal  = useMemo(() => calcSaldoProveedorMov(proveedor, ccRaw, movimientos), [proveedor, ccRaw, movimientos]);
-  const saldoObra   = (obraId) => calcSaldoProveedorMov(proveedor, ccRaw, movimientos, obraId);
+  // Deuda BRUTA que aportan las facturas pendientes abiertas a una obra (null =
+  // todas). Es la suma de su MONTO total (no del saldo): los pagos ya restan vía
+  // movimientos (haber) en calcSaldoProveedorMov, así que sumar el saldo
+  // descontaría el pago dos veces. El neto sale correcto: debe(monto) − pago(mov).
+  const deudaFacturasObra = (obraId) => facturasAbiertas
+    .filter(f => !obraId || f.obraId === obraId)
+    .reduce((s, f) => s + (Number(f.monto) || 0), 0);
+
+  const allEntries  = useMemo(() => buildEntries(null), [ccRaw, movimientos, id, proveedor, facturasAbiertas]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Saldo consolidado = (debe ccEntries − pagos movimientos) + monto de facturas
+  // pendientes abiertas. Sus pagos ya están en los movimientos (haber).
+  const saldoTotal  = useMemo(() => calcSaldoProveedorMov(proveedor, ccRaw, movimientos) + deudaFacturasObra(null), [proveedor, ccRaw, movimientos, facturasAbiertas]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saldoObra   = (obraId) => calcSaldoProveedorMov(proveedor, ccRaw, movimientos, obraId) + deudaFacturasObra(obraId);
 
   const selObraId = selectedObraId || obras[0]?.id || null;
   const ccEntries = useMemo(() => buildEntries(selObraId), [ccRaw, movimientos, id, selObraId, proveedor]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -126,6 +156,7 @@ export default function ProveedorCC() {
           { label: 'Saldo consolidado', value: saldoTotal > 0 ? `$ ${fmtN(saldoTotal)}` : 'Al día', accent: saldoTotal > 0 },
           { label: `Debe (${obras.length} CC)`, value: `$ ${fmtN(totalDebe)}` },
           { label: 'Haber', value: `$ ${fmtN(totalHaber)}`, ok: true },
+          { label: 'Fact. pendientes', value: totalPendienteProv > 0 ? `$ ${fmtN(totalPendienteProv)}` : '—', accent: totalPendienteProv > 0 },
           { label: 'Obras activas', value: String(obras.length) },
         ].map((s, i) => (
           <div key={s.label} style={{ flex: 1, padding: '10px 14px', borderLeft: i ? `1px solid ${saldoTotal > 0 ? '#f0c5b8' : T.faint2}` : 'none' }}>
@@ -139,6 +170,9 @@ export default function ProveedorCC() {
       <div className="k-tabs" style={{ marginBottom: 12 }}>
         <span className={`k-tab${tab === 'cc' ? ' k-tab-on' : ''}`} onClick={() => setTab('cc')}>
           Cuentas corrientes · {obras.length}
+        </span>
+        <span className={`k-tab${tab === 'facturas' ? ' k-tab-on' : ''}`} onClick={() => setTab('facturas')}>
+          Facturas pendientes{facturasAbiertas.length > 0 ? ` · ${facturasAbiertas.length}` : ''}
         </span>
         <span className={`k-tab${tab === 'datos' ? ' k-tab-on' : ''}`} onClick={() => setTab('datos')}>
           Datos del proveedor
@@ -232,8 +266,17 @@ export default function ProveedorCC() {
                         $ {fmtN(e.saldoAcum)}
                       </span>
                       <span style={{ flex: 0.4, textAlign: 'right' }}>
-                        <span style={{ color: T.accent, cursor: 'pointer', fontSize: 13, padding: '0 4px' }}
-                          onClick={() => { if (confirm('¿Eliminar este movimiento?')) removeCC(e.id); }}>×</span>
+                        {e.tipo === 'facturaPend' ? (
+                          <span style={{ color: T.accent, cursor: 'pointer', fontSize: 10, fontWeight: 700, padding: '0 4px' }}
+                            onClick={() => { const f = facturasAbiertas.find(x => x.id === e._facturaId); if (f) setPagarFactura(f); }}>
+                            Pagar
+                          </span>
+                        ) : e._esMov ? (
+                          <span />
+                        ) : (
+                          <span style={{ color: T.accent, cursor: 'pointer', fontSize: 13, padding: '0 4px' }}
+                            onClick={() => { if (confirm('¿Eliminar este movimiento?')) removeCC(e.id); }}>×</span>
+                        )}
                       </span>
                     </div>
                   ))}
@@ -254,6 +297,68 @@ export default function ProveedorCC() {
             )}
           </Box>
         </div>
+      )}
+
+      {tab === 'facturas' && (
+        <Box style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}` }}>
+            <div className="k-h" style={{ fontSize: 16 }}>Cuentas por pagar</div>
+            <Chip style={{ fontSize: 10 }}>{facturasAbiertas.length} abierta{facturasAbiertas.length !== 1 ? 's' : ''}</Chip>
+            {totalPendienteProv > 0 && (
+              <span style={{ fontSize: 12, color: T.accent, fontWeight: 700, fontFamily: T.fontMono, marginLeft: 'auto' }}>
+                Total pendiente $ {fmtN(totalPendienteProv)}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', padding: '6px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            <span style={{ flex: 0.8 }}>Fecha</span>
+            <span style={{ flex: 1.2 }}>N° / Tipo</span>
+            <span style={{ flex: 1.6 }}>Concepto / Obra</span>
+            <span style={{ flex: 1, textAlign: 'right' }}>Total</span>
+            <span style={{ flex: 1, textAlign: 'right' }}>Saldo</span>
+            <span style={{ flex: 0.8, textAlign: 'center' }}>Estado</span>
+            <span style={{ flex: 0.7, textAlign: 'right' }}></span>
+          </div>
+
+          {facturasProv.length === 0 && (
+            <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin facturas pendientes para este proveedor.</div>
+          )}
+          {[...facturasProv].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map((f, i) => {
+            const saldo = saldoFacturaPendiente(f);
+            const estado = estadoFacturaPendiente(f);
+            const estCfg = {
+              pendiente: { label: 'Pendiente', color: T.accent }, parcial: { label: 'Parcial', color: T.warn },
+              pagada: { label: 'Pagada', color: T.ok }, anulada: { label: 'Anulada', color: T.ink3 },
+            }[estado] || { label: estado, color: T.ink2 };
+            const abierta = estado === 'pendiente' || estado === 'parcial';
+            return (
+              <div key={f.id} style={{ display: 'flex', padding: '8px 12px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, background: i % 2 === 1 ? T.faint : 'transparent' }}>
+                <span style={{ flex: 0.8, fontFamily: T.fontMono, color: T.ink2, fontSize: 11 }}>{fmtFecha(f.fecha)}</span>
+                <span style={{ flex: 1.2 }}>
+                  <span style={{ fontWeight: 700 }}>{f.numero || 's/n'}</span>
+                  {f.tipoLetra && <span style={{ fontSize: 10, color: T.ink2, marginLeft: 4 }}>({f.tipoLetra})</span>}
+                </span>
+                <span style={{ flex: 1.6, color: T.ink2 }}>
+                  {f.concepto || '—'}{f.obraNombre && f.obraNombre !== 'General' ? ` · ${f.obraNombre}` : ''}
+                </span>
+                <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono }}>$ {fmtN(f.monto || 0)}</span>
+                <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.accent : T.ok }}>
+                  {saldo > 0 ? `$ ${fmtN(saldo)}` : '—'}
+                </span>
+                <span style={{ flex: 0.8, textAlign: 'center' }}>
+                  <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, background: T.faint, color: estCfg.color, fontWeight: 700 }}>{estCfg.label}</span>
+                </span>
+                <span style={{ flex: 0.7, textAlign: 'right' }}>
+                  {abierta && isAdmin && (
+                    <span style={{ color: T.accent, cursor: 'pointer', fontSize: 10, fontWeight: 700, padding: '0 4px' }}
+                      onClick={() => setPagarFactura(f)}>Pagar</span>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </Box>
       )}
 
       {tab === 'datos' && (
@@ -298,6 +403,13 @@ export default function ProveedorCC() {
           proveedor={proveedor.nombre}
           proveedorId={id}
           onClose={() => setPagoOpen(false)} />
+      )}
+      {pagarFactura && (
+        <RegistrarPagoModal
+          proveedor={proveedor.nombre}
+          proveedorId={id}
+          facturaPendiente={pagarFactura}
+          onClose={() => setPagarFactura(null)} />
       )}
     </PageLayout>
   );
