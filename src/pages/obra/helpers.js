@@ -214,6 +214,18 @@ export const tareaVentaUnit = (t, rubro) => {
 };
 
 /**
+ * Quita el margen POR LÍNEA (margenLinea) de una tarea para que pase a usar el
+ * margen del RUBRO (margenMat/margenMO). Se usa al aplicar margen por gremio o
+ * global: si la tarea conserva su margenLinea, pisa al del rubro y el margen del
+ * gremio no tiene efecto. Devuelve la misma tarea si no tenía margenLinea.
+ */
+export const tareaSinMargenLinea = (t) => {
+  if (!t || t.margenLinea == null) return t;
+  const { margenLinea, ...resto } = t;
+  return resto;
+};
+
+/**
  * Calcula totales (costo, venta, margen, avance) de un rubro a partir de sus
  * tareas. Las "secciones" (separadores visuales) se excluyen del calculo.
  */

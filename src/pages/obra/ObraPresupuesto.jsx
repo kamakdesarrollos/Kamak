@@ -27,7 +27,7 @@ import { cajasDelUsuario } from '../../lib/permisosCaja';
 import {
   cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
   cuotaMontoUSD, arsToUSD, calcTotalClienteUSD,
-  tareaVentaUnit, calcRubro, calcObra, calcTareaContratada,
+  tareaVentaUnit, tareaSinMargenLinea, calcRubro, calcObra, calcTareaContratada,
   cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado,
   ingresosObraUSD, detallePagosCuotas,
   gastadoPorRubro, desvioRubro,
@@ -630,7 +630,11 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const setRubroMargen = (rubroId, campo, valor) => {
     const n = valor === '' || valor == null ? 0 : Number(valor);
     if (Number.isNaN(n)) return;
-    patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, [campo]: n } : r) }));
+    // Al setear el margen del gremio limpiamos el margenLinea de sus tareas: el
+    // margen por línea pisa al del rubro, así que sin esto la venta no cambiaría.
+    patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId
+      ? { ...r, [campo]: n, tareas: (r.tareas || []).map(tareaSinMargenLinea) }
+      : r) }));
   };
   // Toggle GLOBAL: si TODOS los rubros ya tienen los materiales a cargo del
   // comprador → vuelve a incluirlos en todos; si alguno los incluye → los saca
@@ -648,7 +652,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
     patch(d => ({
       ...d,
       margenDefault: { mat, mo },
-      rubros: d.rubros.map(r => ({ ...r, margenMat: mat, margenMO: mo })),
+      // Limpiamos el margenLinea de TODAS las tareas: el margen por línea pisa al
+      // del rubro, así que sin esto el margen global no cambiaría la venta.
+      rubros: d.rubros.map(r => ({ ...r, margenMat: mat, margenMO: mo, tareas: (r.tareas || []).map(tareaSinMargenLinea) })),
     }));
     setNewRubro(p => ({ ...p, margenMat: mat, margenMO: mo }));
   };
