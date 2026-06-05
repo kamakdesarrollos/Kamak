@@ -16,7 +16,7 @@ const fmtFecha = (iso) => {
   return `${d}/${m}/${y.slice(2)}`;
 };
 
-const TIPO_LABEL = { contrato: 'Contrato', pago: 'Pago', cert: 'Certif.', factura: 'Factura', facturaPend: 'Fact. pend.', adicional: 'Adicional', echeq: 'ECHEQ', fondo: 'Fondo rep.' };
+const TIPO_LABEL = { contrato: 'Contrato', pago: 'Pago', cert: 'Certif.', factura: 'Factura', facturaPend: 'Orden pago', adicional: 'Adicional', echeq: 'ECHEQ', fondo: 'Fondo rep.' };
 const TIPO_COLOR = { contrato: T.ink, pago: T.ok, cert: T.ok, factura: T.warn, facturaPend: T.accent, adicional: T.warn, echeq: T.ink2, fondo: T.accent };
 
 function Avatar({ nombre, size = 50 }) {
@@ -69,7 +69,7 @@ export default function ProveedorCC() {
       .filter(f => !obraId || f.obraId === obraId)
       .map(f => ({
         id: `fp-${f.id}`, proveedorId: id, obraId: f.obraId || null, obraNombre: f.obraNombre || 'General',
-        fecha: f.fecha, concepto: `Factura ${f.numero || ''} ${f.tipoLetra ? `(${f.tipoLetra})` : ''} · pendiente`.replace(/\s+/g, ' ').trim(),
+        fecha: f.fecha, concepto: `Orden de pago ${f.numero || ''} ${f.tipoLetra ? `(${f.tipoLetra})` : ''}`.replace(/\s+/g, ' ').trim(),
         tipo: 'facturaPend', debe: Number(f.monto) || 0, haber: 0, _facturaId: f.id,
       }));
     const pagos = pagosProveedorDesdeMovs(proveedor, movimientos, obraId).map(m => ({
@@ -156,7 +156,7 @@ export default function ProveedorCC() {
           { label: 'Saldo consolidado', value: saldoTotal > 0 ? `$ ${fmtN(saldoTotal)}` : 'Al día', accent: saldoTotal > 0 },
           { label: `Debe (${obras.length} CC)`, value: `$ ${fmtN(totalDebe)}` },
           { label: 'Haber', value: `$ ${fmtN(totalHaber)}`, ok: true },
-          { label: 'Fact. pendientes', value: totalPendienteProv > 0 ? `$ ${fmtN(totalPendienteProv)}` : '—', accent: totalPendienteProv > 0 },
+          { label: 'Por pagar', value: totalPendienteProv > 0 ? `$ ${fmtN(totalPendienteProv)}` : '—', accent: totalPendienteProv > 0 },
           { label: 'Obras activas', value: String(obras.length) },
         ].map((s, i) => (
           <div key={s.label} style={{ flex: 1, padding: '10px 14px', borderLeft: i ? `1px solid ${saldoTotal > 0 ? '#f0c5b8' : T.faint2}` : 'none' }}>
@@ -172,7 +172,7 @@ export default function ProveedorCC() {
           Cuentas corrientes · {obras.length}
         </span>
         <span className={`k-tab${tab === 'facturas' ? ' k-tab-on' : ''}`} onClick={() => setTab('facturas')}>
-          Facturas pendientes{facturasAbiertas.length > 0 ? ` · ${facturasAbiertas.length}` : ''}
+          Órdenes de pago{facturasAbiertas.length > 0 ? ` · ${facturasAbiertas.length}` : ''}
         </span>
         <span className={`k-tab${tab === 'datos' ? ' k-tab-on' : ''}`} onClick={() => setTab('datos')}>
           Datos del proveedor

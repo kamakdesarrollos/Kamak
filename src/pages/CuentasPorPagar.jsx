@@ -36,12 +36,16 @@ function EstadoChip({ estado }) {
 export default function CuentasPorPagar() {
   const navigate = useNavigate();
   const { currentUser } = useUsuarios();
-  // Mismo criterio que el resto de la app: Admin y Administración gestionan
-  // cuentas por pagar (cargan, pagan y anulan facturas de proveedor).
-  const puede = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
+  // Admin y Administración gestionan TODAS las órdenes (ven todas, pagan, ven el
+  // CBU/alias para transferir). Jefe de obra y Logística pueden CARGAR órdenes y
+  // ven SOLO las que subieron ellos — no ven datos bancarios ni pagan.
+  const esAdmin  = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
+  const puedeVer = esAdmin || currentUser?.rol === 'Jefe de obra' || currentUser?.rol === 'Logística y compras';
+  const miId = currentUser?.id, miEmail = currentUser?.email;
+  const esPropia = (f) => (!!miId && f.createdBy === miId) || (!!miEmail && f.createdBy === miEmail);
   useEffect(() => {
-    if (currentUser && !puede) navigate('/', { replace: true });
-  }, [currentUser, puede, navigate]);
+    if (currentUser && !puedeVer) navigate('/', { replace: true });
+  }, [currentUser, puedeVer, navigate]);
 
   const { proveedores, facturasPendientes, updateFacturaPendiente } = useProveedores();
 
@@ -50,16 +54,23 @@ export default function CuentasPorPagar() {
   const [modalAlta, setModalAlta]     = useState(false);
   const [pagoFactura, setPagoFactura] = useState(null); // factura a saldar
 
-  // KPI global: total adeudado (saldos de facturas abiertas) + cantidad abiertas.
-  const totalAdeudado = useMemo(() => totalPendiente(facturasPendientes), [facturasPendientes]);
+  // Visibilidad por dueño: admin/administración ven todas; el resto solo las que
+  // subió cada uno (createdBy). Todo lo demás (KPIs, filtros) opera sobre esto.
+  const visibles = useMemo(
+    () => esAdmin ? facturasPendientes : facturasPendientes.filter(esPropia),
+    [facturasPendientes, esAdmin, miId, miEmail]
+  );
+
+  // KPI: total adeudado (saldos de órdenes abiertas) + cantidad abiertas.
+  const totalAdeudado = useMemo(() => totalPendiente(visibles), [visibles]);
   const cantAbiertas = useMemo(
-    () => facturasPendientes.filter(f => { const e = estadoFacturaPendiente(f); return e === 'pendiente' || e === 'parcial'; }).length,
-    [facturasPendientes]
+    () => visibles.filter(f => { const e = estadoFacturaPendiente(f); return e === 'pendiente' || e === 'parcial'; }).length,
+    [visibles]
   );
 
   // Filtrado.
   const filtradas = useMemo(() => {
-    return facturasPendientes.filter(f => {
+    return visibles.filter(f => {
       if (filtroProv !== 'todos') {
         const matchProv = f.proveedorId === filtroProv;
         if (!matchProv) return false;
@@ -69,15 +80,16 @@ export default function CuentasPorPagar() {
       if (filtroEstado !== 'todas') return est === filtroEstado;
       return true;
     });
-  }, [facturasPendientes, filtroProv, filtroEstado]);
+  }, [visibles, filtroProv, filtroEstado]);
 
   // Agrupar por proveedor (nombre, con fallback al campo proveedor de la factura).
   const grupos = useMemo(() => {
     const map = new Map();
     filtradas.forEach(f => {
       const key = f.proveedorId || f.proveedor || 'sin-proveedor';
-      const nombre = proveedores.find(p => p.id === f.proveedorId)?.nombre || f.proveedor || 'Sin proveedor';
-      if (!map.has(key)) map.set(key, { key, nombre, facturas: [] });
+      const prov = proveedores.find(p => p.id === f.proveedorId) || null;
+      const nombre = prov?.nombre || f.proveedor || 'Sin proveedor';
+      if (!map.has(key)) map.set(key, { key, nombre, prov, facturas: [] });
       map.get(key).facturas.push(f);
     });
     const arr = [...map.values()];
@@ -92,22 +104,22 @@ export default function CuentasPorPagar() {
   }, [filtradas, proveedores]);
 
   const anular = (f) => {
-    if (window.confirm(`¿Anular la factura ${f.numero || ''} de ${f.proveedor || ''}?\n\nDejará de contar como deuda.`)) {
+    if (window.confirm(`¿Anular la orden de pago ${f.numero || ''} de ${f.proveedor || ''}?\n\nDejará de contar como deuda.`)) {
       updateFacturaPendiente(f.id, { estado: 'anulada' });
     }
   };
 
   const proveedoresOrden = [...proveedores].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
-  if (currentUser && !puede) return null;
+  if (currentUser && !puedeVer) return null;
 
   return (
-    <PageLayout breadcrumb={['Cuentas por Pagar']} active="Cuentas por Pagar">
+    <PageLayout breadcrumb={['Órdenes de pago']} active="Órdenes de pago">
       <PageHero
-        label="CUENTAS POR PAGAR"
-        title="Cuentas por Pagar"
-        subtitle="Facturas de proveedor pendientes de pago"
-        actions={<Btn fill onClick={() => setModalAlta(true)} style={{ gap: 6 }}>+ Subir factura</Btn>}
+        label="ÓRDENES DE PAGO"
+        title="Órdenes de pago"
+        subtitle={esAdmin ? 'Facturas de proveedor pendientes de pago' : 'Las órdenes de pago que cargaste'}
+        actions={<Btn fill onClick={() => setModalAlta(true)} style={{ gap: 6 }}>+ Nueva orden de pago</Btn>}
         kpis={[
           { label: 'Total adeudado', value: `$ ${fmtN(totalAdeudado)}`, color: totalAdeudado > 0 ? T.warn : T.ok },
           { label: 'Facturas abiertas', value: cantAbiertas, color: T.ink },
@@ -141,7 +153,7 @@ export default function CuentasPorPagar() {
       {/* Listado agrupado por proveedor */}
       {grupos.length === 0 ? (
         <Box style={{ padding: 32, textAlign: 'center', color: T.ink3, fontSize: 13 }}>
-          No hay facturas en esta vista
+          No hay órdenes de pago en esta vista
         </Box>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -149,8 +161,17 @@ export default function CuentasPorPagar() {
             <Box key={g.key} style={{ padding: 0, overflow: 'hidden' }}>
               {/* Header del proveedor */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, gap: 8 }}>
-                <span style={{ fontWeight: 800, fontSize: 13 }}>{g.nombre}</span>
-                <span style={{ fontSize: 11, color: T.ink2 }}>
+                <div style={{ minWidth: 0 }}>
+                  <span style={{ fontWeight: 800, fontSize: 13 }}>{g.nombre}</span>
+                  {/* Datos bancarios para transferir — SOLO Admin/Administración. */}
+                  {esAdmin && (g.prov?.cbu || g.prov?.alias) && (
+                    <div style={{ fontSize: 10, color: T.ink2, fontFamily: T.fontMono, marginTop: 3, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      {g.prov?.alias && <span title="Alias para transferir">🏦 {g.prov.alias}</span>}
+                      {g.prov?.cbu && <span title="CBU para transferir">CBU {g.prov.cbu}</span>}
+                    </div>
+                  )}
+                </div>
+                <span style={{ fontSize: 11, color: T.ink2, flexShrink: 0 }}>
                   Pendiente <b style={{ fontFamily: T.fontMono, color: g.subtotal > 0 ? T.warn : T.ok }}>$ {fmtN(g.subtotal)}</b>
                 </span>
               </div>
@@ -199,12 +220,12 @@ export default function CuentasPorPagar() {
                       {f.comprobanteUrl && (
                         <Btn sm onClick={() => window.open(f.comprobanteUrl, '_blank', 'noopener')} style={{ fontSize: 10 }}>Ver</Btn>
                       )}
-                      {abierta && (
+                      {abierta && esAdmin && (
                         <Btn sm accent onClick={() => setPagoFactura(f)} style={{ fontSize: 10 }}>Registrar pago</Btn>
                       )}
-                      {est !== 'anulada' && est !== 'pagada' && (
+                      {est !== 'anulada' && est !== 'pagada' && (esAdmin || esPropia(f)) && (
                         <span style={{ color: T.warn, cursor: 'pointer', fontSize: 15, padding: '0 2px', lineHeight: 1 }}
-                          title="Anular factura"
+                          title="Anular orden de pago"
                           onClick={() => anular(f)}>×</span>
                       )}
                     </span>

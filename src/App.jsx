@@ -246,6 +246,7 @@ function AppShell() {
                   <Route path="/cajas" element={<Cajas />} />
                   <Route path="/cajas/conciliacion" element={<Conciliacion />} />
                   <Route path="/cheques" element={<Cheques />} />
+                  <Route path="/ordenes-de-pago" element={<CuentasPorPagar />} />
                   <Route path="/cuentas-por-pagar" element={<CuentasPorPagar />} />
                   <Route path="/facturacion" element={<Facturacion />} />
                   {/* /whatsapp queda como atajo a la seccion WhatsApp de /autorizaciones */}

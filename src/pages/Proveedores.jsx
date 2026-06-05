@@ -71,10 +71,13 @@ function KPI({ label, value, color, sub }) {
 
 // ── Nuevo / Editar proveedor modal ────────────────────────────────────────────
 function NuevoProveedorModal({ onClose, onSave, initial = null }) {
+  const { currentUser } = useUsuarios();
+  // CBU/alias para transferir = dato sensible: solo lo ven/editan Admin/Administración.
+  const esAdmin = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
   const initCat = initial ? getCat(initial) : 'Mano de obra';
   const [form, setForm] = useState(initial
     ? { ...initial, categoria: initCat }
-    : { nombre: '', categoria: 'Mano de obra', tipo: '', cuit: '', telefono: '', email: '', condicion: 'Responsable Inscripto', calificacion: 0, notas: '' });
+    : { nombre: '', categoria: 'Mano de obra', tipo: '', cuit: '', telefono: '', email: '', condicion: 'Responsable Inscripto', cbu: '', alias: '', calificacion: 0, notas: '' });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   return (
@@ -123,6 +126,18 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
               <input style={inputSt} type="email" value={form.email} onChange={e => set('email', e.target.value)} />
             </div>
           </div>
+          {esAdmin && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 10 }}>
+              <div>
+                <label style={labelSt}>CBU (para transferir)</label>
+                <input style={{ ...inputSt, fontFamily: T.fontMono }} value={form.cbu || ''} onChange={e => set('cbu', e.target.value)} placeholder="22 dígitos" />
+              </div>
+              <div>
+                <label style={labelSt}>Alias</label>
+                <input style={inputSt} value={form.alias || ''} onChange={e => set('alias', e.target.value)} placeholder="alias.del.proveedor" />
+              </div>
+            </div>
+          )}
           <div>
             <label style={labelSt}>Calificación</label>
             <StarRating value={form.calificacion || 0} onChange={v => set('calificacion', v)} size={22} />
@@ -335,7 +350,7 @@ export default function Proveedores() {
                     {deudaFacturas[p.id] > 0 && (
                       <span style={{ fontSize: 9, fontFamily: T.fontMono, color: T.accent, fontWeight: 700 }}
                         title="Facturas pendientes de pago">
-                        + $ {fmtN(deudaFacturas[p.id])} fact.
+                        + $ {fmtN(deudaFacturas[p.id])} órdenes
                       </span>
                     )}
                   </span>
@@ -399,7 +414,7 @@ export default function Proveedores() {
                     {deudaFacturas[p.id] > 0 && (
                       <div style={{ fontSize: 10, fontFamily: T.fontMono, color: T.accent, fontWeight: 700, marginTop: 2 }}
                         title="Facturas pendientes de pago">
-                        + $ {fmtN(deudaFacturas[p.id])} en fact. pendientes
+                        + $ {fmtN(deudaFacturas[p.id])} en órdenes de pago
                       </div>
                     )}
                   </div>

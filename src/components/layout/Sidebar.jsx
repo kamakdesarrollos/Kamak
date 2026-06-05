@@ -17,7 +17,7 @@ const ALL_ITEMS = [
   { icon: '⇄', label: 'Movimientos',    path: '/movimientos',  perm: 'verCaja' },
   { icon: '$', label: 'Cajas',          path: '/cajas',        perm: 'verCaja' },
   { icon: '✓', label: 'Cheques',        path: '/cheques',      allowedRoles: ['Admin', 'Administración'] },
-  { icon: '📥', label: 'Cuentas por Pagar', path: '/cuentas-por-pagar', allowedRoles: ['Admin', 'Administración'] },
+  { icon: '📥', label: 'Órdenes de pago', path: '/ordenes-de-pago', allowedRoles: ['Admin', 'Administración', 'Jefe de obra', 'Logística y compras'] },
   { icon: '🧾', label: 'Facturación',    path: '/facturacion',  allowedRoles: ['Admin', 'Administración', 'Contador externo'] },
   { icon: '⌗', label: 'Gastos Fijos',   path: '/prorrateo',    allowedRoles: ['Admin', 'Administración'] },
   { section: 'Datos' },
@@ -97,11 +97,12 @@ export default function Sidebar({ active }) {
             onClick={() => it.path && navigate(it.path)}
           >
             <span style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0, lineHeight: 1 }}>{it.icon || '·'}</span>
-            {/* Label: se trunca con "..." solo si hay badge (asi el badge
-                nunca se corta). Sin badge, el label se ve completo siempre. */}
+            {/* Label: con badge se trunca con "..." (asi el badge nunca se corta).
+                Sin badge, ocupa el ancho disponible y ENVUELVE a 2 lineas si es
+                largo (ej. "Cuentas por Pagar") en vez de tocar el margen derecho. */}
             <span style={hasBadge
               ? { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-              : { whiteSpace: 'nowrap' }}>
+              : { flex: 1, minWidth: 0, whiteSpace: 'normal', lineHeight: 1.15 }}>
               {it.label}
             </span>
             {hasBadge && (

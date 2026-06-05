@@ -19,9 +19,11 @@ const fmtN = (n) => Math.round(n || 0).toLocaleString('es-AR');
 const today = () => new Date().toISOString().split('T')[0];
 
 export default function FacturaPendienteModal({ onClose }) {
-  const { proveedores, addFacturaPendiente } = useProveedores();
+  const { proveedores, addFacturaPendiente, updateProveedor } = useProveedores();
   const { obras } = useObras();
   const { currentUser } = useUsuarios();
+  // CBU/alias para transferir: dato sensible que solo cargan/ven Admin/Administración.
+  const esAdmin = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
 
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
   const provsOrden = [...proveedores].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
@@ -32,6 +34,8 @@ export default function FacturaPendienteModal({ onClose }) {
   const [numero, setNumero]     = useState('');
   const [tipoLetra, setTipoLetra] = useState('A');
   const [cuit, setCuit]         = useState('');
+  const [cbu, setCbu]           = useState('');
+  const [alias, setAlias]       = useState('');
   const [concepto, setConcepto] = useState('');
   const [obraId, setObraId]     = useState('');
   const [rubroId, setRubroId]   = useState('');
@@ -51,6 +55,8 @@ export default function FacturaPendienteModal({ onClose }) {
     setProveedorId(id);
     const p = proveedores.find(x => x.id === id);
     if (p && !cuit) setCuit(p.cuit || '');
+    if (p && !cbu) setCbu(p.cbu || '');
+    if (p && !alias) setAlias(p.alias || '');
   };
 
   const guardar = async () => {
@@ -108,6 +114,15 @@ export default function FacturaPendienteModal({ onClose }) {
       };
     }
 
+    // CBU/alias para transferir viven en el PROVEEDOR (se reusan en próximas
+    // órdenes). Solo Admin/Administración los cargan. Si cambian, se actualizan.
+    if (esAdmin && proveedorId && (cbu.trim() || alias.trim())) {
+      const ch = {};
+      if (cbu.trim()   && cbu.trim()   !== (prov?.cbu   || '')) ch.cbu   = cbu.trim();
+      if (alias.trim() && alias.trim() !== (prov?.alias || '')) ch.alias = alias.trim();
+      if (Object.keys(ch).length) updateProveedor(proveedorId, ch);
+    }
+
     addFacturaPendiente(data);
     onClose();
   };
@@ -117,8 +132,8 @@ export default function FacturaPendienteModal({ onClose }) {
       <div className="k-modal" style={{ width: 520 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontFamily: T.font, fontWeight: 800, fontSize: 17 }}>Subir factura pendiente</div>
-            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 2 }}>Cuenta por pagar · {prov?.nombre || 'Proveedor'}</div>
+            <div style={{ fontFamily: T.font, fontWeight: 800, fontSize: 17 }}>Nueva orden de pago</div>
+            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 2 }}>Factura de proveedor pendiente · {prov?.nombre || 'Proveedor'}</div>
           </div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
         </div>
@@ -163,6 +178,19 @@ export default function FacturaPendienteModal({ onClose }) {
               <input style={inputSt} value={cuit} onChange={e => setCuit(e.target.value)} placeholder="20-12345678-9" />
             </div>
           </div>
+
+          {esAdmin && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 10 }}>
+              <div>
+                <label style={labelSt}>CBU (para transferir)</label>
+                <input style={{ ...inputSt, fontFamily: T.fontMono }} value={cbu} onChange={e => setCbu(e.target.value)} placeholder="22 dígitos" />
+              </div>
+              <div>
+                <label style={labelSt}>Alias</label>
+                <input style={inputSt} value={alias} onChange={e => setAlias(e.target.value)} placeholder="alias.del.proveedor" />
+              </div>
+            </div>
+          )}
 
           <div>
             <label style={labelSt}>Concepto</label>
@@ -235,7 +263,7 @@ export default function FacturaPendienteModal({ onClose }) {
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn sm onClick={onClose}>Cancelar</Btn>
           <Btn sm fill onClick={guardar} style={{ opacity: canSave && !subiendo ? 1 : 0.5 }}>
-            {subiendo ? 'Subiendo…' : 'Guardar factura'}
+            {subiendo ? 'Subiendo…' : 'Crear orden de pago'}
           </Btn>
         </div>
       </div>
