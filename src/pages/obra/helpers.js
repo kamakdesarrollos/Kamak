@@ -249,6 +249,23 @@ export const calcObra = (rubros) => {
 };
 
 /**
+ * Estado de la CUENTA CORRIENTE del cliente (en USD): total acordado − cobrado.
+ * Mismo criterio que la tab Cuenta corriente y la card de Obras (saldo "naranja").
+ * `saldada` = saldoUSD <= 1. Para obras de arrastre el total sale de precioVentaUSD.
+ */
+export const ccObra = (obra, detalle, movimientos, cajas, tc) => {
+  const { venta: ventaBaseARS } = calcObra((detalle && detalle.rubros) || []);
+  const adicionalARS = ((detalle && detalle.adicionales) || [])
+    .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
+    .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
+  const interes = parseFloat((detalle && detalle.financiacion || {}).interes) || 0;
+  const totalUSD   = Math.round(calcTotalClienteUSD(detalle, ventaBaseARS, adicionalARS, interes, tc));
+  const cobradoUSD = Math.round(cobradoObraUSD(movimientos, cajas, obra.id, tc));
+  const saldoUSD   = Math.max(0, totalUSD - cobradoUSD);
+  return { totalUSD, cobradoUSD, saldoUSD, saldada: saldoUSD <= 1 };
+};
+
+/**
  * Gasto real de la obra agrupado por rubro. Matchea cada gasto por rubroId si lo
  * tiene (más robusto ante renombres), sino por rubroNombre. Lo no imputado a
  * ningún rubro se acumula en `sinRubro`. Devuelve { porRubroId, porNombre, sinRubro }.

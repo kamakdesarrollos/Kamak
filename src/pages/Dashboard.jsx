@@ -9,7 +9,7 @@ import { useDolar } from '../store/DolarContext';
 import { useAlertas } from '../store/AlertasContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
-import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, tareaVentaUnit } from './obra/helpers';
+import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, ccObra } from './obra/helpers';
 import { montoEnARS } from '../lib/caja';
 import { cajasDelUsuario } from '../lib/permisosCaja';
 
@@ -70,26 +70,21 @@ export default function Dashboard() {
   const posicionUSD = Math.round(totalARS / tc + totalUSD);
   const posicionARS = Math.round(totalARS + totalUSD * tc);
 
-  // ── Dinero en la calle ──
-  // Valor de las tareas YA REALIZADAS (según avance) que el cliente todavía NO
-  // pagó, sumado en todas las obras. Por obra: max(0, valorRealizado − cobrado),
-  // clampeado a ≥0 (las obras pagadas de más no descuentan del total). En USD.
-  const { dineroEnLaCalleUSD, obrasConSaldo } = useMemo(() => {
-    let total = 0, conSaldo = 0;
+  // ── Me deben (obras terminadas) ──
+  // Saldo a cobrar de las obras FINALIZADAS (lo "naranja" en Obras): total
+  // acordado al cliente − cobrado, por obra (mismo cálculo que la card de Obras,
+  // ccObra). Aging por antigüedad (días desde fechaFin): 1-15 / 15-30 / +30.
+  const deudaTerminadas = useMemo(() => {
+    let total = 0, n = 0; const b = { d15: 0, d30: 0, dmas: 0 };
     for (const o of obras) {
-      if (!['activa', 'pausada', 'finalizada'].includes(o.estado)) continue;
-      const det = getDetalle(o.id);
-      let realizadoARS = 0;
-      for (const r of (det?.rubros || []).filter(r => r.tipo !== 'seccion')) {
-        for (const t of (r.tareas || []).filter(t => t.tipo !== 'seccion')) {
-          realizadoARS += tareaVentaUnit(t, r) * (t.cantidad || 0) * ((t.avance || 0) / 100);
-        }
-      }
-      const cobradoUSD = cobradoObraUSD(movimientos, cajas, o.id, tc);
-      const porCobrar = Math.max(0, Math.round(realizadoARS / tc - cobradoUSD));
-      if (porCobrar > 0) { total += porCobrar; conSaldo++; }
+      if (o.estado !== 'finalizada') continue;
+      const cc = ccObra(o, getDetalle(o.id), movimientos, cajas, tc);
+      if (cc.saldada) continue;
+      total += cc.saldoUSD; n++;
+      const dias = o.fechaFin ? Math.max(0, Math.floor((Date.now() - new Date(o.fechaFin).getTime()) / 86400000)) : 0;
+      if (dias <= 15) b.d15 += cc.saldoUSD; else if (dias <= 30) b.d30 += cc.saldoUSD; else b.dmas += cc.saldoUSD;
     }
-    return { dineroEnLaCalleUSD: total, obrasConSaldo: conSaldo };
+    return { total, n, ...b };
   }, [obras, getDetalle, movimientos, cajas, tc]);
 
   // ── KPIs del mes ──
@@ -313,19 +308,31 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Dinero en la calle: tareas realizadas que el cliente aún no pagó */}
-              <div onClick={() => navigate('/obras')}
-                style={{ padding: '8px 14px', borderBottom: `1px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: T.faint }}
-                onMouseEnter={e => e.currentTarget.style.background = T.accentSoft}
-                onMouseLeave={e => e.currentTarget.style.background = T.faint}>
-                <div>
-                  <div style={{ fontSize: 8, color: T.ink3, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.5, fontWeight: 700 }}>💸 DINERO EN LA CALLE</div>
-                  <div style={{ fontSize: 9, color: T.ink3 }}>tareas hechas sin cobrar · {obrasConSaldo} obra{obrasConSaldo === 1 ? '' : 's'}</div>
+              {/* Me deben: saldo de obras terminadas + aging por antigüedad */}
+              <div style={{ borderBottom: `1px solid ${T.faint2}` }}>
+                <div onClick={() => navigate('/obras')}
+                  style={{ padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: T.faint }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.accentSoft}
+                  onMouseLeave={e => e.currentTarget.style.background = T.faint}>
+                  <div>
+                    <div style={{ fontSize: 8, color: T.ink3, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1.5, fontWeight: 700 }}>💸 ME DEBEN · OBRAS TERMINADAS</div>
+                    <div style={{ fontSize: 9, color: T.ink3 }}>saldo a cobrar · {deudaTerminadas.n} obra{deudaTerminadas.n === 1 ? '' : 's'}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div className="k-mono" style={{ fontSize: 18, fontWeight: 800, color: deudaTerminadas.total > 0 ? '#d97706' : T.ink }}>U$S {fmtN(deudaTerminadas.total)}</div>
+                    <div style={{ fontSize: 10, color: T.ink3 }}>≈ $ {fmtN(Math.round(deudaTerminadas.total * tc))} ARS</div>
+                  </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div className="k-mono" style={{ fontSize: 18, fontWeight: 800 }}>U$S {fmtN(dineroEnLaCalleUSD)}</div>
-                  <div style={{ fontSize: 10, color: T.ink3 }}>≈ $ {fmtN(dineroEnLaCalleUSD * tc)} ARS</div>
-                </div>
+                {deudaTerminadas.total > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderTop: `1px solid ${T.faint2}` }}>
+                    {[['1-15 días', deudaTerminadas.d15, T.ink2], ['15-30 días', deudaTerminadas.d30, '#d97706'], ['+30 días', deudaTerminadas.dmas, '#dc2626']].map(([lab, val, col], i) => (
+                      <div key={lab} style={{ padding: '5px 8px', textAlign: 'center', borderLeft: i ? `1px solid ${T.faint2}` : 'none' }}>
+                        <div style={{ fontSize: 8, color: T.ink3, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.5 }}>{lab}</div>
+                        <div className="k-mono" style={{ fontSize: 12, fontWeight: 700, color: col }}>U$S {fmtN(Math.round(val))}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
