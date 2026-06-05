@@ -16,6 +16,7 @@ import { WhatsappPendingProvider } from './store/WhatsappPendingContext';
 import { AlertasProvider } from './store/AlertasContext';
 import { SolicitudesProvider } from './store/SolicitudesContext';
 import { TareasProvider } from './store/TareasContext';
+import { ComercialProvider } from './store/ComercialContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
 import { AppLoadingProvider, useAppLoading } from './store/AppLoadingContext';
@@ -184,6 +185,7 @@ function DataProviders({ children }) {
     <GastosFijosProvider>
     <ProveedoresProvider>
     <ClientesProvider>
+    <ComercialProvider>
     <ComprobantesProvider>
     <FinancieroProvider>
     <MovimientosProvider>
@@ -203,6 +205,7 @@ function DataProviders({ children }) {
     </MovimientosProvider>
     </FinancieroProvider>
     </ComprobantesProvider>
+    </ComercialProvider>
     </ClientesProvider>
     </ProveedoresProvider>
     </GastosFijosProvider>
