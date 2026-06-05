@@ -25,6 +25,7 @@ import { AuthProvider, useAuth } from './store/AuthContext';
 // Login se importa estatico — es lo primero que se ve si no hay sesion.
 import Login from './pages/Login';
 import WhatsappVerificationBanner from './components/WhatsappVerificationBanner';
+import VentaSync from './components/VentaSync';
 import { ToastProvider } from './components/ui/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -235,6 +236,9 @@ function AppShell() {
             {/* Rutas internas — requieren autenticación */}
             <Route path="*" element={
               <AuthGate>
+                {/* Reconciliador global pago->Ganado: corre una vez, dentro de
+                    los Providers de Obras/Movimientos/Dolar del area autenticada. */}
+                <VentaSync />
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/obras" element={<Obras />} />
