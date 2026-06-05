@@ -4,6 +4,7 @@ import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
 import { SAVE_DEBOUNCE_MS } from '../lib/constants';
 import { cascadeRubroRenameEnDetalle } from '../lib/catalogCascade';
+import { obraEstadoParaEtapa } from '../lib/ventaEtapa';
 
 // Alerta global "obra iniciada" para todo el equipo (campana del Topbar +
 // dashboard). Se dispara cuando una obra pasa a 'activa' — sea confirmándola a
@@ -357,6 +358,37 @@ export function ObrasProvider({ children }) {
     patchObjectItem('obras', 'obras', id, ch);
   }, []);
 
+  // Mueve una obra de etapa de venta (embudo Comercial) atómicamente. Mismo
+  // patrón que setEstado: persiste con patchObjectItem y aplica los side-effects
+  // de estado que correspondan a la etapa (ganado->activa, perdido->archivada).
+  const setVentaEtapa = useCallback((obraId, etapa, { usuario = null, motivoPerdida } = {}) => {
+    markUserEdit();
+    const prevObra = obrasRef.current.find(o => o.id === obraId);
+    if (!prevObra) return;
+    const today = new Date().toISOString().split('T')[0];
+    const prevVenta = prevObra.venta || {};
+    const venta = {
+      ...prevVenta,
+      etapa,
+      fechaCambioEtapa: today,
+      changelog: [...(prevVenta.changelog || []), { etapa, fecha: today, usuario }],
+    };
+    if (etapa === 'perdido') venta.motivoPerdida = motivoPerdida || prevVenta.motivoPerdida || '';
+    const ch = { venta };
+    // Side-effects de estado, alineados con setEstado.
+    const nuevoEstado = obraEstadoParaEtapa(etapa, prevObra.estado);
+    if (nuevoEstado && nuevoEstado !== prevObra.estado) {
+      ch.estado = nuevoEstado;
+      if (nuevoEstado === 'activa') {
+        if (prevObra.estado !== 'activa') emitAlertaObraIniciada(prevObra, obrasYaAlertadas.current);
+        if (!prevObra.fechaInicio) ch.fechaInicio = today;
+      }
+      if (nuevoEstado === 'finalizada') { ch.avance = 100; ch.fechaFin = today; }
+    }
+    setObras(prev => prev.map(o => o.id === obraId ? { ...o, ...ch } : o));
+    patchObjectItem('obras', 'obras', obraId, ch);
+  }, []);
+
   const deleteObra = useCallback((id) => {
     markUserEdit();
     setObras(prev => prev.filter(o => o.id !== id));
@@ -421,8 +453,8 @@ export function ObrasProvider({ children }) {
   // las obras / detalles no hayan cambiado. Era la causa principal de lentitud
   // al editar inputs (ObraPresupuesto consume 9 contexts).
   const value = useMemo(
-    () => ({ obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch }),
-    [obras, addObra, updateObra, setEstado, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch]
+    () => ({ obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch }),
+    [obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch]
   );
 
   return (
