@@ -21,13 +21,21 @@ const tareaVentaUnit = (t, rubro) => {
 
 const calcRubroExport = (rubro) => {
   const sinMat = !!rubro.materialesACargoComprador;
-  let cMat = 0, cSub = 0, venta = 0;
+  // cMat/cSub = costo. vMat/vSub = venta (costo + margen) por componente — la
+  // suma vMat+vSub es exactamente la venta total, así el desglose CUADRA con el
+  // total mostrado (antes el desglose iba a costo y no cerraba contra el total).
+  let cMat = 0, cSub = 0, vMat = 0, vSub = 0;
   for (const t of rubro.tareas.filter(t => t.tipo !== 'seccion')) {
-    cMat += (sinMat ? 0 : t.costoMat) * t.cantidad;
-    cSub += (t.costoSub || 0) * t.cantidad;
-    venta += tareaVentaUnit(t, rubro) * t.cantidad;
+    const mat = (sinMat ? 0 : t.costoMat) || 0;
+    const sub = t.costoSub || 0;
+    const fMat = t.margenLinea != null ? 1 + t.margenLinea / 100 : 1 + (rubro.margenMat || 0) / 100;
+    const fSub = t.margenLinea != null ? 1 + t.margenLinea / 100 : 1 + (rubro.margenMO || 0) / 100;
+    cMat += mat * t.cantidad;
+    cSub += sub * t.cantidad;
+    vMat += mat * fMat * t.cantidad;
+    vSub += sub * fSub * t.cantidad;
   }
-  return { cMat, cSub, costo: cMat + cSub, venta };
+  return { cMat, cSub, costo: cMat + cSub, venta: vMat + vSub, vMat, vSub };
 };
 
 // SVG grande (1100x1300) que cubre la diagonal entera de su esquina del
@@ -56,15 +64,22 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
   const rubros = detalle?.rubros || [];
   const rr = rubros.map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
-  const totalMat   = rr.reduce((s, r) => s + r.cMat, 0);
-  const totalSub   = rr.reduce((s, r) => s + r.cSub, 0);
+  // Desglose a VENTA (con margen) para que sume al total. vMat+vSub === venta.
+  const totalMat   = rr.reduce((s, r) => s + r.vMat, 0);
+  const totalSub   = rr.reduce((s, r) => s + r.vSub, 0);
+  // En USD redondeado: la M.O absorbe el ±1 del redondeo para que
+  // Subtotal mat + Subtotal M.O dé SIEMPRE exactamente el Total mostrado.
+  const totalVentaUSD = Math.round(totalVenta / tc);
+  const totalMatUSD   = Math.round(totalMat / tc);
+  const totalSubUSD   = totalVentaUSD - totalMatUSD;
+  const usdAR = (n) => n.toLocaleString('es-AR');
   const moneda = obra?.moneda || 'ARS';
   const fecha = fmtFecha();
   const numPresu = `PRES-${new Date().getFullYear()}-${String(rubros.length * 7 + 42).padStart(3, '0')}`;
   const totalPags = condiciones ? 3 : 2;
 
   const imgLight = logoLight
-    ? `<img src="${logoLight}" style="height:36px;object-fit:contain;display:block" />`
+    ? `<img src="${logoLight}" style="height:56px;object-fit:contain;display:block" />`
     : `<div class="logo">KAMAK</div>`;
   const imgDark = logoDark
     ? `<img src="${logoDark}" style="height:22px;object-fit:contain;display:block" />`
@@ -115,7 +130,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
     }).join('');
 
     return `<div class="rubro-sec">
-      <div class="rubro-ttl"><span class="dmnd-sm"></span>RUBRO ${String(ri + 1).padStart(2, '0')} · ${esc(rubro.nombre.toUpperCase())}</div>
+      <div class="rubro-ttl"><span class="dmnd-sm"></span>RUBRO ${String(ri + 1).padStart(2, '0')} · ${esc(rubro.nombre)}</div>
       ${rubro.materialesACargoComprador ? `<div style="font-size:10.5px;font-style:italic;color:#8a6d2a;background:#fcf6e3;border:1px solid #e6d9a8;border-radius:3px;padding:4px 9px;margin:3px 0 6px;">⚑ Materiales de ${esc(rubro.nombre)} <b>a cargo del comprador</b> (no incluidos en este precio).</div>` : ''}
       <div class="tbl-hdr">
         <div class="tc tc-name">TAREA / DESCRIPCIÓN</div>
@@ -151,8 +166,8 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div class="dmnd-corner"></div>
         <div class="totales-lbl">MONTOS TOTALES</div>
         <div class="totales-grid">
-          <span>Subtotal materiales</span><span class="mono">$ ${fmtN(totalMat)}</span>
-          <span>Subtotal mano de obra</span><span class="mono">$ ${fmtN(totalSub)}</span>
+          <span>Subtotal materiales</span><span class="mono">U$S ${usdAR(totalMatUSD)}</span>
+          <span>Subtotal mano de obra</span><span class="mono">U$S ${usdAR(totalSubUSD)}</span>
         </div>
         <div class="totales-rule"></div>
         <div class="total-final">
@@ -197,8 +212,8 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
           <div class="cond-totales">
             <div class="dmnd-corner"></div>
             <div class="totales-grid-sm">
-              <span>Subtotal mat.</span><span class="mono">$ ${fmtN(totalMat)}</span>
-              <span>Subtotal M.O</span><span class="mono">$ ${fmtN(totalSub)}</span>
+              <span>Subtotal mat.</span><span class="mono">U$S ${usdAR(totalMatUSD)}</span>
+              <span>Subtotal M.O</span><span class="mono">U$S ${usdAR(totalSubUSD)}</span>
             </div>
             <div class="totales-rule"></div>
             <div class="total-final">
@@ -263,9 +278,9 @@ body{font-family:'Montserrat',sans-serif}
 .wm-br svg{position:absolute;bottom:-180px;right:-180px;transform:rotate(180deg)}
 .wm-bl svg{position:absolute;bottom:-180px;left:-180px;transform:rotate(180deg)}
 /* portada */
-.portada-hdr{height:70px;padding:16px 44px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
-.logo{font-weight:900;font-size:24px;letter-spacing:2px}
-.contact-r{font-size:8.5px;color:#aaa;text-align:right;font-family:'JetBrains Mono',monospace;line-height:1.6}
+.portada-hdr{height:108px;padding:20px 44px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
+.logo{font-weight:900;font-size:36px;letter-spacing:2px}
+.contact-r{font-size:10.5px;color:#aaa;text-align:right;font-family:'JetBrains Mono',monospace;line-height:1.7}
 .teal-rule{height:6px;background:#1a9b9c;position:relative;z-index:1}
 .diamond-c{position:absolute;left:50%;top:-10px;margin-left:-10px;width:20px;height:20px;background:#1a9b9c;transform:rotate(45deg);box-shadow:0 0 0 3px #1f2024}
 .portada-hero{flex:1;padding:50px 56px 30px;display:flex;flex-direction:column;align-items:center;position:relative;z-index:1}
@@ -282,6 +297,9 @@ body{font-family:'Montserrat',sans-serif}
 .cell-val{font-size:15px;font-weight:700;margin-top:5px;color:#fff;line-height:1.2}
 .cell-val-lg{font-size:22px;font-weight:800;margin-top:3px;color:#fff;line-height:1.1}
 .cell-sub{font-size:11px;color:#9a9892;margin-top:3px}
+/* Columna derecha del pie (Tipo de obra · Monto total) alineada al borde
+   derecho: misma distancia al margen que la izquierda, sin el hueco grande. */
+.portada-ftr>div:nth-child(even){text-align:right}
 /* cómputo */
 .comp-hdr{padding:10px 30px;display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px solid #1f2024;position:relative;z-index:1}
 .logo-sm{font-weight:900;font-size:15px;letter-spacing:2px;color:#1f2024}
@@ -398,10 +416,10 @@ function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta }) {
         </svg>
       </div>
       {/* Header */}
-      <div style={{ height: 62, padding: '14px 38px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
-        <img src="/assets/kamak-logo-light.png" style={{ height: 32, objectFit: 'contain', display: 'block' }} onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
-        <span style={{ display: 'none', fontWeight: 900, fontSize: 20, letterSpacing: 2 }}>KAMAK</span>
-        <div style={{ fontSize: 7.5, color: '#aaa', textAlign: 'right', fontFamily: T.fontMono, lineHeight: 1.6 }}>
+      <div style={{ height: 84, padding: '20px 38px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
+        <img src="/assets/kamak-logo-light.png" style={{ height: 46, objectFit: 'contain', display: 'block' }} onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
+        <span style={{ display: 'none', fontWeight: 900, fontSize: 30, letterSpacing: 2 }}>KAMAK</span>
+        <div style={{ fontSize: 9, color: '#aaa', textAlign: 'right', fontFamily: T.fontMono, lineHeight: 1.7 }}>
           7630 NECOCHEA<br />BUENOS AIRES · ARGENTINA<br />KAMAKDESARROLLOS@GMAIL.COM
         </div>
       </div>
@@ -438,7 +456,7 @@ function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta }) {
           { label: 'FECHA · VIGENCIA', val: fecha, sub: `Vigencia: ${vigencia}` },
           { label: 'MONTO TOTAL', val: fmtV(totalVenta), sub: '+ IVA', big: true },
         ].map((c, i) => (
-          <div key={i}>
+          <div key={i} style={{ textAlign: i % 2 === 1 ? 'right' : 'left' }}>
             <div style={{ fontSize: 7, color: '#1a9b9c', letterSpacing: 2, fontFamily: T.fontMono }}>{c.label}</div>
             <div style={{ fontSize: c.big ? 14 : 11, fontWeight: c.big ? 800 : 700, marginTop: 3, color: '#fff', lineHeight: 1.2 }}>{c.val}</div>
             {c.sub && <div style={{ fontSize: 8, color: '#9a9892', marginTop: 2 }}>{c.sub}</div>}

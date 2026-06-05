@@ -7,6 +7,7 @@ import { T } from '../theme';
 import { usePlantillas } from '../store/PlantillasContext';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { buscarEnCatalogo } from '../lib/apuPriceResolver';
+import { formatRubroNombre } from '../lib/rubroNombre';
 import { getSismatCostsForTarea } from '../lib/sismatCostFallback';
 import { useObras } from '../store/ObrasContext';
 import { useClientes } from '../store/ClientesContext';
@@ -562,8 +563,9 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
                     onClick={() => toggleRubro(rubro.id)}>{open ? '▾' : '▸'}</span>
                   <input
                     value={rubro.nombre}
-                    onChange={e => updRubro(rubro.id, { nombre: e.target.value.toUpperCase() })}
-                    style={{ fontWeight: 800, fontSize: 13, flex: 1, fontFamily: T.font, background: 'transparent', border: 'none', borderBottom: `1px solid ${T.faint2}`, outline: 'none', textTransform: 'uppercase', letterSpacing: 0.5, color: T.ink, padding: '1px 0' }}
+                    onChange={e => updRubro(rubro.id, { nombre: e.target.value })}
+                    onBlur={e => updRubro(rubro.id, { nombre: formatRubroNombre(e.target.value) })}
+                    style={{ fontWeight: 800, fontSize: 13, flex: 1, fontFamily: T.font, background: 'transparent', border: 'none', borderBottom: `1px solid ${T.faint2}`, outline: 'none', letterSpacing: 0.5, color: T.ink, padding: '1px 0' }}
                   />
                   <span style={{ fontSize: 10, color: T.ink2, flexShrink: 0 }}>Mat%</span>
                   <input type="number" min="0" max="100" value={rubro.margenMat}

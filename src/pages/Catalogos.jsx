@@ -9,6 +9,7 @@ import { useDolar } from '../store/DolarContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex, aplicarDolarItems } from '../lib/apuPriceResolver';
 import { groupByKey } from '../lib/catalogGroup';
 import { syncFormItemNames } from '../lib/catalogCascade';
+import { formatRubroNombre } from '../lib/rubroNombre';
 import { normUnidad } from '../lib/unidad';
 import { searchNorm } from '../lib/searchNorm';
 import TareasEstandarEditor from './modales/TareasEstandarEditor';
@@ -1025,13 +1026,16 @@ function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateM
           <div style={{ background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 5, padding: '8px 10px', display: 'flex', gap: 6, alignItems: 'flex-end', flexShrink: 0, marginBottom: 8 }}>
             <div style={{ flex: 1 }}>
               <div style={labelSt}>Nombre</div>
-              <input style={inputSt} value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value.toUpperCase() }))} placeholder="Ej: PINTURA" autoFocus />
+              <input style={inputSt} value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Ej: Pintura" autoFocus />
             </div>
             <Btn sm onClick={() => setForm(null)}>✕</Btn>
             <Btn sm fill onClick={() => {
-              if (!form.nombre.trim()) return;
-              if (selId) onUpdate(selId, { nombre: form.nombre });
-              else onAdd({ nombre: form.nombre });
+              // Se normaliza al guardar: no importa si lo tipearon en MAYÚSCULAS,
+              // queda en minúscula con la inicial mayúscula (formatRubroNombre).
+              const nombre = formatRubroNombre(form.nombre);
+              if (!nombre) return;
+              if (selId) onUpdate(selId, { nombre });
+              else onAdd({ nombre });
               setForm(null); setSelId(null);
             }}>OK</Btn>
           </div>
