@@ -119,6 +119,14 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
   // ─ Cómputo (light, flows naturally across print pages — no fixed height) ─
   const rubroSections = rr.map((rubro, ri) => {
     const taskRows = rubro.tareas.map((t, ti) => {
+      // Las secciones (sub-rubros dentro del gremio: Iluminación, Tomas, Tablero…)
+      // se imprimen como ENCABEZADO, no como fila de tarea: sino salían con
+      // unidad "undefined", cantidad "NaN" y "U$S NaN".
+      if (t.tipo === 'seccion') {
+        return `<div class="task-row" style="background:#eef3f7;border-left:3px solid #1a9b9c;">
+          <div class="tc tc-name" style="flex:1;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:#0d7475;">${esc(t.nombre)}</div>
+        </div>`;
+      }
       const vu = tareaVentaUnit(t, rubro);
       return `<div class="task-row${ti % 2 === 1 ? ' alt' : ''}">
         <div class="tc tc-name">${esc(t.nombre)}${t.codigo ? ` <span class="t-code">[${esc(t.codigo)}]</span>` : ''}</div>
@@ -142,7 +150,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       ${taskRows}
       <div class="rubro-sub">
         <div class="tc tc-name">SUBTOTAL RUBRO ${String(ri + 1).padStart(2, '0')}</div>
-        <div class="tc tc-num gray" style="flex:1.5;">${rubro.tareas.length} tareas</div>
+        <div class="tc tc-num gray" style="flex:1.5;">${rubro.tareas.filter(t => t.tipo !== 'seccion').length} tareas</div>
         <div class="tc tc-num bold-lg">U$S ${toUSD(rubro.venta)}</div>
       </div>
     </div>`;
