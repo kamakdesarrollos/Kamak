@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
@@ -372,6 +373,7 @@ const newAdicId = () => `adic-${Date.now()}-${Math.random().toString(36).slice(2
 function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, onSave, onCancel }) {
   const isGasto  = tipo === 'gasto';
   const color    = isGasto ? T.warn : T.ok;
+  const isMobile = useIsMobile();
   const { catalog } = useCatalog();
   const { config } = useConfiguracion();
   const { addCheque } = useCheques();
@@ -663,7 +665,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
     <div style={{ padding: '12px 14px', background: isGasto ? 'rgba(212,146,58,.07)' : 'rgba(61,122,74,.07)', display: 'flex', flexDirection: 'column', gap: 8 }}>
 
       {/* fila 1: descripción + monto + fecha */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 8 }}>
         <input autoFocus style={{ ...inputSt, flex: 1 }}
           value={desc} onChange={e => setDesc(e.target.value)} onKeyDown={onKey}
           placeholder={isGasto ? 'Descripción del gasto…' : 'Descripción del ingreso…'} />
@@ -671,8 +673,8 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
         {/* Monto según modo */}
         {!isGasto && monedaIngreso === 'USD_ARS' ? (
           // Recibo pesos, referencia en USD: ARS ÷ TC = USD ref
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
-            <input style={{ ...inputSt, width: 110, fontFamily: T.fontMono, fontWeight: 700 }}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+            <input style={{ ...inputSt, width: isMobile ? '100%' : 110, fontFamily: T.fontMono, fontWeight: 700 }}
               type="number" min="0" placeholder="$ Pesos"
               value={monto} onChange={e => setMonto(e.target.value)} onKeyDown={onKey} />
             <span style={{ fontSize: 11, color: T.ink3 }}>÷ TC</span>
@@ -686,20 +688,20 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           </div>
         ) : (
           // Input directo (USD o ARS según moneda seleccionada)
-          <input style={{ ...inputSt, width: 130, fontFamily: T.fontMono, fontWeight: 700 }}
+          <input style={{ ...inputSt, width: isMobile ? '100%' : 130, fontFamily: T.fontMono, fontWeight: 700 }}
             type="number" min="0" placeholder={cajaIsUSD ? 'USD' : '$ Monto'}
             value={monto} onChange={e => setMonto(e.target.value)} onKeyDown={onKey} />
         )}
 
-        <input type="date" style={{ ...inputSt, width: 140 }}
+        <input type="date" style={{ ...inputSt, width: isMobile ? '100%' : 140 }}
           value={fecha} onChange={e => setFecha(e.target.value)} />
       </div>
 
       {/* fila 2: contraparte + moneda + obra + caja + medio */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
 
         {/* Selector proveedor / cliente */}
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1.4, gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: isMobile ? '1 1 100%' : '1.4', gap: 2 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               {isGasto ? 'Proveedor' : 'Cliente'}
@@ -728,16 +730,16 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
         </div>
 
         {/* Selector de moneda — ingresos: ARS / USD / USD→Pesos; gastos: ARS / USD */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: isMobile ? '1 1 calc(50% - 4px)' : '0 0 auto' }}>
           <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Moneda</span>
           {isGasto ? (
-            <select style={{ ...inputSt, width: 110, cursor: 'pointer' }}
+            <select style={{ ...inputSt, width: isMobile ? '100%' : 110, cursor: 'pointer' }}
               value={monedaGasto} onChange={e => setMonedaGasto(e.target.value)}>
               <option value="ARS">Pesos (ARS)</option>
               <option value="USD">Dólares (USD)</option>
             </select>
           ) : (
-            <select style={{ ...inputSt, width: 110, cursor: 'pointer' }}
+            <select style={{ ...inputSt, width: isMobile ? '100%' : 110, cursor: 'pointer' }}
               value={monedaIngreso} onChange={e => setMonedaIngreso(e.target.value)}>
               <option value="ARS">Pesos (ARS)</option>
               <option value="USD">Dólares (USD)</option>
@@ -747,7 +749,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
         </div>
 
         {isGasto && (
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', flex: isMobile ? '1 1 100%' : 1, gap: 2 }}>
             <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               Rubro{obraId && rubrosImputables.length ? ' (del presupuesto)' : ''}
             </span>
@@ -759,7 +761,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: isMobile ? '1 1 calc(50% - 4px)' : 1, gap: 2 }}>
           <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Obra</span>
           <select style={{ ...inputSt, cursor: 'pointer', width: '100%' }} value={obraId} onChange={e => setObraId(e.target.value)}>
             <option value="">— Sin obra —</option>
@@ -767,7 +769,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           </select>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: isMobile ? '1 1 calc(50% - 4px)' : 1, gap: 2 }}>
           <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Caja</span>
           <select style={{ ...inputSt, cursor: 'pointer', width: '100%' }}
             value={cajasMoneda.find(c => c.id === cajaId) ? cajaId : cajasMoneda[0]?.id || ''}
@@ -779,40 +781,42 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           </select>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: isMobile ? '1 1 calc(50% - 4px)' : '0 0 auto' }}>
           <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Medio de pago</span>
-          <select style={{ ...inputSt, width: 120, cursor: 'pointer' }} value={medio} onChange={e => setMedio(e.target.value)}>
+          <select style={{ ...inputSt, width: isMobile ? '100%' : 120, cursor: 'pointer' }} value={medio} onChange={e => setMedio(e.target.value)}>
             {mediosDisponibles.map(v => <option key={v}>{v}</option>)}
           </select>
         </div>
 
-        <Btn sm onClick={onCancel}>✕</Btn>
-        <button onClick={save}
-          style={{ padding: '6px 16px', borderRadius: 4, border: 'none', fontFamily: T.font, fontWeight: 700, fontSize: 12, cursor: canSave ? 'pointer' : 'not-allowed', background: canSave ? color : T.faint2, color: canSave ? '#fff' : T.ink3, transition: 'background .15s', flexShrink: 0 }}>
-          ↵ Guardar
-        </button>
+        <div style={{ display: 'flex', gap: 8, flex: isMobile ? '1 1 100%' : '0 0 auto', justifyContent: isMobile ? 'flex-end' : 'flex-start', alignItems: 'flex-end' }}>
+          <Btn sm onClick={onCancel}>✕</Btn>
+          <button onClick={save}
+            style={{ padding: '6px 16px', borderRadius: 4, border: 'none', fontFamily: T.font, fontWeight: 700, fontSize: 12, cursor: canSave ? 'pointer' : 'not-allowed', background: canSave ? color : T.faint2, color: canSave ? '#fff' : T.ink3, transition: 'background .15s', flexShrink: 0 }}>
+            ↵ Guardar
+          </button>
+        </div>
       </div>
 
       {/* Fila 3: datos del cheque (solo cuando medio = Cheque / E-cheq) */}
       {isCheckPayment && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: '8px 10px', background: isGasto ? 'rgba(212,146,58,.06)' : 'rgba(61,122,74,.06)', borderRadius: 4, border: `1px dashed ${isGasto ? T.warn : T.ok}` }}>
-          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, flexShrink: 0, alignSelf: 'center' }}>Datos cheque</span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '0 0 100px' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', padding: '8px 10px', background: isGasto ? 'rgba(212,146,58,.06)' : 'rgba(61,122,74,.06)', borderRadius: 4, border: `1px dashed ${isGasto ? T.warn : T.ok}`, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, flexShrink: 0, alignSelf: 'center', flex: isMobile ? '1 1 100%' : '0 0 auto' }}>Datos cheque</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: isMobile ? '1 1 calc(50% - 4px)' : '0 0 100px' }}>
             <span style={{ fontSize: 10, color: T.ink3 }}>N° cheque</span>
             <input style={{ ...inputSt }} value={cheqNumero} onChange={e => setCheqNumero(e.target.value)} placeholder="12345678" />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '0 0 140px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: isMobile ? '1 1 calc(50% - 4px)' : '0 0 140px' }}>
             <span style={{ fontSize: 10, color: T.ink3 }}>Banco</span>
             <input list="mov-bancos-list" style={{ ...inputSt }} value={cheqBanco} onChange={e => setCheqBanco(e.target.value)} placeholder="Banco Galicia" />
             <datalist id="mov-bancos-list">{BANCOS_QUICK.map(b => <option key={b} value={b} />)}</datalist>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: isMobile ? '1 1 100%' : 1 }}>
             <span style={{ fontSize: 10, color: T.ink3 }}>{isGasto ? 'Destinatario' : 'Titular (emisor)'}</span>
             <input style={{ ...inputSt }} value={cheqTitular} onChange={e => setCheqTitular(e.target.value)} placeholder={isGasto ? 'A quién se emite' : 'Quien lo firmó'} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '0 0 140px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: isMobile ? '1 1 100%' : '0 0 140px' }}>
             <span style={{ fontSize: 10, color: T.ink3 }}>Fecha de cobro *</span>
-            <input type="date" style={{ ...inputSt }} value={cheqVencimiento} onChange={e => setCheqVencimiento(e.target.value)} />
+            <input type="date" style={{ ...inputSt, width: '100%' }} value={cheqVencimiento} onChange={e => setCheqVencimiento(e.target.value)} />
           </div>
         </div>
       )}
@@ -1116,6 +1120,7 @@ function ComprobantesPanel({ movimientos, mes }) {
 
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Movimientos() {
+  const isMobile = useIsMobile();
   const { movimientos, cajas: allCajas, addMovimiento, removeMovimiento, traspasar } = useMovimientos();
   const { obras }          = useObras();
   const { proveedores }    = useProveedores();
@@ -1259,7 +1264,7 @@ export default function Movimientos() {
         ]}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
         <Panel
           tipo="ingreso"
           movs={ingresos}

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
@@ -72,6 +73,7 @@ function downloadCSV(filename, rows) {
 
 // ── Modal: nueva factura (Ventas — emisión) ───────────────────────────────────
 function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onClose }) {
+  const isMobile = useIsMobile();
   const [form, setForm] = useState({
     clienteId: '',
     tipoId: 'FB',
@@ -181,7 +183,7 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
             <div style={{ flex: 1 }}>
               <label style={labelSt}>Tipo de comprobante *</label>
               <select
@@ -199,7 +201,7 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
               )}
               {!cliente && <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>Elegí primero el cliente.</div>}
             </div>
-            <div style={{ width: 150 }}>
+            <div style={{ width: isMobile ? '100%' : 150 }}>
               <label style={labelSt}>Fecha *</label>
               <input type="date" style={inputSt} value={form.fecha} onChange={e => set('fecha', e.target.value)} />
             </div>
@@ -250,12 +252,12 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
             </select>
           </div>
 
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
             <div style={{ flex: 1 }}>
               <label style={labelSt}>Concepto / detalle</label>
               <input style={inputSt} value={form.concepto} onChange={e => set('concepto', e.target.value)} placeholder="Ej: Trabajos de obra — abril 2026" />
             </div>
-            <div style={{ width: 180 }}>
+            <div style={{ width: isMobile ? '100%' : 180 }}>
               <label style={labelSt}>Concepto AFIP</label>
               <select style={{ ...inputSt, cursor: 'pointer' }} value={form.conceptoAfip} onChange={e => set('conceptoAfip', Number(e.target.value))}>
                 {CONCEPTOS_AFIP.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
@@ -263,13 +265,13 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
             <div style={{ flex: 1 }}>
               <label style={labelSt}>Neto gravado $ *</label>
               <input style={{ ...inputSt, fontFamily: T.fontMono, fontWeight: 700, fontSize: 14 }} type="text" inputMode="decimal"
                 value={form.neto} onChange={e => set('neto', e.target.value)} placeholder="0,00" />
             </div>
-            <div style={{ width: 130 }}>
+            <div style={{ width: isMobile ? '100%' : 130 }}>
               <label style={labelSt}>IVA *</label>
               <select style={{ ...inputSt, cursor: 'pointer' }} value={form.alicuota} onChange={e => set('alicuota', Number(e.target.value))}>
                 {ALICUOTAS_IVA.map(a => <option key={a.pct} value={a.pct}>{a.pct}%</option>)}
@@ -320,7 +322,7 @@ function NuevaFacturaModal({ empresa, clientes, obras, comprobantes, onSave, onC
 }
 
 // ── KPI grande ─────────────────────────────────────────────────────────────────
-function PosicionCard({ debito, credito, percepcionIVA = 0, posicion, mes, readOnly }) {
+function PosicionCard({ debito, credito, percepcionIVA = 0, posicion, mes, readOnly, isMobile }) {
   const aPagar  = posicion > 0;
   const aFavor  = posicion < 0;
   const color   = aPagar ? '#b91c1c' : aFavor ? '#166534' : T.ink2;
@@ -339,7 +341,7 @@ function PosicionCard({ debito, credito, percepcionIVA = 0, posicion, mes, readO
           </div>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.4fr', gap: 12, alignItems: 'stretch' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1.4fr', gap: 12, alignItems: 'stretch' }}>
         <div style={{ background: '#fff7e0', borderRadius: 6, padding: '14px 16px', border: `1px solid #fde68a` }}>
           <div style={{ fontSize: 10, color: '#92400e', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>Débito (Ventas)</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: '#92400e', fontFamily: T.fontMono, marginTop: 4 }}>{fmtMoney(debito)}</div>
@@ -367,6 +369,7 @@ function PosicionCard({ debito, credito, percepcionIVA = 0, posicion, mes, readO
 
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Facturacion() {
+  const isMobile = useIsMobile();
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const isAdmin    = currentUser?.rol === 'Admin';
@@ -657,7 +660,7 @@ export default function Facturacion() {
   const tabSt = (active) => ({
     padding: '10px 18px', cursor: 'pointer', fontFamily: T.font, fontSize: 13, fontWeight: 700,
     borderBottom: active ? `3px solid ${T.accent}` : `3px solid transparent`,
-    color: active ? T.ink : T.ink2, transition: 'all .12s',
+    color: active ? T.ink : T.ink2, transition: 'all .12s', whiteSpace: 'nowrap',
   });
 
   return (
@@ -699,8 +702,8 @@ export default function Facturacion() {
       })()}
 
       {/* Tabs */}
-      <Box style={{ padding: 0, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex' }}>
+      <Box style={{ padding: 0, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+        <div style={{ display: 'flex', overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch', maxWidth: '100%' }}>
           <div style={tabSt(tab === 'resumen')}    onClick={() => setTab('resumen')}>📊 Resumen</div>
           <div style={tabSt(tab === 'ventas')}     onClick={() => setTab('ventas')}>📤 Ventas</div>
           <div style={tabSt(tab === 'compras')}    onClick={() => setTab('compras')}>📥 Compras</div>
@@ -717,10 +720,10 @@ export default function Facturacion() {
       {/* ── TAB RESUMEN ─────────────────────────────────────────────────────── */}
       {tab === 'resumen' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <PosicionCard debito={debito} credito={credito} percepcionIVA={percepcionIVAMes} posicion={posicion} mes={mes} readOnly={isContador} />
+          <PosicionCard debito={debito} credito={credito} percepcionIVA={percepcionIVAMes} posicion={posicion} mes={mes} readOnly={isContador} isMobile={isMobile} />
 
           {/* Comparativa + saldo a favor arrastrado */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
             <Box style={{ padding: 14 }}>
               <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>Mes anterior · {labelMes(mesAnterior)}</div>
               {datosMesAnt && (datosMesAnt.debito || datosMesAnt.credito) ? (
@@ -769,7 +772,7 @@ export default function Facturacion() {
               📦 TXT Libro IVA Digital (AFIP)
             </Btn>
           </Box>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
             <Box style={{ padding: 14 }}>
               <div style={{ fontSize: 11, color: T.ink2, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>Ventas del mes</div>
               <div style={{ fontSize: 14, fontFamily: T.fontMono, marginTop: 4 }}><b>{ventasMes.length}</b> comprobante{ventasMes.length === 1 ? '' : 's'} · {fmtMoney(ventasMes.reduce((s, c) => s + (getTipoComprobante(c.tipoId)?.signo ?? 1) * (c.total || 0), 0))}</div>
@@ -794,7 +797,8 @@ export default function Facturacion() {
               No hay comprobantes emitidos en este mes.{isAdmin && ' Tocá + Nueva factura.'}
             </div>
           ) : (
-            <>
+            <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: isMobile ? 820 : 'auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '7px 14px', background: T.dark, color: '#fff', fontSize: 9.5, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700 }}>
                 <div style={{ width: 70, flexShrink: 0 }}>TIPO</div>
                 <div style={{ flex: 1 }}>CLIENTE</div>
@@ -865,7 +869,8 @@ export default function Facturacion() {
                   </div>
                 );
               })}
-            </>
+            </div>
+            </div>
           )}
         </Box>
       )}
@@ -882,7 +887,8 @@ export default function Facturacion() {
               No hay facturas de compra en este mes. El bot las carga al recibir la foto/PDF.
             </div>
           ) : (
-            <>
+            <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: isMobile ? 760 : 'auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '7px 14px', background: T.dark, color: '#fff', fontSize: 9.5, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700 }}>
                 <div style={{ width: 60, flexShrink: 0 }}>TIPO</div>
                 <div style={{ flex: 1 }}>PROVEEDOR</div>
@@ -918,7 +924,8 @@ export default function Facturacion() {
                   </div>
                 );
               })}
-            </>
+            </div>
+            </div>
           )}
         </Box>
       )}
@@ -1068,8 +1075,8 @@ export default function Facturacion() {
               <Btn sm onClick={exportCSVFinanciero}>⬇ CSV Financiero</Btn>
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', minWidth: isMobile ? 820 : 'auto', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
                   <th style={{ ...headSt, textAlign: 'left' }}>PERIODO</th>

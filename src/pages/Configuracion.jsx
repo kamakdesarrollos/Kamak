@@ -9,6 +9,7 @@ import { useDolar } from '../store/DolarContext';
 import { useIndices } from '../store/IndicesContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { INDICES_TIPO, getIndiceTipo, redeterminar, valorIndice, variacionPct } from '../lib/indices';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -285,6 +286,7 @@ function IndicesCacSection() {
 export default function Configuracion() {
   const { config, patchEmpresa, patchNotificaciones, patchSeguridad, patchApariencia, patchRoot } = useConfiguracion();
   const { currentUser } = useUsuarios();
+  const isMobile = useIsMobile();
   const [saved, setSaved] = useState(false);
 
   const save = (patchFn, changes) => {
@@ -307,7 +309,7 @@ export default function Configuracion() {
         actions={saved && <Chip ok style={{ fontSize: 12 }}>✓ Guardado</Chip>}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, maxWidth: 900, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, maxWidth: 900, alignItems: 'start' }}>
 
         {/* Empresa */}
         <Box style={{ padding: 16 }}>

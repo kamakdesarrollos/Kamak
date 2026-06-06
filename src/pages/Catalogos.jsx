@@ -20,6 +20,7 @@ import { useMovimientos } from '../store/MovimientosContext';
 import { usePlantillas } from '../store/PlantillasContext';
 import { calcularPreviewCAC } from '../lib/cacUpdate';
 import { getIndiceTipo } from '../lib/indices';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 const newId = () => `ci-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const ROLES_LIST = Object.keys(ROLES || {});
@@ -153,6 +154,7 @@ const cellInSt = { width: '100%', textAlign: 'right', fontFamily: T.fontMono, fo
 
 function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, generales, onSave, onCancel }) {
   const { dolarVenta } = useDolar();
+  const isMobile = useIsMobile();
   // Index del catálogo (Map por nombre normalizado) para lookup O(1) en
   // calcTarea — sin esto, cada material × cada item del catálogo SISMAT
   // (~2000) hacía string normalization lineal y mataba el render.
@@ -184,8 +186,12 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
     </div>
   );
 
+  // En mobile las filas (k-tr/k-cell, flex con ratios chicos) se aplastan: fijamos
+  // un minWidth y el bloque de cada tabla va dentro de un contenedor con scroll-x
+  // para preservar la alineación de las columnas numéricas.
+  const rowMinWidth = isMobile ? 460 : undefined;
   const TableHeader = () => (
-    <div className="k-tr" style={{ background: T.faint, fontWeight: 700, fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+    <div className="k-tr" style={{ background: T.faint, fontWeight: 700, fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4, minWidth: rowMinWidth }}>
       <div className="k-cell" style={{ flex: 3 }}>Nombre</div>
       <div className="k-cell" style={{ flex: 1, textAlign: 'right' }}>Cant</div>
       <div className="k-cell" style={{ flex: 0.8, textAlign: 'center' }}>Unidad</div>
@@ -194,28 +200,29 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
       <div className="k-cell" style={{ flex: 0.3 }} />
     </div>
   );
+  const scrollWrap = isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 300, display: 'flex', padding: 16 }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: T.paper, borderRadius: 8, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.4)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 300, display: 'flex', padding: isMobile ? 0 : 16 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: T.paper, borderRadius: isMobile ? 0 : 8, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.4)' }}>
 
         {/* Dark header */}
-        <div style={{ background: T.dark, color: T.paper, padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+        <div style={{ background: T.dark, color: T.paper, padding: isMobile ? '10px 12px' : '12px 18px', display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, flexShrink: 0, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           <input
             value={form.nombre || ''}
             onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
             placeholder="Nombre de la tarea / receta…"
             autoFocus
-            style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: '1.5px solid rgba(255,255,255,.3)', color: T.paper, fontFamily: T.font, fontSize: 18, fontWeight: 800, outline: 'none', padding: '2px 0' }}
+            style={{ flex: isMobile ? '1 1 100%' : 1, background: 'transparent', border: 'none', borderBottom: '1.5px solid rgba(255,255,255,.3)', color: T.paper, fontFamily: T.font, fontSize: isMobile ? 16 : 18, fontWeight: 800, outline: 'none', padding: '2px 0' }}
           />
           <input value={form.subRubro || ''} onChange={e => setForm(f => ({ ...f, subRubro: e.target.value }))}
-            placeholder="Sub-categoría" style={headerInput({ width: 180 })} />
+            placeholder="Sub-categoría" style={headerInput(isMobile ? { flex: '1 1 100%' } : { width: 180 })} />
           <input value={form.codigo || ''} onChange={e => setForm(f => ({ ...f, codigo: e.target.value }))}
-            placeholder="Código" style={headerInput({ width: 100, fontFamily: T.fontMono })} />
+            placeholder="Código" style={headerInput(isMobile ? { flex: 1, fontFamily: T.fontMono } : { width: 100, fontFamily: T.fontMono })} />
           <input value={form.unidad || ''} onChange={e => setForm(f => ({ ...f, unidad: normUnidad(e.target.value) }))}
-            placeholder="Unidad" style={headerInput({ width: 70 })} />
+            placeholder="Unidad" style={headerInput(isMobile ? { flex: 1 } : { width: 70 })} />
           <select value={form.rubroNombre || ''} onChange={e => setForm(f => ({ ...f, rubroNombre: e.target.value }))}
-            style={headerInput({ cursor: 'pointer' })}>
+            style={headerInput(isMobile ? { cursor: 'pointer', flex: '1 1 100%' } : { cursor: 'pointer' })}>
             {rubros.map(r => <option key={r.id} style={{ background: T.dark }}>{r.nombre}</option>)}
           </select>
           <Btn sm fill onClick={onSave} style={{ flexShrink: 0 }}>Guardar</Btn>
@@ -223,7 +230,7 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
         </div>
 
         {/* Totals strip */}
-        <div style={{ background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 20px', display: 'flex', gap: 20, alignItems: 'center', flexShrink: 0 }}>
+        <div style={{ background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: isMobile ? '8px 12px' : '8px 20px', display: 'flex', gap: isMobile ? 12 : 20, alignItems: 'center', flexShrink: 0, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           {[
             { label: 'Materiales', val: costs.mat },
             { label: 'Mano de Obra', val: costs.sub + costs.mo },
@@ -242,7 +249,7 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '14px 12px' : '18px 20px', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
           {/* MATERIALES */}
           <div>
@@ -251,14 +258,14 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
               <InsumoSearch items={materiales} onSelect={addMat} placeholder="Buscar material del catálogo y agregar…" />
             </div>
             {form.materiales.length > 0 ? (
-              <div>
+              <div style={scrollWrap}>
                 <TableHeader />
                 {form.materiales.map(m => {
                   const r = resolverItemAPU(m, catalogIndex.materiales);
                   const warn = !r.encontrado;
                   const unidadMostrar = r.encontrado ? r.unidadCatalogo : m.unidad;
                   return (
-                  <div key={m.id} className="k-tr" style={{ alignItems: 'center', background: warn ? '#fff7ed' : 'transparent' }}>
+                  <div key={m.id} className="k-tr" style={{ alignItems: 'center', background: warn ? '#fff7ed' : 'transparent', minWidth: rowMinWidth }}>
                     <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>
                       {m.nombre}
                       {warn && <span title="Material no encontrado en el catálogo — el precio puede estar desactualizado" style={{ marginLeft: 6, fontSize: 9.5, padding: '1px 5px', borderRadius: 8, background: '#dc2626', color: '#fff', fontWeight: 700, letterSpacing: 0.4 }}>SIN CATÁLOGO</span>}
@@ -288,14 +295,14 @@ function APUEditor({ form, setForm, rubros, materiales, moItems, subcontratos, g
               <InsumoSearch items={subcontratos} onSelect={addSub} placeholder="Buscar M.O del catálogo y agregar…" />
             </div>
             {(form.subcontratos||[]).length > 0 ? (
-              <div>
+              <div style={scrollWrap}>
                 <TableHeader />
                 {(form.subcontratos||[]).map(s => {
                   const r = resolverItemAPU(s, catalogIndex.subcontratos);
                   const warn = !r.encontrado;
                   const unidadMostrar = r.encontrado ? r.unidadCatalogo : s.unidad;
                   return (
-                  <div key={s.id} className="k-tr" style={{ alignItems: 'center', background: warn ? '#fff7ed' : 'transparent' }}>
+                  <div key={s.id} className="k-tr" style={{ alignItems: 'center', background: warn ? '#fff7ed' : 'transparent', minWidth: rowMinWidth }}>
                     <div className="k-cell" style={{ flex: 3, fontSize: 12, fontWeight: 600 }}>
                       {s.nombre}
                       {warn && <span title="Item de M.O no encontrado en el catálogo" style={{ marginLeft: 6, fontSize: 9.5, padding: '1px 5px', borderRadius: 8, background: '#dc2626', color: '#fff', fontWeight: 700, letterSpacing: 0.4 }}>SIN CATÁLOGO</span>}
@@ -341,6 +348,7 @@ const ordenarRubros = (a, b) => {
 };
 
 function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm, rubroKey = 'rubro', rubros }) {
+  const isMobile = useIsMobile();
   const [sel, setSel] = useState(null);
   const [form, setForm] = useState(null);
   const [search, setSearch] = useState('');
@@ -382,9 +390,9 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
   };
 
   return (
-    <div style={{ display: 'flex', gap: 10, height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, height: isMobile ? 'auto' : '100%' }}>
       {rubros?.length > 0 && (
-        <Box style={{ width: 190, flexShrink: 0, padding: '8px 6px', overflow: 'auto' }}>
+        <Box style={{ width: isMobile ? '100%' : 190, flexShrink: 0, padding: '8px 6px', overflow: 'auto', maxHeight: isMobile ? 180 : 'none' }}>
           <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, padding: '0 4px', marginBottom: 6 }}>Por rubro</div>
           <div onClick={() => setSelRubro('')}
             style={{ padding: '4px 8px', borderRadius: 3, cursor: 'pointer', fontWeight: !selRubro ? 700 : 400, fontSize: 11, background: !selRubro ? T.accentSoft : 'transparent', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
@@ -408,14 +416,14 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
         </Box>
       )}
 
-      <Box style={{ flex: 1, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <Box style={{ flex: 1, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: isMobile ? 360 : 0, height: isMobile ? '60vh' : 'auto' }}>
         <div style={{ padding: '8px 10px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 8, alignItems: 'center' }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar…"
             style={{ ...inputSt, flex: 1, padding: '4px 8px' }} />
           <Btn sm fill onClick={startAdd}>+ Agregar</Btn>
         </div>
-        <div style={{ flex: 1, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <div style={{ flex: 1, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: isMobile ? 600 : 'auto' }}>
             <thead>
               <tr style={{ background: T.faint, position: 'sticky', top: 0 }}>
                 {cols.map(c => <th key={c.label} style={{ padding: '6px 10px', textAlign: c.align||'left', fontWeight: 700, fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: `1px solid ${T.faint2}` }}>{c.label}</th>)}
@@ -484,7 +492,7 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
       </Box>
 
       {form && (
-        <Box style={{ width: 300, flexShrink: 0, padding: 14, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Box style={{ width: isMobile ? '100%' : 300, flexShrink: 0, padding: 14, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 4 }}>{sel ? 'Editar' : 'Nuevo'}</div>
           {renderForm(form, setForm)}
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
@@ -591,6 +599,7 @@ function ActualizarCACModal({ catalog, indices, onAplicar, onRestore, onClose })
 }
 
 function ImportarAPUModal({ rubros, onImport, onClose }) {
+  const isMobile = useIsMobile();
   const [text, setText] = useState('');
   const [nombre, setNombre] = useState('');
   const [subRubro, setSubRubro] = useState('');
@@ -628,8 +637,8 @@ function ImportarAPUModal({ rubros, onImport, onClose }) {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ background: T.paper, borderRadius: 8, width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.4)', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 400, display: 'flex', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 20 }}>
+      <div style={{ background: T.paper, borderRadius: isMobile ? 0 : 8, width: '100%', maxWidth: isMobile ? 'none' : 680, maxHeight: isMobile ? '100dvh' : '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.4)', overflow: 'hidden' }}>
 
         {/* Header */}
         <div style={{ background: T.dark, color: T.paper, padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -656,7 +665,7 @@ function ImportarAPUModal({ rubros, onImport, onClose }) {
             <>
               <div style={{ background: T.accentSoft, border: `1.5px solid ${T.accent}`, borderRadius: 6, padding: '10px 14px', fontSize: 12 }}>
                 <div style={{ fontWeight: 800, marginBottom: 6, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: T.ink2 }}>2. Revisá y ajustá los datos detectados</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div>
                       <div style={labelSt}>Nombre de la tarea (receta)</div>
@@ -750,6 +759,7 @@ function ImportarAPUModal({ rubros, onImport, onClose }) {
 
 // ── Tab: APU ──────────────────────────────────────────────────────────────────
 function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMaterial, onAddSubcontrato, nuevaApuRubro, onNuevaApuConsumida }) {
+  const isMobile = useIsMobile();
   const { tareas, rubros, materiales, subcontratos, mo } = catalog;
   const [selRubro, setSelRubro] = useState('');
   const [search, setSearch] = useState('');
@@ -868,9 +878,9 @@ function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMateria
   };
 
   return (
-    <div style={{ display: 'flex', gap: 10, height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, height: isMobile ? 'auto' : '100%' }}>
       {/* Left: rubro tree */}
-      <Box style={{ width: 190, flexShrink: 0, padding: '8px 6px', overflow: 'auto' }}>
+      <Box style={{ width: isMobile ? '100%' : 190, flexShrink: 0, padding: '8px 6px', overflow: 'auto', maxHeight: isMobile ? 180 : 'none' }}>
         <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, padding: '0 4px', marginBottom: 6 }}>Por rubro</div>
         <div onClick={() => setSelRubro('')}
           style={{ padding: '4px 8px', borderRadius: 3, cursor: 'pointer', fontWeight: !selRubro ? 700 : 400, fontSize: 11, background: !selRubro ? T.accentSoft : 'transparent', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
@@ -895,16 +905,16 @@ function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMateria
       </Box>
 
       {/* Main: task list */}
-      <Box style={{ flex: 1, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '8px 10px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 8, alignItems: 'center' }}>
+      <Box style={{ flex: 1, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: isMobile ? 360 : 0, height: isMobile ? '60vh' : 'auto' }}>
+        <div style={{ padding: '8px 10px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', gap: 8, alignItems: 'center', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar tarea…"
-            style={{ ...inputSt, flex: 1, padding: '4px 8px' }} />
+            style={{ ...inputSt, flex: isMobile ? '1 1 100%' : 1, padding: '4px 8px' }} />
           <Chip style={{ fontSize: 10 }}>{filtered.length} tareas</Chip>
           <Btn sm onClick={() => setShowImport(true)}>⬇ Desde Excel</Btn>
           <Btn sm fill onClick={() => startNew(selRubro)}>+ Nueva APU</Btn>
         </div>
-        <div style={{ flex: 1, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <div style={{ flex: 1, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: isMobile ? 560 : 'auto' }}>
             <thead>
               <tr style={{ background: T.faint, position: 'sticky', top: 0, zIndex: 2 }}>
                 {['Tarea','Un','Mat $','M.O $','Total $'].map((h,i) => (
@@ -997,6 +1007,7 @@ function TabAPU({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onAddMateria
 
 // ── Tab: Rubros / Gremios ─────────────────────────────────────────────────────
 function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateMO, onUpdateTarea, onAgregarApu, roles }) {
+  const isMobile = useIsMobile();
   const { rubros, tareas, mo, subcontratos } = catalog;
   const subs = subcontratos || [];
   const [form, setForm] = useState(null);
@@ -1017,8 +1028,8 @@ function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateM
   };
 
   return (
-    <div style={{ display: 'flex', gap: 10, height: '100%' }}>
-      <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, height: isMobile ? 'auto' : '100%' }}>
+      <div style={{ width: isMobile ? '100%' : 240, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', maxHeight: isMobile ? 240 : 'none' }}>
         <div style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0, paddingBottom: 8 }}>
           <Btn sm fill onClick={() => { setForm({ nombre: '' }); setSelId(null); }}>+ Nuevo rubro</Btn>
         </div>
@@ -1059,7 +1070,7 @@ function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateM
       </div>
 
       {activeRubro ? (
-        <Box style={{ flex: 1, padding: 14, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Box style={{ flex: 1, padding: 14, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 14, minHeight: isMobile ? 320 : 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ width: 14, height: 14, borderRadius: 3, background: rCol(activeRubro.nombre), flexShrink: 0 }} />
             <div style={{ fontWeight: 800, fontSize: 20 }}>{activeRubro.nombre}</div>
@@ -1098,12 +1109,12 @@ function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateM
               const open = expandedApuId === t.id;
               return (
                 <div key={t.id} style={{ background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, marginBottom: 5, overflow: 'hidden' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', gap: 10 }}>
-                    <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', gap: 10, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+                    <div style={{ flex: isMobile ? '1 1 100%' : 1 }}>
                       <div style={{ fontSize: 12, fontWeight: 600 }}>{t.nombre}</div>
                       {t.codigo && <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{t.codigo}</div>}
                     </div>
-                    <div style={{ display: 'flex', gap: 12, fontSize: 11, fontFamily: T.fontMono, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11, fontFamily: T.fontMono, alignItems: 'center', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                       <span style={{ color: T.ink2 }}>Mat: $ {fmtN(c.mat)}</span>
                       <span style={{ color: T.ink2 }}>M.O: $ {fmtN(c.sub)}</span>
                       <span style={{ fontWeight: 800, color: T.accent }}>$ {fmtN(c.total)}</span>
@@ -1153,7 +1164,7 @@ function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateM
           </div>
         </Box>
       ) : (
-        <Box style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink3 }}>
+        <Box style={{ flex: 1, minHeight: isMobile ? 200 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink3 }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>👈</div>
             <div style={{ fontSize: 12 }}>Seleccioná un gremio para ver sus tareas y precios de mano de obra</div>
@@ -1169,6 +1180,7 @@ function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateM
 // tareasBase que se generan al aprobar el presupuesto de una obra de ese
 // tipo. No depende del rubro — son tareas administrativas/papeleo típicas.
 function TabTiposObra({ tiposObra, onAdd, onUpdate, onDelete }) {
+  const isMobile = useIsMobile();
   const [form, setForm] = useState(null); // { nombre, descripcion } al crear/editar
   const [editId, setEditId] = useState(null);
   const [activeId, setActiveId] = useState(null);
@@ -1183,9 +1195,9 @@ function TabTiposObra({ tiposObra, onAdd, onUpdate, onDelete }) {
   };
 
   return (
-    <div style={{ display: 'flex', gap: 10, height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, height: isMobile ? 'auto' : '100%' }}>
       {/* Sidebar: lista de tipos */}
-      <div style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+      <div style={{ width: isMobile ? '100%' : 260, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', maxHeight: isMobile ? 240 : 'none' }}>
         <div style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0, paddingBottom: 8 }}>
           <Btn sm fill onClick={() => { setForm({ nombre: '', descripcion: '' }); setEditId(null); }}>+ Nuevo tipo</Btn>
         </div>
@@ -1237,7 +1249,7 @@ function TabTiposObra({ tiposObra, onAdd, onUpdate, onDelete }) {
 
       {/* Detalle: tareas base */}
       {activeTipo ? (
-        <Box style={{ flex: 1, padding: 14, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Box style={{ flex: 1, padding: 14, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 14, minHeight: isMobile ? 320 : 0 }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 20 }}>{activeTipo.nombre}</div>
             {activeTipo.descripcion && <div style={{ fontSize: 12, color: T.ink2, marginTop: 2 }}>{activeTipo.descripcion}</div>}
@@ -1259,7 +1271,7 @@ function TabTiposObra({ tiposObra, onAdd, onUpdate, onDelete }) {
           </div>
         </Box>
       ) : (
-        <Box style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink3 }}>
+        <Box style={{ flex: 1, minHeight: isMobile ? 200 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink3 }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>👈</div>
             <div style={{ fontSize: 12 }}>Seleccioná un tipo para ver y editar sus tareas base</div>
@@ -1278,6 +1290,7 @@ function TabTiposObra({ tiposObra, onAdd, onUpdate, onDelete }) {
 const TABS = ['Materiales', 'Mano de Obra - M.O', 'Generales', 'Tareas (APU)', 'Rubros / Gremios', 'Tipos de obra'];
 
 export default function Catalogos() {
+  const isMobile = useIsMobile();
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const isAdmin = currentUser?.rol === 'Admin';
@@ -1368,7 +1381,7 @@ export default function Catalogos() {
         title="Catálogos"
         subtitle="Insumos, mano de obra, tareas y rubros base del presupuesto"
         actions={
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
             {cacFlash && <Chip ok style={{ fontSize: 11 }}>{cacFlash}</Chip>}
             <Btn sm onClick={() => setCacModal(true)} title="Actualizar precios del catálogo por índice CAC">⟳ Actualizar por CAC</Btn>
             <Btn sm onClick={() => {
@@ -1386,7 +1399,7 @@ export default function Catalogos() {
         }))}
       />
 
-      <div style={{ height: 'calc(100vh - 230px)', overflow: 'hidden' }}>
+      <div style={{ height: isMobile ? 'auto' : 'calc(100vh - 230px)', overflow: isMobile ? 'visible' : 'hidden' }}>
         {tab === 0 && (() => {
           const seen = new Set();
           // Rubros con materiales + TODOS los gremios del catálogo, así un rubro

@@ -4,6 +4,7 @@ import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
@@ -280,6 +281,7 @@ export default function Autorizaciones() {
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const isAdmin = currentUser?.rol === 'Admin';
+  const isMobile = useIsMobile();
   // Guard: solo Admin.
   useEffect(() => {
     if (currentUser && !isAdmin) navigate('/', { replace: true });
@@ -493,7 +495,7 @@ export default function Autorizaciones() {
       )}
 
       {/* Contenido */}
-      <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
+      <div style={{ overflow: 'auto', maxHeight: isMobile ? 'none' : 'calc(100vh - 280px)' }}>
 
         {/* Solicitudes de eliminacion */}
         {showEliminacion && (
@@ -502,15 +504,21 @@ export default function Autorizaciones() {
             {!collapsed.eliminacion && (
               current.eliminacion.length === 0
                 ? <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin items</div>
-                : current.eliminacion.map(sol => (
-                  <SolicitudRow
-                    key={sol.id}
-                    sol={sol}
-                    isPendiente={isPendienteTab}
-                    onAprobar={() => handleAprobarSol(sol)}
-                    onRechazar={() => handleRechazarSol(sol)}
-                  />
-                ))
+                : (
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <div style={{ minWidth: isMobile ? 560 : 'auto' }}>
+                      {current.eliminacion.map(sol => (
+                        <SolicitudRow
+                          key={sol.id}
+                          sol={sol}
+                          isPendiente={isPendienteTab}
+                          onAprobar={() => handleAprobarSol(sol)}
+                          onRechazar={() => handleRechazarSol(sol)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
             )}
           </div>
         )}

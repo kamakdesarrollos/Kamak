@@ -11,6 +11,7 @@ import { useUsuarios } from '../store/UsuariosContext';
 import { CONDICIONES_IVA, validarCUIT } from '../lib/afip';
 import { useComercial } from '../store/ComercialContext';
 import { derivaClienteEstado } from '../lib/derivaClienteEstado';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import ClienteFicha360Modal from './Clientes/ClienteFicha360Modal';
 
 // Chip de estado derivado del cliente: cliente=verde, prospecto=accent, inactivo=gris.
@@ -113,6 +114,7 @@ function NuevoClienteModal({ initial = null, onSave, onClose }) {
 export default function Clientes() {
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const isAdmin = currentUser?.rol === 'Admin';
   // Grilla de la tabla: el no-admin no ve la columna "Facturado" (monto general).
   const gridCols = isAdmin
@@ -260,20 +262,98 @@ export default function Clientes() {
         </Box>
       ) : (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: gridCols, padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            <span>Cliente</span>
-            <span>Empresa</span>
-            <span>CUIT</span>
-            <span>Contacto</span>
-            <span style={{ textAlign: 'center' }}>Obras</span>
-            <span>Estado</span>
-            {isAdmin && <span style={{ textAlign: 'right' }}>Facturado</span>}
-            <span>Acciones</span>
-          </div>
+          {!isMobile && (
+            <div style={{ display: 'grid', gridTemplateColumns: gridCols, padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              <span>Cliente</span>
+              <span>Empresa</span>
+              <span>CUIT</span>
+              <span>Contacto</span>
+              <span style={{ textAlign: 'center' }}>Obras</span>
+              <span>Estado</span>
+              {isAdmin && <span style={{ textAlign: 'right' }}>Facturado</span>}
+              <span>Acciones</span>
+            </div>
+          )}
           {filtered.map(c => {
             const phone = (c.telefono || '').replace(/\s/g, '').replace('+', '');
             const estado = derivaClienteEstado(c, obras.filter(o => o.clienteId === c.id || o.cliente === c.nombre), ultActMap[c.id] || null);
             const ec = ESTADO_CLIENTE_CHIP[estado] || ESTADO_CLIENTE_CHIP.prospecto;
+
+            // ── MOBILE: cada fila como TARJETA vertical (datos clave + acciones) ──
+            if (isMobile) {
+              return (
+                <div key={c.id}
+                  style={{ padding: '12px 14px', borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer' }}
+                  onClick={() => setEditCliente(c)}>
+                  {/* Encabezado: avatar + nombre + chip estado */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <Avatar nombre={c.nombre} size={36} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.nombre}</div>
+                      {c.empresa && <div style={{ color: T.ink2, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.empresa}</div>}
+                    </div>
+                    <span style={{ background: ec.color, color: '#fff', borderRadius: 12, padding: '3px 10px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>{ec.label}</span>
+                  </div>
+
+                  {/* Datos clave */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', fontSize: 12, marginBottom: 10 }}>
+                    {c.cuit && (
+                      <span style={{ color: T.ink2 }}>
+                        <span style={{ color: T.ink3 }}>CUIT </span>
+                        <span style={{ fontFamily: T.fontMono }}>{c.cuit}</span>
+                      </span>
+                    )}
+                    <span onClick={e => e.stopPropagation()}>
+                      <span style={{ color: T.ink3 }}>Obras </span>
+                      {obrasCount[c.id] > 0 ? (
+                        <span
+                          onClick={() => navigate(`/obras?q=${encodeURIComponent(c.nombre)}`)}
+                          style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.ok, textDecoration: 'underline' }}>
+                          {obrasCount[c.id]}
+                        </span>
+                      ) : <span style={{ color: T.ink3, fontFamily: T.fontMono }}>0</span>}
+                    </span>
+                    {isAdmin && totalFacturado[c.id] > 0 && (
+                      <span>
+                        <span style={{ color: T.ink3 }}>Facturado </span>
+                        <span style={{ fontFamily: T.fontMono, color: T.ok }}>$ {Math.round(totalFacturado[c.id]).toLocaleString('es-AR')}</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Contacto */}
+                  {(c.telefono || c.email) && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', marginBottom: 10 }} onClick={e => e.stopPropagation()}>
+                      {c.telefono && (
+                        <a href={`https://wa.me/${phone}`} target="_blank" rel="noopener noreferrer"
+                          style={{ color: '#25d366', textDecoration: 'none', fontSize: 12 }}>
+                          📱 {c.telefono}
+                        </a>
+                      )}
+                      {c.email && (
+                        <a href={`mailto:${c.email}`}
+                          style={{ color: T.accent, textDecoration: 'none', fontSize: 12 }}>
+                          ✉ {c.email}
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Acciones */}
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                    {obrasCount[c.id] > 0 && (
+                      <Btn sm onClick={() => navigate(`/obras?q=${encodeURIComponent(c.nombre)}`)}>🏗 Obras</Btn>
+                    )}
+                    <Btn sm onClick={() => setFicha(c)}>360</Btn>
+                    <Btn sm onClick={() => setEditCliente(c)}>✏ Editar</Btn>
+                    <span style={{ color: T.warn, cursor: 'pointer', fontSize: 18, padding: '0 6px', lineHeight: 1, marginLeft: 'auto' }}
+                      onClick={() => { if (confirm(`¿Eliminar ${c.nombre}?`)) removeCliente(c.id); }}>×</span>
+                  </div>
+                </div>
+              );
+            }
+
+            // ── DESKTOP: fila de tabla (grilla original, intacta) ──
             return (
               <div key={c.id}
                 style={{ display: 'grid', gridTemplateColumns: gridCols, padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, cursor: 'pointer' }}

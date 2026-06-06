@@ -7,6 +7,7 @@ import { T } from '../theme';
 import { useProveedores, calcSaldoProveedorMov } from '../store/ProveedoresContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
 import { facturasPendientesDeProveedor, totalPendiente } from '../lib/facturasPendientes';
 
@@ -161,6 +162,7 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Proveedores() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { currentUser } = useUsuarios();
   // En Proveedores, "Administración" tiene el mismo acceso que Admin: gestiona pagos
   // y cuenta corriente de proveedores (de mano de obra y de materiales).
@@ -269,7 +271,102 @@ export default function Proveedores() {
       )}
 
       {/* ─── Vista lista ────────────────────────────────────────────────────── */}
-      {view === 'lista' && filtered.length > 0 && (
+      {/* En mobile, la lista (tabla ancha de ~10 col) pasa a tarjetas verticales. */}
+      {view === 'lista' && filtered.length > 0 && isMobile && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {filtered.map(p => {
+            const saldo = getSaldo(p.id);
+            const cat   = getCat(p);
+            const phone = (p.telefono || '').replace(/\s/g, '').replace('+', '');
+            const obrasCount = getObrasProveedor(p.id).length;
+            return (
+              <Box key={p.id} style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, cursor: 'pointer' }}
+                onClick={() => navigate(`/proveedores/${p.id}`)}>
+                {/* Cabecera: avatar + nombre + categoría */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Avatar nombre={p.nombre} size={38} cat={cat} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.nombre}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                      <CatBadge cat={cat} />
+                      <StarRating value={p.calificacion || 0} size={12} />
+                    </div>
+                  </div>
+                </div>
+                {/* Datos clave en pares label/valor */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 9, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Especialidad</div>
+                    <div style={{ fontSize: 12, color: T.ink }}>{p.tipo || '—'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>CUIT</div>
+                    <div style={{ fontSize: 12, fontFamily: T.fontMono, color: T.ink }}>{p.cuit || '—'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Obras</div>
+                    <div style={{ fontSize: 12, fontFamily: T.fontMono, fontWeight: 700, color: obrasCount > 0 ? T.accent : T.ink3 }}>{obrasCount}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Condición</div>
+                    <div style={{ fontSize: 11, color: T.ink }}>{p.condicion || '—'}</div>
+                  </div>
+                </div>
+                {/* Contacto */}
+                {(p.telefono || p.email) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }} onClick={e => e.stopPropagation()}>
+                    {p.telefono && (
+                      <a href={`https://wa.me/${phone}`} target="_blank" rel="noopener noreferrer"
+                        style={{ color: '#25d366', textDecoration: 'none', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span>📱</span>{p.telefono}
+                      </a>
+                    )}
+                    {p.email && (
+                      <a href={`mailto:${p.email}`}
+                        style={{ color: T.accent, textDecoration: 'none', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span>✉</span>{p.email}
+                      </a>
+                    )}
+                  </div>
+                )}
+                {/* Saldo / pagado — solo admin */}
+                {isAdmin && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: `1px solid ${T.faint2}`, paddingTop: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 9, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Pagado</div>
+                      <div style={{ fontSize: 13, fontFamily: T.fontMono, color: totalPagado[p.id] > 0 ? T.ok : T.ink3 }}>
+                        {totalPagado[p.id] > 0 ? `$ ${fmtN(totalPagado[p.id])}` : '—'}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 9, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Saldo CC</div>
+                      <div style={{ fontSize: 15, fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.warn : T.ok }}>
+                        {saldo > 0 ? `$ ${fmtN(saldo)}` : 'Al día'}
+                      </div>
+                      {deudaFacturas[p.id] > 0 && (
+                        <div style={{ fontSize: 10, fontFamily: T.fontMono, color: T.accent, fontWeight: 700 }}
+                          title="Facturas pendientes de pago">
+                          + $ {fmtN(deudaFacturas[p.id])} órdenes
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {/* Acciones */}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                  <Btn sm style={{ flex: 1 }} onClick={() => setEditProv(p)}>✏ Editar</Btn>
+                  {isAdmin && <Btn sm accent style={{ flex: 1 }} onClick={() => setPagoProvId(p.id)}>Pagar</Btn>}
+                  {isAdmin && (
+                    <span style={{ color: T.warn, cursor: 'pointer', fontSize: 20, padding: '0 6px', lineHeight: 1 }}
+                      onClick={() => { if (confirm(`¿Eliminar ${p.nombre}?`)) removeProveedor(p.id); }}>×</span>
+                  )}
+                </div>
+              </Box>
+            );
+          })}
+        </div>
+      )}
+      {view === 'lista' && filtered.length > 0 && !isMobile && (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 1fr 1fr 1fr 1fr' : '2.5fr 1.1fr 1fr 1.3fr 0.8fr 0.6fr 0.8fr auto', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             <span>Proveedor</span>

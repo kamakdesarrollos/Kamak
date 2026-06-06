@@ -16,17 +16,19 @@ import { ETAPAS_VENTA } from '../../lib/constants';
 import { pipelinePonderado, agingDias, motivosPerdida, winRatePorResponsable } from '../../lib/ventaKpis';
 import { derivaClienteEstado } from '../../lib/derivaClienteEstado';
 import { fmtN } from '../../lib/format';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 const fmtU = (n) => `U$S ${fmtN(n)}`;
 const Kpi = ({ label, value, sub, color }) => (
   <Box style={{ padding: '12px 16px' }}>
     <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1, fontWeight: 700, textTransform: 'uppercase' }}>{label}</div>
-    <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: color || T.ink, lineHeight: 1.1, marginTop: 2 }}>{value}</div>
+    <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: color || T.ink, lineHeight: 1.1, marginTop: 2, wordBreak: 'break-all' }}>{value}</div>
     {sub && <div style={{ fontSize: 10.5, color: T.ink3, marginTop: 2 }}>{sub}</div>}
   </Box>
 );
 
 export default function VentasReportes() {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const { obras, getDetalle } = useObras();
   const { movimientos, cajas } = useMovimientos();
@@ -77,7 +79,7 @@ export default function VentasReportes() {
       <PageHero label="COMERCIAL" title="KPIs de ventas"
         subtitle={`${abiertas.length} oportunidades abiertas · conversión ${resumen.conversion}% · pipeline U$S ${fmtN(valorAbierto)}`} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(140px, 1fr))' : 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
         <Kpi label="Conversión" value={`${resumen.conversion}%`} sub={`${resumen.conteo.ganado} ganadas / ${resumen.cerradas} cerradas`} color={T.ok} />
         <Kpi label="Tasa de pérdida" value={`${resumen.cerradas > 0 ? Math.round(resumen.conteo.perdido / resumen.cerradas * 100) : 0}%`} sub={`${resumen.conteo.perdido} perdidas`} color="#b91c1c" />
         <Kpi label="Pipeline abierto" value={fmtU(valorAbierto)} sub={`${abiertas.length} oportunidades`} color={T.accent} />
@@ -86,7 +88,7 @@ export default function VentasReportes() {
         <Kpi label="Clientes" value={`${estadosCliente.cliente}`} sub={`${estadosCliente.prospecto} prospectos · ${estadosCliente.inactivo} inactivos`} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
         {/* Embudo por etapa */}
         <Box style={{ padding: 16 }}>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Embudo por etapa</div>

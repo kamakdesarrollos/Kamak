@@ -62,7 +62,7 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
               {label}
             </div>
           )}
-          <div className="k-h" style={{ fontSize: 17, lineHeight: 1.15, letterSpacing: -0.2 }}>{title}</div>
+          <div className="k-h" style={{ fontSize: 'clamp(15px, 4.5vw, 17px)', lineHeight: 1.15, letterSpacing: -0.2 }}>{title}</div>
           {subtitle && (
             <div style={{ fontSize: 10.5, color: '#a3a09a', marginTop: 2, fontWeight: 400 }}>{subtitle}</div>
           )}
@@ -87,7 +87,7 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
       {kpis.length > 0 && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${kpis.length}, 1fr)`,
+          gridTemplateColumns: `repeat(auto-fit, minmax(120px, 1fr))`,
           background: '#fbf9f1',
         }}>
           {kpis.map((k, i) => (

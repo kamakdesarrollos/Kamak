@@ -4,6 +4,7 @@ import PageLayout from '../components/layout/PageLayout';
 import PageHero from '../components/ui/PageHero';
 import { Box, Btn, Chip, Divider } from '../components/ui';
 import { T } from '../theme';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import { usePlantillas } from '../store/PlantillasContext';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { buscarEnCatalogo } from '../lib/apuPriceResolver';
@@ -810,6 +811,7 @@ export default function Plantillas() {
   const navigate = useNavigate();
   const { currentUser } = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
+  const isMobile = useIsMobile();
   // Guard: solo Admin (las plantillas tienen costos y margenes).
   useEffect(() => {
     if (currentUser && !isAdmin) navigate('/', { replace: true });
@@ -907,10 +909,10 @@ export default function Plantillas() {
         ]}
       />
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar…"
-          style={{ ...inputSt, width: 180, padding: '5px 10px' }} />
-        <div style={{ display: 'flex', gap: 4 }}>
+          style={{ ...inputSt, width: isMobile ? '100%' : 180, padding: '5px 10px' }} />
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {TIPOS.map(t => (
             <span key={t} onClick={() => setTipoFilt(t)}
               style={{ padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12,
@@ -926,8 +928,9 @@ export default function Plantillas() {
 
       {/* Tabla estructurada — estilo formal similar a Catalogos */}
       <Box style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {/* Header */}
-        <div style={{ display: 'grid', gridTemplateColumns: '0.7fr 2fr 0.6fr 0.6fr 1fr 0.5fr 0.8fr 1fr', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 12px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '0.7fr 2fr 0.6fr 0.6fr 1fr 0.5fr 0.8fr 1fr', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 12px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, minWidth: isMobile ? 700 : 'auto' }}>
           <span>Tipo</span>
           <span>Nombre</span>
           <span style={{ textAlign: 'right' }}>Rubros</span>
@@ -939,7 +942,7 @@ export default function Plantillas() {
         </div>
 
         {/* Filas */}
-        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 290px)' }}>
+        <div style={{ overflow: 'auto', maxHeight: isMobile ? 'none' : 'calc(100vh - 290px)' }}>
           {filtered.map((p, i) => {
             const ref     = calcRef(p, catalogIndex, sismatCostMap);
             const nTareas = totalTareas(p);
@@ -948,6 +951,7 @@ export default function Plantillas() {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '0.7fr 2fr 0.6fr 0.6fr 1fr 0.5fr 0.8fr 1fr',
+                  minWidth: isMobile ? 700 : 'auto',
                   padding: '10px 12px',
                   borderBottom: i < filtered.length - 1 ? `1px solid ${T.faint2}` : 'none',
                   fontSize: 12,
@@ -997,6 +1001,7 @@ export default function Plantillas() {
             </div>
           )}
         </div>
+        </div>{/* /overflowX */}
       </Box>
 
       {viewPlt && !showEdit && (

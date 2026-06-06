@@ -39,8 +39,8 @@ export default function Login() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f0ece0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font }}>
-      <div style={{ width: 400, background: T.paper, borderRadius: 8, boxShadow: '0 8px 48px rgba(0,0,0,0.13)', overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: '#f0ece0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font, padding: '16px' }}>
+      <div style={{ width: '100%', maxWidth: 400, background: T.paper, borderRadius: 8, boxShadow: '0 8px 48px rgba(0,0,0,0.13)', overflow: 'hidden' }}>
 
         <div style={{ background: T.dark, padding: '26px 30px 22px', position: 'relative', overflow: 'hidden' }}>
           <Stripes style={{ top: -20, right: -10 }} />

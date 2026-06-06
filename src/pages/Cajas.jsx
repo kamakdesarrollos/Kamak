@@ -11,6 +11,7 @@ import { useUsuarios } from '../store/UsuariosContext';
 import { useCheques } from '../store/ChequesContext';
 import TraspasoModal from './modales/TraspasoModal';
 import { puedeVerCaja } from '../lib/permisosCaja';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -325,6 +326,7 @@ function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0, canRe
 }
 
 export default function Cajas() {
+  const isMobile = useIsMobile();
   const { cajas, removeCaja } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
@@ -406,6 +408,10 @@ export default function Cajas() {
           </div>
 
           <Box style={{ padding: 0, overflow: 'hidden' }}>
+            {/* En mobile, scroll-x para no aplastar las columnas (preserva la
+                alineación de saldos/cheques/acciones). Desktop intacto. */}
+            <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+            <div style={{ minWidth: isMobile ? (seccion.isARS ? 640 : 540) : undefined }}>
             {/* Header */}
             <div style={{ display: 'grid', gridTemplateColumns: seccion.isARS ? '2fr 1fr 1.4fr 1fr 1fr 110px' : '2fr 1fr 1.4fr 1fr 110px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 12px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               <span>Caja</span>
@@ -463,6 +469,8 @@ export default function Cajas() {
                 </div>
               );
             })}
+            </div>
+            </div>
           </Box>
 
           {seccion.titulo === 'Rendición de fondos' && (

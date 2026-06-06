@@ -10,6 +10,7 @@ import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useDolar } from '../store/DolarContext';
 import { calcObra, calcTotalClienteUSD, cobradoObraUSD } from './obra/helpers';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n, moneda) => {
@@ -422,8 +423,41 @@ function CardFinalizada({ obra, cc, onClick, onTransicion, onEditar }) {
 }
 
 // ── Fila: archivada (lista compacta) ─────────────────────────────────────────
-function FilaArchivada({ obra, onClick, onTransicion, onEliminar }) {
+function FilaArchivada({ obra, onClick, onTransicion, onEliminar, isMobile }) {
   const navigate = useNavigate();
+
+  if (isMobile) {
+    return (
+      <div
+        style={{ padding: '10px 14px', borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer' }}
+        onClick={onClick}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>{obra.nombre}</div>
+            <div style={{ fontSize: 11, color: T.ink2 }}>
+              {obra.cliente
+                ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                    onClick={e => { e.stopPropagation(); navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`); }}>
+                    {obra.cliente}
+                  </span>
+                : '—'
+              }
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', fontSize: 11 }}>
+            <div className="k-mono" style={{ fontWeight: 700, fontSize: 12 }}>{fmt(obra.presupuesto, obra.moneda)}</div>
+            <div style={{ color: T.ink2, marginTop: 2 }}>{fmtDate(obra.fechaFin || obra.fechaFinEstim)}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
+          <Btn sm style={{ flex: 1, justifyContent: 'center' }} onClick={() => onTransicion('en-presupuesto')}>↩ Desarchivar</Btn>
+          <Btn sm style={{ color: T.accent, borderColor: T.accent }} onClick={onEliminar}>🗑</Btn>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.faint2}`, cursor: 'pointer', gap: 10 }}
@@ -463,6 +497,7 @@ export default function Obras() {
   const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
+  const isMobile = useIsMobile();
   const isAdmin = currentUser?.rol === 'Admin';
   const tc = dolarVenta || 1070;
 
@@ -552,14 +587,14 @@ export default function Obras() {
         title="Obras"
         subtitle={`${activas.length + enPresu.length} obras en curso`}
         actions={
-          <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             <input
               value={busqueda} onChange={e => setBusqueda(e.target.value)}
               placeholder="⌕ Buscar obra o cliente…"
-              style={{ padding: '5px 10px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, width: 200, outline: 'none', background: 'rgba(255,255,255,0.06)', color: '#fff' }}
+              style={{ padding: '5px 10px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, width: isMobile ? '100%' : 200, outline: 'none', background: 'rgba(255,255,255,0.06)', color: '#fff', boxSizing: 'border-box' }}
             />
             {canCreate && <Btn sm fill onClick={() => setShowNueva(true)}>+ Nueva obra</Btn>}
-          </>
+          </div>
         }
         kpis={(isAdmin
           ? [
@@ -580,7 +615,7 @@ export default function Obras() {
 
       {/* ── TAB 0: Activas ── */}
       {tabIdx === 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 12 }}>
           {filtrar(activas).map(o => (
             <CardActiva key={o.id} obra={o} stats={getStats(o)}
               onClick={() => goObra(o)}
@@ -615,7 +650,7 @@ export default function Obras() {
               {canCreate && <Btn sm fill onClick={() => setShowNueva(true)}>+ Nueva obra</Btn>}
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 12 }}>
               {filtrar(enPresu).map(o => (
                 <CardPresupuesto key={o.id} obra={o}
                   onClick={() => goObra(o)}
@@ -655,7 +690,7 @@ export default function Obras() {
                 <div style={{ fontSize: 11, fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>
                   {s.titulo} <span style={{ color: T.ink3 }}>· {s.lista.length}</span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 12 }}>
                   {s.lista.map(o => (
                     <CardFinalizada key={o.id} obra={o} cc={getCC(o)}
                       onClick={() => goObra(o)}
@@ -673,14 +708,16 @@ export default function Obras() {
       {/* ── TAB 3: Archivadas ── */}
       {tabIdx === 3 && (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
-          {/* header tabla */}
-          <div style={{ display: 'flex', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 11, fontWeight: 700, color: T.ink2, gap: 10 }}>
-            <span style={{ flex: 1.5 }}>Obra / Cliente</span>
-            <span style={{ flex: 1 }}>Tipo</span>
-            <span style={{ flex: 1 }}>Presupuesto</span>
-            <span style={{ flex: 0.8 }}>Cierre</span>
-            <span style={{ flex: 1.2 }}>Acciones</span>
-          </div>
+          {/* header tabla — solo visible en desktop */}
+          {!isMobile && (
+            <div style={{ display: 'flex', padding: '7px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 11, fontWeight: 700, color: T.ink2, gap: 10 }}>
+              <span style={{ flex: 1.5 }}>Obra / Cliente</span>
+              <span style={{ flex: 1 }}>Tipo</span>
+              <span style={{ flex: 1 }}>Presupuesto</span>
+              <span style={{ flex: 0.8 }}>Cierre</span>
+              <span style={{ flex: 1.2 }}>Acciones</span>
+            </div>
+          )}
           {filtrar(archivadas).length === 0 ? (
             <div style={{ padding: 24, color: T.ink3, textAlign: 'center' }}>
               {busqueda ? `Sin resultados para "${busqueda}"` : 'No hay obras archivadas'}
@@ -690,6 +727,7 @@ export default function Obras() {
               onClick={() => goObra(o)}
               onTransicion={(est) => handleTransicion(o.id, est)}
               onEliminar={() => handleEliminar(o.id)}
+              isMobile={isMobile}
             />
           ))}
         </Box>

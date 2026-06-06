@@ -4,11 +4,13 @@ import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Stat, Label, Note } from '../components/ui';
 import { T } from '../theme';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 export default function Conciliacion() {
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const isAdmin = currentUser?.rol === 'Admin';
+  const isMobile = useIsMobile();
   // Guard: solo Admin (conciliacion bancaria es operacion financiera).
   useEffect(() => {
     if (currentUser && !isAdmin) navigate('/', { replace: true });
@@ -40,18 +42,18 @@ export default function Conciliacion() {
       <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#b45309', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 12, fontWeight: 600 }}>
         🚧 En construcción — esta pantalla es una maqueta de demostración. Los datos no son reales y no se guardan.
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'baseline', gap: 8, marginBottom: 8 }}>
         <div>
           <div className="k-h" style={{ fontSize: 28 }}>Conciliación bancaria</div>
           <div style={{ fontSize: 12, color: T.ink2 }}>Banco Galicia ARS · período 01–15 mayo 2026 · 48 movimientos del extracto</div>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <Btn sm>↗ Importar extracto (.xlsx / .csv)</Btn>
           <Btn sm fill>Confirmar conciliación</Btn>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 14, padding: '10px 12px', background: '#f6efd9', borderRadius: 4, marginBottom: 10 }}>
+      <div style={{ display: 'flex', gap: 14, padding: '10px 12px', background: '#f6efd9', borderRadius: 4, marginBottom: 10, flexWrap: 'wrap' }}>
         <Stat label="Saldo banco (extracto)" value="$ 2.290.000" />
         <Stat label="Saldo sistema" value="$ 2.300.000" />
         <Stat label="Diferencia" value="$ 10.000" accent />
@@ -59,7 +61,7 @@ export default function Conciliacion() {
         <Stat label="Pendientes" value="6" />
       </div>
 
-      <div style={{ display: 'flex', gap: 10, overflow: 'hidden', height: 'calc(100vh - 280px)' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, overflow: isMobile ? 'visible' : 'hidden', height: isMobile ? 'auto' : 'calc(100vh - 280px)' }}>
         {/* Extracto banco */}
         <Box style={{ flex: 1, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '7px 10px', background: T.faint, borderBottom: `1.5px solid ${T.rule}`, display: 'flex', alignItems: 'center', gap: 8 }}>

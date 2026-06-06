@@ -5,6 +5,7 @@ import { Btn } from '../../components/ui';
 import { T } from '../../theme';
 import { useObras } from '../../store/ObrasContext';
 import { useUsuarios, ROL_TABS_OCULTAS, ROL_TABS_OCULTAS_DEFAULT } from '../../store/UsuariosContext';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 // ── Fixed constants ────────────────────────────────────────────────────────────
 const TOT_WEEKS  = 60;
@@ -131,6 +132,7 @@ export default function ObraGantt() {
   const navigate = useNavigate();
   const { obras, getDetalle, patchDetalle } = useObras();
   const { currentUser } = useUsuarios();
+  const isMobile = useIsMobile();
   const isAdmin = currentUser?.rol === 'Admin';
   // Mapa único de pestañas ocultas por rol (compartido con ObraPresupuesto).
   const rolHiddenTabs = isAdmin ? [] : (ROL_TABS_OCULTAS[currentUser?.rol] ?? ROL_TABS_OCULTAS_DEFAULT);
@@ -472,11 +474,11 @@ export default function ObraGantt() {
       </div>
 
       {/* ── Main ── */}
-      <div style={{ display: 'flex', gap: 10, height: 'calc(100vh - 218px)', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, height: isMobile ? 'auto' : 'calc(100vh - 218px)', overflow: isMobile ? 'visible' : 'hidden' }}>
 
         {/* ── Timeline ── */}
         <div ref={containerRef}
-          style={{ flex: 1, overflow: 'auto', border: `1.5px solid ${T.faint2}`, borderRadius: 6, background: 'white', position: 'relative', cursor: drag ? 'grabbing' : splitMode ? 'crosshair' : addingDep ? 'cell' : 'default' }}>
+          style={{ flex: 1, overflowX: 'auto', overflowY: 'auto', WebkitOverflowScrolling: 'touch', ...(isMobile ? { height: '62vh', minWidth: 0 } : {}), border: `1.5px solid ${T.faint2}`, borderRadius: 6, background: 'white', position: 'relative', cursor: drag ? 'grabbing' : splitMode ? 'crosshair' : addingDep ? 'cell' : 'default' }}>
           <div style={{ minWidth: LEFT_W + TOT_DAYS * dayPx, position: 'relative' }}>
 
             {/* Month header */}
@@ -699,7 +701,7 @@ export default function ObraGantt() {
         </div>
 
         {/* ── Right panel ── */}
-        <div style={{ width: 268, flexShrink: 0, border: `1.5px solid ${T.faint2}`, borderRadius: 6, background: 'white', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ width: isMobile ? '100%' : 268, flexShrink: 0, border: `1.5px solid ${T.faint2}`, borderRadius: 6, background: 'white', overflow: isMobile ? 'visible' : 'auto', display: 'flex', flexDirection: 'column' }}>
 
           {/* Add task form */}
           {showAdd && (
