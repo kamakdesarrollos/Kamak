@@ -8,7 +8,41 @@ import { hashDocumento } from '../../src/lib/contrato.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const META_TOKEN = process.env.META_ACCESS_TOKEN;
+const PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
 const sbH = () => ({ apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' });
+
+// GET genérico a una tabla REST (para app_users / whatsapp_users).
+async function sbGet(table, query = '') {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, { headers: sbH() });
+    if (!r.ok) return [];
+    return r.json();
+  } catch (e) { console.error('[firmar] sbGet', table, e.message); return []; }
+}
+
+// Mensaje de WhatsApp (texto libre) — molde de payment-reminders/sales-followups.
+async function sendWA(to, body) {
+  try {
+    const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body } }),
+    });
+    return { ok: r.ok };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+// Avisa a los admins (app_users rol Admin + whatsapp_users vinculados) por WA.
+// Best-effort: NUNCA rompe el flujo de firma (cualquier error se loguea y sigue).
+async function avisarAdmins(texto) {
+  try {
+    const appUsers = await sbGet('app_users', '?select=id,rol');
+    const waUsers = await sbGet('whatsapp_users', '?select=user_id,phone');
+    const admins = (waUsers || []).filter(lu => (appUsers || []).find(u => u.id === lu.user_id)?.rol === 'Admin');
+    for (const a of admins) { if (a.phone) await sendWA(a.phone, texto); }
+  } catch (e) { console.error('[firmar] avisarAdmins', e.message); }
+}
 
 async function loadSharedData(key) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/shared_data?key=eq.${key}&select=data`, { headers: sbH() });
@@ -148,6 +182,9 @@ export default async function handler(req, res) {
     const actividades = (await loadSharedData('crm_actividades')) || [];
     actividades.unshift({ id: `act-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, clienteId: obra.clienteId || null, obraId, tipo: 'firma', texto: `Contrato firmado por ${firma.nombre}`, fecha, usuario: 'sistema', adjuntos: [], creadoAt: fecha, actualizadoAt: fecha });
     await saveSharedData('crm_actividades', actividades);
+
+    // Aviso a los admins por WhatsApp (best-effort, no rompe la firma).
+    await avisarAdmins(`✍️ ${firma.nombre} firmó el contrato de ${obra.nombre}`);
 
     return res.status(200).json({ success: true, fechaFirmado: fecha });
   } catch (e) {
