@@ -53,7 +53,10 @@ export default function VentasReportes() {
   const valorAbierto = useMemo(() => abiertas.reduce((s, o) => s + o.montoUSD, 0), [abiertas]);
   const ganadasUSD = useMemo(() => oportunidades.filter(o => o.etapa === 'ganado').reduce((s, o) => s + o.montoUSD, 0), [oportunidades]);
   const ticket = resumen.conteo.ganado > 0 ? Math.round(ganadasUSD / resumen.conteo.ganado) : 0;
-  const motivos = useMemo(() => motivosPerdida(obras), [obras]);
+  // Motivos de pérdida sobre la MISMA fuente que el resto de KPIs: oportunidades
+  // con etapa EFECTIVA 'perdido' (no la cruda), para que no se contradiga con la
+  // conversión (una 'perdido' que cobró cuenta como ganada en ambos lados).
+  const motivos = useMemo(() => motivosPerdida(oportunidades.filter(o => o.etapa === 'perdido').map(o => o.obra)), [oportunidades]);
   const winResp = useMemo(() => winRatePorResponsable(oportunidades), [oportunidades]);
   const agingTop = useMemo(() => abiertas.map(o => ({ nombre: o.obra.nombre, dias: agingDias(o.obra) })).filter(x => x.dias != null).sort((a, b) => b.dias - a.dias).slice(0, 6), [abiertas]);
 

@@ -54,6 +54,9 @@ export async function crearProspecto({ nombreObra, clienteNombre, usuario }) {
   const obrasData = (await loadSharedData('obras')) || { obras: [], detalles: {} };
   const clientes = (await loadSharedData('clientes')) || [];
   const cliente = clientes.find(c => (c.nombre || '').toLowerCase() === (clienteNombre || '').toLowerCase());
+  // Evitar duplicados: si ya existe una obra con ese nombre, no crear otra.
+  const dupe = (obrasData.obras || []).find(o => (o.nombre || '').toLowerCase().trim() === (nombreObra || '').toLowerCase().trim());
+  if (dupe) return { duplicada: true, existente: { nombre: dupe.nombre, etapa: dupe.venta?.etapa || null } };
   const today = new Date().toISOString().slice(0, 10);
   const nueva = {
     id: newId('obra'), nombre: nombreObra, cliente: cliente?.nombre || clienteNombre || '', clienteId: cliente?.id || null,
@@ -70,8 +73,13 @@ export async function crearProspecto({ nombreObra, clienteNombre, usuario }) {
 // la actividad en el timeline (crm_actividades).
 export async function moverEtapaObra({ obraNombre, etapaNueva, usuario }) {
   const obrasData = (await loadSharedData('obras')) || { obras: [], detalles: {} };
-  const obra = (obrasData.obras || []).find(o => (o.nombre || '').toLowerCase().includes((obraNombre || '').toLowerCase()));
-  if (!obra) return { error: 'obra_no_encontrada' };
+  const q = (obraNombre || '').toLowerCase().trim();
+  const matches = (obrasData.obras || []).filter(o => (o.nombre || '').toLowerCase().includes(q));
+  // Preferir match EXACTO (desambigua 'Shell Ruta 3' de 'Shell Ruta 3 Anexo'); si
+  // hay varias coincidencias parciales y ninguna exacta, pedir desambiguación en
+  // vez de mover la obra equivocada (mover a ganado/perdido es destructivo).
+  const obra = matches.find(o => (o.nombre || '').toLowerCase().trim() === q) || (matches.length === 1 ? matches[0] : null);
+  if (!obra) return matches.length > 1 ? { error: 'obra_ambigua', candidatos: matches.map(o => o.nombre) } : { error: 'obra_no_encontrada' };
   const today = new Date().toISOString().slice(0, 10);
   const venta = { ...(obra.venta || {}), etapa: etapaNueva, fechaCambioEtapa: today, changelog: [...((obra.venta || {}).changelog || []), { etapa: etapaNueva, fecha: today, usuario: usuario || 'bot' }] };
   const cambios = { venta };

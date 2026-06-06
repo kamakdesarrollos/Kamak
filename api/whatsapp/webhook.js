@@ -2611,9 +2611,15 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     const nombreObra = String(datos.obraNombre || datos.nombreObra || '').trim();
     if (!nombreObra) return '❌ ¿Cómo se llama la obra/oportunidad? Ej: *nuevo prospecto Shell Ruta 3 cliente Pérez*.';
     const clienteNombre = String(datos.clienteNombre || '').trim() || null;
-    const nueva = await crearProspecto({ nombreObra, clienteNombre, usuario: user.user_name });
-    const cliMsg = nueva.clienteId ? `\n👤 Cliente: *${nueva.cliente}*` : (clienteNombre ? `\n👤 Cliente: *${clienteNombre}* (no estaba en la base, lo dejé como texto)` : '');
-    return `✅ *Prospecto creado*\n🏗 *${nueva.nombre}*${cliMsg}\nEtapa: *Prospecto* · en presupuesto. Editable desde Comercial.`;
+    try {
+      const nueva = await crearProspecto({ nombreObra, clienteNombre, usuario: user.user_name });
+      if (nueva.duplicada) return `⚠️ Ya existe una obra *${nueva.existente.nombre}*${nueva.existente.etapa ? ` (etapa ${nueva.existente.etapa})` : ''}. Si la querés mover, decime: *pasá ${nueva.existente.nombre} a cotizado*.`;
+      const cliMsg = nueva.clienteId ? `\n👤 Cliente: *${nueva.cliente}*` : (clienteNombre ? `\n👤 Cliente: *${clienteNombre}* (no estaba en la base, lo dejé como texto)` : '');
+      return `✅ *Prospecto creado*\n🏗 *${nueva.nombre}*${cliMsg}\nEtapa: *Prospecto* · en presupuesto. Editable desde Comercial.`;
+    } catch (e) {
+      console.error('[webhook] crear_prospecto', e.message);
+      return '❌ No pude guardar el prospecto (error de base). Reintentá en un momento; si sigue, avisá.';
+    }
   }
 
   if (tipo === 'mover_etapa') {
@@ -2623,11 +2629,17 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     const etapaNueva = String(datos.etapaNueva || '').trim().toLowerCase();
     if (!obraNombre) return '❌ ¿Qué obra movemos? Ej: *pasá Shell Ruta 3 a ganado*.';
     if (!ETAPAS_OK.includes(etapaNueva)) return '❌ ¿A qué etapa? Las opciones son: prospecto, cotizado, negociación, ganado o perdido.';
-    const r = await moverEtapaObra({ obraNombre, etapaNueva, usuario: user.user_name });
-    if (r?.error === 'obra_no_encontrada') return `❌ No encontré una obra que matchee con "${obraNombre}".`;
-    const extra = etapaNueva === 'ganado' ? '\n🎉 La pasé a *activa* (ganada).'
-                : etapaNueva === 'perdido' ? '\n📁 La archivé como *perdida*.' : '';
-    return `✅ *${r.obra}* movida a *${etapaNueva}*.${extra}\nQuedó registrado en el timeline.`;
+    try {
+      const r = await moverEtapaObra({ obraNombre, etapaNueva, usuario: user.user_name });
+      if (r?.error === 'obra_no_encontrada') return `❌ No encontré una obra que matchee con "${obraNombre}".`;
+      if (r?.error === 'obra_ambigua') return `🤔 Hay varias obras que matchean con "${obraNombre}":\n${(r.candidatos || []).map(n => `• ${n}`).join('\n')}\nDecime el nombre exacto.`;
+      const extra = etapaNueva === 'ganado' ? '\n🎉 La pasé a *activa* (ganada).'
+                  : etapaNueva === 'perdido' ? '\n📁 La archivé como *perdida*.' : '';
+      return `✅ *${r.obra}* movida a *${etapaNueva}*.${extra}\nQuedó registrado en el timeline.`;
+    } catch (e) {
+      console.error('[webhook] mover_etapa', e.message);
+      return '❌ No pude mover la etapa (error de base). Reintentá en un momento; si sigue, avisá.';
+    }
   }
 
   // ── Nueva tarea desde WhatsApp ──────────────────────────────────────────────

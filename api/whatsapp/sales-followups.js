@@ -13,6 +13,7 @@ const MESES_INACTIVO = 6;
 const sbH = () => ({ apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' });
 async function sbGet(table, query = '') { const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, { headers: sbH() }); if (!r.ok) return []; return r.json(); }
 async function loadSharedData(key) { const rows = await sbGet('shared_data', `?key=eq.${key}&select=data`); return rows[0]?.data ?? null; }
+async function saveSharedData(key, data) { await fetch(`${SUPABASE_URL}/rest/v1/shared_data?on_conflict=key`, { method: 'POST', headers: { ...sbH(), Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ key, data }) }); }
 async function sendWA(to, body) { try { const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, { method: 'POST', headers: { Authorization: `Bearer ${META_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body } }) }); return { ok: r.ok }; } catch (e) { return { ok: false, error: e.message }; } }
 
 const diasDesde = (iso) => iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null;
@@ -51,6 +52,14 @@ export default async function handler(req, res) {
 
     if (estancadas.length === 0 && inactivos.length === 0) return res.status(200).json({ ok: true, nada: true });
 
+    // Dedup/throttle: si el set de oportunidades/clientes es idéntico al último
+    // aviso y pasaron < 24h, no reenviamos (evita el spam diario a los admins).
+    const idsActual = [...estancadas.map(o => o.id), ...inactivos.map(c => 'cl:' + c.id)].sort();
+    const prevState = (await loadSharedData('sales_followups_state')) || {};
+    const sinCambios = JSON.stringify(prevState.ids || []) === JSON.stringify(idsActual);
+    const horasDesdeUltimo = prevState.ts ? (Date.now() - new Date(prevState.ts).getTime()) / 3600000 : Infinity;
+    if (sinCambios && horasDesdeUltimo < 24) return res.status(200).json({ ok: true, skip: 'sin-cambios' });
+
     // Armar mensaje y mandar a los admins.
     const appUsers = await sbGet('app_users', '?select=id,nombre,rol');
     const waUsers = await sbGet('whatsapp_users', '?select=user_id,phone');
@@ -62,6 +71,8 @@ export default async function handler(req, res) {
 
     const resultados = [];
     for (const a of admins) { const r = await sendWA(a.phone, cuerpo); resultados.push({ phone: a.phone, ok: r.ok }); }
+    // Registrar el estado de esta corrida para deduplicar la próxima.
+    await saveSharedData('sales_followups_state', { ts: new Date().toISOString(), ids: idsActual });
     return res.status(200).json({ ok: true, estancadas: estancadas.length, inactivos: inactivos.length, enviados: resultados });
   } catch (e) { console.error('[sales-followups]', e.message); return res.status(500).json({ error: e.message }); }
 }
