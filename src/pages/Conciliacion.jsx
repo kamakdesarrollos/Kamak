@@ -44,21 +44,21 @@ export default function Conciliacion() {
       </div>
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'baseline', gap: 8, marginBottom: 8 }}>
         <div>
-          <div className="k-h" style={{ fontSize: 28 }}>Conciliación bancaria</div>
+          <div className="k-h" style={{ fontSize: isMobile ? 20 : 28 }}>Conciliación bancaria</div>
           <div style={{ fontSize: 12, color: T.ink2 }}>Banco Galicia ARS · período 01–15 mayo 2026 · 48 movimientos del extracto</div>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <Btn sm>↗ Importar extracto (.xlsx / .csv)</Btn>
-          <Btn sm fill>Confirmar conciliación</Btn>
+          <Btn sm style={isMobile ? { fontSize: 12 } : {}}>↗ {isMobile ? 'Importar' : 'Importar extracto (.xlsx / .csv)'}</Btn>
+          <Btn sm fill style={isMobile ? { fontSize: 12 } : {}}>Confirmar{isMobile ? '' : ' conciliación'}</Btn>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 14, padding: '10px 12px', background: '#f6efd9', borderRadius: 4, marginBottom: 10, flexWrap: 'wrap' }}>
-        <Stat label="Saldo banco (extracto)" value="$ 2.290.000" />
-        <Stat label="Saldo sistema" value="$ 2.300.000" />
-        <Stat label="Diferencia" value="$ 10.000" accent />
-        <Stat label="Conciliados auto" value="42 / 48" />
-        <Stat label="Pendientes" value="6" />
+        <Stat label="Saldo banco (extracto)" value="$ 2.290.000" style={isMobile ? { width: '100%' } : {}} />
+        <Stat label="Saldo sistema" value="$ 2.300.000" style={isMobile ? { width: '100%' } : {}} />
+        <Stat label="Diferencia" value="$ 10.000" accent style={isMobile ? { width: '100%' } : {}} />
+        <Stat label="Conciliados auto" value="42 / 48" style={isMobile ? { width: '48%' } : {}} />
+        <Stat label="Pendientes" value="6" style={isMobile ? { width: '48%' } : {}} />
       </div>
 
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, overflow: isMobile ? 'visible' : 'hidden', height: isMobile ? 'auto' : 'calc(100vh - 280px)' }}>
@@ -70,17 +70,31 @@ export default function Conciliacion() {
           </div>
           <div style={{ flex: 1, overflow: 'auto', fontSize: 12 }}>
             {banco.map(([d, c, m, st, color], i) => (
-              <div key={i} className="k-tr" style={{ alignItems: 'center', borderLeft: `3px solid ${color}` }}>
-                <div className="k-cell" style={{ flex: 0.6, fontFamily: `'JetBrains Mono', monospace` }}>{d}</div>
-                <div className="k-cell" style={{ flex: 2.5 }}>{c}</div>
-                <div className="k-cell" style={{ flex: 1.2, textAlign: 'right', fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, color: m.startsWith('-') ? T.accent : T.ok }}>{m}</div>
-                <div className="k-cell" style={{ flex: 1.2, fontSize: 10 }}>
-                  {st === 'match' ? <Chip ok style={{ fontSize: 10 }}>✓ {st}</Chip> : <Chip accent style={{ fontSize: 10 }}>! {st}</Chip>}
+              isMobile ? (
+                <div key={i} style={{ borderLeft: `3px solid ${color}`, padding: '7px 10px', borderBottom: `1px solid ${T.rule}`, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontFamily: `'JetBrains Mono', monospace`, color: T.ink2 }}>{d}</span>
+                    <span style={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, color: m.startsWith('-') ? T.accent : T.ok }}>{m}</span>
+                  </div>
+                  <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.ink }}>{c}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {st === 'match' ? <Chip ok style={{ fontSize: 10 }}>✓ {st}</Chip> : <Chip accent style={{ fontSize: 10 }}>! {st}</Chip>}
+                    {st === 'sin match' && <Btn sm>+ Crear gasto</Btn>}
+                  </div>
                 </div>
-                <div className="k-cell" style={{ flex: 0.8 }}>
-                  {st === 'sin match' && <Btn sm>+ Crear gasto</Btn>}
+              ) : (
+                <div key={i} className="k-tr" style={{ alignItems: 'center', borderLeft: `3px solid ${color}` }}>
+                  <div className="k-cell" style={{ flex: 0.6, fontFamily: `'JetBrains Mono', monospace` }}>{d}</div>
+                  <div className="k-cell" style={{ flex: 2.5 }}>{c}</div>
+                  <div className="k-cell" style={{ flex: 1.2, textAlign: 'right', fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, color: m.startsWith('-') ? T.accent : T.ok }}>{m}</div>
+                  <div className="k-cell" style={{ flex: 1.2, fontSize: 10 }}>
+                    {st === 'match' ? <Chip ok style={{ fontSize: 10 }}>✓ {st}</Chip> : <Chip accent style={{ fontSize: 10 }}>! {st}</Chip>}
+                  </div>
+                  <div className="k-cell" style={{ flex: 0.8 }}>
+                    {st === 'sin match' && <Btn sm>+ Crear gasto</Btn>}
+                  </div>
                 </div>
-              </div>
+              )
             ))}
           </div>
         </Box>
@@ -93,20 +107,35 @@ export default function Conciliacion() {
           </div>
           <div style={{ flex: 1, overflow: 'auto', fontSize: 12 }}>
             {sistema.map(([d, c, m, st, color], i) => (
-              <div key={i} className="k-tr" style={{ alignItems: 'center', borderLeft: `3px solid ${color}` }}>
-                <div className="k-cell" style={{ flex: 0.6, fontFamily: `'JetBrains Mono', monospace` }}>{d}</div>
-                <div className="k-cell" style={{ flex: 2.5 }}>{c}</div>
-                <div className="k-cell" style={{ flex: 1.2, textAlign: 'right', fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, color: m.startsWith('-') ? T.accent : T.ok }}>{m}</div>
-                <div className="k-cell" style={{ flex: 1.4, fontSize: 10 }}>
-                  {st === 'match' ? <Chip ok style={{ fontSize: 10 }}>✓ conciliado</Chip> : <Chip warn style={{ fontSize: 10 }}>? sin extracto</Chip>}
+              isMobile ? (
+                <div key={i} style={{ borderLeft: `3px solid ${color}`, padding: '7px 10px', borderBottom: `1px solid ${T.rule}`, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontFamily: `'JetBrains Mono', monospace`, color: T.ink2 }}>{d}</span>
+                    <span style={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, color: m.startsWith('-') ? T.accent : T.ok }}>{m}</span>
+                  </div>
+                  <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.ink }}>{c}</div>
+                  <div>
+                    {st === 'match' ? <Chip ok style={{ fontSize: 10 }}>✓ conciliado</Chip> : <Chip warn style={{ fontSize: 10 }}>? sin extracto</Chip>}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div key={i} className="k-tr" style={{ alignItems: 'center', borderLeft: `3px solid ${color}` }}>
+                  <div className="k-cell" style={{ flex: 0.6, fontFamily: `'JetBrains Mono', monospace` }}>{d}</div>
+                  <div className="k-cell" style={{ flex: 2.5 }}>{c}</div>
+                  <div className="k-cell" style={{ flex: 1.2, textAlign: 'right', fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, color: m.startsWith('-') ? T.accent : T.ok }}>{m}</div>
+                  <div className="k-cell" style={{ flex: 1.4, fontSize: 10 }}>
+                    {st === 'match' ? <Chip ok style={{ fontSize: 10 }}>✓ conciliado</Chip> : <Chip warn style={{ fontSize: 10 }}>? sin extracto</Chip>}
+                  </div>
+                </div>
+              )
             ))}
           </div>
         </Box>
       </div>
 
-      <Note style={{ position: 'fixed', bottom: 18, right: 24, maxWidth: 230, zIndex: 10 }}>
+      <Note style={isMobile
+        ? { position: 'fixed', bottom: 8, left: 8, right: 8, width: 'auto', maxWidth: 'min(360px, 92vw)', zIndex: 10 }
+        : { position: 'fixed', bottom: 18, right: 24, maxWidth: 230, zIndex: 10 }}>
         Match auto por monto + fecha (±2d) + nombre. Discrepancias: crear gasto desde el extracto o marcar como ignorado.
       </Note>
     </PageLayout>
