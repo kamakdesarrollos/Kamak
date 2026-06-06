@@ -528,7 +528,7 @@ export default function Dashboard() {
       {/* KPIs del mes */}
       {on('kpis') && (
         <Box style={{ padding: 0, marginBottom: 12, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fit, minmax(140px, 1fr))' : 'repeat(4, 1fr)' }}>
             {[
               { label: `Ingresos · ${MESES_N[mo - 1]}`, value: `$ ${fmtN(totalIngresosMes)}`, sub: `${ingresosMes.length} cobros`, color: T.ok, to: '/movimientos' },
               { label: `Gastos · ${MESES_N[mo - 1]}`,   value: `$ ${fmtN(totalGastosMes)}`,   sub: `${gastosMes.length} registros`, color: T.warn, to: '/movimientos' },
