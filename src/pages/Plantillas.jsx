@@ -195,6 +195,7 @@ function TotalsStrip({ rr, cols, setCols, children }) {
 
 // ── ImportarRecetaModal ───────────────────────────────────────────────────────
 function ImportarRecetaModal({ onAgregar, onClose }) {
+  const isMobile = useIsMobile();
   const [texto,          setTexto]          = useState('');
   const [nombreOverride, setNombreOverride] = useState('');
   const [margenMat,      setMargenMat]      = useState(15);
@@ -210,7 +211,7 @@ function ImportarRecetaModal({ onAgregar, onClose }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: isMobile ? '100%' : 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 16 }}>Importar receta desde Excel</div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
@@ -272,7 +273,7 @@ function ImportarRecetaModal({ onAgregar, onClose }) {
                       <span style={{ width: 30, fontWeight: 700, color: it.costoSub > 0 ? '#6b7db3' : T.ok, flexShrink: 0 }}>
                         {it.costoSub > 0 ? 'SC' : 'MA'}
                       </span>
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.nombre}</span>
+                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.nombre}</span>
                       <span style={{ width: 60, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2, flexShrink: 0 }}>{it.cantidad}</span>
                       <span style={{ width: 40, marginLeft: 6, color: T.ink2, flexShrink: 0 }}>{it.unidad}</span>
                       <span style={{ width: 90, textAlign: 'right', fontFamily: T.fontMono, color: T.accent, flexShrink: 0 }}>
@@ -323,6 +324,7 @@ function buildVisibleTareas(tareas, collapsedSections) {
 
 // ── PlantillaViewer ───────────────────────────────────────────────────────────
 function PlantillaViewer({ plt, onClose, onEdit, onUsar }) {
+  const isMobile = useIsMobile();
   const { catalogIndex, sismatCostMap } = useCatalog();
   const [cols, setCols]         = useState({ costoUnit: false, costoTotal: true, margenL: false, ventaUnit: false, ventaTotal: true });
   const [abiertos, setAbiertos] = useState({});
@@ -337,14 +339,14 @@ function PlantillaViewer({ plt, onClose, onEdit, onUsar }) {
       <div style={{ flex: 1, background: T.paper, borderRadius: 6, border: `1.5px solid ${T.faint2}`, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.3)' }}>
 
         <div style={{ padding: '12px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 19, letterSpacing: 0.5 }}>{plt.nombre}</div>
-            <div style={{ fontSize: 11, opacity: 0.55, marginTop: 2 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: isMobile ? 'clamp(15px,4.5vw,19px)' : 19, letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: isMobile ? 'normal' : 'nowrap' }}>{plt.nombre}</div>
+            <div style={{ fontSize: isMobile ? 'clamp(10px,2.5vw,11px)' : 11, opacity: 0.55, marginTop: 2, whiteSpace: 'normal', lineHeight: 1.4 }}>
               {plt.tipo} · {(plt.rubros || []).length} rubros · {totalTareas(plt)} tareas
               {plt.descripcion ? ` · ${plt.descripcion}` : ''}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
             <Btn sm onClick={onEdit}>✏ Editar</Btn>
             <Btn sm fill onClick={onUsar}>Usar en obra →</Btn>
             <span style={{ cursor: 'pointer', fontSize: 22, opacity: 0.6, marginLeft: 8, lineHeight: 1 }} onClick={onClose}>✕</span>
@@ -746,6 +748,7 @@ function PlantillaEditor({ form, setForm, onSave, onCancel }) {
 
 // ── Modal: crear obra desde plantilla ────────────────────────────────────────
 function UsarPlantillaModal({ plantilla, onClose, onCrear }) {
+  const isMobile = useIsMobile();
   const { clientes } = useClientes();
   const todayStr = () => new Date().toISOString().split('T')[0];
   const [nombre, setNombre]     = useState('');
@@ -760,7 +763,7 @@ function UsarPlantillaModal({ plantilla, onClose, onCrear }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: isMobile ? '100%' : 420 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Crear obra desde plantilla</div>
@@ -930,7 +933,7 @@ export default function Plantillas() {
       <Box style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {/* Header */}
-        <div style={{ display: 'grid', gridTemplateColumns: '0.7fr 2fr 0.6fr 0.6fr 1fr 0.5fr 0.8fr 1fr', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 12px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, minWidth: isMobile ? 700 : 'auto' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '0.7fr 2fr 0.6fr 0.6fr 1fr 0.5fr 0.8fr 1fr', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, padding: '8px 12px', fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, minWidth: isMobile ? 'auto' : 700 }}>
           <span>Tipo</span>
           <span>Nombre</span>
           <span style={{ textAlign: 'right' }}>Rubros</span>
@@ -951,7 +954,7 @@ export default function Plantillas() {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '0.7fr 2fr 0.6fr 0.6fr 1fr 0.5fr 0.8fr 1fr',
-                  minWidth: isMobile ? 700 : 'auto',
+                  minWidth: isMobile ? 'auto' : 700,
                   padding: '10px 12px',
                   borderBottom: i < filtered.length - 1 ? `1px solid ${T.faint2}` : 'none',
                   fontSize: 12,
@@ -982,7 +985,9 @@ export default function Plantillas() {
                   <span style={{ position: 'relative' }}>
                     <Btn sm onClick={() => setMenuId(menuId === p.id ? null : p.id)}>⋮</Btn>
                     {menuId === p.id && (
-                      <div style={{ position: 'absolute', right: 0, top: 28, background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, zIndex: 20, minWidth: 120, boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
+                      <div style={isMobile
+                        ? { position: 'fixed', left: 8, right: 8, top: 'auto', bottom: 80, background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 6, zIndex: 200, maxWidth: 'min(360px, 92vw)', margin: '0 auto', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }
+                        : { position: 'absolute', right: 0, top: 28, background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 4, zIndex: 20, minWidth: 120, boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
                         <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 12, borderBottom: `1px solid ${T.faint2}` }}
                           onClick={() => handleDup(p)}>Duplicar</div>
                         <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 12, color: T.warn }}
@@ -1028,7 +1033,9 @@ export default function Plantillas() {
       )}
 
       {flash && (
-        <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: T.ink, color: 'white', padding: '10px 20px', borderRadius: 6, fontSize: 13, zIndex: 400, maxWidth: 420, textAlign: 'center', pointerEvents: 'none' }}>
+        <div style={isMobile
+          ? { position: 'fixed', bottom: 20, left: 8, right: 8, background: T.ink, color: 'white', padding: '10px 16px', borderRadius: 6, fontSize: 13, zIndex: 400, maxWidth: 'min(360px, 92vw)', margin: '0 auto', textAlign: 'center', pointerEvents: 'none' }
+          : { position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: T.ink, color: 'white', padding: '10px 20px', borderRadius: 6, fontSize: 13, zIndex: 400, maxWidth: 420, textAlign: 'center', pointerEvents: 'none' }}>
           {flash}
         </div>
       )}
