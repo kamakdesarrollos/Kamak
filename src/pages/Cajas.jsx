@@ -26,6 +26,7 @@ const fmtFecha = (iso) => { if (!iso) return ''; const [, m, d] = iso.split('-')
 const fmtFechaLarga = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
 
 function CajaMovimientosModal({ caja, onClose }) {
+  const isMobile = useIsMobile();
   const { movimientos } = useMovimientos();
   const { cheques } = useCheques();
   const { proveedores } = useProveedores();
@@ -50,7 +51,7 @@ function CajaMovimientosModal({ caja, onClose }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 580, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: isMobile ? '100%' : 580, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
@@ -183,6 +184,7 @@ function CajaMovimientosModal({ caja, onClose }) {
 }
 
 function NuevaCajaModal({ onClose }) {
+  const isMobile = useIsMobile();
   const { addCaja } = useMovimientos();
   const { usuarios } = useUsuarios();
   const [nombre, setNombre] = useState('');
@@ -211,7 +213,7 @@ function NuevaCajaModal({ onClose }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 380 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: isMobile ? '100%' : 380 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 800, fontSize: 17, fontFamily: T.font }}>Nueva caja</div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
@@ -294,14 +296,14 @@ function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0, canRe
 
       {tieneChecks ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr', alignItems: 'stretch', marginBottom: 10 }}>
-          <div style={{ paddingRight: 12 }}>
+          <div style={{ paddingRight: 12, minWidth: 0 }}>
             <div style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Efectivo</div>
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 16, color: efectivo < 0 ? NEG : T.ink, lineHeight: 1 }}>
               {fmtMonto(efectivo, '$')}
             </div>
           </div>
           <div style={{ background: T.faint2 }} />
-          <div style={{ paddingLeft: 12 }}>
+          <div style={{ paddingLeft: 12, minWidth: 0 }}>
             <div style={{ fontSize: 9, color: '#1a9b9c', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Cheques</div>
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 16, color: '#1a9b9c', lineHeight: 1 }}>
               $ {fmtN(saldoCheques)}
@@ -445,12 +447,12 @@ export default function Cajas() {
                   onMouseEnter={e => e.currentTarget.style.background = T.faint}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <span style={{ fontWeight: 700, color: T.ink, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                  <span style={{ fontWeight: 700, color: T.ink, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', minWidth: 0 }}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</span>
                     {isLow && <Chip warn style={{ fontSize: 9, flexShrink: 0 }}>⚠ bajo</Chip>}
                   </span>
                   <span style={{ fontSize: 11, color: T.ink2, textTransform: 'capitalize' }}>{TIPO_LABEL[c.tipo] || c.tipo}</span>
-                  <span style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 6 }}>{c.propietario || '—'}</span>
+                  <span style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 6, minWidth: 0 }}>{c.propietario || '—'}</span>
                   {seccion.isARS && (
                     <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 600, color: saldoCheques > 0 ? T.accent : T.ink3 }}>
                       {saldoCheques > 0 ? `$ ${fmtN(saldoCheques)}` : '—'}

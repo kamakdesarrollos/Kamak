@@ -3,12 +3,14 @@ import { Btn, Divider } from '../../components/ui';
 import { T } from '../../theme';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useDolar } from '../../store/DolarContext';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
 const fmtN = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
 
 export default function TraspasoModal({ onClose }) {
+  const isMobile = useIsMobile();
   const { cajas, traspasar } = useMovimientos();
   const { dolarVenta } = useDolar();
 
@@ -55,7 +57,7 @@ export default function TraspasoModal({ onClose }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: isMobile ? '100%' : 420 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontFamily: T.font, fontWeight: 800, fontSize: 17 }}>Traspaso entre cajas</div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
