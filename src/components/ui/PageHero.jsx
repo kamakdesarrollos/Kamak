@@ -79,7 +79,7 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
             minWidth: 0,
           }}>{title}</div>
           {subtitle && (
-            <div style={{ fontSize: 10.5, color: '#a3a09a', marginTop: 2, fontWeight: 400 }}>{subtitle}</div>
+            <div style={{ fontSize: 10.5, color: '#a3a09a', marginTop: 2, fontWeight: 400, whiteSpace: isMobile ? 'normal' : 'nowrap', overflowWrap: 'break-word' }}>{subtitle}</div>
           )}
         </div>
 

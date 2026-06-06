@@ -20,9 +20,9 @@ import { useIsMobile } from '../../hooks/useMediaQuery';
 
 const fmtU = (n) => `U$S ${fmtN(n)}`;
 const Kpi = ({ label, value, sub, color }) => (
-  <Box style={{ padding: '12px 16px' }}>
+  <Box style={{ padding: '12px 16px', maxWidth: '100%' }}>
     <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1, fontWeight: 700, textTransform: 'uppercase' }}>{label}</div>
-    <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: color || T.ink, lineHeight: 1.1, marginTop: 2, wordBreak: 'break-all' }}>{value}</div>
+    <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 'clamp(16px, 3.5vw, 22px)', color: color || T.ink, lineHeight: 1.1, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
     {sub && <div style={{ fontSize: 10.5, color: T.ink3, marginTop: 2 }}>{sub}</div>}
   </Box>
 );
@@ -79,7 +79,7 @@ export default function VentasReportes() {
       <PageHero label="COMERCIAL" title="KPIs de ventas"
         subtitle={`${abiertas.length} oportunidades abiertas · conversión ${resumen.conversion}% · pipeline U$S ${fmtN(valorAbierto)}`} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(140px, 1fr))' : 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(110px, 1fr))' : 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
         <Kpi label="Conversión" value={`${resumen.conversion}%`} sub={`${resumen.conteo.ganado} ganadas / ${resumen.cerradas} cerradas`} color={T.ok} />
         <Kpi label="Tasa de pérdida" value={`${resumen.cerradas > 0 ? Math.round(resumen.conteo.perdido / resumen.cerradas * 100) : 0}%`} sub={`${resumen.conteo.perdido} perdidas`} color="#b91c1c" />
         <Kpi label="Pipeline abierto" value={fmtU(valorAbierto)} sub={`${abiertas.length} oportunidades`} color={T.accent} />
@@ -106,9 +106,9 @@ export default function VentasReportes() {
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Más estancadas (días en etapa)</div>
           {agingTop.length === 0 && <div style={{ fontSize: 12, color: T.ink3 }}>—</div>}
           {agingTop.map(x => (
-            <div key={x.nombre} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
-              <span style={{ color: T.ink }}>{x.nombre}</span>
-              <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: x.dias > 14 ? '#b91c1c' : T.ink2 }}>{x.dias}d</span>
+            <div key={x.nombre} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, gap: 6 }}>
+              <span style={{ color: T.ink, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.nombre}</span>
+              <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: x.dias > 14 ? '#b91c1c' : T.ink2, flexShrink: 0 }}>{x.dias}d</span>
             </div>
           ))}
         </Box>
@@ -118,9 +118,9 @@ export default function VentasReportes() {
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Motivos de pérdida</div>
           {motivos.length === 0 && <div style={{ fontSize: 12, color: T.ink3 }}>Sin pérdidas registradas.</div>}
           {motivos.map(m => (
-            <div key={m.motivo} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
-              <span style={{ color: T.ink }}>{m.motivo}</span>
-              <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.ink2 }}>{m.count}</span>
+            <div key={m.motivo} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, gap: 6 }}>
+              <span style={{ color: T.ink, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.motivo}</span>
+              <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.ink2, flexShrink: 0 }}>{m.count}</span>
             </div>
           ))}
         </Box>
@@ -129,9 +129,9 @@ export default function VentasReportes() {
         <Box style={{ padding: 16 }}>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Win rate por responsable</div>
           {Object.entries(winResp).map(([id, r]) => (
-            <div key={id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
-              <span style={{ color: T.ink }}>{nombreResp(id)}</span>
-              <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.ok }}>{r.winRate}% <span style={{ color: T.ink3, fontWeight: 400 }}>({r.ganadas}/{r.ganadas + r.perdidas})</span></span>
+            <div key={id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, gap: 6 }}>
+              <span style={{ color: T.ink, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreResp(id)}</span>
+              <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.ok, flexShrink: 0 }}>{r.winRate}% <span style={{ color: T.ink3, fontWeight: 400 }}>({r.ganadas}/{r.ganadas + r.perdidas})</span></span>
             </div>
           ))}
         </Box>
