@@ -91,6 +91,7 @@ function InsumoSearch({ items, onSelect, placeholder }) {
   const [open, setOpen] = useState(false);
   const [idx, setIdx] = useState(0);
   const ref = useRef(null);
+  const isMobile = useIsMobile();
 
   const results = useMemo(() => {
     if (!q.trim()) return [];
@@ -134,7 +135,9 @@ function InsumoSearch({ items, onSelect, placeholder }) {
         style={{ ...inputSt, padding: '7px 10px' }}
       />
       {open && results.length > 0 && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: T.paper, border: `1.5px solid ${T.accent}`, borderRadius: 4, boxShadow: '0 4px 16px rgba(0,0,0,.15)', zIndex: 50, maxHeight: 220, overflow: 'auto' }}>
+        <div style={isMobile
+          ? { position: 'fixed', left: 8, right: 8, width: 'auto', maxWidth: 'min(92vw, 360px)', top: 'auto', background: T.paper, border: `1.5px solid ${T.accent}`, borderRadius: 4, boxShadow: '0 4px 16px rgba(0,0,0,.2)', zIndex: 1200, maxHeight: '80vh', overflowY: 'auto' }
+          : { position: 'absolute', top: '100%', left: 0, right: 0, background: T.paper, border: `1.5px solid ${T.accent}`, borderRadius: 4, boxShadow: '0 4px 16px rgba(0,0,0,.15)', zIndex: 50, maxHeight: 220, overflow: 'auto' }}>
           {results.map((item, i) => (
             <div key={item.id}
               onMouseDown={() => select(item)}
@@ -508,6 +511,7 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
 // ── Importar APU desde Excel ──────────────────────────────────────────────────
 // Modal: actualizar masivamente los precios del catálogo por índice CAC.
 function ActualizarCACModal({ catalog, indices, onAplicar, onRestore, onClose }) {
+  const isMobile = useIsMobile();
   const meses = Object.keys(indices || {}).sort();
   const [mesBase, setMesBase] = useState(meses[0] || '');
   const [mesActual, setMesActual] = useState(meses[meses.length - 1] || '');
@@ -527,8 +531,8 @@ function ActualizarCACModal({ catalog, indices, onAplicar, onRestore, onClose })
   const sel = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontSize: 12, background: T.paper, cursor: 'pointer' };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
-      <div style={{ background: T.paper, borderRadius: 8, width: 580, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '8px' : '20px' }} onClick={onClose}>
+      <div style={{ background: T.paper, borderRadius: 8, width: isMobile ? '100%' : 580, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <b style={{ fontSize: 15 }}>⟳ Actualizar precios por CAC</b>
           <span style={{ cursor: 'pointer', color: T.ink3, fontSize: 18 }} onClick={onClose}>✕</span>
@@ -1122,7 +1126,7 @@ function TabRubros({ catalog, catalogIndex, onAdd, onUpdate, onDelete, onUpdateM
                     </div>
                     <span onClick={() => setExpandedApuId(open ? null : t.id)}
                       title="Tareas a generar al aprobar un presupuesto con este APU"
-                      style={{ cursor: 'pointer', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, whiteSpace: 'nowrap', background: nTE ? T.accentSoft : T.faint, color: nTE ? T.accent : T.ink3 }}>
+                      style={{ cursor: 'pointer', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, whiteSpace: 'nowrap', minWidth: 0, flexShrink: isMobile ? 1 : 0, background: nTE ? T.accentSoft : T.faint, color: nTE ? T.accent : T.ink3 }}>
                       ◆ {nTE || ''} tarea{nTE === 1 ? '' : 's'} {open ? '▾' : '▸'}
                     </span>
                   </div>
@@ -1230,8 +1234,8 @@ function TabTiposObra({ tiposObra, onAdd, onUpdate, onDelete }) {
               style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 3, borderLeft: `3px solid ${isActive ? T.accent : T.faint2}`, background: isActive ? T.accentSoft : 'transparent', cursor: 'pointer', gap: 6, marginBottom: 2 }}
               onClick={() => setActiveId(t.id === activeId ? null : t.id)}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: isActive ? 700 : 500, color: isActive ? T.ink : T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.nombre}</div>
-                {t.descripcion && <div style={{ fontSize: 9.5, color: T.ink3, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</div>}
+                <div style={{ fontSize: 12, fontWeight: isActive ? 700 : 500, color: isActive ? T.ink : T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: isMobile ? 'normal' : 'nowrap' }}>{t.nombre}</div>
+                {t.descripcion && <div style={{ fontSize: 9.5, color: T.ink3, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: isMobile ? 'normal' : 'nowrap' }}>{t.descripcion}</div>}
               </div>
               {n > 0 && <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono }}>{n}</span>}
               <span style={{ fontSize: 11, color: T.ink3, cursor: 'pointer', opacity: 0.6, lineHeight: 1, padding: '0 3px' }}
