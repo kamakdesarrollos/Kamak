@@ -13,6 +13,7 @@ const ALL_ITEMS = [
   { icon: '☑', label: 'Tareas',         path: '/tareas' },
   { section: 'Comercial' },
   { icon: '📊', label: 'Embudo',        path: '/comercial',    allowedRoles: ['Admin', 'Administración'] },
+  { icon: '📈', label: 'KPIs Ventas',   path: '/comercial/reportes', allowedRoles: ['Admin', 'Administración'] },
   { icon: '◎', label: 'Clientes',       path: '/clientes',     allowedRoles: ['Admin', 'Administración'] },
   { section: 'Administración' },
   { icon: '◉', label: 'Proveedores',    path: '/proveedores',  allowedRoles: ['Admin', 'Administración', 'Logística y compras'] },
