@@ -10,6 +10,7 @@ import { T } from '../../theme';
 import { fmtN, fmtFecha } from '../../lib/format';
 import { cuotaEstadoCalc, cuotaCobrado, calcObra, cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, ingresosObraUSD, detallePagosCuotas, calcTotalClienteUSD } from '../obra/helpers';
 import { useMovimientos } from '../../store/MovimientosContext';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 import ContratoFirma from './ContratoFirma';
 
 const fmtD = fmtFecha;
@@ -36,6 +37,7 @@ export default function PortalCliente() {
   // Para el modo admin-preview: movimientos/cajas del contexto, para derivar lo
   // cobrado. En modo cliente, el cobrado viene del endpoint (serverData.cobradoUSD).
   const { movimientos: portalMovs, cajas: portalCajas } = useMovimientos();
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState(0);
 
   // GATE de acceso al portal + modo de operacion.
@@ -306,7 +308,7 @@ export default function PortalCliente() {
     <div className="portal-page" style={{ fontFamily: T.font, background: T.paper, minHeight: '100vh', overflowX: 'hidden' }}>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="portal-header" style={{ background: T.dark, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', overflow: 'hidden', gap: 8, flexWrap: 'wrap' }}>
+      <div className="portal-header" style={{ background: T.dark, display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', position: 'relative', overflow: 'hidden', gap: isMobile ? 12 : 8, flexWrap: 'wrap' }}>
         {/* Rayas decorativas (referencia a la M de Kamak). El SVG ahora ocupa
             100% del contenedor y se recorta limpiamente dentro del header
             (sin importar la altura del header en mobile o con flex-wrap). */}
@@ -372,7 +374,7 @@ export default function PortalCliente() {
       </div>
 
       {/* ── Content ────────────────────────────────────────────────────────── */}
-      <div className="portal-content" style={{ maxWidth: 1060, margin: '0 auto' }}>
+      <div className="portal-content" style={{ maxWidth: isMobile ? '100%' : 1060, margin: '0 auto' }}>
 
 
 
@@ -560,7 +562,7 @@ export default function PortalCliente() {
                 Sin fotos disponibles por el momento.
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(140px, 1fr))' : 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
                 {fotos.map((f) => (
                   <a key={f.id} href={f.url || undefined} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: T.faint, borderRadius: 8, overflow: 'hidden', border: `1.5px solid ${T.faint2}`, cursor: 'pointer', transition: 'box-shadow 0.15s', display: 'block' }}>
                     <div style={{ background: T.faint2, aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42, color: T.ink3, overflow: 'hidden' }}>
@@ -607,7 +609,7 @@ export default function PortalCliente() {
             {/* KPIs principales — Monto total / Pagado / Saldo / Cuotas pagadas
                 Nota: en el portal del cliente decimos "Pagado" (desde su POV).
                 En el panel admin decimos "Cobrado" (desde POV de Kamak). */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 10 }}>
               <Box style={{ padding: '13px 16px', borderLeft: `3px solid ${T.accent}` }}>
                 <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Monto total</div>
                 <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: T.accent, lineHeight: 1.1 }}>{fmt(totalClienteUSD)}</div>
@@ -705,12 +707,13 @@ export default function PortalCliente() {
                     <div key={c.id} style={{
                       display: 'flex', alignItems: 'center', padding: '12px 16px',
                       borderBottom: i < cuotas.length - 1 ? `1px solid ${T.faint2}` : 'none',
-                      gap: 14, background: rowBg, borderLeft: `3px solid ${borderLeftColor}`,
+                      gap: isMobile ? 12 : 14, background: rowBg, borderLeft: `3px solid ${borderLeftColor}`,
+                      flexWrap: isMobile ? 'wrap' : 'nowrap',
                     }}>
                       <div style={{ width: 32, height: 32, borderRadius: 16, background: dot.bg, color: dot.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
                         {c.n}
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ flex: 1, minWidth: isMobile ? '60%' : 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{c.descripcion}</div>
                         <div style={{ fontSize: 11, color: T.ink2, marginTop: 1 }}>
                           {fmtD(c.fecha)}
@@ -726,6 +729,11 @@ export default function PortalCliente() {
                           )}
                         </div>
                       </div>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14,
+                        flexShrink: 0,
+                        ...(isMobile ? { width: '100%', justifyContent: 'space-between', paddingLeft: 44 } : {}),
+                      }}>
                       <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 14, flexShrink: 0, color: isPagado ? T.ok : T.ink }}>
                         {fmt(cuotaEnUSD(c))}
                       </div>
@@ -741,6 +749,7 @@ export default function PortalCliente() {
                         ) : (
                           <span style={{ fontSize: 10, background: T.faint, color: T.ink2, padding: '2px 8px', borderRadius: 3, fontWeight: 600, border: `1px solid ${T.faint2}` }}>Al día</span>
                         )}
+                      </div>
                       </div>
                     </div>
                   );
