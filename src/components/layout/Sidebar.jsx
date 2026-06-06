@@ -33,7 +33,7 @@ const ALL_ITEMS = [
   { icon: '⚙', label: 'Configuración', path: '/configuracion', adminOnly: true },
 ];
 
-export default function Sidebar({ active }) {
+export default function Sidebar({ active, onNavigate }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser } = useUsuarios();
@@ -97,7 +97,7 @@ export default function Sidebar({ active }) {
           <div
             key={i}
             className={`k-sidebar-item${isActive ? ' active' : ''}`}
-            onClick={() => it.path && navigate(it.path)}
+            onClick={() => { if (it.path) { navigate(it.path); onNavigate?.(); } }}
           >
             <span style={{ width: 16, textAlign: 'center', fontSize: 13, flexShrink: 0, lineHeight: 1 }}>{it.icon || '·'}</span>
             {/* Label: con badge se trunca con "..." (asi el badge nunca se corta).

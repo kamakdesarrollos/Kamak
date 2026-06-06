@@ -222,7 +222,7 @@ function diasHasta(fecha) {
   return Math.round((d2 - d1) / 86400000);
 }
 
-export default function Topbar({ breadcrumb = [], right, search = true }) {
+export default function Topbar({ breadcrumb = [], right, search = true, isMobile = false, onHamburger }) {
   const { dolarVenta, dolarCompra, loading: dolarLoading } = useDolar();
   const { user: authUser, signOut } = useAuth();
   const { currentUser } = useUsuarios();
@@ -318,16 +318,26 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
   }, [showNotif]);
 
   return (
-    <div className="k-stripes-bg k-topbar" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', backgroundColor: T.dark, color: '#fff', position: 'relative', overflow: 'visible', flexShrink: 0, zIndex: 100 }}>
+    <div className="k-stripes-bg k-topbar" style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 14, padding: isMobile ? '10px 12px' : '10px 16px', backgroundColor: T.dark, color: '#fff', position: 'relative', overflow: 'visible', flexShrink: 0, zIndex: 100 }}>
       {/* Las rayas vienen del background fixed (clase k-stripes-bg) — asi
           se alinean con las del PageHero y parecen "continuar" detras del
           area clara intermedia.
           La clase k-topbar agrega la sombra inferior + barra accent
           decorativa a la izquierda (ver index.css). */}
 
+      {/* Hamburguesa: solo en mobile, abre/cierra el drawer del Sidebar. */}
+      {isMobile && (
+        <button
+          onClick={onHamburger}
+          aria-label="Menú"
+          style={{ background: 'none', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', padding: '4px 6px', lineHeight: 1, flexShrink: 0 }}>
+          ☰
+        </button>
+      )}
+
       <Link to="/" className="k-topbar-logo" style={{ display: 'block', lineHeight: 0 }}><Logo h={26} dark /></Link>
 
-      {breadcrumb.length > 0 && (
+      {!isMobile && breadcrumb.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#9a9892', marginLeft: 8, paddingLeft: 14, borderLeft: `1px solid #3a3a3e`, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1, textTransform: 'uppercase' }}>
           {breadcrumb.map((b, i) => {
             // Acepta string u objeto { label, to }. Si tiene `to`, es clickeable
@@ -361,10 +371,10 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
         </div>
       )}
 
-      {search && <GlobalSearch />}
+      {!isMobile && search && <GlobalSearch />}
 
       {right ?? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: search ? 0 : 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10, marginLeft: isMobile ? 'auto' : (search ? 0 : 'auto') }}>
 
           {/* Notificaciones — campana con panel dropdown */}
           <div ref={bellRef} style={{ position: 'relative' }}>
@@ -407,7 +417,8 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
             )}
           </div>
 
-          {/* Dólar oficial */}
+          {/* Dólar oficial — bloque ancho, oculto en mobile. */}
+          {!isMobile && (
           <div style={{ fontSize: 10, color: '#9a9892', fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 1, borderLeft: '1px solid #3a3a3e', paddingLeft: 10 }}>
             <div style={{ color: T.accent }}>USD OFICIAL BNA</div>
             {dolarLoading ? (
@@ -423,6 +434,7 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
               </>
             )}
           </div>
+          )}
 
           {/* Avatar + nombre — click va a /perfil */}
           <div
@@ -435,18 +447,22 @@ export default function Topbar({ breadcrumb = [], right, search = true }) {
             <div style={{ width: 28, height: 28, borderRadius: '50%', background: T.accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: `'Montserrat', sans-serif`, fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
               {displayName[0].toUpperCase()}
             </div>
+            {/* Nombre/rol: bloque ancho, oculto en mobile (queda solo el avatar). */}
+            {!isMobile && (
             <div style={{ fontSize: 11, color: '#9a9892', lineHeight: 1.3 }}>
               <div style={{ color: '#fff', fontWeight: 700, fontSize: 12 }}>{displayName}</div>
               <div style={{ fontSize: 10 }}>{displayRol}</div>
             </div>
+            )}
           </div>
 
-          {/* Cerrar sesión */}
+          {/* Cerrar sesión — en mobile queda solo el icono (label oculto). */}
           <div onClick={logout}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 4, border: '1px solid #3a3a3e', cursor: 'pointer', fontSize: 11, color: '#9a9892', fontWeight: 600, userSelect: 'none', transition: 'border-color 0.15s' }}
+            title={isMobile ? 'Salir' : undefined}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 8px' : '5px 10px', borderRadius: 4, border: '1px solid #3a3a3e', cursor: 'pointer', fontSize: 11, color: '#9a9892', fontWeight: 600, userSelect: 'none', transition: 'border-color 0.15s' }}
             onMouseEnter={e => e.currentTarget.style.borderColor = T.accent}
             onMouseLeave={e => e.currentTarget.style.borderColor = '#3a3a3e'}>
-            <span style={{ fontSize: 13 }}>⏻</span> Salir
+            <span style={{ fontSize: 13 }}>⏻</span>{!isMobile && ' Salir'}
           </div>
 
         </div>
