@@ -95,7 +95,7 @@ export default function VentasReportes() {
           {ETAPAS_VENTA.map(e => (
             <div key={e} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: ETAPA_META[e].color, flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 12, color: T.ink }}>{ETAPA_META[e].label}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ETAPA_META[e].label}</span>
               <span style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 13, color: ETAPA_META[e].color }}>{resumen.conteo[e]}</span>
             </div>
           ))}
