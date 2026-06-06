@@ -52,6 +52,7 @@ function ChipToggle({ label, active, onClick, color }) {
       color: active ? T.paper : T.ink2,
       border: `1.5px solid ${active ? (color || T.accent) : T.faint2}`,
       transition: 'all 0.12s',
+      maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
     }}>
       {label}
     </div>
@@ -60,6 +61,7 @@ function ChipToggle({ label, active, onClick, color }) {
 
 function EditarAccesosModal({ usuario, obras, cajas, onClose }) {
   const { updateUsuario } = useUsuarios();
+  const isMobile = useIsMobile();
 
   const [obrasAll, setObrasAll] = useState(usuario.obrasVisibles === '*');
   const [obrasSelected, setObrasSelected] = useState(
@@ -107,9 +109,9 @@ function EditarAccesosModal({ usuario, obras, cajas, onClose }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: isMobile ? '100%' : 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Accesos · {usuario.nombre}</div>
+          <div style={{ fontWeight: 800, fontSize: isMobile ? 'clamp(13px, 3.5vw, 15px)' : 16, fontFamily: T.font, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 8 }}>Accesos · {usuario.nombre}</div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
         </div>
 
@@ -176,6 +178,7 @@ function EditarAccesosModal({ usuario, obras, cajas, onClose }) {
 
 function NuevoUsuarioModal({ obras, cajas, onClose }) {
   const { addUsuario, roles } = useUsuarios();
+  const isMobile = useIsMobile();
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -230,9 +233,9 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 500, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: isMobile ? '100%' : 500, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 17, fontFamily: T.font }}>Nuevo usuario</div>
+          <div style={{ fontWeight: 800, fontSize: isMobile ? 'clamp(13px, 3.5vw, 16px)' : 17, fontFamily: T.font }}>Nuevo usuario</div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
         </div>
         <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
@@ -262,7 +265,7 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
           </div>
           <div>
             <label style={labelSt}>Rol base</label>
-            <select style={{ ...inputSt, cursor: 'pointer' }} value={rol} onChange={e => setRol(e.target.value)}>
+            <select style={{ ...inputSt, cursor: 'pointer', fontSize: isMobile ? 16 : 12 }} value={rol} onChange={e => setRol(e.target.value)}>
               {Object.keys(roles).map(r => <option key={r}>{r}</option>)}
             </select>
             <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>Los permisos se pre-rellenan según el rol y se pueden editar individualmente.</div>
@@ -577,7 +580,7 @@ export default function Usuarios() {
                 {/* Rol */}
                 <div style={{ marginBottom: 10 }}>
                   <label style={labelSt}>Rol</label>
-                  <select style={{ ...inputSt, cursor: 'pointer' }}
+                  <select style={{ ...inputSt, cursor: 'pointer', fontSize: 16 }}
                     value={u.rol}
                     onChange={e => applyRol(u.id, e.target.value)}>
                     {Object.keys(roles).map(r => <option key={r}>{r}</option>)}
@@ -588,11 +591,11 @@ export default function Usuarios() {
                 <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <label style={labelSt}>Obras</label>
-                    <div style={{ fontSize: 12, color: T.ink2 }}>{obrasLabel(u)}</div>
+                    <div style={{ fontSize: 12, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{obrasLabel(u)}</div>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <label style={labelSt}>Cajas</label>
-                    <div style={{ fontSize: 12, color: T.ink2 }}>{cajasLabel(u)}</div>
+                    <div style={{ fontSize: 12, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cajasLabel(u)}</div>
                   </div>
                 </div>
 
