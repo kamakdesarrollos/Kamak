@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 import PageLayout from '../../components/layout/PageLayout';
 import { Box, Btn, Chip, Stat, Label, Bar, Divider } from '../../components/ui';
 import { T } from '../../theme';
@@ -82,6 +83,7 @@ const slot = w => <div className="k-cell" style={fcol(w)} />;
 // TAB 0: RESUMEN
 // ─────────────────────────────────────────────────────────────────────────────
 function TabResumen({ obra, detalle, moneda, onChangeTab }) {
+  const isMobile = useIsMobile();
   const { currentUser } = useUsuarios();
   const isAdmin     = currentUser?.rol === 'Admin';
   // Fail-closed: si la clave de permiso no esta presente, se considera NO autorizado.
@@ -234,7 +236,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
               <div style={{ fontSize: 9.5, color: T.accent, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
                 ◆ Estado de obra
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fit, minmax(120px, 1fr))' : 'repeat(3, 1fr)', gap: 10 }}>
                 <Box style={{ padding: '11px 14px' }}>
                   <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Avance general</div>
                   <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 19, color: avanceGeneral >= 85 ? T.warn : T.ok, lineHeight: 1.1 }}>{avanceGeneral}%</div>
@@ -265,7 +267,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
         </div>
         <Box style={{ padding: 14, cursor: 'pointer' }} onClick={() => onChangeTab?.(1)}>
           {rr.length === 0 && <div style={{ color: T.ink3, fontSize: 12 }}>Sin rubros cargados</div>}
-          <div style={{ display: 'grid', gridTemplateColumns: rr.length > 4 ? '1fr 1fr' : '1fr', gap: rr.length > 4 ? '6px 20px' : 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: (rr.length > 4 && !isMobile) ? '1fr 1fr' : '1fr', gap: (rr.length > 4 && !isMobile) ? '6px 20px' : 0 }}>
             {rr.map(r => (
               <div key={r.id} style={{ marginBottom: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
@@ -423,6 +425,7 @@ function buildVisibleTareas(tareas, collapsedSections) {
 function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReopen, onExport, collapsed, onToggleCollapse }) {
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { proveedores: provListPresu } = useProveedores();
   // Fail-closed: defaults restrictivos. Admin tiene todos los permisos por su rol.
   const isAdmin    = currentUser?.rol === 'Admin';
@@ -825,6 +828,13 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   ];
   const colPermOk = p => p === 'cost' ? verCostos : p === 'margin' ? verMargenes : isAdmin;
 
+  // Ancho minimo de la tabla del computo en mobile: suma de las columnas
+  // PERMITIDAS (las no-permitidas se colapsan). Las toggleadas off dejan su slot
+  // del mismo ancho, asi que el ancho de fila es constante = suma de permitidas.
+  // Se usa como minWidth en el scroll-x para preservar la alineacion de columnas.
+  const presuMinW = 150 + CW.cantidad + CW.u + CW.accion
+    + COLS_DEF.reduce((s, c) => s + (colPermOk(c.perm) ? c.w : 0), 0);
+
   return (
     <div>
 
@@ -838,7 +848,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
           <span style={{ display: 'inline-block', width: 8, height: 8, background: T.accent, transform: 'rotate(45deg)', flexShrink: 0 }} />
           <span className="k-h" style={{ fontSize: 14, lineHeight: 1.1, color: T.ink }}>Cómputo y presupuesto</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: isMobile ? 'wrap' : 'nowrap', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
           {!collapsed && (frozen ? (
             <>
               <span style={{ fontSize: 11, color: T.ok, fontWeight: 700 }}>Aprobado{detalle.fechaAprobacion ? ` ${fmtD(detalle.fechaAprobacion)}` : ''}</span>
@@ -856,7 +866,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
       </div>
 
       {!collapsed && (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden', height: 'calc(100vh - 300px)', minHeight: 480 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflow: isMobile ? 'visible' : 'hidden', height: isMobile ? 'auto' : 'calc(100vh - 300px)', minHeight: isMobile ? 0 : 480 }}>
 
       {/* ── Barra de totales + moneda ───────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexShrink: 0, flexWrap: 'wrap', padding: '6px 10px', background: T.faint, borderRadius: 6, border: `1px solid ${T.faint2}` }}>
@@ -908,9 +918,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
         </span>
       </div>
 
-    <div style={{ display: 'flex', gap: 10, flex: 1, overflow: 'hidden' }}>
-      {/* Left: rubro navigation sidebar */}
-      <Box style={{ width: 138, flexShrink: 0, padding: '7px 5px', overflow: 'auto' }}>
+    <div style={{ display: 'flex', gap: 10, flex: 1, overflow: isMobile ? 'visible' : 'hidden' }}>
+      {/* Left: rubro navigation sidebar (oculta en mobile: es atajo de scroll, redundante en pantalla chica) */}
+      <Box style={{ width: 138, flexShrink: 0, padding: '7px 5px', overflow: 'auto', display: isMobile ? 'none' : 'block' }}>
         <div style={{ fontSize: 8.5, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, padding: '0 4px', marginBottom: 5 }}>Por rubro</div>
         {rr.map(r => {
           const isActive = selRubroId === r.id;
@@ -933,17 +943,21 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
         })}
       </Box>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: isMobile ? 'visible' : 'hidden', ...(isMobile ? { minWidth: 0 } : {}) }}>
 
-        {/* Rubros */}
-        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* Rubros. En mobile: scroll horizontal (overflowX) con minWidth para
+            preservar la alineacion de las columnas numericas (NO cards: rompe la
+            grilla). El scroll vertical pasa a la pagina (overflowY visible). */}
+        <div style={isMobile
+          ? { flex: 1, overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column', gap: 8 }
+          : { flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
 
           {/* Fila de filtros: un toggle por columna, JUSTO arriba de su columna.
               Sticky al tope del scroll y con el mismo ancho que los rubros (asi
               el scrollbar no la desalinea). Tambien sirve para volver a prender
               una columna oculta (su lugar queda reservado mas abajo). */}
           {detalle.rubros.length > 0 && (
-            <div className="k-tr" style={{ alignItems: 'center', flexShrink: 0, position: 'sticky', top: 0, zIndex: 5, background: T.paper, borderBottom: `1.5px solid ${T.faint2}` }}>
+            <div className="k-tr" style={{ alignItems: 'center', flexShrink: 0, position: 'sticky', top: 0, zIndex: 5, background: T.paper, borderBottom: `1.5px solid ${T.faint2}`, ...(isMobile ? { minWidth: presuMinW } : {}) }}>
               <div className="k-cell" style={{ flex: '1 1 150px', minWidth: 150, fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 700 }}>Columnas</div>
               <div className="k-cell" style={{ ...fcol(CW.cantidad) }} />
               <div className="k-cell" style={{ ...fcol(CW.u) }} />
@@ -976,7 +990,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
               onDragOver={e => onRubroDragOver(e, rubro.id)}
               onDrop={e => onRubroDrop(e, rubro.id)}
               onDragEnd={onRubroDragEnd}
-              style={{ padding: 0, flexShrink: 0, borderTop: dragOverRubroId === rubro.id ? `2px solid ${T.accent}` : '2px solid transparent', opacity: dragRubroRef.current === rubro.id ? 0.5 : 1, transition: 'border-top 0.1s' }}>
+              style={{ padding: 0, flexShrink: 0, borderTop: dragOverRubroId === rubro.id ? `2px solid ${T.accent}` : '2px solid transparent', opacity: dragRubroRef.current === rubro.id ? 0.5 : 1, transition: 'border-top 0.1s', ...(isMobile ? { minWidth: presuMinW } : {}) }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: T.dark, borderBottom: isRubroAbierto(rubro.id) ? `2px solid ${T.ok}` : 'none', cursor: 'pointer' }}
                 onClick={() => { toggleRubro(rubro.id); setSelRubroId(rubro.id); setSelTask(null); }}>
                 <span style={{ color: 'rgba(255,255,255,0.4)', cursor: 'grab', userSelect: 'none' }}>⋮⋮</span>
@@ -1496,6 +1510,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
 // TAB 2: MATERIALES
 // ─────────────────────────────────────────────────────────────────────────────
 function TabMateriales({ detalle, obra }) {
+  const isMobile = useIsMobile();
   const [selCategoria, setSelCategoria] = useState(null);
   const { catalog } = useCatalog();
 
@@ -1596,18 +1611,20 @@ function TabMateriales({ detalle, obra }) {
   };
 
   return (
-    <div style={{ display: 'flex', gap: 12, height: 'calc(100vh - 240px)' }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 12, height: isMobile ? 'auto' : 'calc(100vh - 240px)' }}>
 
-      {/* Sidebar: material categories */}
-      <div style={{ width: 200, flexShrink: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {/* Sidebar: material categories. En mobile pasa a una fila scrolleable arriba. */}
+      <div style={isMobile
+        ? { width: '100%', flexShrink: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'row', gap: 6 }
+        : { width: 200, flexShrink: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div onClick={() => setSelCategoria(null)}
-          style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${!selCategoria ? T.accent : T.faint2}`, background: !selCategoria ? T.accentSoft : T.paper }}>
+          style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${!selCategoria ? T.accent : T.faint2}`, background: !selCategoria ? T.accentSoft : T.paper, ...(isMobile ? { flexShrink: 0, whiteSpace: 'nowrap' } : {}) }}>
           <div style={{ fontSize: 12, fontWeight: !selCategoria ? 700 : 400 }}>Todos los materiales</div>
           <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, marginTop: 2 }}>{globalMats.length} materiales</div>
         </div>
         {catMats.map(({ categoria, materiales }) => (
           <div key={categoria} onClick={() => setSelCategoria(categoria)}
-            style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${selCategoria === categoria ? T.accent : T.faint2}`, background: selCategoria === categoria ? T.accentSoft : T.paper }}>
+            style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${selCategoria === categoria ? T.accent : T.faint2}`, background: selCategoria === categoria ? T.accentSoft : T.paper, ...(isMobile ? { flexShrink: 0, whiteSpace: 'nowrap' } : {}) }}>
             <div style={{ fontSize: 12, fontWeight: 600 }}>{categoria}</div>
             <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, marginTop: 2 }}>{materiales.length} materiales</div>
           </div>
@@ -1961,6 +1978,7 @@ function abrirExport(html, titulo) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 function TabAdicionales({ detalle, patch, moneda, obra }) {
+  const isMobile = useIsMobile();
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const defaultForm = {
@@ -2073,8 +2091,8 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div style={{ fontSize: 12, color: T.ink2, display: 'flex', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: isMobile ? 'wrap' : 'nowrap', gap: isMobile ? 8 : 0 }}>
+        <div style={{ fontSize: 12, color: T.ink2, display: 'flex', gap: 16, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           <span>{detalle.adicionales.length} adicionales</span>
           {totalCosto > 0 && <span>Costo aprobado: <b>{fmtM(totalCosto, moneda)}</b></span>}
           {totalVenta > 0 && <span style={{ color: T.ok }}>Venta aprobada: <b>{fmtM(totalVenta, moneda)}</b></span>}
@@ -2087,19 +2105,19 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
       {adding && (
         <FormPanel title={editingId ? 'Editar adicional' : 'Nuevo adicional'} onSave={save} onCancel={() => { setAdding(false); setEditingId(null); setForm(defaultForm); }} style={{ marginBottom: 14 }}>
           <FInput label="Descripción" value={form.descripcion} onChange={v => setForm(p => ({ ...p, descripcion: v }))} placeholder="Ej: Ampliación tablero secundario" />
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '2fr 1fr 1fr 1fr', gap: 10 }}>
             <FInput label="Tarea" value={form.tarea} onChange={v => setForm(p => ({ ...p, tarea: v }))} placeholder="Ej: Pintura interior látex" />
             <FInput label="Cantidad" value={form.cantidad} onChange={set('cantidad')} type="number" />
             <FInput label="Unidad" value={form.unidad} onChange={v => setForm(p => ({ ...p, unidad: normUnidad(v) }))} placeholder="m², u..." />
             <FInput label="Fecha" value={form.fecha} onChange={v => setForm(p => ({ ...p, fecha: v }))} type="date" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginTop: 4 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr 1fr', gap: 10, marginTop: 4 }}>
             <FInput label="Costo / unidad" value={form.costoUnit} onChange={set('costoUnit')} type="number" />
             <FInput label="Costo total" value={form.costoTotal} onChange={set('costoTotal')} type="number" />
             <FInput label="Venta / unidad (cliente)" value={form.valorVentaUnit} onChange={set('valorVentaUnit')} type="number" />
             <FInput label="Venta total (cliente)" value={form.valorVentaTotal} onChange={set('valorVentaTotal')} type="number" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 10, marginTop: 8, alignItems: 'end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr auto auto', gap: 10, marginTop: 8, alignItems: 'end' }}>
             <FInput label="Cant. proveedor MO" value={form.cantidadProveedor} onChange={v => setForm(p => ({ ...p, cantidadProveedor: v }))} type="number" placeholder="Si difiere de cant. cliente" />
             <FInput label="Costo/u proveedor MO" value={form.costoUnitProveedor} onChange={v => setForm(p => ({ ...p, costoUnitProveedor: v }))} type="number" />
             <FInput label="Monto prov. total" value={form.montoProveedor} onChange={v => setForm(p => ({ ...p, montoProveedor: v }))} type="number" placeholder="Opcional" />
@@ -2198,6 +2216,7 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
 // TAB 10: FINANCIACIÓN
 // ─────────────────────────────────────────────────────────────────────────────
 function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
+  const isMobile = useIsMobile();
   const fin = detalle.financiacion || {};
   const { dolarVenta } = useDolar();
   const { clientes } = useClientes();
@@ -2408,29 +2427,29 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
         <div style={{
           padding: '14px 16px',
           display: 'grid',
-          gridTemplateColumns: `1fr 1fr 1fr ${moneda === 'ARS' ? '1fr ' : ''}1fr 1.3fr`,
-          gap: 0,
+          gridTemplateColumns: isMobile ? '1fr 1fr' : `1fr 1fr 1fr ${moneda === 'ARS' ? '1fr ' : ''}1fr 1.3fr`,
+          gap: isMobile ? '12px 10px' : 0,
           alignItems: 'center',
         }}>
           <div style={{ paddingRight: 14 }}>
             <div style={kSt}>Presupuesto venta</div>
             <div style={{ ...vSt, fontSize: 17 }}>{fmtUSD(Math.round(ventaBase / tc))}</div>
           </div>
-          <div style={{ paddingLeft: 14, paddingRight: 14, borderLeft: `1px solid ${T.faint2}` }}>
+          <div style={{ paddingLeft: isMobile ? 0 : 14, paddingRight: 14, borderLeft: isMobile ? 'none' : `1px solid ${T.faint2}` }}>
             <div style={kSt}>Adicionales</div>
             <div style={{ ...vSt, fontSize: 17, color: adicionalCliente > 0 ? T.accent : T.ink }}>{fmtUSD(Math.round(adicionalCliente / tc))}</div>
           </div>
-          <div style={{ paddingLeft: 14, paddingRight: 14, borderLeft: `1px solid ${T.faint2}` }}>
+          <div style={{ paddingLeft: isMobile ? 0 : 14, paddingRight: 14, borderLeft: isMobile ? 'none' : `1px solid ${T.faint2}` }}>
             <div style={kSt}>Base total</div>
             <div style={{ ...vSt, fontSize: 17 }}>{fmtUSD(Math.round(baseTotal / tc))}</div>
           </div>
           {moneda === 'ARS' && (
-            <div style={{ paddingLeft: 14, paddingRight: 14, borderLeft: `1px solid ${T.faint2}` }}>
+            <div style={{ paddingLeft: isMobile ? 0 : 14, paddingRight: 14, borderLeft: isMobile ? 'none' : `1px solid ${T.faint2}` }}>
               <div style={kSt}>TC BNA</div>
               <div style={{ ...vSt, fontSize: 13, color: T.ink2 }}>${fmtN(tc)}</div>
             </div>
           )}
-          <div style={{ paddingLeft: 14, paddingRight: 14, borderLeft: `1px solid ${T.faint2}` }}>
+          <div style={{ paddingLeft: isMobile ? 0 : 14, paddingRight: 14, borderLeft: isMobile ? 'none' : `1px solid ${T.faint2}` }}>
             <div style={kSt}>Interés</div>
             {locked ? (
               <div style={{ ...vSt, fontSize: 17, color: interes > 0 ? T.warn : T.ink3 }}>{interes > 0 ? `${interes}%` : '—'}</div>
@@ -2461,7 +2480,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
               </div>
             )}
           </div>
-          <div style={{ paddingLeft: 14, borderLeft: `3px solid ${T.accent}` }}>
+          <div style={{ paddingLeft: isMobile ? 10 : 14, borderLeft: `3px solid ${T.accent}`, ...(isMobile ? { gridColumn: '1 / -1', marginTop: 2 } : {}) }}>
             <div style={kSt}>Total cliente</div>
             <div style={{ ...vSt, color: T.accent, fontSize: 22 }}>{fmtUSD(totalUSD)}</div>
             {!locked && (
@@ -2527,7 +2546,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
                       </div>
                     </div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>Saldo en cuotas</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 10 }}>
                       <FInput label="Cantidad de cuotas" value={genForm.n} onChange={v => setGenForm(p => ({ ...p, n: v }))} type="number" placeholder="6" />
                       <FInput label="Primera fecha de pago" value={genForm.primerFecha} onChange={v => setGenForm(p => ({ ...p, primerFecha: v }))} type="date" />
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -2562,7 +2581,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
         {!locked && addingCuota && (
           <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.faint2}` }}>
             <FormPanel title={editCuotaId ? 'Editar cuota' : 'Nueva cuota'} onSave={saveCuota} onCancel={() => { setAddingCuota(false); setEditCuotaId(null); }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 2fr 1fr 1fr', gap: 10 }}>
                 <FInput label="N°" value={cuotaForm.n} onChange={v => setCuotaForm(p => ({ ...p, n: v }))} type="number" />
                 <FInput label="Descripción" value={cuotaForm.descripcion} onChange={v => setCuotaForm(p => ({ ...p, descripcion: v }))} placeholder="Ej: Anticipo / Cuota 1 de 6..." />
                 <FInput label="Monto (U$S)" value={cuotaForm.monto} onChange={v => setCuotaForm(p => ({ ...p, monto: v }))} type="number" />
@@ -2577,7 +2596,8 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
             Sin cuotas. Usá "⚡ Generar automático" para distribuir o "+ Cuota manual" para agregar una por una.
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', ...(isMobile ? { minWidth: 480 } : {}) }}>
             <thead>
               <tr style={{ background: T.faint }}>
                 <th style={{ ...colH2, textAlign: 'center', width: 40 }}>#</th>
@@ -2615,6 +2635,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
               </tfoot>
             )}
           </table>
+          </div>
         )}
       </Box>
 
@@ -2639,7 +2660,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
 
       {/* Botones de acción */}
       {!locked && cuotas.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           <Btn onClick={() => onExport?.()} style={{ padding: '8px 18px' }}>↗ Generar propuesta</Btn>
           <Btn fill onClick={() => {
             // No dejar cerrar si las cuotas no cubren el total (diferencia >1 USD
@@ -2714,6 +2735,7 @@ function ObraMovRow({ m, cajas, onRemove }) {
 }
 
 function ObraQuickAddForm({ tipo, cajas, proveedores, clientes, dolarVenta, obraId, obraNombre, obraMoneda, onSave, onCancel }) {
+  const isMobile = useIsMobile();
   const isGasto = tipo === 'gasto';
   const color = isGasto ? T.warn : T.ok;
   const navigate = useNavigate();
@@ -2792,8 +2814,8 @@ function ObraQuickAddForm({ tipo, cajas, proveedores, clientes, dolarVenta, obra
 
   return (
     <div style={{ padding: '12px 14px', background: isGasto ? 'rgba(212,146,58,.07)' : 'rgba(61,122,74,.07)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input autoFocus style={{ ...inputStMov, flex: 1 }}
+      <div style={{ display: 'flex', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+        <input autoFocus style={{ ...inputStMov, flex: 1, ...(isMobile ? { minWidth: '100%' } : {}) }}
           value={desc} onChange={e => setDesc(e.target.value)} onKeyDown={onKey}
           placeholder={isGasto ? 'Descripción del gasto…' : 'Descripción del ingreso…'} />
         {!isGasto && monedaIngreso === 'USD_ARS' ? (
@@ -2818,8 +2840,8 @@ function ObraQuickAddForm({ tipo, cajas, proveedores, clientes, dolarVenta, obra
         <input type="date" style={{ ...inputStMov, width: 140 }}
           value={fecha} onChange={e => setFecha(e.target.value)} />
       </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1.4, gap: 2 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1.4, gap: 2, ...(isMobile ? { minWidth: '100%' } : {}) }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{isGasto ? 'Proveedor' : 'Cliente'}</span>
             {isGasto && contraparteId && (
@@ -2931,6 +2953,7 @@ function ObraPanel({ tipo, movs, cajas, proveedores, clientes, dolarVenta, obraI
 }
 
 function TabMovimientos({ obra, moneda }) {
+  const isMobile = useIsMobile();
   const { movimientos, cajas: allCajas, addMovimiento, removeMovimiento } = useMovimientos();
   const { proveedores } = useProveedores();
   const { clientes }    = useClientes();
@@ -2965,7 +2988,7 @@ function TabMovimientos({ obra, moneda }) {
           Ver todos en Movimientos →
         </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fit, minmax(100px, 1fr))' : 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
         <Box style={{ padding: '10px 16px' }}>
           <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Ingresos</div>
           <div style={{ fontSize: 20, fontWeight: 800, fontFamily: T.fontMono, color: T.ok, marginTop: 2 }}>$ {fmtN(totalIngresos)}</div>
@@ -2979,7 +3002,7 @@ function TabMovimientos({ obra, moneda }) {
           <div style={{ fontSize: 20, fontWeight: 800, fontFamily: T.fontMono, color: neto >= 0 ? T.ok : T.warn, marginTop: 2 }}>$ {fmtN(neto)}</div>
         </Box>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
         <ObraPanel
           tipo="ingreso"
           movs={ingresos}
@@ -3225,6 +3248,7 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
 // Presupuesto (acordeón plan de pagos) y la tab Adicionales.
 // ─────────────────────────────────────────────────────────────────────────────
 function TabCuentaCorriente({ obra, detalle, patch, moneda, onExport }) {
+  const isMobile = useIsMobile();
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
@@ -3323,7 +3347,7 @@ function TabCuentaCorriente({ obra, detalle, patch, moneda, onExport }) {
             )}
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 10 }}>
           <Box style={{ padding: '13px 16px', borderLeft: `3px solid ${T.accent}` }}>
             <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Monto total obra</div>
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: T.accent, lineHeight: 1.1 }}>{fmtMon(usdToMon(totalUSD))}</div>
@@ -3435,6 +3459,7 @@ function urgenciaCuota(c, estado, hoyStr) {
 }
 
 function EstadoDeCuenta({ obra, detalle, tc }) {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const obraMon = obra?.moneda || 'ARS';
   const cuotas = detalle.cuotas || [];
@@ -3495,6 +3520,11 @@ function EstadoDeCuenta({ obra, detalle, tc }) {
         </div>
       )}
       <Box style={{ padding: 0, overflow: 'hidden' }}>
+      {/* En mobile la tabla (columnas numericas de ancho fijo) scrollea en X con
+          minWidth para no romper la alineacion. La nota de abajo queda fuera del
+          scroll. */}
+      <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+      <div style={isMobile ? { minWidth: 640 } : undefined}>
       {/* Header tabla */}
       <div style={{
         display: 'flex',
@@ -3619,6 +3649,8 @@ function EstadoDeCuenta({ obra, detalle, tc }) {
           </div>
         );
       })()}
+      </div>
+      </div>
       <div style={{ padding: '8px 14px', fontSize: 10.5, color: T.ink3, background: T.faint, borderTop: `1px solid ${T.faint2}` }}>
         Las cuotas se marcan pagadas automáticamente al registrar el ingreso en{' '}
         <span style={{ color: T.accent, cursor: 'pointer', fontWeight: 700 }} onClick={() => navigate(`/movimientos?obra=${obra.id}`)}>
@@ -3641,6 +3673,7 @@ const makeFormInit = () => ({ proveedor: '', cuit: '', fechaInicio: '', fechaFin
 const makeRubroFormInit = () => ({ rubroId: '', tareasSel: {} });
 
 function TabContratosMO({ detalle, patch, moneda, obra }) {
+  const isMobile = useIsMobile();
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(makeFormInit);
   const [formError, setFormError] = useState('');
@@ -3747,7 +3780,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
           {formError && <div style={{ color: '#dc2626', fontSize: 12, fontWeight: 600, padding: '4px 0' }}>{formError}</div>}
 
           {/* Fila 1: proveedor + cuit */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <FRow label="Proveedor / contratista">
               <input
                 list="contrato-prov-list"
@@ -3767,7 +3800,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
           </div>
 
           {/* Fila 2: fechas + fondo + forma de pago */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 0.6fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 0.6fr 1fr', gap: 10 }}>
             <FInput label="Fecha inicio" value={form.fechaInicio} onChange={v => setForm(p => ({ ...p, fechaInicio: v }))} type="date" />
             <FInput label="Fecha fin" value={form.fechaFin} onChange={v => setForm(p => ({ ...p, fechaFin: v }))} type="date" />
             <FInput label="Fondo reparo %" value={form.fondoReparo} onChange={v => setForm(p => ({ ...p, fondoReparo: v }))} type="number" />
@@ -3884,7 +3917,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                             </div>
                             {/* Línea 2: inputs (solo cuando está seleccionado) */}
                             {sel && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, paddingLeft: 24 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, paddingLeft: 24, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                                   <span style={{ fontSize: 9, color: T.ink3 }}>Cantidad</span>
                                   <input type="number" value={sel.cantidad} min="0" max={disponible}
@@ -3949,8 +3982,8 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
           : [...new Set(tareas.map(t => t.rubroNombre).filter(Boolean))];
         return (
           <Box key={c.id} style={{ padding: '12px 14px', marginBottom: 8, opacity: c.estado === 'cerrado' ? 0.7 : 1 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-              <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+              <div style={{ flex: 1, ...(isMobile ? { minWidth: '100%' } : {}) }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>
                   {(() => {
                     const prov = proveedoresDyn.find(p => p.nombre === c.proveedor || (c.cuit && p.cuit && p.cuit.replace(/[-\s]/g,'') === c.cuit.replace(/[-\s]/g,'')));
@@ -3992,7 +4025,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
             </div>
 
             {avPct > 0 && (
-              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 8 }}>
                 {[
                   { label: 'Certificado', value: fmtM(cert, moneda), color: T.ink },
                   { label: `Fondo reparo (${c.fondoReparo}%)`, value: `− ${fmtM(reparo, moneda)}`, color: T.warn },
@@ -4006,7 +4039,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
               </div>
             )}
 
-            <div style={{ marginTop: 8, fontSize: 11, color: T.ink2, display: 'flex', gap: 16 }}>
+            <div style={{ marginTop: 8, fontSize: 11, color: T.ink2, display: 'flex', gap: 16, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
               <span>Inicio: {fmtD(c.fechaInicio)}</span>
               <span>Fin: {fmtD(c.fechaFin)}</span>
               <span>Fondo reparo: {c.fondoReparo}%</span>
