@@ -125,6 +125,7 @@ function AdjuntosTarea({ tarea, currentUser, addAdjunto, removeAdjunto }) {
 }
 
 function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto, isAdmin, solapaUserId }) {
+  const isMobile = useIsMobile();
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
   const obra = obras.find(o => o.id === tarea.obraId);
   // Gestiona el checklist (ve TODO + asigna ítems a otros + agrega ítems): el
@@ -205,7 +206,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
 
         {/* Titulo + meta */}
         <div style={{ flex: 3, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             <span style={{ fontWeight: 700, fontSize: 13, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {tarea.titulo}
             </span>
@@ -231,7 +232,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
             )}
           </div>
           {tarea.descripcion && (
-            <div style={{ fontSize: 11, color: T.ink2, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 11, color: T.ink2, marginTop: 2, overflow: 'hidden', textOverflow: isMobile ? 'unset' : 'ellipsis', whiteSpace: isMobile ? 'normal' : 'nowrap', lineHeight: isMobile ? 1.3 : 1 }}>
               {tarea.descripcion}
             </div>
           )}
@@ -313,7 +314,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                       transition: 'background 0.1s',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                       <input
                         type="checkbox"
                         checked={!!it.completado}
@@ -327,6 +328,10 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                           color: it.completado ? T.ink3 : T.ink,
                           textDecoration: it.completado ? 'line-through' : 'none',
                           flex: 1,
+                          minWidth: 0,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: isMobile ? 'normal' : 'nowrap',
                           cursor: 'pointer',
                         }}
                       >
@@ -340,7 +345,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                           value={it.asignadoA || ''}
                           onChange={e => setItemAsignado(tarea.id, it.id, e.target.value || null)}
                           title="Responsable de este ítem"
-                          style={{ fontSize: 10, padding: '1px 3px', border: `1px solid ${it.asignadoA ? '#a5b4fc' : T.faint2}`, borderRadius: 3, background: it.asignadoA ? '#eef2ff' : T.paper, color: it.asignadoA ? '#3949ab' : T.ink3, maxWidth: 100, flexShrink: 0, cursor: 'pointer' }}
+                          style={{ fontSize: 10, padding: '1px 3px', border: `1px solid ${it.asignadoA ? '#a5b4fc' : T.faint2}`, borderRadius: 3, background: it.asignadoA ? '#eef2ff' : T.paper, color: it.asignadoA ? '#3949ab' : T.ink3, maxWidth: isMobile ? 70 : 100, flexShrink: 0, cursor: 'pointer' }}
                         >
                           <option value="">— responsable</option>
                           {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
@@ -629,7 +634,7 @@ export default function Tareas() {
             {PRIORIDADES.map(p => <option key={p} value={p}>{PRIO_LABEL[p]}</option>)}
           </select>
           <select value={filtroObra} onChange={e => setFiltroObra(e.target.value)}
-            style={{ padding: '4px 8px', border: `1px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 11, background: T.paper, outline: 'none', maxWidth: 220 }}>
+            style={{ padding: '4px 8px', border: `1px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 11, background: T.paper, outline: 'none', maxWidth: isMobile ? '90%' : 220 }}>
             <option value="">Todas las obras</option>
             <option value="sin-obra">Sin obra</option>
             {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
