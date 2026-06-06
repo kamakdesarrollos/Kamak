@@ -9,6 +9,7 @@ import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { CONDICIONES_IVA, validarCUIT } from '../lib/afip';
+import { useComercial } from '../store/ComercialContext';
 import { derivaClienteEstado } from '../lib/derivaClienteEstado';
 import ClienteFicha360Modal from './Clientes/ClienteFicha360Modal';
 
@@ -126,6 +127,7 @@ export default function Clientes() {
   const { clientes, addCliente, updateCliente, removeCliente } = useClientes();
   const { obras, updateObra } = useObras();
   const { movimientos, updateMovimiento } = useMovimientos();
+  const { actividades } = useComercial();
   const [searchParams] = useSearchParams();
   const [modal, setModal] = useState(false);
   const [editCliente, setEditCliente] = useState(null);
@@ -138,9 +140,19 @@ export default function Clientes() {
     if (q) setSearch(q);
   }, [searchParams]);
 
+  // Última actividad CRM por cliente (para derivar el estado: reactiva inactivos).
+  const ultActMap = useMemo(() => {
+    const m = {};
+    for (const a of (actividades || [])) {
+      const f = a.fecha || a.creadoAt;
+      if (a.clienteId && f && (!m[a.clienteId] || String(f) > String(m[a.clienteId]))) m[a.clienteId] = f;
+    }
+    return m;
+  }, [actividades]);
+
   const obrasCount = useMemo(() => {
     const map = {};
-    clientes.forEach(c => { map[c.id] = obras.filter(o => o.cliente === c.nombre).length; });
+    clientes.forEach(c => { map[c.id] = obras.filter(o => o.clienteId === c.id || o.cliente === c.nombre).length; });
     return map;
   }, [clientes, obras]);
 
@@ -260,7 +272,7 @@ export default function Clientes() {
           </div>
           {filtered.map(c => {
             const phone = (c.telefono || '').replace(/\s/g, '').replace('+', '');
-            const estado = derivaClienteEstado(c, obras.filter(o => o.clienteId === c.id || o.cliente === c.nombre), null);
+            const estado = derivaClienteEstado(c, obras.filter(o => o.clienteId === c.id || o.cliente === c.nombre), ultActMap[c.id] || null);
             const ec = ESTADO_CLIENTE_CHIP[estado] || ESTADO_CLIENTE_CHIP.prospecto;
             return (
               <div key={c.id}

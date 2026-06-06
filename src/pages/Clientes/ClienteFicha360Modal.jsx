@@ -9,7 +9,7 @@ import { useUsuarios } from '../../store/UsuariosContext';
 import { useClientes } from '../../store/ClientesContext';
 import { useComercial } from '../../store/ComercialContext';
 import { ccObra, cobradoObraUSD } from '../obra/helpers';
-import { ETAPA_META, etapaEfectiva } from '../../lib/ventaEtapa';
+import { ETAPA_META, etapaEfectiva, esArrastrableEnEmbudo } from '../../lib/ventaEtapa';
 import { derivaClienteEstado } from '../../lib/derivaClienteEstado';
 import { fmtN, fmtFecha } from '../../lib/format';
 
@@ -22,10 +22,10 @@ const ESTADO_CHIP = {
 };
 
 export default function ClienteFicha360Modal({ cliente, onClose }) {
-  const { obras, getDetalle } = useObras();
+  const { obras, getDetalle, setVentaEtapa } = useObras();
   const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
-  const { usuarios } = useUsuarios();
+  const { usuarios, currentUser } = useUsuarios();
   const { updateCliente } = useClientes();
   const { actividades, addActividad } = useComercial();
   const tc = dolarVenta || 1070;
@@ -59,7 +59,7 @@ export default function ClienteFicha360Modal({ cliente, onClose }) {
 
   const registrarActividad = () => {
     if (!nuevaAct.texto.trim()) return;
-    addActividad({ clienteId: cliente.id, tipo: nuevaAct.tipo, texto: nuevaAct.texto.trim(), usuario: null });
+    addActividad({ clienteId: cliente.id, tipo: nuevaAct.tipo, texto: nuevaAct.texto.trim(), usuario: currentUser?.id || null });
     setNuevaAct({ tipo: 'llamada', texto: '' });
   };
 
@@ -107,7 +107,20 @@ export default function ClienteFicha360Modal({ cliente, onClose }) {
               <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderBottom: `1px solid ${T.faint2}` }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: meta.color || T.ink3, flexShrink: 0 }} />
                 <span style={{ fontSize: 13, fontWeight: 600, color: T.ink, flex: 1 }}>{o.nombre}</span>
-                <span style={{ fontSize: 10.5, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>{meta.label || et}</span>
+                {esArrastrableEnEmbudo(o) ? (
+                  <select value={et}
+                    onChange={e => {
+                      const nueva = e.target.value;
+                      if (nueva === et) return;
+                      setVentaEtapa(o.id, nueva, { usuario: currentUser?.id || null });
+                      addActividad({ clienteId: cliente.id, obraId: o.id, tipo: 'cambio_etapa', texto: `Movida de ${ETAPA_META[et]?.label || et} a ${ETAPA_META[nueva]?.label || nueva} — ${o.nombre}`, usuario: currentUser?.id || null });
+                    }}
+                    style={{ fontSize: 10, padding: '2px 4px', border: `1px solid ${T.faint2}`, borderRadius: 4, color: T.ink2, background: '#fff', fontFamily: T.font }}>
+                    {['prospecto', 'cotizado', 'negociacion', 'ganado'].map(x => <option key={x} value={x}>{ETAPA_META[x]?.label || x}</option>)}
+                  </select>
+                ) : (
+                  <span style={{ fontSize: 10.5, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>{meta.label || et}</span>
+                )}
                 <span style={{ fontFamily: T.fontMono, fontSize: 12.5, fontWeight: 700, color: meta.color || T.ink }}>{fmtU(totalUSD)}</span>
               </div>
             );

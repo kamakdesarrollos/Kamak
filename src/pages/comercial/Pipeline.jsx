@@ -59,7 +59,7 @@ export default function Pipeline() {
       clienteId: op.obra.clienteId || null,
       obraId,
       tipo: 'cambio_etapa',
-      texto: `Movida a ${(ETAPA_META[etapaDestino]?.label) || etapaDestino} — ${op.obra.nombre}`,
+      texto: `Movida de ${(ETAPA_META[op.etapa]?.label) || op.etapa} a ${(ETAPA_META[etapaDestino]?.label) || etapaDestino} — ${op.obra.nombre}`,
       usuario: currentUser?.id || null,
     });
   };

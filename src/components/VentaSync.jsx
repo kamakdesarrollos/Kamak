@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useDolar } from '../store/DolarContext';
+import { useComercial } from '../store/ComercialContext';
 import { cobradoObraUSD } from '../pages/obra/helpers';
 import { necesitaGanarPorPago } from '../lib/ventaEtapa';
 
@@ -12,6 +13,7 @@ export default function VentaSync() {
   const { obras, setVentaEtapa } = useObras();
   const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
+  const { addActividad } = useComercial();
   const enProceso = useRef(new Set()); // evita re-disparos mientras propaga el state
 
   useEffect(() => {
@@ -22,9 +24,11 @@ export default function VentaSync() {
       if (necesitaGanarPorPago(o, cobrado)) {
         enProceso.current.add(o.id);
         setVentaEtapa(o.id, 'ganado', { usuario: 'sistema' });
+        // Registra el cambio de etapa en el timeline (auto-ganada por cobro).
+        addActividad({ clienteId: o.clienteId || null, obraId: o.id, tipo: 'cambio_etapa', texto: `Ganada automáticamente por cobro — ${o.nombre}`, usuario: 'sistema' });
       }
     }
-  }, [obras, movimientos, cajas, dolarVenta, setVentaEtapa]);
+  }, [obras, movimientos, cajas, dolarVenta, setVentaEtapa, addActividad]);
 
   return null;
 }
