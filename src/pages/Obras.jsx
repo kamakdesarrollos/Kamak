@@ -80,6 +80,7 @@ function ccObra(obra, detalle, movimientos, cajas, tc) {
 // ── Menu contextual de una obra ───────────────────────────────────────────────
 function ObraMenu({ obra, onTransicion, onEditar, onEliminar }) {
   const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const ACCIONES = {
     'en-presupuesto': [
@@ -112,7 +113,13 @@ function ObraMenu({ obra, onTransicion, onEditar, onEliminar }) {
       {open && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => setOpen(false)} />
-          <div style={{
+          <div style={isMobile ? {
+            position: 'fixed', top: '50%', left: 8, right: 8, transform: 'translateY(-50%)',
+            zIndex: 200, background: T.paper, border: `1.5px solid ${T.ink}`,
+            borderRadius: 5, boxShadow: '2px 4px 12px rgba(0,0,0,0.14)',
+            width: 'auto', maxWidth: 'min(280px, 92vw)', margin: '0 auto',
+            maxHeight: '80vh', overflowY: 'auto',
+          } : {
             position: 'absolute', top: 24, right: 0, zIndex: 100,
             background: T.paper, border: `1.5px solid ${T.ink}`,
             borderRadius: 5, boxShadow: '2px 4px 12px rgba(0,0,0,0.14)',
@@ -150,6 +157,7 @@ function ObraMenu({ obra, onTransicion, onEditar, onEliminar }) {
 function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar, isAdmin = true }) {
   const [hover, setHover] = useState(false);
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { presupuesto, gastado, avance, margen } = stats;
   const sobrec = margen < 0;
   const alertCerrar = avance >= 85;
@@ -165,7 +173,7 @@ function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar, 
       {/* header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="k-h" style={{ fontSize: 19, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{obra.nombre}</div>
+          <div className="k-h" style={{ fontSize: isMobile ? 16 : 19, whiteSpace: isMobile ? 'normal' : 'nowrap', overflow: 'hidden', textOverflow: isMobile ? 'unset' : 'ellipsis' }}>{obra.nombre}</div>
           <div style={{ fontSize: 12, color: T.ink2, marginTop: 1 }}>
             {obra.cliente
               ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
@@ -198,18 +206,18 @@ function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar, 
           borderRadius: 4,
           padding: '8px 10px',
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: 6,
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+          gap: isMobile ? 8 : 6,
         }}>
           <div>
             <div style={{ fontSize: 8.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase' }}>Presu</div>
             <div className="k-mono" style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 1 }}>{fmt(presupuesto, obra.moneda)}</div>
           </div>
-          <div style={{ borderLeft: `1px solid ${T.faint2}`, paddingLeft: 8 }}>
+          <div style={isMobile ? {} : { borderLeft: `1px solid ${T.faint2}`, paddingLeft: 8 }}>
             <div style={{ fontSize: 8.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase' }}>Gastado</div>
             <div className="k-mono" style={{ fontSize: 13, fontWeight: 700, color: sobrec ? T.accent : T.ink, marginTop: 1 }}>{fmt(gastado, obra.moneda)}</div>
           </div>
-          <div style={{ borderLeft: `1px solid ${T.faint2}`, paddingLeft: 8 }}>
+          <div style={isMobile ? {} : { borderLeft: `1px solid ${T.faint2}`, paddingLeft: 8 }}>
             <div style={{ fontSize: 8.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase' }}>Margen</div>
             <div className="k-mono" style={{ fontSize: 13, fontWeight: 800, color: margenColor(margen), marginTop: 1 }}>{margen}%</div>
           </div>
@@ -264,10 +272,11 @@ function CardActiva({ obra, stats, onClick, onTransicion, onEditar, onEliminar, 
 // ── Card: en presupuesto ──────────────────────────────────────────────────────
 function CardPresupuesto({ obra, onClick, onTransicion, onEditar, onEliminar }) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   return (
     <Box style={{ padding: 13, borderStyle: 'dashed', cursor: 'pointer', position: 'relative' }} onClick={onClick}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: isMobile ? 'flex-start' : 'space-between', alignItems: 'flex-start', gap: isMobile ? 8 : 0 }}>
+        <div style={{ minWidth: 0, width: isMobile ? '100%' : 'auto' }}>
           <div className="k-h" style={{ fontSize: 19 }}>{obra.nombre}</div>
           <div style={{ fontSize: 12, color: T.ink2 }}>
             {obra.cliente
@@ -316,6 +325,7 @@ function CardPresupuesto({ obra, onClick, onTransicion, onEditar, onEliminar }) 
 function CardPausada({ obra, stats, onClick, onTransicion, onEditar, onEliminar }) {
   const { presupuesto, gastado, avance, margen } = stats;
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   return (
     <Box style={{ padding: 13, position: 'relative', opacity: 0.9 }} onClick={onClick}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -346,7 +356,7 @@ function CardPausada({ obra, stats, onClick, onTransicion, onEditar, onEliminar 
         <Bar pct={avance} />
       </div>
 
-      <div style={{ marginTop: 8, fontSize: 12, display: 'flex', justifyContent: 'space-between' }}>
+      <div style={{ marginTop: 8, fontSize: 12, display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', gap: isMobile ? 6 : 0 }}>
         <div><Label>Gastado</Label><div className="k-mono">{fmt(gastado, obra.moneda)}</div></div>
         <div><Label>Presup.</Label><div className="k-mono">{fmt(presupuesto, obra.moneda)}</div></div>
         <div><Label>Margen</Label><div className="k-mono" style={{ fontWeight: 700, color: margenColor(margen) }}>{margen}%</div></div>
@@ -369,6 +379,7 @@ function CardPausada({ obra, stats, onClick, onTransicion, onEditar, onEliminar 
 // ── Card: finalizada — con estado de la cuenta corriente (Total/Cobrado/Saldo) ──
 function CardFinalizada({ obra, cc, onClick, onTransicion, onEditar }) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const fmtU = (n) => `U$S ${Math.round(n).toLocaleString('es-AR')}`;
 
   return (
@@ -394,7 +405,7 @@ function CardFinalizada({ obra, cc, onClick, onTransicion, onEditar }) {
         </div>
       </div>
 
-      <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, fontSize: 11 }}>
+      <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8, fontSize: 11 }}>
         <div style={{ background: T.faint, borderRadius: 4, padding: '6px 8px' }}>
           <div style={{ color: T.ink2 }}>Total</div>
           <div className="k-mono" style={{ fontWeight: 700, fontSize: 12 }}>{fmtU(cc.totalUSD)}</div>
@@ -465,9 +476,9 @@ function FilaArchivada({ obra, onClick, onTransicion, onEliminar, isMobile }) {
       onMouseEnter={e => e.currentTarget.style.background = T.faint}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
     >
-      <div style={{ flex: 1.5 }}>
-        <div style={{ fontWeight: 700, fontSize: 13 }}>{obra.nombre}</div>
-        <div style={{ fontSize: 11, color: T.ink2 }}>
+      <div style={{ flex: 1.5, minWidth: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{obra.nombre}</div>
+        <div style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {obra.cliente
             ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
                 onClick={e => { e.stopPropagation(); navigate(`/clientes?q=${encodeURIComponent(obra.cliente)}`); }}>
@@ -477,9 +488,9 @@ function FilaArchivada({ obra, onClick, onTransicion, onEliminar, isMobile }) {
           }
         </div>
       </div>
-      <div style={{ flex: 1, fontSize: 11, color: T.ink2 }}>{obra.tipo}</div>
-      <div style={{ flex: 1, fontFamily: T.fontMono, fontSize: 12 }}>{fmt(obra.presupuesto, obra.moneda)}</div>
-      <div style={{ flex: 0.8, fontSize: 11, color: T.ink2 }}>
+      <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{obra.tipo}</div>
+      <div style={{ flex: 1, minWidth: 0, fontFamily: T.fontMono, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmt(obra.presupuesto, obra.moneda)}</div>
+      <div style={{ flex: 0.8, minWidth: 0, fontSize: 11, color: T.ink2 }}>
         {fmtDate(obra.fechaFin || obra.fechaFinEstim)}
       </div>
       <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
