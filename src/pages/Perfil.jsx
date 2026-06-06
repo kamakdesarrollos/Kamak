@@ -6,6 +6,7 @@ import { T } from '../theme';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useAuth } from '../store/AuthContext';
 import { supabase } from '../lib/supabase';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -89,6 +90,7 @@ function CambiarContrasena() {
 export default function Perfil() {
   const { currentUser } = useUsuarios();
   const { signOut } = useAuth();
+  const isMobile = useIsMobile();
 
   return (
     <PageLayout breadcrumb={['Mi perfil']} active="">
@@ -103,7 +105,7 @@ export default function Perfil() {
         }
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, maxWidth: 900 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, maxWidth: 900 }}>
         <MiPerfil />
         <CambiarContrasena />
       </div>
