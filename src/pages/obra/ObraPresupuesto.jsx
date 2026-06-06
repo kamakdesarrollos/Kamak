@@ -20,6 +20,7 @@ import { generarTareasObra } from '../../lib/generarTareasObra';
 import { normUnidad } from '../../lib/unidad';
 import { supabase } from '../../lib/supabase';
 import { loadSharedData, saveSharedData } from '../../lib/dbHelpers';
+import { renderPlantilla, planCuotasHtml, hashDocumento } from '../../lib/contrato';
 import { onRemoteChange } from '../../lib/syncBus';
 import { esc, abrirHTML } from '../../lib/html';
 import { BASE_CSS } from '../../lib/printTheme';
@@ -2199,6 +2200,7 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
 function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const fin = detalle.financiacion || {};
   const { dolarVenta } = useDolar();
+  const { clientes } = useClientes();
   const enviada    = !!fin.propuestaEnviada;
   const confirmada = !!fin.propuestaConfirmada;
   const locked     = enviada || confirmada;
@@ -2253,6 +2255,49 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const cuotasPagadas = cuotas.filter(c => cuotaEstadoCalc(c, moneda, tc) === 'pagado').reduce((s, c) => s + cuotaMonto(c), 0);
   const saldoCuotas = totalCuotas - cuotasPagadas;
   const diferencia = totalUSD - totalCuotas;
+
+  const [generandoContrato, setGenerandoContrato] = useState(false);
+  // Genera el contrato del cliente desde la app: resuelve la plantilla legal
+  // 'plc-default' (crm_plantillas_contrato) con renderPlantilla (escapa los
+  // valores, anti-XSS) y lo deja en detalle.contrato listo para firmar en el
+  // portal. NO toca costos ni márgenes. La firma/conversión a Ganado corre
+  // server-side (api/portal/firmar.js).
+  const generarContrato = async () => {
+    setGenerandoContrato(true);
+    try {
+      const plantillas = (await loadSharedData('crm_plantillas_contrato')) || [];
+      const plantilla = plantillas.find(p => p.id === 'plc-default') || plantillas[0];
+      if (!plantilla) { window.alert('No hay plantilla de contrato. Sembrala primero.'); return; }
+      // Resolver el cliente: por clienteId (FK), por nombre (legacy), o fallback.
+      const clienteActual =
+        (obra.clienteId && clientes.find(c => c.id === obra.clienteId)) ||
+        clientes.find(c => (c.nombre || '').toLowerCase().trim() === (obra.cliente || '').toLowerCase().trim()) ||
+        { nombre: obra.cliente };
+      const cuotasHtml = planCuotasHtml(cuotas, (c) => fmtN(cuotaMonto(c)));
+      const valores = {
+        'cliente.nombre': clienteActual?.nombre || obra.cliente || '',
+        'cliente.cuit': clienteActual?.cuit || '',
+        'obra.nombre': obra.nombre || '',
+        'obra.direccion': obra.direccion || '',
+        alcance: `${(detalle.rubros || []).length} rubros`,
+        montoUSD: fmtN(totalUSD),
+        planCuotas: cuotasHtml,
+        fecha: new Date().toLocaleDateString('es-AR'),
+      };
+      const html = renderPlantilla(plantilla.html, valores);
+      patch(d => ({ ...d, contrato: {
+        plantillaId: plantilla.id,
+        htmlRenderizado: html,
+        version: ((d.contrato?.version) || 0) + 1,
+        estado: 'enviado',
+        fechaEnviado: new Date().toISOString(),
+        hashDocumento: hashDocumento(html),
+      } }));
+      window.alert('Contrato generado. El cliente ya puede firmarlo desde el portal.');
+    } finally {
+      setGenerandoContrato(false);
+    }
+  };
 
   const saveFin = () => {
     patch(d => ({ ...d, financiacion: { ...(d.financiacion || {}), interes: parseFloat(finForm.interes) || 0, notaPortal: finForm.notaPortal } }));
@@ -2565,6 +2610,25 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
           </table>
         )}
       </Box>
+
+      {/* Contrato del cliente: generar la versión legal (plantilla plc-default)
+          que el cliente firma desde el portal con firma electrónica simple. */}
+      {cuotas.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '10px 14px', border: `1px solid ${T.faint2}`, borderRadius: 6, background: T.faint }}>
+          <div style={{ fontSize: 12, color: T.ink2 }}>
+            {detalle.contrato
+              ? (detalle.contrato.estado === 'firmado'
+                  ? <span style={{ color: T.ok, fontWeight: 700 }}>✓ Contrato firmado{detalle.contrato.firma?.nombre ? ` por ${detalle.contrato.firma.nombre}` : ''}</span>
+                  : <span>Contrato generado (v{detalle.contrato.version || 1}) — el cliente puede firmarlo desde el portal.</span>)
+              : <span>Generá el contrato para que el cliente lo firme desde el portal.</span>}
+          </div>
+          {detalle.contrato?.estado !== 'firmado' && (
+            <Btn sm onClick={generarContrato} disabled={generandoContrato}>
+              {generandoContrato ? 'Generando…' : (detalle.contrato ? '↻ Regenerar contrato' : '📄 Generar contrato')}
+            </Btn>
+          )}
+        </div>
+      )}
 
       {/* Botones de acción */}
       {!locked && cuotas.length > 0 && (
