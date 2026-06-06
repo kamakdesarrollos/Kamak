@@ -112,7 +112,7 @@ export default function Pipeline() {
                 background: isOver ? tint(meta.color, 0.10) : '#fbf9f1',
                 border: isOver ? `1.5px dashed ${meta.color}` : `1px solid ${T.faint2}`,
                 borderRadius: 10,
-                padding: 11,
+                padding: isMobile ? 8 : 11,
                 minHeight: 300,
                 boxShadow: '0 1px 0 rgba(0,0,0,0.03)',
                 transition: 'background .15s, border-color .15s',
@@ -146,6 +146,7 @@ export default function Pipeline() {
                       borderRadius: 7,
                       padding: '9px 11px 9px 12px',
                       marginBottom: 9,
+                      minWidth: 0,
                       cursor: arrastrable ? 'grab' : 'default',
                       boxShadow: isDragging ? '0 10px 20px -6px rgba(20,18,15,0.38)' : '0 1px 2px rgba(20,18,15,0.06)',
                       opacity: isDragging ? 0.55 : 1,
@@ -155,10 +156,10 @@ export default function Pipeline() {
                     onMouseEnter={e => { if (arrastrable && !drag) e.currentTarget.style.boxShadow = '0 4px 12px -4px rgba(20,18,15,0.20)'; }}
                     onMouseLeave={e => { if (arrastrable && !drag) e.currentTarget.style.boxShadow = '0 1px 2px rgba(20,18,15,0.06)'; }}
                   >
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.25, ...(isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}) }}>{obra.nombre}</div>
-                    <div style={{ fontSize: 11, color: T.ink2, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{obra.cliente || 'Sin cliente'}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 7, gap: 6 }}>
-                      <span style={{ fontFamily: T.fontMono, fontSize: 12.5, fontWeight: 700, color: meta.color }}>U$S {fmtN(montoUSD)}</span>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.25, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{obra.nombre}</div>
+                    <div style={{ fontSize: 11, color: T.ink2, marginTop: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{obra.cliente || 'Sin cliente'}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 7, gap: isMobile ? 4 : 6 }}>
+                      <span style={{ fontFamily: T.fontMono, fontSize: isMobile ? 11 : 12.5, fontWeight: 700, color: meta.color, flexShrink: 0 }}>U$S {fmtN(montoUSD)}</span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                         {!arrastrable && <span style={{ fontSize: 9, color: T.ink3 }}>🔒</span>}
                         {obra.tipo && <span style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 'clamp(50px, 8vw, 65px)' : 100 }}>{obra.tipo}</span>}
