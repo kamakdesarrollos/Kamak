@@ -279,7 +279,7 @@ export default function Dashboard() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: isMobile ? 'flex-start' : 'flex-end', width: isMobile ? '100%' : undefined }}>
           {editMode && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '6px 10px', background: T.faint, borderRadius: 6, border: `1px solid ${T.faint2}`, maxWidth: 480 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '6px 10px', background: T.faint, borderRadius: 6, border: `1px solid ${T.faint2}`, maxWidth: isMobile ? 'calc(100vw - 16px)' : 480 }}>
               {ALL_WIDGETS.map(w => (
                 <span key={w.id} onClick={() => toggleWidget(w.id)}
                   style={{ padding: '3px 10px', borderRadius: 10, fontSize: 11, cursor: 'pointer', fontWeight: 600, userSelect: 'none', background: on(w.id) ? T.ink : T.faint2, color: on(w.id) ? T.paper : T.ink3, transition: 'all .15s' }}>
@@ -343,7 +343,7 @@ export default function Dashboard() {
                       )}
                     </div>
                     {/* Pills por tramo de antigüedad */}
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 4 : 6 }}>
                       {[['1–15 días', 'd15', '#3d7a4a'], ['15–30 días', 'd30', '#b45309'], ['+30 días', 'dmas', '#dc2626']].map(([lab, k, c]) => (
                         <div key={k} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 7, padding: '6px 9px', borderRadius: 6, background: T.faint, border: `1px solid ${T.faint2}`, minWidth: 0 }}>
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: deudaTerminadas[k] > 0 ? c : T.faint2, flexShrink: 0 }} />
@@ -541,8 +541,8 @@ export default function Dashboard() {
                 onMouseEnter={e => e.currentTarget.style.background = T.faint}
                 onMouseLeave={e => e.currentTarget.style.background = ''}>
                 <div style={{ fontSize: 10, color: T.ink3, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.label}</div>
-                <div style={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: k.value.length > 10 ? 14 : 18, fontWeight: 800, color: k.color, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.value}</div>
-                <div style={{ fontSize: 10, color: T.ink3, marginTop: 6, whiteSpace: 'nowrap' }}>{k.sub}</div>
+                <div style={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: isMobile ? (k.value.length > 10 ? 12 : 14) : (k.value.length > 10 ? 14 : 18), fontWeight: 800, color: k.color, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.value}</div>
+                <div style={{ fontSize: 10, color: T.ink3, marginTop: 6, whiteSpace: isMobile ? 'normal' : 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.sub}</div>
               </div>
             ))}
           </div>
@@ -565,7 +565,7 @@ export default function Dashboard() {
                     ? <span style={{ width: isMobile ? '100%' : 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${provObj.id}`)}>{nombre}</span>
                     : <span style={{ width: isMobile ? '100%' : 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</span>
                   }
-                  <div style={{ flex: 1, minWidth: isMobile ? '60%' : undefined }}><Bar pct={Math.round((monto / maxProvMonto) * 100)} h={5} /></div>
+                  <div style={{ flex: 1, minWidth: 0 }}><Bar pct={Math.round((monto / maxProvMonto) * 100)} h={5} /></div>
                   <span style={{ width: isMobile ? 'auto' : 100, textAlign: 'right', fontFamily: `'JetBrains Mono', monospace`, fontSize: 11 }}>$ {fmtN(monto)}</span>
                 </div>
               );})}
