@@ -73,6 +73,7 @@ function KPI({ label, value, color, sub }) {
 // ── Nuevo / Editar proveedor modal ────────────────────────────────────────────
 function NuevoProveedorModal({ onClose, onSave, initial = null }) {
   const { currentUser } = useUsuarios();
+  const isMobile = useIsMobile();
   // CBU/alias para transferir = dato sensible: solo lo ven/editan Admin/Administración.
   const esAdmin = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
   const initCat = initial ? getCat(initial) : 'Mano de obra';
@@ -83,7 +84,7 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 480 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: isMobile ? '100%' : 480 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 800, fontSize: 17, fontFamily: T.font }}>{initial ? 'Editar proveedor' : 'Nuevo proveedor'}</div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
@@ -93,7 +94,7 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
             <label style={labelSt}>Nombre / Razón social</label>
             <input style={inputSt} value={form.nombre} onChange={e => set('nombre', e.target.value)} placeholder="Ej: Don Luis SRL" autoFocus />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>Categoría</label>
               <select style={{ ...inputSt, cursor: 'pointer' }} value={form.categoria} onChange={e => set('categoria', e.target.value)}>
@@ -105,7 +106,7 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
               <input style={inputSt} value={form.tipo} onChange={e => set('tipo', e.target.value)} placeholder="Ej: Electricidad, Pintura…" />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>Condición AFIP</label>
               <select style={{ ...inputSt, cursor: 'pointer' }} value={form.condicion} onChange={e => set('condicion', e.target.value)}>
@@ -117,7 +118,7 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
               <input style={inputSt} value={form.cuit} onChange={e => set('cuit', e.target.value)} placeholder="20-12345678-9" />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>Teléfono</label>
               <input style={inputSt} value={form.telefono} onChange={e => set('telefono', e.target.value)} placeholder="+54 11 1234-5678" />
@@ -128,7 +129,7 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
             </div>
           </div>
           {esAdmin && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.6fr 1fr', gap: 10 }}>
               <div>
                 <label style={labelSt}>CBU (para transferir)</label>
                 <input style={{ ...inputSt, fontFamily: T.fontMono }} value={form.cbu || ''} onChange={e => set('cbu', e.target.value)} placeholder="22 dígitos" />
@@ -234,25 +235,27 @@ export default function Proveedores() {
           ? `$ ${fmtN(totalDeuda)} en deuda CC · $ ${fmtN(totalDeudaFacturas)} en facturas pendientes · $ ${fmtN(totalPagadoSum)} pagado histórico`
           : `${proveedores.length} proveedores · ${moCount} mano de obra · ${matCount} materiales`}
         actions={
-          <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, width: '100%', alignItems: 'center', justifyContent: isMobile ? 'flex-start' : 'flex-end' }}>
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar nombre, rubro, CUIT…"
-              style={{ padding: '5px 10px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, background: 'rgba(255,255,255,0.06)', color: '#fff', width: 200, outline: 'none' }} />
-            <select value={sort} onChange={e => setSort(e.target.value)}
-              style={{ padding: '5px 8px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, background: 'rgba(255,255,255,0.06)', color: '#fff', cursor: 'pointer' }}>
-              <option value="nombre" style={{ color: T.ink }}>A – Z</option>
-              <option value="saldo" style={{ color: T.ink }}>Mayor saldo</option>
-            </select>
-            <div style={{ display: 'flex', border: `1px solid #3a3a3e`, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
-              {[['lista', '≡'], ['cards', '⊞']].map(([v, icon]) => (
-                <div key={v} onClick={() => setView(v)}
-                  style={{ padding: '5px 11px', fontSize: 14, cursor: 'pointer', background: view === v ? T.accent : 'rgba(255,255,255,0.06)', color: '#fff', userSelect: 'none', lineHeight: 1 }}>
-                  {icon}
-                </div>
-              ))}
+              style={{ padding: '5px 10px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, background: 'rgba(255,255,255,0.06)', color: '#fff', width: isMobile ? '100%' : 200, outline: 'none', boxSizing: 'border-box', minWidth: 0 }} />
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select value={sort} onChange={e => setSort(e.target.value)}
+                style={{ padding: '5px 8px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, background: 'rgba(255,255,255,0.06)', color: '#fff', cursor: 'pointer' }}>
+                <option value="nombre" style={{ color: T.ink }}>A – Z</option>
+                <option value="saldo" style={{ color: T.ink }}>Mayor saldo</option>
+              </select>
+              <div style={{ display: 'flex', border: `1px solid #3a3a3e`, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
+                {[['lista', '≡'], ['cards', '⊞']].map(([v, icon]) => (
+                  <div key={v} onClick={() => setView(v)}
+                    style={{ padding: '5px 11px', fontSize: 14, cursor: 'pointer', background: view === v ? T.accent : 'rgba(255,255,255,0.06)', color: '#fff', userSelect: 'none', lineHeight: 1 }}>
+                    {icon}
+                  </div>
+                ))}
+              </div>
+              <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo proveedor</Btn>
             </div>
-            <Btn sm fill onClick={() => setModalNuevo(true)}>+ Nuevo proveedor</Btn>
-          </>
+          </div>
         }
         kpis={tabs.map(t => ({
           label: t.label,
@@ -353,11 +356,11 @@ export default function Proveedores() {
                   </div>
                 )}
                 {/* Acciones */}
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
-                  <Btn sm style={{ flex: 1 }} onClick={() => setEditProv(p)}>✏ Editar</Btn>
-                  {isAdmin && <Btn sm accent style={{ flex: 1 }} onClick={() => setPagoProvId(p.id)}>Pagar</Btn>}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }} onClick={e => e.stopPropagation()}>
+                  <Btn sm style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => setEditProv(p)}>✏ Editar</Btn>
+                  {isAdmin && <Btn sm accent style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => setPagoProvId(p.id)}>Pagar</Btn>}
                   {isAdmin && (
-                    <span style={{ color: T.warn, cursor: 'pointer', fontSize: 20, padding: '0 6px', lineHeight: 1 }}
+                    <span style={{ color: T.warn, cursor: 'pointer', fontSize: 20, padding: '0 6px', lineHeight: 1, flexShrink: 0 }}
                       onClick={() => { if (confirm(`¿Eliminar ${p.nombre}?`)) removeProveedor(p.id); }}>×</span>
                   )}
                 </div>
@@ -517,10 +520,10 @@ export default function Proveedores() {
                   </div>
                 )}
                 {/* Acciones */}
-                <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
-                  {isAdmin && <Btn sm style={{ flex: 1 }} onClick={() => navigate(`/proveedores/${p.id}`)}>Ver CC</Btn>}
-                  {isAdmin && <Btn sm accent style={{ flex: 1 }} onClick={() => setPagoProvId(p.id)}>Pagar</Btn>}
-                  <Btn sm onClick={() => setEditProv(p)}>✏</Btn>
+                <div style={{ display: 'flex', gap: 4, minWidth: 0 }} onClick={e => e.stopPropagation()}>
+                  {isAdmin && <Btn sm style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => navigate(`/proveedores/${p.id}`)}>Ver CC</Btn>}
+                  {isAdmin && <Btn sm accent style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => setPagoProvId(p.id)}>Pagar</Btn>}
+                  <Btn sm style={{ flexShrink: 0 }} onClick={() => setEditProv(p)}>✏</Btn>
                 </div>
               </Box>
             );

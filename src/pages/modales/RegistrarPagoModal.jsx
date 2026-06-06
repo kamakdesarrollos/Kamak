@@ -6,6 +6,7 @@ import { useObras } from '../../store/ObrasContext';
 import { useConfiguracion } from '../../store/ConfiguracionContext';
 import { useProveedores } from '../../store/ProveedoresContext';
 import { facturasPendientesDeProveedor, saldoFacturaPendiente } from '../../lib/facturasPendientes';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -19,6 +20,7 @@ const DEFAULT_MEDIOS = ['Transferencia', 'Cheque', 'E-cheq', 'Efectivo', 'Tarjet
 // proveedor seleccionado, se ofrece vincular el pago a una de sus facturas
 // pendientes (o dejarlo "sin vincular", comportamiento histórico).
 export default function RegistrarPagoModal({ proveedor = '', proveedorId = null, facturaPendiente = null, onClose }) {
+  const isMobile = useIsMobile();
   const { cajas, addMovimiento } = useMovimientos();
   const { obras } = useObras();
   const { config } = useConfiguracion();
@@ -122,7 +124,7 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 440 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: isMobile ? '100%' : 440 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontFamily: T.font, fontWeight: 800, fontSize: 17 }}>{facturaPendiente ? 'Saldar factura' : 'Registrar pago'}</div>
