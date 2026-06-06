@@ -25,10 +25,22 @@ const ESTADO_CHIP = {
   anulada:   { label: 'Anulada',   bg: T.faint2,  color: T.ink3 },
 };
 
-function EstadoChip({ estado }) {
+function EstadoChip({ estado, mobile }) {
   const c = ESTADO_CHIP[estado] || ESTADO_CHIP.pendiente;
   return (
-    <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 3, background: c.bg, color: c.color, fontWeight: 700, whiteSpace: 'nowrap' }}>
+    <span style={{
+      fontSize: mobile ? 9 : 10,
+      padding: '2px 7px',
+      borderRadius: 3,
+      background: c.bg,
+      color: c.color,
+      fontWeight: 700,
+      whiteSpace: mobile ? 'normal' : 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      display: 'inline-block',
+      maxWidth: '100%',
+    }}>
       {c.label}
     </span>
   );
@@ -162,18 +174,26 @@ export default function CuentasPorPagar() {
           {grupos.map(g => (
             <Box key={g.key} style={{ padding: 0, overflow: 'hidden' }}>
               {/* Header del proveedor */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, gap: 8 }}>
-                <div style={{ minWidth: 0 }}>
-                  <span style={{ fontWeight: 800, fontSize: 13 }}>{g.nombre}</span>
+              <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', padding: '10px 14px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, gap: 8 }}>
+                <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                  <span style={{ fontWeight: 800, fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.nombre}</span>
                   {/* Datos bancarios para transferir — SOLO Admin/Administración. */}
                   {esAdmin && (g.prov?.cbu || g.prov?.alias) && (
-                    <div style={{ fontSize: 10, color: T.ink2, fontFamily: T.fontMono, marginTop: 3, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                      {g.prov?.alias && <span title="Alias para transferir">🏦 {g.prov.alias}</span>}
-                      {g.prov?.cbu && <span title="CBU para transferir">CBU {g.prov.cbu}</span>}
+                    <div style={{
+                      fontSize: isMobile ? 9 : 10,
+                      color: T.ink2,
+                      fontFamily: T.fontMono,
+                      marginTop: 3,
+                      display: isMobile ? 'block' : 'flex',
+                      gap: isMobile ? undefined : 12,
+                      flexWrap: 'wrap',
+                    }}>
+                      {g.prov?.alias && <span title="Alias para transferir" style={isMobile ? { display: 'block', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : undefined}>🏦 {g.prov.alias}</span>}
+                      {g.prov?.cbu && <span title="CBU para transferir" style={isMobile ? { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : undefined}>CBU {g.prov.cbu}</span>}
                     </div>
                   )}
                 </div>
-                <span style={{ fontSize: 11, color: T.ink2, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, color: T.ink2, flexShrink: 0, whiteSpace: 'nowrap' }}>
                   Pendiente <b style={{ fontFamily: T.fontMono, color: g.subtotal > 0 ? T.warn : T.ok }}>$ {fmtN(g.subtotal)}</b>
                 </span>
               </div>
@@ -221,7 +241,7 @@ export default function CuentasPorPagar() {
                     <span style={{ textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 && abierta ? T.warn : T.ink3 }}>
                       {abierta ? `$ ${fmtN(saldo)}` : '—'}
                     </span>
-                    <span style={{ textAlign: 'center' }}><EstadoChip estado={est} /></span>
+                    <span style={{ textAlign: 'center' }}><EstadoChip estado={est} mobile={isMobile} /></span>
                     <span style={{ display: 'flex', gap: 5, justifyContent: 'flex-end', alignItems: 'center' }}>
                       {f.comprobanteUrl && (
                         <Btn sm onClick={() => window.open(f.comprobanteUrl, '_blank', 'noopener')} style={{ fontSize: 10 }}>Ver</Btn>
