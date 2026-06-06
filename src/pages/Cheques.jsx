@@ -11,6 +11,7 @@ import { useProveedores } from '../store/ProveedoresContext';
 import { useClientes } from '../store/ClientesContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { idsCajasDelUsuario } from '../lib/permisosCaja';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -74,6 +75,7 @@ function Badge({ tipo, estado }) {
 
 // ── Resumen por vencimiento ────────────────────────────────────────────────────
 function ResumenBand({ cheques }) {
+  const isMobile = useIsMobile();
   const grupos = useMemo(() => {
     const cartera = cheques.filter(c => c.estado === 'cartera' && (c.tipo === 'tercero' || c.tipo === 'echeq_tercero'));
     const calc = (fn) => {
@@ -92,7 +94,7 @@ function ResumenBand({ cheques }) {
   return (
     <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
       {grupos.map(g => (
-        <div key={g.label} style={{ flex: 1, minWidth: 120, padding: '10px 14px', borderRadius: 6, background: g.bg, border: `1px solid ${g.color}22` }}>
+        <div key={g.label} style={{ flex: isMobile ? '1 1 calc(50% - 4px)' : 1, minWidth: isMobile ? 0 : 120, padding: '10px 14px', borderRadius: 6, background: g.bg, border: `1px solid ${g.color}22` }}>
           <div style={{ fontSize: 10, color: g.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>{g.label}</div>
           <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 15, color: g.color }}>{g.count > 0 ? `$ ${fmtN(g.monto)}` : '—'}</div>
           {g.count > 0 && <div style={{ fontSize: 10, color: T.ink3, marginTop: 2 }}>{g.count} cheque{g.count !== 1 ? 's' : ''}</div>}
@@ -129,6 +131,7 @@ function ChequesTable({ cheques, onAccion, cajas, currentUserEmail }) {
 
 function ChequeFila({ cheque: c, onAccion, cajas, currentUserEmail }) {
   const [hover, setHover] = useState(false);
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const { proveedores } = useProveedores();
   const { clientes }    = useClientes();
@@ -176,7 +179,7 @@ function ChequeFila({ cheque: c, onAccion, cajas, currentUserEmail }) {
         <div style={{ fontWeight: 600 }}>{c.banco || '—'}</div>
         <div style={{ fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{c.numero || '—'}</div>
       </td>
-      <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.faint2}`, maxWidth: 180 }}>
+      <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.faint2}`, maxWidth: 180, minWidth: 0 }}>
         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {esTercero ? (() => {
             const nombre = c.titular || c.clienteNombre || '';
@@ -234,8 +237,8 @@ function ChequeFila({ cheque: c, onAccion, cajas, currentUserEmail }) {
           </div>
         )}
       </td>
-      <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.faint2}` }}>
-        <div style={{ display: 'flex', gap: 4 }}>
+      <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.faint2}`, minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           {c.estado === 'cartera' && esTercero && (
             <>
               {btnAccion('Depositar', 'depositar')}
@@ -262,6 +265,7 @@ function ChequeFila({ cheque: c, onAccion, cajas, currentUserEmail }) {
 
 // ── Modal: registrar / editar cheque ─────────────────────────────────────────
 function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
+  const isMobile = useIsMobile();
   const esEdicion = !!cheque?.id;
   const cajasARS = cajas.filter(c => c.activa && c.moneda === 'ARS');
   const [tipo, setTipo]               = useState(cheque?.tipo || 'tercero');
@@ -298,7 +302,7 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 520 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: 'min(94vw, 520px)' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: T.dark, color: T.paper, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>{esEdicion ? 'Editar cheque' : 'Registrar cheque'}</div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
@@ -309,7 +313,7 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
           {!esEdicion && (
             <div>
               <label style={labelSt}>Tipo</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 6 }}>
                 {TIPO_OPTS.map(opt => (
                   <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '7px 10px', borderRadius: 4, border: `1.5px solid ${tipo === opt.value ? T.accent : T.faint2}`, background: tipo === opt.value ? '#f0f9f9' : 'transparent' }}>
                     <input type="radio" checked={tipo === opt.value} onChange={() => setTipo(opt.value)} style={{ accentColor: T.accent, marginTop: 2 }} />
@@ -323,7 +327,7 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>N° de cheque</label>
               <input style={inputSt} value={numero} onChange={e => setNumero(e.target.value)} placeholder="12345678" />
@@ -335,7 +339,7 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>{esTercero ? 'Titular (emisor)' : 'Destinatario (proveedor)'}</label>
               <input style={inputSt}
@@ -351,7 +355,7 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 80px' : '1fr 80px', gap: 10 }}>
             <div>
               <label style={labelSt}>Monto</label>
               <input style={{ ...inputSt, fontFamily: T.fontMono, fontWeight: 700 }} type="number" min="0" value={monto} onChange={e => setMonto(e.target.value)} placeholder="0" />
@@ -373,7 +377,7 @@ function ChequeModal({ cheque, onSave, onClose, obras, cajas }) {
             </select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>{esTercero ? 'Fecha de recepción' : 'Fecha de emisión'}</label>
               <input type="date" style={inputSt} value={fechaIngreso} onChange={e => setFechaIngreso(e.target.value)} />
@@ -417,7 +421,7 @@ function DepositarModal({ cheque, cajas, onConfirm, onClose }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 380 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: 'min(94vw, 380px)' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: '#2d7a2d', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Depositar cheque</div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
@@ -453,6 +457,7 @@ function DepositarModal({ cheque, cajas, onConfirm, onClose }) {
 
 // ── Modal: endosar ────────────────────────────────────────────────────────────
 function EndosarModal({ cheque, cajas, obras, onConfirm, onClose }) {
+  const isMobile = useIsMobile();
   const cajaCheque = cajas.find(c => c.id === cheque.cajaId);
   const [endosadoA, setEndosadoA] = useState('');
   const [fecha,      setFecha]    = useState(todayStr());
@@ -469,7 +474,7 @@ function EndosarModal({ cheque, cajas, obras, onConfirm, onClose }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: 'min(94vw, 420px)' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: '#d97706', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Endosar cheque</div>
@@ -489,7 +494,7 @@ function EndosarModal({ cheque, cajas, obras, onConfirm, onClose }) {
               placeholder="Nombre de quien recibe el cheque" autoFocus />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>Fecha de endoso</label>
               <input type="date" style={inputSt} value={fecha} onChange={e => setFecha(e.target.value)} />
@@ -543,7 +548,7 @@ function TraspasoModal({ cheque, cajas, onConfirm, onClose }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 400 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: 'min(94vw, 400px)' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: sinCaja ? T.ink2 : '#6366f1', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Traspasar cheque</div>
@@ -617,7 +622,7 @@ function RechazarModal({ cheque, onConfirm, onClose }) {
   const [fecha, setFecha]   = useState(todayStr());
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 360 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: 'min(94vw, 360px)' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: '#dc2626', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>Rechazar cheque</div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.7 }} onClick={onClose}>✕</span>
@@ -647,6 +652,7 @@ function RechazarModal({ cheque, onConfirm, onClose }) {
 
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Cheques() {
+  const isMobile = useIsMobile();
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const isAdmin = currentUser?.rol === 'Admin';
@@ -963,7 +969,7 @@ export default function Cheques() {
       {/* Búsqueda (historial) */}
       {tab === 'historial' && (
         <div style={{ marginBottom: 10 }}>
-          <input style={{ ...inputSt, maxWidth: 320 }} value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar por banco, número, titular, obra…" />
+          <input style={{ ...inputSt, maxWidth: isMobile ? undefined : 320 }} value={buscar} onChange={e => setBuscar(e.target.value)} placeholder={isMobile ? 'Buscar cheque…' : 'Buscar por banco, número, titular, obra…'} />
         </div>
       )}
 
