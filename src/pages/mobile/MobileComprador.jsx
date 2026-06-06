@@ -23,7 +23,7 @@ function Screen({ title, children, onBack }) {
       </div>
       <div style={{ background: T.dark, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
         {onBack && <span style={{ color: T.paper, cursor: 'pointer', fontSize: 20 }} onClick={onBack}>←</span>}
-        <div style={{ color: T.paper, fontWeight: 800, fontSize: 17 }}>{title}</div>
+        <div style={{ color: T.paper, fontWeight: 800, fontSize: 'clamp(14px, 4vw, 17px)' }}>{title}</div>
       </div>
       {children}
     </div>
@@ -37,7 +37,7 @@ function HomeScreen({ onCamera, onCola }) {
         {/* Quick capture */}
         <div style={{ background: T.accent, borderRadius: 12, padding: '20px 16px', display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer' }} onClick={onCamera}>
           <div style={{ fontSize: 40 }}>📷</div>
-          <div style={{ color: 'white' }}>
+          <div style={{ color: 'white', minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: 18 }}>Foto de factura</div>
             <div style={{ fontSize: 12, opacity: 0.85 }}>Capturá o elegí de galería</div>
           </div>
@@ -49,8 +49,8 @@ function HomeScreen({ onCamera, onCola }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {OBRAS.map((o, i) => (
               <div key={i} style={{ background: o.color, borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{o.name}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.name}</div>
                   <div style={{ fontSize: 11, color: T.ink2 }}>{o.code}</div>
                 </div>
                 {o.pending > 0 && <Chip accent style={{ fontSize: 10 }}>{o.pending} pendientes</Chip>}
@@ -65,18 +65,18 @@ function HomeScreen({ onCamera, onCola }) {
             <Label style={{ fontSize: 13 }}>Cola offline</Label>
             <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer' }} onClick={onCola}>Ver todo →</span>
           </div>
-          <div style={{ background: T.faint, borderRadius: 8, padding: '8px 12px', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 12 }}>2 facturas pendientes de subir</span>
-            <Chip warn style={{ fontSize: 10 }}>offline</Chip>
+          <div style={{ background: T.faint, borderRadius: 8, padding: '8px 12px', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontSize: 12, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>2 facturas pendientes de subir</span>
+            <Chip warn style={{ fontSize: 10, flexShrink: 0 }}>offline</Chip>
           </div>
         </div>
 
         {/* WhatsApp */}
         <div style={{ background: '#e7f7e9', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
-          <div style={{ fontSize: 28 }}>💬</div>
-          <div>
+          <div style={{ fontSize: 28, flexShrink: 0 }}>💬</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 13 }}>Bot WhatsApp activo</div>
-            <div style={{ fontSize: 11, color: T.ink2 }}>Enviá +54 9 11 XXXX "FACTURA BARA" para cargar</div>
+            <div style={{ fontSize: 11, color: T.ink2, overflowWrap: 'break-word', wordBreak: 'break-word' }}>Enviá +54 9 11 XXXX "FACTURA BARA" para cargar</div>
           </div>
         </div>
       </div>
@@ -101,7 +101,7 @@ function CameraScreen({ onBack }) {
   if (step === 'datos') return (
     <Screen title="Revisar datos OCR" onBack={() => setStep('review')}>
       <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ background: '#e7f7e9', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
+        <div style={{ background: '#e7f7e9', borderRadius: 6, padding: '8px 12px', fontSize: 12, wordBreak: 'break-word', overflowWrap: 'break-word' }}>
           <b>OCR detectó:</b> Factura B · Don Luis SRL · CUIT 30-71589456-2
         </div>
         {[
@@ -169,9 +169,9 @@ function ColaScreen({ onBack }) {
         {COLA.map((c, i) => (
           <div key={i} style={{ background: 'white', border: `1.5px solid ${T.faint2}`, borderRadius: 8, padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'center' }}>
             <div style={{ fontSize: 28 }}>🧾</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{c.proveedor}</div>
-              <div style={{ fontSize: 11, color: T.ink2 }}>{c.obra} · {c.monto} · {c.ts}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.proveedor}</div>
+              <div style={{ fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.obra} · {c.monto} · {c.ts}</div>
             </div>
             <Chip style={{ fontSize: 9 }} ok={c.estado === 'subido'} warn={c.estado === 'pendiente'} accent={c.estado === 'procesando'}>{c.estado}</Chip>
           </div>
