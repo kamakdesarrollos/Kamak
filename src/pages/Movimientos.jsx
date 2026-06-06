@@ -16,7 +16,7 @@ import { useSolicitudes } from '../store/SolicitudesContext';
 import { useCatalog } from '../store/CatalogContext';
 import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useCheques } from '../store/ChequesContext';
-import { supabase } from '../lib/supabase';
+import { uploadFoto } from '../lib/upload';
 import { cobradoObraUSD, repartirCobroEnCuotas, cuotaMontoUSD } from './obra/helpers';
 import { parseMoneyAR, JURISDICCIONES_IIBB } from '../lib/afip';
 import { cajasDelUsuario } from '../lib/permisosCaja';
@@ -381,7 +381,9 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
   const { patchDetalle, getDetalle } = useObras();
   const { movimientos: allMovs } = useMovimientos();
   const { currentUser } = useUsuarios();
-  const fotoRef = useRef(null);
+  const fotoRef = useRef(null);       // attach del panel de cuotas (existente)
+  const camRef  = useRef(null);       // input cámara (mobile, capture)
+  const archRef = useRef(null);       // input archivo (galería / PDF)
   const mediosDePago = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
 
   const [desc,          setDesc]          = useState('');
@@ -569,14 +571,15 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       if (cuotaId) extra.cuotaId = cuotaId;
     }
 
-    // Subir comprobante si hay foto
+    // Subir comprobante si hay foto (helper central — bucket kamak-fotos).
     let fotoUrl = null;
     if (fotoFile) {
       setFotoUploading(true);
-      const ext = fotoFile.name.split('.').pop();
-      const path = `cobros/${obraId || 'general'}/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('kamak-fotos').upload(path, fotoFile, { upsert: true });
-      if (!error) fotoUrl = supabase.storage.from('kamak-fotos').getPublicUrl(path).data.publicUrl;
+      try {
+        fotoUrl = await uploadFoto(fotoFile, isGasto ? 'gastos' : 'ingresos');
+      } catch (err) {
+        console.error('[Movimientos] subir comprobante:', err);
+      }
       setFotoUploading(false);
     }
 
@@ -654,7 +657,10 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
 
     setDesc(''); setMonto(''); setRubroNombre(''); setContraparteId(''); setEsAdicional(false); setCategoriaFiscal(''); setRetencionIIBB(''); setPercepcionIIBB(''); setPercepcionIVA(''); setJurisdiccionIIBB('PBA');
     setCheqNumero(''); setCheqBanco(''); setCheqTitular(''); setCheqVencimiento('');
-    setCuotaId(''); setFotoFile(null); if (fotoRef.current) fotoRef.current.value = '';
+    setCuotaId(''); setFotoFile(null);
+    if (fotoRef.current) fotoRef.current.value = '';
+    if (camRef.current)  camRef.current.value  = '';
+    if (archRef.current) archRef.current.value = '';
   };
 
   const onKey = (e) => {
@@ -789,7 +795,34 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           </select>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flex: isMobile ? '1 1 100%' : '0 0 auto', justifyContent: isMobile ? 'flex-end' : 'flex-start', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 8, flex: isMobile ? '1 1 100%' : '0 0 auto', justifyContent: isMobile ? 'flex-end' : 'flex-start', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Adjuntar comprobante — SIEMPRE disponible (cualquier gasto/ingreso).
+              En mobile: cámara directa (capture) + archivo. En desktop: un solo
+              botón selector. Reutiliza fotoFile/fotoUploading (sube en save()). */}
+          {isMobile ? (
+            <>
+              <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                onChange={e => setFotoFile(e.target.files?.[0] || null)} />
+              <input ref={archRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }}
+                onChange={e => setFotoFile(e.target.files?.[0] || null)} />
+              <Btn sm onClick={() => camRef.current?.click()}>📷 Cámara</Btn>
+              <Btn sm onClick={() => archRef.current?.click()}>📎 Archivo</Btn>
+            </>
+          ) : (
+            <>
+              <input ref={archRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }}
+                onChange={e => setFotoFile(e.target.files?.[0] || null)} />
+              <Btn sm onClick={() => archRef.current?.click()}>📎 Comprobante</Btn>
+            </>
+          )}
+          {fotoFile && (
+            <span style={{ fontSize: 10, color: T.ink3, display: 'flex', alignItems: 'center', gap: 4, maxWidth: 140 }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fotoFile.name}</span>
+              <span style={{ cursor: 'pointer', color: T.warn, fontWeight: 700 }}
+                onClick={() => { setFotoFile(null); if (camRef.current) camRef.current.value = ''; if (archRef.current) archRef.current.value = ''; }}>✕</span>
+            </span>
+          )}
+          {fotoUploading && <span style={{ fontSize: 10, color: T.ink2 }}>Subiendo…</span>}
           <Btn sm onClick={onCancel}>✕</Btn>
           <button onClick={save}
             style={{ padding: '6px 16px', borderRadius: 4, border: 'none', fontFamily: T.font, fontWeight: 700, fontSize: 12, cursor: canSave ? 'pointer' : 'not-allowed', background: canSave ? color : T.faint2, color: canSave ? '#fff' : T.ink3, transition: 'background .15s', flexShrink: 0 }}>

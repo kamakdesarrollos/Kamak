@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 import { Btn, Divider } from '../../components/ui';
 import { T } from '../../theme';
 import { useProveedores } from '../../store/ProveedoresContext';
@@ -22,6 +23,7 @@ export default function FacturaPendienteModal({ onClose }) {
   const { proveedores, addFacturaPendiente, updateProveedor } = useProveedores();
   const { obras } = useObras();
   const { currentUser } = useUsuarios();
+  const isMobile = useIsMobile();
   // CBU/alias para transferir: dato sensible que solo cargan/ven Admin/Administración.
   const esAdmin = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
 
@@ -213,7 +215,7 @@ export default function FacturaPendienteModal({ onClose }) {
 
           <div>
             <label style={labelSt}>Comprobante (PDF / foto)</label>
-            <input type="file" accept="image/*,application/pdf" style={{ ...inputSt, padding: '5px 8px' }}
+            <input type="file" accept="image/*,application/pdf" capture={isMobile ? 'environment' : undefined} style={{ ...inputSt, padding: '5px 8px' }}
               onChange={e => setFile(e.target.files?.[0] || null)} />
             {file && <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>{file.name}</div>}
           </div>
