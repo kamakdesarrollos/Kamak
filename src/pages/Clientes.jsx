@@ -35,6 +35,7 @@ function Avatar({ nombre, size = 36 }) {
 function NuevoClienteModal({ initial = null, onSave, onClose }) {
   const [form, setForm] = useState(initial || { nombre: '', empresa: '', cuit: '', condicionIVA: 'CF', telefono: '', email: '', notas: '', tags: [], responsableComercial: null, fechaProximoContacto: null, estado: 'prospecto' });
   const { usuarios } = useUsuarios();
+  const isMobile = useIsMobile();
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const cuitInvalido = form.cuit && form.cuit.replace(/\D/g, '').length > 0 && !validarCUIT(form.cuit);
 
@@ -54,7 +55,7 @@ function NuevoClienteModal({ initial = null, onSave, onClose }) {
             <label style={labelSt}>Empresa</label>
             <input style={inputSt} value={form.empresa} onChange={e => set('empresa', e.target.value)} placeholder="Razón social (opcional)" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>CUIT</label>
               <input style={{ ...inputSt, borderColor: cuitInvalido ? '#b91c1c' : T.faint2 }} value={form.cuit} onChange={e => set('cuit', e.target.value)} placeholder="20-12345678-9" />
@@ -223,7 +224,7 @@ export default function Clientes() {
           <>
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar nombre, empresa, CUIT…"
-              style={{ padding: '5px 10px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, background: 'rgba(255,255,255,0.06)', color: '#fff', width: 220, outline: 'none' }} />
+              style={{ padding: '5px 10px', border: `1.2px solid #3a3a3e`, borderRadius: 4, fontSize: 12, fontFamily: T.font, background: 'rgba(255,255,255,0.06)', color: '#fff', width: isMobile ? '100%' : 220, outline: 'none' }} />
             <Btn sm fill onClick={() => setModal(true)}>+ Nuevo cliente</Btn>
           </>
         }

@@ -158,6 +158,7 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
+                minWidth: 0,
               }}>
                 {k.value}
               </div>

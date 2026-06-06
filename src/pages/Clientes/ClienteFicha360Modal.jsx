@@ -12,6 +12,7 @@ import { ccObra, cobradoObraUSD } from '../obra/helpers';
 import { ETAPA_META, etapaEfectiva, esArrastrableEnEmbudo } from '../../lib/ventaEtapa';
 import { derivaClienteEstado } from '../../lib/derivaClienteEstado';
 import { fmtN, fmtFecha } from '../../lib/format';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 const TIPO_ICON = {
   llamada: '📞', mail: '✉️', reunion: '🤝', whatsapp: '💬', nota: '📝',
@@ -28,6 +29,7 @@ export default function ClienteFicha360Modal({ cliente, onClose }) {
   const { usuarios, currentUser } = useUsuarios();
   const { updateCliente } = useClientes();
   const { actividades, addActividad } = useComercial();
+  const isMobile = useIsMobile();
   const tc = dolarVenta || 1070;
 
   const [nuevaAct, setNuevaAct] = useState({ tipo: 'llamada', texto: '' });
@@ -74,12 +76,12 @@ export default function ClienteFicha360Modal({ cliente, onClose }) {
           <span style={{ background: ec.color, color: '#fff', borderRadius: 12, padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>{ec.label}</span>
           {respNombre && <span style={{ fontSize: 12, color: T.ink2 }}>· Resp: <b>{respNombre}</b></span>}
           {(cliente.tags || []).map(t => <Chip key={t} accent style={{ fontSize: 10 }}>{t}</Chip>)}
-          <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {!isMobile && <div style={{ flex: 1 }} />}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: isMobile ? '100%' : 'auto' }}>
             <span style={{ fontSize: 11, color: T.ink3 }}>Próx. contacto</span>
             <input type="date" value={cliente.fechaProximoContacto || ''}
               onChange={e => updateCliente(cliente.id, { fechaProximoContacto: e.target.value || null })}
-              style={{ padding: '3px 6px', border: `1px solid ${T.faint2}`, borderRadius: 4, fontSize: 12, fontFamily: T.font }} />
+              style={{ padding: '3px 6px', border: `1px solid ${T.faint2}`, borderRadius: 4, fontSize: 12, fontFamily: T.font, flex: isMobile ? 1 : 'none' }} />
           </div>
         </div>
 
