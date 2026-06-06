@@ -125,21 +125,21 @@ export default function ProveedorCC() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Avatar nombre={proveedor.nombre} />
           <div>
-            <div className="k-h" style={{ fontSize: 24 }}>{proveedor.nombre}</div>
-            <div style={{ fontSize: 12, color: T.ink2, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-              {proveedor.cuit && <span>CUIT {proveedor.cuit}</span>}
-              {proveedor.tipo && <span>· {proveedor.tipo}</span>}
-              {proveedor.condicion && <span>· {proveedor.condicion}</span>}
+            <div className="k-h" style={{ fontSize: isMobile ? 18 : 24 }}>{proveedor.nombre}</div>
+            <div style={{ fontSize: 12, color: T.ink2, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', minWidth: 0 }}>
+              {proveedor.cuit && <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>CUIT {proveedor.cuit}</span>}
+              {proveedor.tipo && <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {proveedor.tipo}</span>}
+              {proveedor.condicion && <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {proveedor.condicion}</span>}
               {proveedor.telefono && (
                 <a href={`https://wa.me/${(proveedor.telefono).replace(/\s/g,'').replace('+','')}`}
                   target="_blank" rel="noopener noreferrer"
-                  style={{ color: '#25d366', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  style={{ color: '#25d366', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   📱 {proveedor.telefono}
                 </a>
               )}
               {proveedor.email && (
                 <a href={`mailto:${proveedor.email}`}
-                  style={{ color: T.accent, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  style={{ color: T.accent, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   ✉ {proveedor.email}
                 </a>
               )}
@@ -230,7 +230,7 @@ export default function ProveedorCC() {
               <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin obras con CC. Registrá un pago para crear una.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: isMobile ? 560 : 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: isMobile ? 480 : 'auto' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}` }}>
                   <div className="k-h" style={{ fontSize: 16 }}>CC · {obras.find(o => o.id === selObraId)?.nombre || selObraId}</div>
                   <Chip style={{ fontSize: 10 }}>Saldo {saldoObra(selObraId) > 0 ? `$ ${fmtN(saldoObra(selObraId))}` : 'al día'}</Chip>
@@ -255,7 +255,7 @@ export default function ProveedorCC() {
                   {saldoSel.map((e, i) => (
                     <div key={e.id} style={{ display: 'flex', padding: '8px 12px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, background: i % 2 === 1 ? T.faint : 'transparent' }}>
                       <span style={{ flex: 0.8, fontFamily: T.fontMono, color: T.ink2, fontSize: 11 }}>{fmtFecha(e.fecha)}</span>
-                      <span style={{ flex: 2.5 }}>{e.concepto}</span>
+                      <span style={{ flex: 2.5, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.concepto}</span>
                       <span style={{ flex: 0.8, textAlign: 'center' }}>
                         <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, background: T.faint, color: TIPO_COLOR[e.tipo] || T.ink2, fontWeight: 700 }}>
                           {TIPO_LABEL[e.tipo] || e.tipo}
@@ -320,7 +320,7 @@ export default function ProveedorCC() {
           {/* Tabla numérica de órdenes de pago: en mobile scrollea en X con
               min-width para preservar la alineación de Total/Saldo. */}
           <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
-          <div style={{ minWidth: isMobile ? 620 : 'auto' }}>
+          <div style={{ minWidth: isMobile ? 520 : 'auto' }}>
           <div style={{ display: 'flex', padding: '6px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             <span style={{ flex: 0.8 }}>Fecha</span>
             <span style={{ flex: 1.2 }}>N° / Tipo</span>
@@ -374,7 +374,7 @@ export default function ProveedorCC() {
       )}
 
       {tab === 'datos' && (
-        <Box style={{ padding: 16, maxWidth: 480 }}>
+        <Box style={{ padding: 16, maxWidth: isMobile ? '100%' : 480 }}>
           <Label style={{ marginBottom: 10 }}>Datos del proveedor</Label>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, fontSize: 12 }}>
             {[
