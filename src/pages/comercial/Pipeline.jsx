@@ -121,7 +121,7 @@ export default function Pipeline() {
               {/* Header de columna: punto de color + label + badge de cantidad */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: totalUSD > 0 ? 3 : 13 }}>
                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
-                <span style={{ fontWeight: 800, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4, color: T.ink, flex: 1 }}>{meta.label}</span>
+                <span style={{ fontWeight: 800, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4, color: T.ink, flex: 1, minWidth: 0 }}>{meta.label}</span>
                 <span style={{ fontFamily: T.fontMono, fontSize: 11, fontWeight: 700, color: '#fff', background: meta.color, borderRadius: 10, padding: '1px 7px', minWidth: 20, textAlign: 'center' }}>{items.length}</span>
               </div>
               {totalUSD > 0 && (
@@ -155,13 +155,13 @@ export default function Pipeline() {
                     onMouseEnter={e => { if (arrastrable && !drag) e.currentTarget.style.boxShadow = '0 4px 12px -4px rgba(20,18,15,0.20)'; }}
                     onMouseLeave={e => { if (arrastrable && !drag) e.currentTarget.style.boxShadow = '0 1px 2px rgba(20,18,15,0.06)'; }}
                   >
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.25 }}>{obra.nombre}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.25, ...(isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}) }}>{obra.nombre}</div>
                     <div style={{ fontSize: 11, color: T.ink2, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{obra.cliente || 'Sin cliente'}</div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 7, gap: 6 }}>
                       <span style={{ fontFamily: T.fontMono, fontSize: 12.5, fontWeight: 700, color: meta.color }}>U$S {fmtN(montoUSD)}</span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                         {!arrastrable && <span style={{ fontSize: 9, color: T.ink3 }}>🔒</span>}
-                        {obra.tipo && <span style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{obra.tipo}</span>}
+                        {obra.tipo && <span style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 'clamp(50px, 8vw, 65px)' : 100 }}>{obra.tipo}</span>}
                       </span>
                     </div>
                   </div>
