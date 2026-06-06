@@ -8,6 +8,7 @@ import { useUsuarios } from '../store/UsuariosContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { adminAction, createAuthUser } from '../lib/dbHelpers';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 // Esta pagina se extrajo de Autorizaciones.jsx: contenia el CRUD de usuarios,
 // permisos y roles. La separamos para que /autorizaciones quede solo como
@@ -331,6 +332,7 @@ function NuevoUsuarioModal({ obras, cajas, onClose }) {
 export default function Usuarios() {
   const { usuarios, currentUser, togglePermiso, applyRol, removeUsuario, roles, updateRol, removeRol } = useUsuarios();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const isAdmin = currentUser?.rol === 'Admin';
   // Guard: solo Admin. La pagina expone CRUD de usuarios.
   useEffect(() => {
@@ -347,6 +349,7 @@ export default function Usuarios() {
   const [resetPassId, setResetPassId] = useState(null);
   const [newPass, setNewPass] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
+  const [permsOpen, setPermsOpen] = useState({}); // { [userId]: bool } — bloque permisos colapsable en mobile
 
   const cajas = allCajas.filter(c => c.activa);
 
@@ -411,7 +414,7 @@ export default function Usuarios() {
         ]}
       />
 
-      {tab === 'usuarios' && (
+      {tab === 'usuarios' && !isMobile && (
         <Box style={{ padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 240px)' }}>
           {/* Header */}
           <div style={{ display: 'flex', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, position: 'sticky', top: 0, zIndex: 1, minWidth: 0 }}>
@@ -516,6 +519,110 @@ export default function Usuarios() {
             </div>
           ))}
         </Box>
+      )}
+
+      {/* Mobile: cada usuario como tarjeta vertical (mismos handlers que el desktop) */}
+      {tab === 'usuarios' && isMobile && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {usuariosFiltrados.map(u => {
+            const abierto = !!permsOpen[u.id];
+            return (
+              <Box key={u.id} style={{ padding: 12 }}>
+                {/* Cabecera: avatar + nombre + eliminar */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.ink2, color: T.paper, fontFamily: `'Montserrat',sans-serif`, fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
+                    {(u.nombre || '?')[0].toUpperCase()}
+                  </div>
+                  <div style={{ fontWeight: 800, fontSize: 15, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nombre}</div>
+                  <span style={{ color: T.faint2, fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
+                    onClick={() => { if (confirm(`¿Eliminar usuario ${u.nombre}?`)) removeUsuario(u.id); }}>×</span>
+                </div>
+
+                {/* Email */}
+                <div style={{ fontSize: 12, color: T.ink2, fontFamily: T.fontMono, marginBottom: 4, wordBreak: 'break-all' }}>{u.email}</div>
+                {resetPassId === u.id ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+                    <input
+                      autoFocus
+                      type="password"
+                      value={newPass}
+                      onChange={e => setNewPass(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Escape') { setResetPassId(null); setNewPass(''); } }}
+                      placeholder="Nueva contraseña"
+                      style={{ fontSize: 13, padding: '6px 8px', border: `1.5px solid ${T.accent}`, borderRadius: 4, fontFamily: T.fontMono, outline: 'none', flex: 1, minWidth: 140 }}
+                    />
+                    <span
+                      title="Confirmar"
+                      style={{ fontSize: 14, color: resetLoading ? T.ink3 : T.ok, cursor: resetLoading ? 'default' : 'pointer', fontWeight: 700, padding: '0 4px' }}
+                      onClick={async () => {
+                        if (!newPass.trim() || resetLoading) return;
+                        if (newPass.trim().length < 6) { alert('La contraseña debe tener al menos 6 caracteres.'); return; }
+                        setResetLoading(true);
+                        const { error } = await adminAction('updatePassword', { email: u.email, password: newPass.trim() });
+                        setResetLoading(false);
+                        if (error) { alert('Error: ' + error); return; }
+                        setResetPassId(null); setNewPass('');
+                      }}>✓</span>
+                    <span style={{ fontSize: 14, color: T.accent, cursor: 'pointer', padding: '0 4px' }}
+                      onClick={() => { setResetPassId(null); setNewPass(''); }}>✕</span>
+                    {resetLoading && <span style={{ fontSize: 11, color: T.ink3 }}>…</span>}
+                  </div>
+                ) : (
+                  <span style={{ fontSize: 11, color: T.accent, cursor: 'pointer', fontWeight: 700, display: 'inline-block', marginBottom: 10 }}
+                    onClick={() => { setResetPassId(u.id); setNewPass(''); }}>
+                    cambiar contraseña
+                  </span>
+                )}
+
+                {/* Rol */}
+                <div style={{ marginBottom: 10 }}>
+                  <label style={labelSt}>Rol</label>
+                  <select style={{ ...inputSt, cursor: 'pointer' }}
+                    value={u.rol}
+                    onChange={e => applyRol(u.id, e.target.value)}>
+                    {Object.keys(roles).map(r => <option key={r}>{r}</option>)}
+                  </select>
+                </div>
+
+                {/* Obras / Cajas */}
+                <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <label style={labelSt}>Obras</label>
+                    <div style={{ fontSize: 12, color: T.ink2 }}>{obrasLabel(u)}</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <label style={labelSt}>Cajas</label>
+                    <div style={{ fontSize: 12, color: T.ink2 }}>{cajasLabel(u)}</div>
+                  </div>
+                </div>
+
+                {/* Permisos: bloque colapsable */}
+                <div style={{ borderTop: `1px solid ${T.faint2}`, paddingTop: 10 }}>
+                  <div onClick={() => setPermsOpen(prev => ({ ...prev, [u.id]: !prev[u.id] }))}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ ...labelSt, marginBottom: 0 }}>Permisos</span>
+                    <span style={{ fontSize: 11, color: T.accent, fontWeight: 700 }}>{abierto ? 'ocultar ▲' : 'ver permisos ▼'}</span>
+                  </div>
+                  {abierto && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8 }}>
+                      {PERM_COLS.map(col => (
+                        <div key={col.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0' }}>
+                          <span style={{ fontSize: 13, color: T.ink }}>{col.label}</span>
+                          <PermToggle on={u.permisos?.[col.key]} onChange={() => togglePermiso(u.id, col.key)} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Acciones */}
+                <div style={{ borderTop: `1px solid ${T.faint2}`, paddingTop: 10, marginTop: 10 }}>
+                  <Btn sm onClick={() => setEditAccesos(u)} style={{ width: '100%' }}>Editar accesos</Btn>
+                </div>
+              </Box>
+            );
+          })}
+        </div>
       )}
 
       {tab === 'roles' && (
