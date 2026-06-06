@@ -58,6 +58,22 @@ async function patchObraItem(obraId, patch) {
   await saveSharedData('obras', { obras: arr.map(o => o.id === obraId ? { ...o, ...patch } : o), detalles: data?.detalles || {} });
 }
 
+// Conversión a Ganado idempotente (espejo de setVentaEtapa). Si la obra ya está
+// ganada/activa no hace nada (evita changelog duplicado); si un intento previo
+// firmó pero no convirtió, un reintento la reasegura.
+async function asegurarGanado(obraId, obra, fechaISO) {
+  if (obra.venta?.etapa === 'ganado' && (obra.estado === 'activa' || obra.estado === 'finalizada')) return;
+  const fecha = fechaISO || new Date().toISOString();
+  const nuevoEstado = obra.estado === 'finalizada' ? 'finalizada' : 'activa';
+  const ventaPrev = obra.venta || {};
+  const cambios = {
+    estado: nuevoEstado,
+    venta: { ...ventaPrev, etapa: 'ganado', fechaCambioEtapa: fecha.slice(0, 10), changelog: [...(ventaPrev.changelog || []), { etapa: 'ganado', fecha: fecha.slice(0, 10), usuario: 'sistema' }] },
+  };
+  if (nuevoEstado === 'activa' && !obra.fechaInicio) cambios.fechaInicio = fecha.slice(0, 10);
+  await patchObraItem(obraId, cambios);
+}
+
 const hashOtp = (otp, salt) => crypto.scryptSync(otp, salt, 32).toString('hex');
 // Comparación en tiempo constante (no '==='): evita timing attacks sobre el hash.
 const eqHash = (a, b) => { const ba = Buffer.from(a, 'hex'), bb = Buffer.from(b, 'hex'); return ba.length === bb.length && crypto.timingSafeEqual(ba, bb); };
@@ -96,7 +112,12 @@ export default async function handler(req, res) {
     const obra = obras?.obras?.find(o => o.id === obraId);
     const detalle = obras?.detalles?.[obraId];
     if (!obra || !detalle?.contrato) return res.status(404).json({ error: 'sin_contrato' });
-    if (detalle.contrato.estado === 'firmado') return res.status(200).json({ success: true, yaFirmado: true, fechaFirmado: detalle.contrato.fechaFirmado });
+    if (detalle.contrato.estado === 'firmado') {
+      // Ya firmado: reasegurar la conversión a Ganado por si un intento previo
+      // persistió la firma pero falló la conversión (idempotente, no duplica).
+      await asegurarGanado(obraId, obra, detalle.contrato.fechaFirmado);
+      return res.status(200).json({ success: true, yaFirmado: true, fechaFirmado: detalle.contrato.fechaFirmado });
+    }
 
     // Verificar que el documento no cambió desde que se envió.
     const hashActual = hashDocumento(detalle.contrato.htmlRenderizado || '');
@@ -114,18 +135,10 @@ export default async function handler(req, res) {
     };
     const nuevoContrato = { ...detalle.contrato, estado: 'firmado', fechaFirmado: fecha, firma };
 
-    // Conversión a Ganado (idempotente, espejo de setVentaEtapa).
-    const nuevoEstado = obra.estado === 'finalizada' ? 'finalizada' : 'activa';
-    const ventaPrev = obra.venta || {};
-    const cambios = {
-      estado: nuevoEstado,
-      venta: { ...ventaPrev, etapa: 'ganado', fechaCambioEtapa: fecha.slice(0, 10), changelog: [...(ventaPrev.changelog || []), { etapa: 'ganado', fecha: fecha.slice(0, 10), usuario: 'sistema' }] },
-    };
-    if (nuevoEstado === 'activa' && !obra.fechaInicio) cambios.fechaInicio = fecha.slice(0, 10);
-
-    // Persistir: detalle (con la firma) + obra (Ganado). RPC atómico → RMW fallback.
+    // Persistir la firma; luego convertir a Ganado (idempotente). Si la conversión
+    // fallara, un reintento de firma la reasegura (ver early-return de arriba).
     await patchDetalleObra(obraId, { contrato: nuevoContrato });
-    await patchObraItem(obraId, cambios);
+    await asegurarGanado(obraId, obra, fecha);
 
     // Consumir OTP.
     c.usado = true; c.verificadoAt = fecha; await saveSharedData('portal_otp_codes', codes);

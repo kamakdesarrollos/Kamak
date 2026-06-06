@@ -45,13 +45,25 @@ export default async function handler(req, res) {
     const salt = crypto.randomBytes(16).toString('hex');
     const otpId = `otp-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
-    const codes = (await loadSharedData('portal_otp_codes')) || {};
-    // Limpieza: descartar los expirados de ese token.
     const now = Date.now();
+    const codes = (await loadSharedData('portal_otp_codes')) || {};
+    // Limpieza: descartar los OTP ya expirados.
     for (const k of Object.keys(codes)) { if (codes[k].expiresAt && new Date(codes[k].expiresAt).getTime() < now) delete codes[k]; }
+
+    // Rate-limit por token (§9/§13): como máximo 1 OTP cada 60s y 5 por hora.
+    // Evita que alguien con el token válido dispare envíos de WhatsApp en bucle.
+    const delToken = Object.values(codes).filter(c => c.token === token);
+    const ultimoAt = delToken.reduce((m, c) => Math.max(m, c.createdAt || 0), 0);
+    if (ultimoAt && now - ultimoAt < 60 * 1000) {
+      return res.status(429).json({ error: 'rate_limit', reintentarEnSeg: Math.ceil((60000 - (now - ultimoAt)) / 1000) });
+    }
+    if (delToken.filter(c => (c.createdAt || 0) > now - 3600 * 1000).length >= 5) {
+      return res.status(429).json({ error: 'rate_limit_hora' });
+    }
+
     codes[otpId] = {
       hashOTP: hashOtp(otp, salt), salt, obraId, token,
-      canal: 'whatsapp', expiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
+      canal: 'whatsapp', createdAt: now, expiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
       intentos: 0, maxIntentos: 3, verificadoAt: null, usado: false,
     };
     await saveSharedData('portal_otp_codes', codes);
