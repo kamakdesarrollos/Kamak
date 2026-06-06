@@ -31,6 +31,9 @@ export const DEFAULT_MESES_INACTIVO = 6;
 
 export const ESTADOS_CHEQUE = ['cartera', 'depositado', 'endosado', 'rechazado', 'anulado'];
 
+// Estados del contrato firmable (módulo Comercial, Fase 3).
+export const ESTADOS_CONTRATO = ['borrador', 'enviado', 'firmado', 'rechazado'];
+
 // ── Roles ───────────────────────────────────────────────────────────────────
 // Los permisos de cada rol viven en src/store/UsuariosContext.jsx (ROLES).
 export const ROL_ADMIN          = 'Admin';
