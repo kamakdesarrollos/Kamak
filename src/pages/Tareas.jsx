@@ -9,6 +9,7 @@ import { useObras } from '../store/ObrasContext';
 import { useTareas } from '../store/TareasContext';
 import { supabase } from '../lib/supabase';
 import TareaModal from './modales/TareaModal';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 // Pagina /tareas. Hub de tareas con checklist asignables entre usuarios.
 //
@@ -459,6 +460,7 @@ export default function Tareas() {
   const { currentUser, usuarios } = useUsuarios();
   const { obras } = useObras();
   const { tareas, marcarVista, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto } = useTareas();
+  const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const isAdmin = currentUser?.rol === 'Admin';
@@ -619,7 +621,7 @@ export default function Tareas() {
         </div>
 
         {/* Filtros */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#fbf9f1', borderBottom: `1px solid ${T.faint2}`, fontSize: 11 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#fbf9f1', borderBottom: `1px solid ${T.faint2}`, fontSize: 11, flexWrap: 'wrap' }}>
           <span style={{ fontFamily: T.fontMono, color: T.ink3, letterSpacing: 1, fontWeight: 700, textTransform: 'uppercase', fontSize: 9.5 }}>Filtros</span>
           <select value={filtroPrio} onChange={e => setFiltroPrio(e.target.value)}
             style={{ padding: '4px 8px', border: `1px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 11, background: T.paper, outline: 'none' }}>
@@ -638,46 +640,50 @@ export default function Tareas() {
           </span>
         </div>
 
-        {/* Header de tabla */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 14px', background: T.dark, color: '#fff', fontSize: 9.5, fontFamily: T.fontMono, letterSpacing: 1.2 }}>
-          <div style={{ width: 4, flexShrink: 0 }} />
-          <div style={{ width: 14, flexShrink: 0 }} />
-          <div style={{ flex: 3 }}>TAREA</div>
-          <div style={{ flex: 1.5 }}>ASIGNADOS</div>
-          <div style={{ flex: 1.3 }}>OBRA</div>
-          <div style={{ width: 110, textAlign: 'left' }}>PROGRESO</div>
-          <div style={{ width: 90, textAlign: 'right' }}>VENCE</div>
-          <div style={{ width: 100, textAlign: 'center' }}>ESTADO</div>
-        </div>
+        {/* Header de tabla + lista — scroll horizontal en mobile */}
+        <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ minWidth: isMobile ? 640 : 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 14px', background: T.dark, color: '#fff', fontSize: 9.5, fontFamily: T.fontMono, letterSpacing: 1.2 }}>
+              <div style={{ width: 4, flexShrink: 0 }} />
+              <div style={{ width: 14, flexShrink: 0 }} />
+              <div style={{ flex: 3 }}>TAREA</div>
+              <div style={{ flex: 1.5 }}>ASIGNADOS</div>
+              <div style={{ flex: 1.3 }}>OBRA</div>
+              <div style={{ width: 110, textAlign: 'left' }}>PROGRESO</div>
+              <div style={{ width: 90, textAlign: 'right' }}>VENCE</div>
+              <div style={{ width: 100, textAlign: 'center' }}>ESTADO</div>
+            </div>
 
-        {/* Lista */}
-        {tareasVisibles.length === 0 ? (
-          <div style={{ padding: '40px 14px', textAlign: 'center', color: T.ink3, fontSize: 12 }}>
-            No hay tareas en esta vista.
+            {/* Lista */}
+            {tareasVisibles.length === 0 ? (
+              <div style={{ padding: '40px 14px', textAlign: 'center', color: T.ink3, fontSize: 12 }}>
+                No hay tareas en esta vista.
+              </div>
+            ) : (
+              tareasVisibles.map(t => (
+                <TareaRow
+                  key={t.id}
+                  tarea={t}
+                  currentUser={currentUser}
+                  usuarios={usuarios}
+                  obras={obras}
+                  solapaUserId={solapaEsUsuario ? tab : null}
+                  expanded={expandedId === t.id}
+                  onToggleExpand={() => setExpandedId(expandedId === t.id ? null : t.id)}
+                  onEdit={() => setEditingId(t.id)}
+                  toggleItem={toggleItem}
+                  addItem={addItem}
+                  addComentario={addComentario}
+                  setItemObservacion={setItemObservacion}
+                  setItemAsignado={setItemAsignado}
+                  addAdjunto={addAdjunto}
+                  removeAdjunto={removeAdjunto}
+                  isAdmin={isAdmin}
+                />
+              ))
+            )}
           </div>
-        ) : (
-          tareasVisibles.map(t => (
-            <TareaRow
-              key={t.id}
-              tarea={t}
-              currentUser={currentUser}
-              usuarios={usuarios}
-              obras={obras}
-              solapaUserId={solapaEsUsuario ? tab : null}
-              expanded={expandedId === t.id}
-              onToggleExpand={() => setExpandedId(expandedId === t.id ? null : t.id)}
-              onEdit={() => setEditingId(t.id)}
-              toggleItem={toggleItem}
-              addItem={addItem}
-              addComentario={addComentario}
-              setItemObservacion={setItemObservacion}
-              setItemAsignado={setItemAsignado}
-              addAdjunto={addAdjunto}
-              removeAdjunto={removeAdjunto}
-              isAdmin={isAdmin}
-            />
-          ))
-        )}
+        </div>
       </Box>
 
       {editingId && (

@@ -8,6 +8,7 @@ import { useGastosFijos } from '../store/GastosFijosContext';
 import { useObras } from '../store/ObrasContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 
@@ -23,6 +24,7 @@ const MES_ACTUAL = new Date().toLocaleString('es-AR', { month: 'long', year: 'nu
 export default function Prorrateo() {
   const navigate = useNavigate();
   const { currentUser } = useUsuarios();
+  const isMobile = useIsMobile();
   const isAllowed = !currentUser || currentUser.rol === 'Admin' || currentUser.rol === 'Administración';
   useEffect(() => {
     if (currentUser && !isAllowed) navigate('/', { replace: true });
@@ -128,10 +130,10 @@ export default function Prorrateo() {
         ]}
       />
 
-      <div style={{ display: 'flex', gap: 10, overflow: 'hidden', height: 'calc(100vh - 240px)' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, overflow: isMobile ? 'visible' : 'hidden', height: isMobile ? 'auto' : 'calc(100vh - 240px)' }}>
 
         {/* ── Panel izquierdo ── */}
-        <Box style={{ width: 290, flexShrink: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', padding: 0 }}>
+        <Box style={{ width: isMobile ? 'auto' : 290, flexShrink: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', padding: 0 }}>
 
           {/* Gastos fijos — editable */}
           <div style={{ padding: '10px 14px 0' }}>
@@ -195,7 +197,7 @@ export default function Prorrateo() {
         </Box>
 
         {/* ── Panel derecho: distribución ── */}
-        <Box style={{ flex: 1, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <Box style={{ flex: 1, padding: 0, overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '8px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, display: 'flex', alignItems: 'center', gap: 8 }}>
             <div className="k-h" style={{ fontSize: 16 }}>Distribución por obra</div>
             <span style={{ marginLeft: 'auto', fontSize: 12, color: T.ink2 }}>
