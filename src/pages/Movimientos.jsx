@@ -26,9 +26,10 @@ const DEFAULT_MEDIOS = ['Transferencia', 'Efectivo', 'Cheque', 'E-cheq', 'Débit
 // ── Modal para solicitar eliminación (no-admin) ───────────────────────────────
 function SolicitarEliminacionModal({ movimiento, solicitante, onConfirm, onClose }) {
   const [motivo, setMotivo] = useState('');
+  const isMobile = useIsMobile();
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={{ width: isMobile ? 'min(90vw, 360px)' : 420 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: '#c0392b', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: '6px 6px 0 0' }}>
           <div style={{ fontWeight: 800, fontSize: 15 }}>Solicitar eliminación de movimiento</div>
           <span style={{ cursor: 'pointer', fontSize: 20, opacity: 0.8 }} onClick={onClose}>✕</span>
@@ -831,10 +832,10 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       {/* Categoría fiscal (opcional) — sirve para que el panel Financiero
           sume sueldos / cargas / etc. automáticamente al mes correspondiente. */}
       {isGasto && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Categoría fiscal (Financiero):</span>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: isMobile ? 'normal' : 'nowrap' }}>Categoría fiscal (Financiero):</span>
           <select value={categoriaFiscal} onChange={e => setCategoriaFiscal(e.target.value)}
-            style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px' }}>
+            style={{ ...inputSt, flex: 1, width: isMobile ? '100%' : undefined, fontSize: 11, padding: '4px 8px' }}>
             <option value="">— sin categoría fiscal —</option>
             <option value="sueldo">Sueldo</option>
             <option value="cs-soc">Cargas sociales</option>
@@ -852,11 +853,11 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           del mes correspondiente en el Financiero. Si el cliente te retuvo
           IIBB en este pago, lo cargás acá y queda registrado. */}
       {!isGasto && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Retención IIBB sufrida $ (opcional):</span>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: isMobile ? 'normal' : 'nowrap' }}>Retención IIBB sufrida $ (opcional):</span>
           <input type="text" inputMode="decimal" placeholder="0"
             value={retencionIIBB} onChange={e => setRetencionIIBB(e.target.value)}
-            style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
+            style={{ ...inputSt, flex: 1, width: isMobile ? '100%' : undefined, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
         </div>
       )}
 
@@ -864,20 +865,20 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
           servicio: te suman un % de IIBB al pagar. Es pago a cuenta del IIBB
           tuyo del mes → se descuenta igual que una retención. */}
       {isGasto && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Percepción IIBB sufrida $ (opcional):</span>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: isMobile ? 'normal' : 'nowrap' }}>Percepción IIBB sufrida $ (opcional):</span>
           <input type="text" inputMode="decimal" placeholder="0"
             value={percepcionIIBB} onChange={e => setPercepcionIIBB(e.target.value)}
-            style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
+            style={{ ...inputSt, flex: 1, width: isMobile ? '100%' : undefined, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
         </div>
       )}
       {/* Jurisdicción de la percepción IIBB: solo las de PBA descuentan del IIBB
           del mes (las de otra provincia se liquidan aparte, Convenio Multilateral). */}
       {isGasto && Math.round(parseMoneyAR(percepcionIIBB)) > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Jurisdicción IIBB:</span>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: isMobile ? 'normal' : 'nowrap' }}>Jurisdicción IIBB:</span>
           <select value={jurisdiccionIIBB} onChange={e => setJurisdiccionIIBB(e.target.value)}
-            style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px' }}>
+            style={{ ...inputSt, flex: 1, width: isMobile ? '100%' : undefined, fontSize: 11, padding: '4px 8px' }}>
             {JURISDICCIONES_IIBB.map(j => <option key={j.id} value={j.id}>{j.nombre}</option>)}
           </select>
         </div>
@@ -885,11 +886,11 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       {/* Percepción IVA sufrida (RG 2408/3337): típica en mayoristas. Es un pago a
           cuenta del IVA del mes → se descuenta de la posición IVA en el Financiero. */}
       {isGasto && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: 'nowrap' }}>Percepción IVA sufrida $ (opcional):</span>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: T.ink3, whiteSpace: isMobile ? 'normal' : 'nowrap' }}>Percepción IVA sufrida $ (opcional):</span>
           <input type="text" inputMode="decimal" placeholder="0"
             value={percepcionIVA} onChange={e => setPercepcionIVA(e.target.value)}
-            style={{ ...inputSt, flex: 1, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
+            style={{ ...inputSt, flex: 1, width: isMobile ? '100%' : undefined, fontSize: 11, padding: '4px 8px', textAlign: 'right', fontFamily: T.fontMono }} />
         </div>
       )}
 
@@ -924,7 +925,7 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
                     <span style={{ background: isPagado ? T.ok : T.warn, color: '#fff', borderRadius: 3, padding: '1px 7px', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
                       {isPagado ? '✓ Pago' : '~ Parcial'}
                     </span>
-                    <span style={{ color: T.ink, flex: 1 }}>{cuota.descripcion}</span>
+                    <span style={{ color: T.ink, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cuota.descripcion}</span>
                     <span style={{ fontFamily: 'monospace', fontWeight: 700, color: isPagado ? T.ok : T.warn }}>{fmtC(aplicar)}</span>
                     {!isPagado && <span style={{ fontSize: 10, color: T.ink3 }}>· resta {fmtC(saldoPost)}</span>}
                   </div>
@@ -1015,6 +1016,7 @@ function Panel({ tipo, movs, cajas, obras, proveedores, clientes, dolarVenta, to
 function ComprobantesPanel({ movimientos, mes }) {
   const [open,        setOpen]        = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const isMobile = useIsMobile();
 
   const conFoto = movimientos.filter(m => m.comprobanteUrl);
   if (!conFoto.length) return null;
@@ -1094,7 +1096,7 @@ function ComprobantesPanel({ movimientos, mes }) {
 
       {open && (
         <div style={{ padding: '0 14px 14px', borderTop: `1px solid ${T.faint2}` }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8, marginTop: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(90px, 1fr))' : 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8, marginTop: 12 }}>
             {conFoto.map(m => (
               <a key={m.id} href={m.comprobanteUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: T.ink }}>
                 <div style={{ border: `1.5px solid ${T.faint2}`, borderRadius: 6, overflow: 'hidden', background: T.paper }}>
