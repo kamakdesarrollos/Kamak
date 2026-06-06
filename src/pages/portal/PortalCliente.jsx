@@ -337,9 +337,9 @@ export default function PortalCliente() {
           <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 18 }}>|</div>
           <div>
             <div style={{ color: 'white', fontWeight: 800, fontSize: 15, lineHeight: 1.2 }}>Portal cliente</div>
-            <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>{clienteNombre} · {obra.nombre} — {obra.tipo}</div>
+            <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? 160 : 'none' }}>{clienteNombre} · {obra.nombre} — {obra.tipo}</div>
           </div>
-          <div style={{ marginLeft: 8, padding: '3px 10px', borderRadius: 20, background: estadoInfo.bg, color: estadoInfo.color, fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>
+          <div style={{ marginLeft: 8, padding: isMobile ? '2px 6px' : '3px 10px', borderRadius: 20, background: estadoInfo.bg, color: estadoInfo.color, fontSize: isMobile ? 8 : 10, fontWeight: 700, letterSpacing: 0.5, flexShrink: 0 }}>
             {estadoInfo.label}
           </div>
         </div>
@@ -447,7 +447,7 @@ export default function PortalCliente() {
                       <div style={{ fontSize: 13, color: T.ink2, fontWeight: 700 }}>· {avancePonderado}% de obra</div>
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: T.ink3, maxWidth: 260, textAlign: 'right', lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 11, color: T.ink3, maxWidth: isMobile ? '100%' : 260, textAlign: isMobile ? 'left' : 'right', lineHeight: 1.4 }}>
                     Calculado sobre el avance real de cada rubro en el Gantt aplicado al total acordado.
                   </div>
                 </div>
@@ -470,7 +470,7 @@ export default function PortalCliente() {
             {/* Datos de la obra (formato compacto key-value, font normal) */}
             <Box style={{ padding: '14px 18px' }}>
               <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: T.ink, textTransform: 'uppercase', letterSpacing: 0.5 }}>Datos de la obra</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px 18px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px 18px' }}>
                 {[
                   ['Tipo de obra',      obra.tipo || '—'],
                   ['Dirección',         obra.direccion || '—'],
@@ -498,7 +498,7 @@ export default function PortalCliente() {
             {/* Avance por rubro */}
             {rubros.length > 0 && (
               <Box style={{ padding: 18 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14, color: T.ink }}>Avance por rubro</div>
+                <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, marginBottom: 14, color: T.ink }}>Avance por rubro</div>
                 {rubros.map(r => {
                   const av = rubroAvance(r);
                   return (
@@ -517,7 +517,7 @@ export default function PortalCliente() {
             {/* Hitos (one per rubro) */}
             {rubros.length > 0 && (
               <Box style={{ padding: 18 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14, color: T.ink }}>Estado de ejecución por gremio</div>
+                <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, marginBottom: 14, color: T.ink }}>Estado de ejecución por gremio</div>
                 {rubros.map((r, i) => {
                   const av = rubroAvance(r);
                   const done = av === 100;
@@ -555,7 +555,7 @@ export default function PortalCliente() {
         {/* TAB 1 — AVANCE / FOTOS */}
         {tab === 1 && (
           <Box style={{ padding: 18 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: T.ink }}>Registro fotográfico de obra</div>
+            <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, marginBottom: 6, color: T.ink }}>Registro fotográfico de obra</div>
             <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>{fotos.length} {fotos.length === 1 ? 'foto' : 'fotos'} disponibles</div>
             {fotos.length === 0 ? (
               <div style={{ color: T.ink3, fontSize: 13, textAlign: 'center', padding: '48px 0' }}>
@@ -609,20 +609,20 @@ export default function PortalCliente() {
             {/* KPIs principales — Monto total / Pagado / Saldo / Cuotas pagadas
                 Nota: en el portal del cliente decimos "Pagado" (desde su POV).
                 En el panel admin decimos "Cobrado" (desde POV de Kamak). */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 10 }}>
-              <Box style={{ padding: '13px 16px', borderLeft: `3px solid ${T.accent}` }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fit, minmax(140px, 1fr))' : 'repeat(4, 1fr)', gap: 10 }}>
+              <Box style={{ padding: isMobile ? '12px 8px' : '13px 16px', borderLeft: `3px solid ${T.accent}` }}>
                 <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Monto total</div>
                 <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: T.accent, lineHeight: 1.1 }}>{fmt(totalClienteUSD)}</div>
               </Box>
-              <Box style={{ padding: '13px 16px' }}>
+              <Box style={{ padding: isMobile ? '12px 8px' : '13px 16px' }}>
                 <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Pagado</div>
                 <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: T.ok, lineHeight: 1.1 }}>{fmt(pagadoCuotasUSD)}</div>
               </Box>
-              <Box style={{ padding: '13px 16px' }}>
+              <Box style={{ padding: isMobile ? '12px 8px' : '13px 16px' }}>
                 <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Saldo</div>
                 <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: saldoUSD > 0 ? T.warn : T.ok, lineHeight: 1.1 }}>{fmt(saldoUSD)}</div>
               </Box>
-              <Box style={{ padding: '13px 16px' }}>
+              <Box style={{ padding: isMobile ? '12px 8px' : '13px 16px' }}>
                 <div style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Cuotas pagas</div>
                 <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 22, color: T.ink, lineHeight: 1.1 }}>{countPagadas} / {cuotas.length}</div>
               </Box>
@@ -713,8 +713,8 @@ export default function PortalCliente() {
                       <div style={{ width: 32, height: 32, borderRadius: 16, background: dot.bg, color: dot.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
                         {c.n}
                       </div>
-                      <div style={{ flex: 1, minWidth: isMobile ? '60%' : 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{c.descripcion}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: isMobile ? 'normal' : 'nowrap' }}>{c.descripcion}</div>
                         <div style={{ fontSize: 11, color: T.ink2, marginTop: 1 }}>
                           {fmtD(c.fecha)}
                           {isPagado && fechaPagada && (
@@ -763,7 +763,7 @@ export default function PortalCliente() {
         {/* TAB 3 — DOCUMENTOS */}
         {tab === 3 && (
           <Box style={{ padding: 18 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: T.ink }}>Documentos de la obra</div>
+            <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, marginBottom: 6, color: T.ink }}>Documentos de la obra</div>
             <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>{documentos.length} {documentos.length === 1 ? 'archivo' : 'archivos'} disponibles</div>
             {documentos.length === 0 ? (
               <div style={{ color: T.ink3, fontSize: 13, textAlign: 'center', padding: '48px 0' }}>
