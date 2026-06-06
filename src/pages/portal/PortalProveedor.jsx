@@ -32,7 +32,7 @@ export default function PortalProveedor() {
           <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 18 }}>|</div>
           <div style={{ color: T.paper }}>
             <div style={{ fontWeight: 800, fontSize: 16 }}>Portal proveedor</div>
-            <div style={{ fontSize: 11, opacity: 0.6 }}>Don Luis SRL · CUIT 30-71589456-2</div>
+            <div style={{ fontSize: 11, opacity: 0.6, whiteSpace: 'normal' }}>Don Luis SRL · CUIT 30-71589456-2</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -44,7 +44,7 @@ export default function PortalProveedor() {
       {/* Tabs */}
       <div style={{ background: 'white', borderBottom: `1.5px solid ${T.faint2}`, padding: isMobile ? '0 14px' : '0 32px', display: 'flex', gap: 4, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {tabs.map((t, i) => (
-          <span key={i} onClick={() => setTab(i)} style={{ padding: '12px 16px', fontSize: 13, fontWeight: tab === i ? 700 : 400, color: tab === i ? T.accent : T.ink2, borderBottom: `2px solid ${tab === i ? T.accent : 'transparent'}`, cursor: 'pointer', whiteSpace: 'nowrap' }}>{t}</span>
+          <span key={i} onClick={() => setTab(i)} style={{ padding: '12px 16px', fontSize: 13, fontWeight: tab === i ? 700 : 400, color: tab === i ? T.accent : T.ink2, borderBottom: `2px solid ${tab === i ? T.accent : 'transparent'}`, cursor: 'pointer', whiteSpace: 'nowrap', minWidth: 0 }}>{t}</span>
         ))}
       </div>
 
@@ -73,7 +73,7 @@ export default function PortalProveedor() {
                 <span style={{ fontSize: 12, color: T.ink2 }}>Filtrar por obra ▾</span>
               </div>
               <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
-              <div style={{ fontSize: 12, minWidth: isMobile ? 560 : 'auto' }}>
+              <div style={{ fontSize: 12, minWidth: isMobile ? 'max(100%, 500px)' : 'auto' }}>
                 <div style={{ display: 'flex', background: T.faint, padding: '6px 14px', fontWeight: 700, fontSize: 11, color: T.ink2, gap: 8 }}>
                   <span style={{ flex: 0.7 }}>Fecha</span>
                   <span style={{ flex: 4 }}>Descripción</span>
@@ -104,7 +104,7 @@ export default function PortalProveedor() {
                 <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10, color: T.warn }}>Pendientes de pago</div>
                 {PENDIENTES.map((p, i) => (
                   <div key={i} style={{ background: '#fff7e6', border: `1.5px solid ${T.warn}`, borderRadius: 8, padding: '12px 16px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 13 }}>Factura {p.n}</div>
                       <div style={{ fontSize: 11, color: T.ink2 }}>Obra {p.obra} · emitida {p.fecha}</div>
                     </div>
@@ -150,7 +150,7 @@ export default function PortalProveedor() {
               ].map((f, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${T.faint2}`, gap: 10, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                   <span style={{ fontSize: 20 }}>🧾</span>
-                  <div style={{ flex: 1, minWidth: isMobile ? '60%' : 0 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 700 }}>Factura {f.n}</div>
                     <div style={{ fontSize: 10, color: T.ink2 }}>Obra {f.obra} · {f.fecha}</div>
                   </div>
@@ -171,7 +171,7 @@ export default function PortalProveedor() {
               { n: 'OC-2026-094', obra: 'Pilar', desc: 'Materiales plomería', monto: '$ 195.000', estado: 'en revisión' },
             ].map((o, i) => (
               <div key={i} style={{ border: `1.5px solid ${T.faint2}`, borderRadius: 8, padding: '12px 16px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-                <div style={{ flex: 1, minWidth: isMobile ? '60%' : 0 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 13 }}>{o.n}</div>
                   <div style={{ fontSize: 11, color: T.ink2 }}>{o.desc} · {o.obra}</div>
                 </div>
