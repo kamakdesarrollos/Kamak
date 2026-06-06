@@ -16,3 +16,6 @@ export const T = {
   fontMono: '"JetBrains Mono", ui-monospace, monospace',
   fontNote: '"Caveat", cursive',
 };
+
+// Breakpoints compartidos JS/CSS (mobile-last). El hook useIsMobile usa 768.
+export const BREAKPOINTS = { mobile: 640, drawer: 768, tablet: 1024 };
