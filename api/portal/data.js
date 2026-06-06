@@ -80,6 +80,16 @@ function sanitizeDetalle(detalle) {
     documentos: (detalle.documentos || []).map(d => ({ id: d.id, nombre: d.nombre, tipo: d.tipo, fecha: d.fecha, url: d.url })),
     fotos: (detalle.fotos || []).map(f => ({ id: f.id, label: f.label, rubro: f.rubro, fecha: f.fecha, url: f.url })),
     financiacion: { interes: fin.interes ?? 0, notaPortal: fin.notaPortal || '' },
+    // Contrato para firma en el portal: whitelist estricta. NO incluye
+    // hashDocumento, ip, dni ni nada de costos/margen.
+    contrato: detalle.contrato ? {
+      estado: detalle.contrato.estado,
+      version: detalle.contrato.version,
+      htmlRenderizado: detalle.contrato.htmlRenderizado,   // ya sanitizado al generar
+      fechaEnviado: detalle.contrato.fechaEnviado || null,
+      fechaFirmado: detalle.contrato.fechaFirmado || null,
+      firma: detalle.contrato.firma ? { nombre: detalle.contrato.firma.nombre, fecha: detalle.contrato.firma.fecha } : null,
+    } : null,
   };
 }
 

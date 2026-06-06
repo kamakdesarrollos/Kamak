@@ -10,6 +10,7 @@ import { T } from '../../theme';
 import { fmtN, fmtFecha } from '../../lib/format';
 import { cuotaEstadoCalc, cuotaCobrado, calcObra, cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, ingresosObraUSD, detallePagosCuotas, calcTotalClienteUSD } from '../obra/helpers';
 import { useMovimientos } from '../../store/MovimientosContext';
+import ContratoFirma from './ContratoFirma';
 
 const fmtD = fmtFecha;
 
@@ -289,7 +290,7 @@ export default function PortalCliente() {
     ? Math.max(0, Math.ceil((new Date(obra.fechaFinEstim) - new Date()) / 86400000))
     : null;
 
-  const tabs = ['Resumen', 'Avance', 'Cuenta corriente', 'Documentos'];
+  const tabs = ['Resumen', 'Avance', 'Cuenta corriente', 'Documentos', ...(detalle.contrato ? ['Contrato'] : [])];
 
   // Estado chip colors
   const estadoChip = {
@@ -779,6 +780,11 @@ export default function PortalCliente() {
               ))
             )}
           </Box>
+        )}
+
+        {/* TAB — CONTRATO (solo si hay contrato; índice variable) */}
+        {tabs[tab] === 'Contrato' && (
+          <ContratoFirma contrato={detalle.contrato} token={(() => { try { return sessionStorage.getItem(`kamak_portal_${id}`); } catch { return null; } })()} />
         )}
       </div>
     </div>
