@@ -1431,7 +1431,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
       {showPlantillas && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={() => setShowPlantillas(false)}>
-          <div style={{ background: T.paper, borderRadius: 8, padding: 22, width: 580, maxHeight: '75vh', overflow: 'auto', boxShadow: '0 6px 32px rgba(0,0,0,0.22)' }}
+          <div style={{ background: T.paper, borderRadius: 8, padding: 22, ...(isMobile ? { width: 'calc(100vw - 32px)', maxWidth: '100%', maxHeight: '80vh' } : { width: 580, maxHeight: '75vh' }), overflow: 'auto', boxShadow: '0 6px 32px rgba(0,0,0,0.22)' }}
             onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>Importar desde plantilla</div>
             <div style={{ fontSize: 12, color: T.ink2, marginBottom: 14 }}>Los rubros y tareas se agregarán al presupuesto actual.</div>
@@ -1462,7 +1462,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
       {showSavePlantilla && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={() => setShowSavePlantilla(false)}>
-          <div style={{ background: T.paper, borderRadius: 8, padding: 24, width: 460, boxShadow: '0 6px 32px rgba(0,0,0,0.22)' }}
+          <div style={{ background: T.paper, borderRadius: 8, padding: 24, ...(isMobile ? { width: 'calc(100vw - 32px)', maxWidth: '100%' } : { width: 460 }), boxShadow: '0 6px 32px rgba(0,0,0,0.22)' }}
             onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>Guardar como plantilla</div>
             <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>
@@ -2819,25 +2819,25 @@ function ObraQuickAddForm({ tipo, cajas, proveedores, clientes, dolarVenta, obra
           value={desc} onChange={e => setDesc(e.target.value)} onKeyDown={onKey}
           placeholder={isGasto ? 'Descripción del gasto…' : 'Descripción del ingreso…'} />
         {!isGasto && monedaIngreso === 'USD_ARS' ? (
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
-            <input style={{ ...inputStMov, width: 90, fontFamily: T.fontMono, fontWeight: 700 }}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0, ...(isMobile ? { minWidth: '100%', flexWrap: 'wrap' } : {}) }}>
+            <input style={{ ...inputStMov, ...(isMobile ? { flex: 1, minWidth: 0 } : { width: 90 }), fontFamily: T.fontMono, fontWeight: 700 }}
               type="number" min="0" placeholder="USD"
               value={montoDolar} onChange={e => setMontoDolar(e.target.value)} onKeyDown={onKey} />
             <span style={{ fontSize: 11, color: T.ink3 }}>× TC</span>
-            <input style={{ ...inputStMov, width: 85, fontFamily: T.fontMono }}
+            <input style={{ ...inputStMov, ...(isMobile ? { flex: 1, minWidth: 0 } : { width: 85 }), fontFamily: T.fontMono }}
               type="number" min="0" placeholder="TC"
               value={tipoCambio} onChange={e => setTipoCambio(e.target.value)} onKeyDown={onKey} />
             <span style={{ fontSize: 11, color: T.ink3 }}>=</span>
-            <div style={{ ...inputStMov, width: 105, fontFamily: T.fontMono, fontWeight: 700, color: T.ok, background: T.faint, display: 'flex', alignItems: 'center', cursor: 'default' }}>
+            <div style={{ ...inputStMov, ...(isMobile ? { flex: 1, minWidth: 0 } : { width: 105 }), fontFamily: T.fontMono, fontWeight: 700, color: T.ok, background: T.faint, display: 'flex', alignItems: 'center', cursor: 'default' }}>
               $ {montoFinal > 0 ? fmtN(montoFinal) : '0'}
             </div>
           </div>
         ) : (
-          <input style={{ ...inputStMov, width: 130, fontFamily: T.fontMono, fontWeight: 700 }}
+          <input style={{ ...inputStMov, ...(isMobile ? { minWidth: '100%' } : { width: 130 }), fontFamily: T.fontMono, fontWeight: 700 }}
             type="number" min="0" placeholder={cajaIsUSD ? 'USD' : '$ Monto'}
             value={monto} onChange={e => setMonto(e.target.value)} onKeyDown={onKey} />
         )}
-        <input type="date" style={{ ...inputStMov, width: 140 }}
+        <input type="date" style={{ ...inputStMov, ...(isMobile ? { minWidth: '100%' } : { width: 140 }) }}
           value={fecha} onChange={e => setFecha(e.target.value)} />
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
@@ -2858,16 +2858,16 @@ function ObraQuickAddForm({ tipo, cajas, proveedores, clientes, dolarVenta, obra
             }
           </select>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, ...(isMobile ? { minWidth: '100%' } : {}) }}>
           <span style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Moneda</span>
           {isGasto ? (
-            <select style={{ ...inputStMov, width: 110, cursor: 'pointer' }}
+            <select style={{ ...inputStMov, ...(isMobile ? { width: '100%' } : { width: 110 }), cursor: 'pointer' }}
               value={monedaGasto} onChange={e => setMonedaGasto(e.target.value)}>
               <option value="ARS">Pesos (ARS)</option>
               <option value="USD">Dólares (USD)</option>
             </select>
           ) : (
-            <select style={{ ...inputStMov, width: 110, cursor: 'pointer' }}
+            <select style={{ ...inputStMov, ...(isMobile ? { width: '100%' } : { width: 110 }), cursor: 'pointer' }}
               value={monedaIngreso} onChange={e => setMonedaIngreso(e.target.value)}>
               {obraMoneda !== 'USD' && <option value="ARS">Pesos (ARS)</option>}
               <option value="USD">Dólares (USD)</option>
@@ -2875,7 +2875,7 @@ function ObraQuickAddForm({ tipo, cajas, proveedores, clientes, dolarVenta, obra
             </select>
           )}
         </div>
-        <select style={{ ...inputStMov, flex: 1, cursor: 'pointer' }}
+        <select style={{ ...inputStMov, flex: 1, cursor: 'pointer', ...(isMobile ? { minWidth: '100%' } : {}) }}
           value={cajasMoneda.find(c => c.id === cajaId) ? cajaId : cajasMoneda[0]?.id || ''}
           onChange={e => setCajaId(e.target.value)}>
           {cajasMoneda.length === 0
@@ -2883,7 +2883,7 @@ function ObraQuickAddForm({ tipo, cajas, proveedores, clientes, dolarVenta, obra
             : cajasMoneda.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)
           }
         </select>
-        <select style={{ ...inputStMov, width: 120, cursor: 'pointer' }} value={medio} onChange={e => setMedio(e.target.value)}>
+        <select style={{ ...inputStMov, ...(isMobile ? { minWidth: '100%' } : { width: 120 }), cursor: 'pointer' }} value={medio} onChange={e => setMedio(e.target.value)}>
           {['Transferencia','Efectivo','Cheque','E-cheq','Débito','Tarjeta'].map(v => <option key={v}>{v}</option>)}
         </select>
         <Btn sm onClick={onCancel}>✕</Btn>
@@ -3038,6 +3038,7 @@ function TabMovimientos({ obra, moneda }) {
 // TAB 4: CUENTA CLIENTE
 // ─────────────────────────────────────────────────────────────────────────────
 function TabCuentaCliente({ detalle, moneda, obra }) {
+  const isMobile = useIsMobile();
   const { dolarVenta } = useDolar();
   const tc = dolarVenta || 1070;
   const navigate = useNavigate();
@@ -3170,6 +3171,8 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
         </Box>
       ) : (
         <Box style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+          <div style={isMobile ? { minWidth: 380 } : undefined}>
           {/* Header tabla */}
           <div style={{
             display: 'flex',
@@ -3235,6 +3238,8 @@ function TabCuentaCliente({ detalle, moneda, obra }) {
               </div>
             );
           })}
+          </div>
+          </div>
         </Box>
       )}
     </div>
@@ -3524,7 +3529,7 @@ function EstadoDeCuenta({ obra, detalle, tc }) {
           minWidth para no romper la alineacion. La nota de abajo queda fuera del
           scroll. */}
       <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
-      <div style={isMobile ? { minWidth: 640 } : undefined}>
+      <div style={isMobile ? { minWidth: 480 } : undefined}>
       {/* Header tabla */}
       <div style={{
         display: 'flex',
