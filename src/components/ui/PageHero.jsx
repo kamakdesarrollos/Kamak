@@ -1,5 +1,6 @@
 import { Box } from './index';
 import { T } from '../../theme';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 // Hero unificado para los encabezados de pagina (Cajas, Cheques, Plantillas,
 // etc.). Imita el diseño del banner "Posicion consolidada" del Dashboard:
@@ -23,6 +24,7 @@ import { T } from '../../theme';
 //   />
 
 export default function PageHero({ title, subtitle, kpis = [], actions, label }) {
+  const isMobile = useIsMobile();
   return (
     <Box style={{
       padding: 0,
@@ -42,13 +44,16 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
         color: '#fff',
         padding: '8px 14px',
         display: 'flex',
-        alignItems: 'center',
+        // En mobile apilamos titulo y acciones para que NUNCA se superpongan
+        // ni se aprieten en ~360px; en desktop quedan lado a lado como siempre.
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'center',
         justifyContent: 'space-between',
         position: 'relative',
         overflow: 'hidden',
-        gap: 12,
+        gap: isMobile ? 8 : 12,
       }}>
-        <div style={{ position: 'relative', minWidth: 0, flex: 1 }}>
+        <div style={{ position: 'relative', minWidth: 0, flex: 1, width: isMobile ? '100%' : 'auto' }}>
           {label && (
             <div style={{
               fontSize: 8.5,
@@ -62,7 +67,17 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
               {label}
             </div>
           )}
-          <div className="k-h" style={{ fontSize: 'clamp(15px, 4.5vw, 17px)', lineHeight: 1.15, letterSpacing: -0.2 }}>{title}</div>
+          <div className="k-h" style={{
+            fontSize: 'clamp(15px, 4.5vw, 17px)',
+            lineHeight: 1.15,
+            letterSpacing: -0.2,
+            // El titulo puede envolver y romper palabras largas para no
+            // desbordar el banner en pantallas angostas (~360px).
+            whiteSpace: 'normal',
+            overflowWrap: 'anywhere',
+            wordBreak: 'break-word',
+            minWidth: 0,
+          }}>{title}</div>
           {subtitle && (
             <div style={{ fontSize: 10.5, color: '#a3a09a', marginTop: 2, fontWeight: 400 }}>{subtitle}</div>
           )}
@@ -76,7 +91,12 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
             position: 'relative',
             flexShrink: 0,
             flexWrap: 'wrap',
-            justifyContent: 'flex-end',
+            // En mobile las acciones ocupan el ancho completo bajo el titulo y
+            // se alinean a la izquierda (en vez de apretarse contra el borde
+            // derecho); en desktop quedan a la derecha como siempre.
+            width: isMobile ? '100%' : 'auto',
+            justifyContent: isMobile ? 'flex-start' : 'flex-end',
+            maxWidth: '100%',
           }}>
             {actions}
           </div>
@@ -87,7 +107,11 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
       {kpis.length > 0 && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(auto-fit, minmax(120px, 1fr))`,
+          // En mobile bajamos el minmax para que entren 2 columnas en ~360px
+          // sin apretar; en desktop el layout queda igual.
+          gridTemplateColumns: isMobile
+            ? `repeat(auto-fit, minmax(100px, 1fr))`
+            : `repeat(auto-fit, minmax(120px, 1fr))`,
           background: '#fbf9f1',
         }}>
           {kpis.map((k, i) => (
@@ -95,7 +119,7 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
               key={i}
               onClick={k.onClick}
               style={{
-                padding: '8px 14px',
+                padding: isMobile ? '6px 10px' : '8px 14px',
                 borderRight: i < kpis.length - 1 ? `1px solid rgba(212, 207, 191, 0.5)` : 'none',
                 minWidth: 0,
                 cursor: k.onClick ? 'pointer' : 'default',
@@ -114,9 +138,13 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
                 fontWeight: 700,
                 marginBottom: 2,
                 textTransform: 'uppercase',
-                whiteSpace: 'nowrap',
+                // En mobile dejamos envolver el label (en vez de recortarlo con
+                // ellipsis) para que no se pierda texto en celdas angostas.
+                whiteSpace: isMobile ? 'normal' : 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
+                overflowWrap: isMobile ? 'anywhere' : 'normal',
+                lineHeight: 1.2,
               }}>
                 {k.label}
               </div>

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { T } from '../../theme';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 // Sistema de notificaciones tipo toast.
 //
@@ -42,6 +43,7 @@ export const fireToast = (detail) => {
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const timers = useRef(new Map());
+  const isMobile = useIsMobile();
 
   const dismiss = useCallback((id) => {
     setToasts(prev => prev.filter(t => t.id !== id));
@@ -78,8 +80,14 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={value}>
       {children}
       <div style={{
-        position: 'fixed', bottom: 20, right: 20, zIndex: 10_000,
+        position: 'fixed', bottom: isMobile ? 12 : 20, zIndex: 10_000,
+        // En mobile: anclar a ambos bordes (left+right) para que los toasts
+        // queden centrados y NUNCA se salgan del viewport. En desktop: pegado
+        // a la derecha como siempre.
+        right: isMobile ? 8 : 20,
+        left: isMobile ? 8 : 'auto',
         display: 'flex', flexDirection: 'column', gap: 8,
+        alignItems: isMobile ? 'stretch' : 'flex-end',
         pointerEvents: 'none',
       }}>
         {toasts.map(t => {
@@ -87,7 +95,9 @@ export function ToastProvider({ children }) {
           return (
             <div key={t.id} onClick={() => dismiss(t.id)}
               style={{
-                minWidth: 260, maxWidth: 380,
+                minWidth: isMobile ? 0 : 260,
+                maxWidth: isMobile ? 'min(420px, 92vw)' : 380,
+                width: isMobile ? '100%' : 'auto',
                 background: c.bg, color: c.text,
                 border: `1.5px solid ${c.border}`,
                 borderRadius: 6,
@@ -97,10 +107,13 @@ export function ToastProvider({ children }) {
                 display: 'flex', alignItems: 'center', gap: 10,
                 cursor: 'pointer', userSelect: 'none',
                 pointerEvents: 'auto',
-                animation: 'kamak-toast-in 0.2s ease-out',
+                // En mobile el toast ocupa todo el ancho disponible: animar con
+                // translateX provocaría un desborde momentáneo por el borde, así
+                // que entra con un fade vertical sutil.
+                animation: `${isMobile ? 'kamak-toast-in-m' : 'kamak-toast-in'} 0.2s ease-out`,
               }}>
               <span style={{ fontSize: 16, fontWeight: 800, flexShrink: 0 }}>{ICONS[t.type] || 'ℹ'}</span>
-              <span style={{ flex: 1, lineHeight: 1.35 }}>{t.msg}</span>
+              <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{t.msg}</span>
               <span style={{ fontSize: 16, opacity: 0.5, flexShrink: 0 }}>×</span>
             </div>
           );
@@ -111,6 +124,10 @@ export function ToastProvider({ children }) {
         @keyframes kamak-toast-in {
           from { transform: translateX(20px); opacity: 0; }
           to   { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes kamak-toast-in-m {
+          from { transform: translateY(12px); opacity: 0; }
+          to   { transform: translateY(0); opacity: 1; }
         }
       `}</style>
     </ToastContext.Provider>
