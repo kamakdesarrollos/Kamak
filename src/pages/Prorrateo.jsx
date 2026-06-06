@@ -145,11 +145,11 @@ export default function Prorrateo() {
 
             {items.map(item => (
               <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 0', borderBottom: `1px solid ${T.faint2}` }}>
-                <span style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nombre}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nombre}</span>
                 {editId === item.id ? (
                   <input
                     autoFocus type="number" min="0"
-                    style={{ width: 100, textAlign: 'right', fontFamily: T.fontMono, padding: '2px 6px', border: `1.5px solid ${T.accent}`, borderRadius: 3, fontSize: 12, outline: 'none', flexShrink: 0 }}
+                    style={{ width: isMobile ? 'calc(100% - 120px)' : 100, maxWidth: 100, minWidth: 60, textAlign: 'right', fontFamily: T.fontMono, padding: '2px 6px', border: `1.5px solid ${T.accent}`, borderRadius: 3, fontSize: 12, outline: 'none', flexShrink: 0 }}
                     value={editVal}
                     onChange={e => setEditVal(e.target.value)}
                     onBlur={saveEdit}
@@ -198,66 +198,74 @@ export default function Prorrateo() {
 
         {/* ── Panel derecho: distribución ── */}
         <Box style={{ flex: 1, padding: 0, overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '8px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div className="k-h" style={{ fontSize: 16 }}>Distribución por obra</div>
-            <span style={{ marginLeft: 'auto', fontSize: 12, color: T.ink2 }}>
+          <div style={{ padding: '8px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 4 : 8 }}>
+            <div className="k-h" style={{ fontSize: 'clamp(13px, 3.5vw, 16px)' }}>Distribución por obra</div>
+            <span style={{ marginLeft: isMobile ? 0 : 'auto', fontSize: 12, color: T.ink2 }}>
               Total a distribuir: <b style={{ fontFamily: T.fontMono }}>$ {fmtN(totalMensual)}</b>
             </span>
           </div>
 
-          <div style={{ display: 'flex', padding: '6px 12px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            <span style={{ flex: 2 }}>Obra</span>
-            <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono }}>Presupuesto</span>
-            <span style={{ flex: 0.8, textAlign: 'right', fontFamily: T.fontMono }}>% Tiempo</span>
-            <span style={{ flex: 0.8, textAlign: 'right', fontFamily: T.fontMono }}>% Peso</span>
-            <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono }}>% Asignado</span>
-            <span style={{ flex: 1.2, textAlign: 'right', fontFamily: T.fontMono }}>Monto $</span>
-          </div>
+          {/* Tabla: wrapped en overflow-x:auto en mobile para que header+filas scrolleen juntos */}
+          <div style={{ flex: 1, overflow: isMobile ? 'visible' : 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 1, overflowX: isMobile ? 'auto' : 'visible', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              {/* Contenedor interno con ancho mínimo para que el scroll funcione en mobile */}
+              <div style={{ minWidth: isMobile ? 520 : 'auto' }}>
 
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            {obrasActivas.length === 0 && (
-              <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin obras activas. El prorrateo requiere al menos una obra en estado "activa".</div>
-            )}
-            {distribuciones.map(({ o, pctTiempo, pctPeso, pctAsignado }, i) => {
-              const monto = totalMensual * pctAsignado / 100;
-              return (
-                <div key={o.id} style={{ display: 'flex', padding: '9px 12px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, background: i % 2 === 1 ? T.faint : 'transparent' }}>
-                  <span style={{ flex: 2, fontWeight: 700, color: T.accent, cursor: 'pointer', textDecoration: 'underline' }}
-                    onClick={() => navigate(`/obras/${o.id}/presupuesto`)}>{o.nombre}</span>
-                  <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>
-                    {o.moneda === 'USD' ? `U$S ${fmtN(o.presupuesto)}` : `$ ${fmtN(o.presupuesto)}`}
-                  </span>
-                  <span style={{ flex: 0.8, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>{pctTiempo.toFixed(1)}%</span>
-                  <span style={{ flex: 0.8, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>{pctPeso.toFixed(1)}%</span>
-                  <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700 }}>
-                    {criterio === 'manual' ? (
-                      <input type="number" min="0" max="100"
-                        value={manualPct[o.id] || ''}
-                        onChange={e => setManualPct(prev => ({ ...prev, [o.id]: e.target.value }))}
-                        style={{ width: 60, textAlign: 'right', padding: '2px 4px', borderRadius: 3, border: `1.5px solid ${T.faint2}`, fontFamily: T.fontMono, fontSize: 12, outline: 'none' }} />
-                    ) : (
-                      `${pctAsignado.toFixed(1)}%`
-                    )}
-                  </span>
-                  <span style={{ flex: 1.2, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700, color: T.accent }}>
-                    {totalMensual > 0 ? `$ ${fmtN(monto)}` : '—'}
-                  </span>
+                <div style={{ display: 'flex', padding: '6px 12px', background: T.faint, borderBottom: `1px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  <span style={{ flex: 2, minWidth: 0 }}>Obra</span>
+                  <span style={{ flex: 1, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono }}>Presupuesto</span>
+                  <span style={{ flex: 0.8, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono }}>% Tiempo</span>
+                  <span style={{ flex: 0.8, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono }}>% Peso</span>
+                  <span style={{ flex: 1, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono }}>% Asignado</span>
+                  <span style={{ flex: 1.2, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono }}>Monto $</span>
                 </div>
-              );
-            })}
-          </div>
 
-          {distribuciones.length > 0 && (
-            <div style={{ display: 'flex', padding: '8px 12px', background: T.faint, borderTop: `1.5px solid ${T.faint2}`, fontSize: 12, fontWeight: 800 }}>
-              <span style={{ flex: 4.6 }}>Total</span>
-              <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, color: Math.abs(totalPct - 100) < 0.5 ? T.ok : T.accent }}>
-                {totalPct.toFixed(1)}%
-              </span>
-              <span style={{ flex: 1.2, textAlign: 'right', fontFamily: T.fontMono, color: T.accent }}>
-                $ {fmtN(totalMensual)}
-              </span>
+                {obrasActivas.length === 0 && (
+                  <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin obras activas. El prorrateo requiere al menos una obra en estado "activa".</div>
+                )}
+                {distribuciones.map(({ o, pctTiempo, pctPeso, pctAsignado }, i) => {
+                  const monto = totalMensual * pctAsignado / 100;
+                  return (
+                    <div key={o.id} style={{ display: 'flex', padding: '9px 12px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, background: i % 2 === 1 ? T.faint : 'transparent' }}>
+                      <span style={{ flex: 2, minWidth: 0, fontWeight: 700, color: T.accent, cursor: 'pointer', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        onClick={() => navigate(`/obras/${o.id}/presupuesto`)}>{o.nombre}</span>
+                      <span style={{ flex: 1, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>
+                        {o.moneda === 'USD' ? `U$S ${fmtN(o.presupuesto)}` : `$ ${fmtN(o.presupuesto)}`}
+                      </span>
+                      <span style={{ flex: 0.8, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>{pctTiempo.toFixed(1)}%</span>
+                      <span style={{ flex: 0.8, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono, color: T.ink2 }}>{pctPeso.toFixed(1)}%</span>
+                      <span style={{ flex: 1, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700 }}>
+                        {criterio === 'manual' ? (
+                          <input type="number" min="0" max="100"
+                            value={manualPct[o.id] || ''}
+                            onChange={e => setManualPct(prev => ({ ...prev, [o.id]: e.target.value }))}
+                            style={{ width: 60, textAlign: 'right', padding: '2px 4px', borderRadius: 3, border: `1.5px solid ${T.faint2}`, fontFamily: T.fontMono, fontSize: 12, outline: 'none' }} />
+                        ) : (
+                          `${pctAsignado.toFixed(1)}%`
+                        )}
+                      </span>
+                      <span style={{ flex: 1.2, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700, color: T.accent }}>
+                        {totalMensual > 0 ? `$ ${fmtN(monto)}` : '—'}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {distribuciones.length > 0 && (
+                  <div style={{ display: 'flex', padding: '8px 12px', background: T.faint, borderTop: `1.5px solid ${T.faint2}`, fontSize: 12, fontWeight: 800 }}>
+                    <span style={{ flex: 4.6, minWidth: 0 }}>Total</span>
+                    <span style={{ flex: 1, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono, color: Math.abs(totalPct - 100) < 0.5 ? T.ok : T.accent }}>
+                      {totalPct.toFixed(1)}%
+                    </span>
+                    <span style={{ flex: 1.2, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono, color: T.accent }}>
+                      $ {fmtN(totalMensual)}
+                    </span>
+                  </div>
+                )}
+
+              </div>
             </div>
-          )}
+          </div>
         </Box>
       </div>
     </PageLayout>
