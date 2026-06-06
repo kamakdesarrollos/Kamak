@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Btn } from '../../components/ui';
 import { T } from '../../theme';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useObras } from '../../store/ObrasContext';
 import { useProveedores } from '../../store/ProveedoresContext';
@@ -21,6 +22,7 @@ const fmtFecha = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.split(
 const newAdicId = () => `adic-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 
 export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
+  const isMobile = useIsMobile();
   const { cajas, addMovimiento, movimientos } = useMovimientos();
   const { obras, patchDetalle }  = useObras();
   const { proveedores, addFacturaPendiente, facturasPendientes } = useProveedores();
@@ -258,7 +260,7 @@ export default function AprobarFacturaModal({ item, onConfirm, onClose }) {
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
-      <div className="k-modal" style={{ width: 500 }} onClick={e => e.stopPropagation()}>
+      <div className="k-modal" style={isMobile ? {} : { width: 500 }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: esNC ? '#b45309' : '#25803a', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 16, fontFamily: T.font }}>{esNC ? 'Confirmar nota de crédito' : 'Confirmar factura'}</div>

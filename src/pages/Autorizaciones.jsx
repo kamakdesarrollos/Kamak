@@ -45,6 +45,7 @@ const cuotaMontoFn   = (c, moneda, tc) => (c._usd || moneda !== 'USD') ? (c.mont
 
 function SolicitudRow({ sol, isPendiente, onAprobar, onRechazar }) {
   const mov = sol.movimiento || {};
+  const isMobile = useIsMobile();
   return (
     <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.faint2}`, padding: '10px 14px', gap: 8, background: isPendiente ? '#fff7ed' : 'transparent' }}>
       <div style={{ flex: 3, minWidth: 0 }}>
@@ -54,12 +55,12 @@ function SolicitudRow({ sol, isPendiente, onAprobar, onRechazar }) {
           {mov.obraNombre && mov.obraNombre !== 'General' && ` · ${mov.obraNombre}`}
         </div>
       </div>
-      <div style={{ flex: 2, fontSize: 12, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sol.motivo}>
+      <div style={{ flex: 2, minWidth: 0, fontSize: 12, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sol.motivo}>
         {sol.motivo}
       </div>
-      <div style={{ flex: 1.2, fontSize: 11, color: T.ink2 }}>{sol.solicitadoPor?.nombre || '—'}</div>
-      <div style={{ flex: 1, fontSize: 10, color: T.ink3, fontFamily: T.fontMono }}>{fmtDatetime(sol.creadoAt)}</div>
-      <div style={{ width: 140, flexShrink: 0, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+      <div style={{ flex: 1.2, minWidth: 0, fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sol.solicitadoPor?.nombre || '—'}</div>
+      <div style={{ flex: 1, minWidth: 0, fontSize: 10, color: T.ink3, fontFamily: T.fontMono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtDatetime(sol.creadoAt)}</div>
+      <div style={{ width: isMobile ? 'auto' : 140, flexShrink: 0, display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 4 : 6, justifyContent: 'flex-end' }}>
         {isPendiente ? (
           <>
             <button onClick={onAprobar}
@@ -142,6 +143,7 @@ function MovimientoCard({ item, isPendiente, navigate, proveedores, obras, getDe
   const esGasto = m.tipo === 'gasto';
   const [esAdicional, setEsAdicional] = useState(false);
   const [cuotaId, setCuotaId] = useState('');
+  const isMobile = useIsMobile();
 
   const tc = dolarVenta || 1070;
   const obraObj    = obras.find(o => o.id === m.obraId);
@@ -224,7 +226,7 @@ function MovimientoCard({ item, isPendiente, navigate, proveedores, obras, getDe
         {isPendiente && !esGasto && m.obraId && cuotas.length > 0 && (
           <div style={{ marginTop: 8, padding: '8px 10px', background: '#e8f4f0', borderRadius: 5, fontSize: 11 }}>
             <div style={{ fontWeight: 700, color: T.ok, marginBottom: 4 }}>Estado cobros de la obra</div>
-            <div style={{ display: 'flex', gap: 16 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: isMobile ? 8 : 16 }}>
               <span>Cobrado: <b style={{ fontFamily: 'monospace' }}>{fmtC(totalCobrado)}</b></span>
               <span>Pendiente: <b style={{ fontFamily: 'monospace', color: saldoPendiente > 0 ? T.warn : T.ok }}>{fmtC(saldoPendiente)}</b></span>
               <span style={{ color: T.ink3 }}>de {fmtC(totalCuotas)} total</span>
@@ -506,7 +508,7 @@ export default function Autorizaciones() {
                 ? <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin items</div>
                 : (
                   <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                    <div style={{ minWidth: isMobile ? 560 : 'auto' }}>
+                    <div style={{ minWidth: isMobile ? 'auto' : 560 }}>
                       {current.eliminacion.map(sol => (
                         <SolicitudRow
                           key={sol.id}
