@@ -13,6 +13,7 @@ import { ETAPAS_VENTA } from '../../lib/constants';
 import { ETAPA_META, etapaEfectiva, resumenEmbudo, visibleEnEmbudo, esArrastrableEnEmbudo } from '../../lib/ventaEtapa';
 import { fmtN } from '../../lib/format';
 import PerdidaModal from './PerdidaModal';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 // Convierte un hex (#rrggbb) a rgba con alpha — para tintes suaves de columna.
 const tint = (hex, a) => {
@@ -33,6 +34,8 @@ export default function Pipeline() {
   // Guard: el embudo es SOLO Admin (un no-admin no entra ni por URL).
   const isAdmin = currentUser?.rol === 'Admin';
   useEffect(() => { if (currentUser && !isAdmin) navigate('/', { replace: true }); }, [currentUser, isAdmin, navigate]);
+
+  const isMobile = useIsMobile();
 
   const [drag, setDrag] = useState(null);          // obraId arrastrándose
   const [dragOver, setDragOver] = useState(null);  // etapa bajo el cursor
@@ -84,7 +87,14 @@ export default function Pipeline() {
       />
 
       {/* Tablero Kanban — scroll horizontal, columnas por etapa */}
-      <div style={{ display: 'flex', gap: 12, overflowX: 'auto', padding: '4px 2px 18px', alignItems: 'flex-start' }}>
+      <div style={{
+        display: 'flex',
+        gap: 12,
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        padding: isMobile ? '4px 0 18px' : '4px 2px 18px',
+        alignItems: 'flex-start',
+      }}>
         {ETAPAS_VENTA.map(etapa => {
           const items = porEtapa(etapa);
           const totalUSD = items.reduce((s, o) => s + o.montoUSD, 0);
@@ -98,7 +108,7 @@ export default function Pipeline() {
               onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); }}
               onDrop={() => onDrop(etapa)}
               style={{
-                flex: '0 0 246px',
+                flex: isMobile ? '0 0 220px' : '0 0 246px',
                 background: isOver ? tint(meta.color, 0.10) : '#fbf9f1',
                 border: isOver ? `1.5px dashed ${meta.color}` : `1px solid ${T.faint2}`,
                 borderRadius: 10,
