@@ -22,7 +22,7 @@ const fmtFecha = (iso) => {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
-function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, cuotasUrgentes, tareasNuevas, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate }) {
+function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, cuotasUrgentes, tareasNuevas, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate, isMobile = false }) {
   const items = [];
 
   // Cuotas vencidas o próximas a vencer (≤3 días). Vencidas primero.
@@ -134,8 +134,20 @@ function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, 
 
   return (
     <div style={{
-      position: 'absolute', top: '100%', right: 0, zIndex: 9999,
-      width: 360, maxHeight: 480, overflow: 'hidden',
+      // En mobile el panel se ancla al viewport (no a la campana) para que
+      // nunca se salga de pantalla por derecha/izquierda: fixed + left/right 8.
+      // En desktop queda igual que antes (absolute, colgando de la campana).
+      ...(isMobile
+        ? {
+            position: 'fixed', top: 56, left: 8, right: 8, width: 'auto',
+            maxWidth: 'min(360px, 92vw)', marginLeft: 'auto',
+            maxHeight: '80vh',
+          }
+        : {
+            position: 'absolute', top: '100%', right: 0,
+            width: 360, maxHeight: 480,
+          }),
+      zIndex: 9999, overflow: 'hidden',
       background: '#1e1e22', border: '1px solid #3a3a3e', borderRadius: 6,
       boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
       display: 'flex', flexDirection: 'column',
@@ -413,6 +425,7 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
                 marcarTodasLeidas={marcarTodasLeidas}
                 onClose={() => setShowNotif(false)}
                 navigate={navigate}
+                isMobile={isMobile}
               />
             )}
           </div>
