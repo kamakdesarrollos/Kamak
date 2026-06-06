@@ -118,8 +118,8 @@ export default function Clientes() {
   const gridCols = isAdmin
     ? '2.5fr 1.5fr 1fr 1.5fr 0.6fr 0.9fr 1fr 0.8fr'
     : '2.5fr 1.5fr 1fr 1.5fr 0.6fr 0.9fr 0.8fr';
-  // Guard: Admin y Administración pueden entrar a esta página.
-  const puedeClientes = isAdmin || currentUser?.rol === 'Administración';
+  // Guard: SOLO Admin (módulo Comercial admin-only, decisión del usuario 2026-06-06).
+  const puedeClientes = isAdmin;
   useEffect(() => {
     if (currentUser && !puedeClientes) navigate('/', { replace: true });
   }, [currentUser, puedeClientes, navigate]);

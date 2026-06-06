@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageLayout from '../../components/layout/PageLayout';
 import PageHero from '../../components/ui/PageHero';
 import { T } from '../../theme';
@@ -26,7 +27,12 @@ export default function Pipeline() {
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
   const { addActividad } = useComercial();
+  const navigate = useNavigate();
   const tc = dolarVenta || 1070;
+
+  // Guard: el embudo es SOLO Admin (un no-admin no entra ni por URL).
+  const isAdmin = currentUser?.rol === 'Admin';
+  useEffect(() => { if (currentUser && !isAdmin) navigate('/', { replace: true }); }, [currentUser, isAdmin, navigate]);
 
   const [drag, setDrag] = useState(null);          // obraId arrastrándose
   const [dragOver, setDragOver] = useState(null);  // etapa bajo el cursor

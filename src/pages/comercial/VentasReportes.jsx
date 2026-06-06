@@ -36,7 +36,7 @@ export default function VentasReportes() {
   const { actividades } = useComercial();
   const tc = dolarVenta || 1070;
 
-  const isAdmin = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
+  const isAdmin = currentUser?.rol === 'Admin';   // módulo Comercial: solo Admin
   useEffect(() => { if (currentUser && !isAdmin) navigate('/', { replace: true }); }, [currentUser, isAdmin, navigate]);
 
   const oportunidades = useMemo(() => obras.filter(visibleEnEmbudo).map(o => {
