@@ -6,6 +6,7 @@ import { T } from '../theme';
 import { useProveedores, debeEntriesProveedor, pagosProveedorDesdeMovs, calcSaldoProveedorMov } from '../store/ProveedoresContext';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
 import { facturasPendientesDeProveedor, saldoFacturaPendiente, estadoFacturaPendiente, totalPendiente } from '../lib/facturasPendientes';
 
@@ -30,6 +31,7 @@ function Avatar({ nombre, size = 50 }) {
 export default function ProveedorCC() {
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const isAdmin = currentUser?.rol === 'Admin';
   // Guard: solo Admin (cuenta corriente expone deudas y pagos del proveedor).
   useEffect(() => {
@@ -119,7 +121,7 @@ export default function ProveedorCC() {
   return (
     <PageLayout breadcrumb={[{ label: 'Proveedores', to: '/proveedores' }, proveedor.nombre]} active="Proveedores">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', justifyContent: 'space-between', gap: isMobile ? 10 : 0, marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Avatar nombre={proveedor.nombre} />
           <div>
@@ -150,8 +152,8 @@ export default function ProveedorCC() {
         </div>
       </div>
 
-      {/* Summary bar */}
-      <div style={{ display: 'flex', gap: 0, background: saldoTotal > 0 ? '#fae6e0' : T.faint, borderRadius: 4, marginBottom: 12, overflow: 'hidden', border: `1px solid ${saldoTotal > 0 ? '#f0c5b8' : T.faint2}` }}>
+      {/* Summary bar — en mobile, grid 2 col envolvente (la fila de 5 paneles no entra). */}
+      <div style={{ display: isMobile ? 'grid' : 'flex', gridTemplateColumns: isMobile ? '1fr 1fr' : undefined, gap: 0, background: saldoTotal > 0 ? '#fae6e0' : T.faint, borderRadius: 4, marginBottom: 12, overflow: 'hidden', border: `1px solid ${saldoTotal > 0 ? '#f0c5b8' : T.faint2}` }}>
         {[
           { label: 'Saldo consolidado', value: saldoTotal > 0 ? `$ ${fmtN(saldoTotal)}` : 'Al día', accent: saldoTotal > 0 },
           { label: `Debe (${obras.length} CC)`, value: `$ ${fmtN(totalDebe)}` },
@@ -159,7 +161,7 @@ export default function ProveedorCC() {
           { label: 'Por pagar', value: totalPendienteProv > 0 ? `$ ${fmtN(totalPendienteProv)}` : '—', accent: totalPendienteProv > 0 },
           { label: 'Obras activas', value: String(obras.length) },
         ].map((s, i) => (
-          <div key={s.label} style={{ flex: 1, padding: '10px 14px', borderLeft: i ? `1px solid ${saldoTotal > 0 ? '#f0c5b8' : T.faint2}` : 'none' }}>
+          <div key={s.label} style={{ flex: isMobile ? undefined : 1, padding: '10px 14px', borderLeft: isMobile ? 'none' : (i ? `1px solid ${saldoTotal > 0 ? '#f0c5b8' : T.faint2}` : 'none'), borderTop: isMobile && i >= 2 ? `1px solid ${saldoTotal > 0 ? '#f0c5b8' : T.faint2}` : 'none', borderRight: isMobile && i % 2 === 0 ? `1px solid ${saldoTotal > 0 ? '#f0c5b8' : T.faint2}` : 'none' }}>
             <div style={{ fontSize: 9, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>{s.label}</div>
             <div style={{ fontWeight: 800, fontFamily: T.fontMono, fontSize: 16, color: s.accent ? T.accent : s.ok ? T.ok : T.ink }}>{s.value}</div>
           </div>
@@ -180,9 +182,9 @@ export default function ProveedorCC() {
       </div>
 
       {tab === 'cc' && (
-        <div style={{ display: 'flex', gap: 10, overflow: 'hidden', height: 'calc(100vh - 300px)' }}>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, overflow: isMobile ? 'visible' : 'hidden', height: isMobile ? 'auto' : 'calc(100vh - 300px)' }}>
           {/* Left: CC by obra */}
-          <div style={{ width: 240, flexShrink: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ width: isMobile ? '100%' : 240, flexShrink: 0, overflow: isMobile ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
             <Label style={{ marginBottom: 2 }}>Cuentas por obra</Label>
             {obras.length === 0 && (
               <div style={{ fontSize: 12, color: T.ink3, padding: '8px 0' }}>Sin obras registradas.</div>
@@ -220,12 +222,15 @@ export default function ProveedorCC() {
             })}
           </div>
 
-          {/* Right: CC entries */}
-          <Box style={{ flex: 1, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {/* Right: CC entries. En mobile, la tabla numérica (Debe/Haber/Saldo)
+              scrollea en X dentro de su propio contenedor para preservar la
+              alineación de columnas; afuera la página crece con normalidad. */}
+          <Box style={{ flex: 1, padding: 0, overflow: isMobile ? 'visible' : 'hidden', display: 'flex', flexDirection: 'column' }}>
             {!selObraId ? (
               <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin obras con CC. Registrá un pago para crear una.</div>
             ) : (
-              <>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: isMobile ? 560 : 'auto' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}` }}>
                   <div className="k-h" style={{ fontSize: 16 }}>CC · {obras.find(o => o.id === selObraId)?.nombre || selObraId}</div>
                   <Chip style={{ fontSize: 10 }}>Saldo {saldoObra(selObraId) > 0 ? `$ ${fmtN(saldoObra(selObraId))}` : 'al día'}</Chip>
@@ -243,7 +248,7 @@ export default function ProveedorCC() {
                   <span style={{ flex: 0.4 }}></span>
                 </div>
 
-                <div style={{ flex: 1, overflow: 'auto' }}>
+                <div style={{ flex: 1, overflow: isMobile ? 'visible' : 'auto' }}>
                   {saldoSel.length === 0 && (
                     <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin movimientos en esta obra.</div>
                   )}
@@ -293,7 +298,8 @@ export default function ProveedorCC() {
                     </span>
                   </div>
                 )}
-              </>
+              </div>
+              </div>
             )}
           </Box>
         </div>
@@ -311,6 +317,10 @@ export default function ProveedorCC() {
             )}
           </div>
 
+          {/* Tabla numérica de órdenes de pago: en mobile scrollea en X con
+              min-width para preservar la alineación de Total/Saldo. */}
+          <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ minWidth: isMobile ? 620 : 'auto' }}>
           <div style={{ display: 'flex', padding: '6px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             <span style={{ flex: 0.8 }}>Fecha</span>
             <span style={{ flex: 1.2 }}>N° / Tipo</span>
@@ -358,13 +368,15 @@ export default function ProveedorCC() {
               </div>
             );
           })}
+          </div>
+          </div>
         </Box>
       )}
 
       {tab === 'datos' && (
         <Box style={{ padding: 16, maxWidth: 480 }}>
           <Label style={{ marginBottom: 10 }}>Datos del proveedor</Label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, fontSize: 12 }}>
             {[
               ['Nombre / Razón social', proveedor.nombre],
               ['Tipo de trabajo', proveedor.tipo || '—'],
