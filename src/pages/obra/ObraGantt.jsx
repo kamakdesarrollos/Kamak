@@ -445,7 +445,7 @@ export default function ObraGantt() {
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
         <div>
-          <div className="k-h" style={{ fontSize: isMobile ? 16 : 20 }}>{obra.nombre} — Gantt</div>
+          <div className="k-h" style={{ fontSize: isMobile ? 16 : 20, whiteSpace: isMobile ? 'normal' : 'nowrap', lineHeight: 1.3 }}>{obra.nombre} — Gantt</div>
           <div style={{ fontSize: 12, color: T.ink2 }}>{gantt.tasks.length} tareas · desde {fmtShort(gantt.startDate)}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -799,7 +799,7 @@ export default function ObraGantt() {
                       const sh = selTask.startHour ?? 8, eh = selTask.endHour ?? 17;
                       const dh = (selEndDay - selTask.startDay) * 24 + (eh - sh);
                       return (
-                        <div style={{ textAlign:'center', fontSize:11, color:T.ink2, fontFamily:T.fontMono }}>
+                        <div style={{ textAlign:'center', fontSize: isMobile ? 10 : 11, color:T.ink2, fontFamily:T.fontMono, whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-word' : 'normal', lineHeight: 1.4 }}>
                           <span style={{ fontWeight:700, color:T.accent }}>{dh}</span> hs · {fmtShort(selStartIso)} {String(sh).padStart(2,'0')}:00 → {fmtShort(selEndIso)} {String(eh).padStart(2,'0')}:00
                         </div>
                       );
@@ -839,8 +839,8 @@ export default function ObraGantt() {
                       <div style={{ position:'absolute', left:0, top:0, bottom:0, width:`${avPct}%`, background:rCol(selTask.rubroNombre), transition:'width 0.3s' }} />
                     </div>
                     <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:T.ink2 }}>
-                      <span>Avance del contrato</span>
-                      <b style={{ fontFamily:T.fontMono, color:rCol(selTask.rubroNombre) }}>{avPct}%</b>
+                      <span style={{ minWidth:0, flex:1, fontSize:11, color:T.ink2 }}>Avance del contrato</span>
+                      <b style={{ fontFamily:T.fontMono, color:rCol(selTask.rubroNombre), flexShrink:0 }}>{avPct}%</b>
                     </div>
                   </div>
                 );
@@ -861,7 +861,7 @@ export default function ObraGantt() {
                     <div style={{ marginBottom:8 }}>
                       <input autoFocus value={depSearch} onChange={e=>setDepSearch(e.target.value)} placeholder="Buscar tarea predecesora…"
                         style={{ width:'100%', padding:'6px 8px', border:`1.5px solid ${T.accent}`, borderRadius:4, fontSize:11, fontFamily:T.font, boxSizing:'border-box', outline:'none', marginBottom:4 }} />
-                      <div style={{ maxHeight:160, overflowY:'auto', border:`1px solid ${T.faint2}`, borderRadius:4, background:'white' }}>
+                      <div style={{ maxHeight: isMobile ? 'min(200px, 40vh)' : 160, overflowY:'auto', border:`1px solid ${T.faint2}`, borderRadius:4, background:'white' }}>
                         {candidates.length===0
                           ? <div style={{ padding:'8px 10px', fontSize:11, color:T.ink3 }}>Sin resultados</div>
                           : candidates.map(t=>(
@@ -888,7 +888,7 @@ export default function ObraGantt() {
                       <div key={depId} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4, padding:'3px 0' }}>
                         <span style={{ width:7, height:7, borderRadius:2, background:rCol(dep.rubroNombre), flexShrink:0 }} />
                         <span style={{ flex:1, fontSize:11, color:T.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{dep.nombre}</span>
-                        <span style={{ fontSize:9, color:T.ink3, flexShrink:0, maxWidth:55, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{dep.rubroNombre}</span>
+                        <span style={{ fontSize:9, color:T.ink3, flexShrink:0, minWidth:0, maxWidth:55, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{dep.rubroNombre}</span>
                         <button onClick={()=>removeDep(selTask.id,depId)} style={{ fontSize:12, color:T.ink3, background:'none', border:'none', cursor:'pointer', padding:'0 2px' }}>✕</button>
                       </div>
                     ) : null;
@@ -929,7 +929,7 @@ export default function ObraGantt() {
           color: 'white',
           padding: isMobile ? '8px 12px' : '8px 18px',
           borderRadius: 20,
-          fontSize: 12,
+          fontSize: isMobile ? 11 : 12,
           fontWeight: 700,
           zIndex: 200,
           pointerEvents: 'none',
