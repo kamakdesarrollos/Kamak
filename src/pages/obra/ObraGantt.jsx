@@ -133,6 +133,8 @@ export default function ObraGantt() {
   const { obras, getDetalle, patchDetalle } = useObras();
   const { currentUser } = useUsuarios();
   const isMobile = useIsMobile();
+  const LEFT_W_MOBILE = 88;
+  const LEFT_W_EFF = isMobile ? LEFT_W_MOBILE : LEFT_W;
   const isAdmin = currentUser?.rol === 'Admin';
   // Mapa único de pestañas ocultas por rol (compartido con ObraPresupuesto).
   const rolHiddenTabs = isAdmin ? [] : (ROL_TABS_OCULTAS[currentUser?.rol] ?? ROL_TABS_OCULTAS_DEFAULT);
@@ -443,12 +445,12 @@ export default function ObraGantt() {
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
         <div>
-          <div className="k-h" style={{ fontSize: 20 }}>{obra.nombre} — Gantt</div>
+          <div className="k-h" style={{ fontSize: isMobile ? 16 : 20 }}>{obra.nombre} — Gantt</div>
           <div style={{ fontSize: 12, color: T.ink2 }}>{gantt.tasks.length} tareas · desde {fmtShort(gantt.startDate)}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           {/* Zoom presets */}
-          <div style={{ display: 'flex', gap: 3, background: T.faint, borderRadius: 5, padding: '3px 4px', border: `1.2px solid ${T.faint2}` }}>
+          <div style={{ display: 'flex', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: 3, background: T.faint, borderRadius: 5, padding: '3px 4px', border: `1.2px solid ${T.faint2}` }}>
             {ZOOM_PRESETS.map(z => (
               <button key={z.label} onClick={() => setWeekPx(z.val)}
                 style={{ padding: '3px 9px', background: Math.abs(weekPx-z.val)<5 ? T.accent : 'transparent', color: Math.abs(weekPx-z.val)<5 ? 'white' : T.ink2, border: 'none', borderRadius: 3, cursor: 'pointer', fontFamily: T.font, fontSize: 11, fontWeight: 700 }}>
@@ -461,8 +463,8 @@ export default function ObraGantt() {
             <span style={{ fontSize: 12 }}>🔭</span>
             <input type="range" min={ZOOM_MIN} max={ZOOM_MAX} value={weekPx}
               onChange={e => setWeekPx(Number(e.target.value))}
-              style={{ width: 88, accentColor: T.accent, cursor: 'pointer' }} />
-            <span style={{ fontSize: 11, fontFamily: T.fontMono, color: T.ink3, width: 28 }}>{weekPx}px</span>
+              style={{ width: isMobile ? 'calc(100vw - 140px)' : 88, maxWidth: isMobile ? 160 : 'none', accentColor: T.accent, cursor: 'pointer' }} />
+            <span style={{ fontSize: 11, fontFamily: T.fontMono, color: T.ink3, width: 'auto', minWidth: 28 }}>{weekPx}px</span>
           </div>
           <div style={{ width: 1, height: 20, background: T.faint2 }} />
           <Btn sm fill onClick={() => { setShowAdd(v=>!v); setSelId(null); setSplitMode(false); setAddingDep(false); }}>+ Tarea</Btn>
@@ -479,12 +481,12 @@ export default function ObraGantt() {
         {/* ── Timeline ── */}
         <div ref={containerRef}
           style={{ flex: 1, overflowX: 'auto', overflowY: 'auto', WebkitOverflowScrolling: 'touch', ...(isMobile ? { height: '62vh', minWidth: 0 } : {}), border: `1.5px solid ${T.faint2}`, borderRadius: 6, background: 'white', position: 'relative', cursor: drag ? 'grabbing' : splitMode ? 'crosshair' : addingDep ? 'cell' : 'default' }}>
-          <div style={{ minWidth: LEFT_W + TOT_DAYS * dayPx, position: 'relative' }}>
+          <div style={{ minWidth: LEFT_W_EFF + TOT_DAYS * dayPx, position: 'relative' }}>
 
             {/* Month header */}
             <div style={{ display: 'flex', position: 'sticky', top: 0, zIndex: 22, height: HDR_H1, background: T.dark, borderBottom: `1.5px solid ${T.faint2}` }}>
-              <div style={{ width: LEFT_W, flexShrink: 0, padding: '0 12px', display: 'flex', alignItems: 'center', fontSize: 10, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.8, position: 'sticky', left: 0, zIndex: 23, background: T.dark, borderRight: `1.5px solid rgba(255,255,255,0.1)` }}>
-                TAREAS · {gantt.tasks.length}
+              <div style={{ width: LEFT_W_EFF, flexShrink: 0, padding: isMobile ? '0 6px' : '0 12px', display: 'flex', alignItems: 'center', fontSize: 10, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.8, position: 'sticky', left: 0, zIndex: 23, background: T.dark, borderRight: `1.5px solid rgba(255,255,255,0.1)`, overflow: 'hidden' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>TAREAS · {gantt.tasks.length}</span>
               </div>
               {isHourView ? (
                 <div style={{ display: 'flex' }}>
@@ -511,8 +513,8 @@ export default function ObraGantt() {
 
             {/* Week sub-header */}
             <div style={{ display: 'flex', position: 'sticky', top: HDR_H1, zIndex: 21, height: HDR_H2, background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
-              <div style={{ width: LEFT_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 22, background: T.faint, borderRight: `1.5px solid ${T.faint2}`, fontSize: 10, color: T.ink3, display: 'flex', alignItems: 'center', padding: '0 12px', fontFamily: T.fontMono }}>
-                {fmtShort(gantt.startDate)} →
+              <div style={{ width: LEFT_W_EFF, flexShrink: 0, position: 'sticky', left: 0, zIndex: 22, background: T.faint, borderRight: `1.5px solid ${T.faint2}`, fontSize: 10, color: T.ink3, display: 'flex', alignItems: 'center', padding: isMobile ? '0 4px' : '0 12px', fontFamily: T.fontMono, overflow: 'hidden' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtShort(gantt.startDate)} →</span>
               </div>
               {isHourView ? (
                 <div style={{ width: TOT_DAYS * dayPx, flexShrink: 0, backgroundImage: weekBg, position: 'relative' }}>
@@ -555,7 +557,7 @@ export default function ObraGantt() {
 
               {/* Dep arrows SVG */}
               {depArrows.length > 0 && (
-                <svg style={{ position: 'absolute', left: LEFT_W, top: 0, width: TOT_DAYS * dayPx, height: totalContentH, pointerEvents: 'none', zIndex: 6, overflow: 'visible' }}>
+                <svg style={{ position: 'absolute', left: LEFT_W_EFF, top: 0, width: TOT_DAYS * dayPx, height: totalContentH, pointerEvents: 'none', zIndex: 6, overflow: 'visible' }}>
                   {depArrows.map((a, i) => {
                     const cp = Math.abs(a.x2 - a.x1) / 2;
                     const d  = `M ${a.x1} ${a.y1} C ${a.x1+cp} ${a.y1} ${a.x2-cp} ${a.y2} ${a.x2} ${a.y2}`;
@@ -571,7 +573,7 @@ export default function ObraGantt() {
 
               {/* Today line */}
               {todayDay >= 0 && todayDay <= TOT_DAYS && (
-                <div style={{ position: 'absolute', left: LEFT_W + todayDay * dayPx, top: 0, bottom: 0, width: 2, background: T.warn, zIndex: 7, pointerEvents: 'none' }}>
+                <div style={{ position: 'absolute', left: LEFT_W_EFF + todayDay * dayPx, top: 0, bottom: 0, width: 2, background: T.warn, zIndex: 7, pointerEvents: 'none' }}>
                   <div style={{ background: T.warn, color: 'white', fontSize: 8, fontWeight: 800, padding: '1px 3px', borderRadius: '0 2px 2px 0', whiteSpace: 'nowrap', fontFamily: T.fontMono, position: 'sticky', top: 0 }}>HOY</div>
                 </div>
               )}
@@ -580,9 +582,9 @@ export default function ObraGantt() {
                 if (row.type === 'rubro') {
                   return (
                     <div key={ri} style={{ display: 'flex', height: RUBRO_H, borderBottom: `1px solid ${T.faint2}`, background: T.faint }}>
-                      <div style={{ width: LEFT_W, flexShrink: 0, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 7, position: 'sticky', left: 0, zIndex: 12, background: T.faint, borderRight: `1.5px solid ${T.faint2}` }}>
+                      <div style={{ width: LEFT_W_EFF, flexShrink: 0, padding: isMobile ? '0 5px' : '0 12px', display: 'flex', alignItems: 'center', gap: 5, position: 'sticky', left: 0, zIndex: 12, background: T.faint, borderRight: `1.5px solid ${T.faint2}`, overflow: 'hidden' }}>
                         <span style={{ width: 8, height: 8, borderRadius: 2, background: rCol(row.nombre), flexShrink: 0 }} />
-                        <span style={{ fontSize: 10, fontWeight: 800, color: T.ink, textTransform: 'uppercase', letterSpacing: 0.6 }}>{row.nombre}</span>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: T.ink, textTransform: 'uppercase', letterSpacing: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>{row.nombre}</span>
                       </div>
                       <div style={{ width: TOT_DAYS * dayPx, flexShrink: 0, backgroundImage: weekBg }} />
                     </div>
@@ -604,7 +606,7 @@ export default function ObraGantt() {
                     }}
                   >
                     {/* Left: name */}
-                    <div style={{ width: LEFT_W, flexShrink: 0, padding: '0 8px 0 18px', display: 'flex', alignItems: 'center', gap: 5, position: 'sticky', left: 0, zIndex: 11, background: isSel ? blendWhite(color, 0.12) : 'white', borderRight: `1.5px solid ${T.faint2}` }}>
+                    <div style={{ width: LEFT_W_EFF, flexShrink: 0, padding: isMobile ? '0 4px 0 8px' : '0 8px 0 18px', display: 'flex', alignItems: 'center', gap: 5, position: 'sticky', left: 0, zIndex: 11, background: isSel ? blendWhite(color, 0.12) : 'white', borderRight: `1.5px solid ${T.faint2}`, overflow: 'hidden' }}>
                       {task.deps.length > 0 && <span style={{ color: T.accent, fontSize: 9, flexShrink: 0, fontWeight: 800 }}>▶</span>}
                       <span style={{ fontSize: 11.5, color: T.ink, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isSel ? 700 : 400 }}>{task.nombre}</span>
                       <span style={{ fontFamily: T.fontMono, fontSize: 10, color: task.avance===100 ? T.ok : task.avance>0 ? color : T.ink3, flexShrink: 0, fontWeight: 700 }}>{task.avance}%</span>
@@ -713,7 +715,7 @@ export default function ObraGantt() {
                   <option value="">— Sin rubro —</option>
                   {[...new Set([...gantt.tasks.map(t=>t.rubroNombre),...(detalle.rubros||[]).map(r=>r.nombre)].filter(Boolean))].map(r=><option key={r} value={r}>{r}</option>)}
                 </select>],
-                ['Duración (días)', <input key="d" type="number" min="1" max="365" value={newForm.duration} onChange={e=>setNewForm(p=>({...p,duration:e.target.value}))} style={{ width:80, padding:'5px 8px', border:`1.2px solid ${T.faint2}`, borderRadius:4, fontSize:12, fontFamily:T.fontMono }} />],
+                ['Duración (días)', <input key="d" type="number" min="1" max="365" value={newForm.duration} onChange={e=>setNewForm(p=>({...p,duration:e.target.value}))} style={{ width: isMobile ? '100%' : 80, boxSizing:'border-box', padding:'5px 8px', border:`1.2px solid ${T.faint2}`, borderRadius:4, fontSize:12, fontFamily:T.fontMono }} />],
               ].map(([label, input]) => (
                 <div key={label} style={{ marginBottom: 8 }}>
                   <div style={{ fontSize:10, color:T.ink3, fontWeight:700, textTransform:'uppercase', letterSpacing:0.5, marginBottom:3 }}>{label}</div>
@@ -916,7 +918,24 @@ export default function ObraGantt() {
       </div>
 
       {(splitMode || addingDep) && (
-        <div style={{ position:'fixed', bottom:18, left:'50%', transform:'translateX(-50%)', background:T.dark, color:'white', padding:'8px 18px', borderRadius:20, fontSize:12, fontWeight:700, zIndex:200, pointerEvents:'none' }}>
+        <div style={{
+          position: 'fixed',
+          bottom: 18,
+          left: isMobile ? 8 : '50%',
+          right: isMobile ? 8 : 'auto',
+          transform: isMobile ? 'none' : 'translateX(-50%)',
+          maxWidth: isMobile ? 'calc(100vw - 16px)' : 'none',
+          background: T.dark,
+          color: 'white',
+          padding: isMobile ? '8px 12px' : '8px 18px',
+          borderRadius: 20,
+          fontSize: 12,
+          fontWeight: 700,
+          zIndex: 200,
+          pointerEvents: 'none',
+          boxSizing: 'border-box',
+          textAlign: 'center',
+        }}>
           {splitMode ? '✂  Hacé click sobre la barra de la tarea seleccionada para cortarla' : '→  Hacé click en la tarea predecesora para crear la dependencia'}
         </div>
       )}
