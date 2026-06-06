@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Box, Btn, Chip, Stat, Label } from '../../components/ui';
 import { T } from '../../theme';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 const MOVS = [
   { fecha: '02/05', desc: 'Pago mat. eléctrica · Bara · TRF-412', debe: '', haber: '245.000', saldo: '0' },
@@ -16,6 +17,7 @@ const PENDIENTES = [
 
 export default function PortalProveedor() {
   const [tab, setTab] = useState(0);
+  const isMobile = useIsMobile();
   const tabs = ['Cuenta corriente', 'Facturas', 'Órdenes de compra', 'Mis datos'];
 
   return (
@@ -24,7 +26,7 @@ export default function PortalProveedor() {
         🚧 En construcción — maqueta de demostración. No muestra datos reales del proveedor.
       </div>
       {/* Header */}
-      <div style={{ background: T.dark, padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ background: T.dark, padding: isMobile ? '12px 14px' : '16px 32px', display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? 10 : 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <img src="/assets/kamak-logo-light.png" alt="Kamak" style={{ height: 32, opacity: 0.9 }} />
           <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 18 }}>|</div>
@@ -40,17 +42,17 @@ export default function PortalProveedor() {
       </div>
 
       {/* Tabs */}
-      <div style={{ background: 'white', borderBottom: `1.5px solid ${T.faint2}`, padding: '0 32px', display: 'flex', gap: 4 }}>
+      <div style={{ background: 'white', borderBottom: `1.5px solid ${T.faint2}`, padding: isMobile ? '0 14px' : '0 32px', display: 'flex', gap: 4, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {tabs.map((t, i) => (
-          <span key={i} onClick={() => setTab(i)} style={{ padding: '12px 16px', fontSize: 13, fontWeight: tab === i ? 700 : 400, color: tab === i ? T.accent : T.ink2, borderBottom: `2px solid ${tab === i ? T.accent : 'transparent'}`, cursor: 'pointer' }}>{t}</span>
+          <span key={i} onClick={() => setTab(i)} style={{ padding: '12px 16px', fontSize: 13, fontWeight: tab === i ? 700 : 400, color: tab === i ? T.accent : T.ink2, borderBottom: `2px solid ${tab === i ? T.accent : 'transparent'}`, cursor: 'pointer', whiteSpace: 'nowrap' }}>{t}</span>
         ))}
       </div>
 
-      <div style={{ padding: '24px 32px', maxWidth: 1000, margin: '0 auto' }}>
+      <div style={{ padding: isMobile ? '18px 14px' : '24px 32px', maxWidth: isMobile ? '100%' : 1000, margin: '0 auto' }}>
         {tab === 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Saldos por obra */}
-            <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 12 }}>
               {[
                 { obra: 'Baradero', saldo: '$ 0', color: T.ok },
                 { obra: 'Pilar', saldo: '$ 87.500', color: T.warn },
@@ -70,7 +72,8 @@ export default function PortalProveedor() {
                 <div className="k-h" style={{ fontSize: 16 }}>Movimientos</div>
                 <span style={{ fontSize: 12, color: T.ink2 }}>Filtrar por obra ▾</span>
               </div>
-              <div style={{ fontSize: 12 }}>
+              <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
+              <div style={{ fontSize: 12, minWidth: isMobile ? 560 : 'auto' }}>
                 <div style={{ display: 'flex', background: T.faint, padding: '6px 14px', fontWeight: 700, fontSize: 11, color: T.ink2, gap: 8 }}>
                   <span style={{ flex: 0.7 }}>Fecha</span>
                   <span style={{ flex: 4 }}>Descripción</span>
@@ -87,6 +90,7 @@ export default function PortalProveedor() {
                     <span style={{ flex: 1.2, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700 }}>{m.saldo !== '0' ? `$ ${m.saldo}` : <span style={{ color: T.ok }}>$ 0</span>}</span>
                   </div>
                 ))}
+              </div>
               </div>
             </Box>
           </div>
@@ -119,7 +123,7 @@ export default function PortalProveedor() {
                 <div style={{ fontSize: 13 }}>Arrastrá el archivo o hacé click</div>
                 <div style={{ fontSize: 11, marginTop: 4 }}>PDF, XML · Factura electrónica AFIP</div>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 8, marginTop: 12 }}>
                 <div style={{ flex: 1 }}>
                   <Label style={{ fontSize: 10 }}>Obra</Label>
                   <select style={{ width: '100%', padding: '6px 10px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontSize: 12, fontFamily: T.font, marginTop: 4 }}>
@@ -144,9 +148,9 @@ export default function PortalProveedor() {
                 { n: 'B 0001-00298', obra: 'Tigre', fecha: '15/04/26', monto: '$ 180.000', estado: 'pagado' },
                 { n: 'B 0001-00271', obra: 'Baradero', fecha: '01/04/26', monto: '$ 380.000', estado: 'pagado' },
               ].map((f, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${T.faint2}`, gap: 10 }}>
+                <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${T.faint2}`, gap: 10, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                   <span style={{ fontSize: 20 }}>🧾</span>
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1, minWidth: isMobile ? '60%' : 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 700 }}>Factura {f.n}</div>
                     <div style={{ fontSize: 10, color: T.ink2 }}>Obra {f.obra} · {f.fecha}</div>
                   </div>
@@ -166,8 +170,8 @@ export default function PortalProveedor() {
               { n: 'OC-2026-089', obra: 'Baradero', desc: 'Materiales eléctricos lote 3', monto: '$ 420.000', estado: 'aprobada' },
               { n: 'OC-2026-094', obra: 'Pilar', desc: 'Materiales plomería', monto: '$ 195.000', estado: 'en revisión' },
             ].map((o, i) => (
-              <div key={i} style={{ border: `1.5px solid ${T.faint2}`, borderRadius: 8, padding: '12px 16px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ flex: 1 }}>
+              <div key={i} style={{ border: `1.5px solid ${T.faint2}`, borderRadius: 8, padding: '12px 16px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+                <div style={{ flex: 1, minWidth: isMobile ? '60%' : 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 13 }}>{o.n}</div>
                   <div style={{ fontSize: 11, color: T.ink2 }}>{o.desc} · {o.obra}</div>
                 </div>
