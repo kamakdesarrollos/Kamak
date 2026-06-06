@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Chip, Btn, Label, Bar, Stripes } from '../components/ui';
 import { T } from '../theme';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import { useMovimientos } from '../store/MovimientosContext';
 import { useObras } from '../store/ObrasContext';
 import { useDolar } from '../store/DolarContext';
@@ -45,6 +46,8 @@ export default function Dashboard() {
   const { proveedores }        = useProveedores();
   const { currentUser }        = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
+
+  const isMobile = useIsMobile();
 
   const [editMode,       setEditMode]       = useState(false);
   const [enabledWidgets, setEnabledWidgets] = useState(loadWidgets);
@@ -269,12 +272,12 @@ export default function Dashboard() {
     <PageLayout breadcrumb={[{ label: 'Inicio', to: '/' }, 'Dashboard']} active="Dashboard">
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12, gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12, gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
         <div>
-          <div className="k-h" style={{ fontSize: 28 }}>Dashboard · Kamak</div>
+          <div className="k-h" style={{ fontSize: isMobile ? 22 : 28 }}>Dashboard · Kamak</div>
           <div style={{ fontSize: 12, color: T.ink2, textTransform: 'capitalize' }}>{fechaStr}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: isMobile ? 'flex-start' : 'flex-end', width: isMobile ? '100%' : undefined }}>
           {editMode && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '6px 10px', background: T.faint, borderRadius: 6, border: `1px solid ${T.faint2}`, maxWidth: 480 }}>
               {ALL_WIDGETS.map(w => (
@@ -291,7 +294,7 @@ export default function Dashboard() {
 
       {/* Posición consolidada + Alertas */}
       {(on('posicion') || on('alertas')) && (
-        <div style={{ display: 'grid', gridTemplateColumns: on('posicion') && on('alertas') ? '1.4fr 1fr' : '1fr', gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: on('posicion') && on('alertas') && !isMobile ? '1.4fr 1fr' : '1fr', gap: 12, marginBottom: 12 }}>
 
           {on('posicion') && (
             <Box style={{ padding: 0, overflow: 'hidden' }}>
@@ -460,7 +463,7 @@ export default function Dashboard() {
 
       {/* Cash flow + Presupuestado vs Gastado */}
       {(on('cashflow') || on('presupuesto')) && (
-        <div style={{ display: 'grid', gridTemplateColumns: on('cashflow') && on('presupuesto') ? '1.4fr 1fr' : '1fr', gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: on('cashflow') && on('presupuesto') && !isMobile ? '1.4fr 1fr' : '1fr', gap: 12, marginBottom: 12 }}>
 
           {on('cashflow') && (
             <Box style={{ padding: 13 }}>
@@ -525,7 +528,7 @@ export default function Dashboard() {
       {/* KPIs del mes */}
       {on('kpis') && (
         <Box style={{ padding: 0, marginBottom: 12, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
             {[
               { label: `Ingresos · ${MESES_N[mo - 1]}`, value: `$ ${fmtN(totalIngresosMes)}`, sub: `${ingresosMes.length} cobros`, color: T.ok, to: '/movimientos' },
               { label: `Gastos · ${MESES_N[mo - 1]}`,   value: `$ ${fmtN(totalGastosMes)}`,   sub: `${gastosMes.length} registros`, color: T.warn, to: '/movimientos' },
@@ -534,7 +537,7 @@ export default function Dashboard() {
             ].map((k, i, arr) => (
               <div key={i}
                 onClick={() => navigate(k.to)}
-                style={{ padding: '14px 16px', borderRight: i < arr.length - 1 ? `1px solid ${T.faint2}` : 'none', minWidth: 0, cursor: 'pointer' }}
+                style={{ padding: '14px 16px', borderRight: i < arr.length - 1 ? `1px solid ${T.faint2}` : 'none', borderBottom: isMobile && i < arr.length - 1 ? `1px solid ${T.faint2}` : 'none', minWidth: 0, cursor: 'pointer' }}
                 onMouseEnter={e => e.currentTarget.style.background = T.faint}
                 onMouseLeave={e => e.currentTarget.style.background = ''}>
                 <div style={{ fontSize: 10, color: T.ink3, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.label}</div>
@@ -557,13 +560,13 @@ export default function Dashboard() {
               {topProvs.map(([nombre, monto], i) => {
                 const provObj = proveedores.find(p => p.nombre === nombre);
                 return (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                   {provObj
-                    ? <span style={{ width: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${provObj.id}`)}>{nombre}</span>
-                    : <span style={{ width: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</span>
+                    ? <span style={{ width: isMobile ? '100%' : 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${provObj.id}`)}>{nombre}</span>
+                    : <span style={{ width: isMobile ? '100%' : 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</span>
                   }
-                  <div style={{ flex: 1 }}><Bar pct={Math.round((monto / maxProvMonto) * 100)} h={5} /></div>
-                  <span style={{ width: 100, textAlign: 'right', fontFamily: `'JetBrains Mono', monospace`, fontSize: 11 }}>$ {fmtN(monto)}</span>
+                  <div style={{ flex: 1, minWidth: isMobile ? '60%' : undefined }}><Bar pct={Math.round((monto / maxProvMonto) * 100)} h={5} /></div>
+                  <span style={{ width: isMobile ? 'auto' : 100, textAlign: 'right', fontFamily: `'JetBrains Mono', monospace`, fontSize: 11 }}>$ {fmtN(monto)}</span>
                 </div>
               );})}
             </div>
@@ -573,7 +576,7 @@ export default function Dashboard() {
 
       {/* Cuotas próximas + Adicionales pendientes */}
       {(on('cuotas-prox') || on('adicionales')) && (
-        <div style={{ display: 'grid', gridTemplateColumns: on('cuotas-prox') && on('adicionales') ? '1fr 1fr' : '1fr', gap: 12, marginTop: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: on('cuotas-prox') && on('adicionales') && !isMobile ? '1fr 1fr' : '1fr', gap: 12, marginTop: 12 }}>
 
           {on('cuotas-prox') && (
             <Box style={{ padding: 0, overflow: 'hidden' }}>
