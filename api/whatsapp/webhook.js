@@ -2,6 +2,9 @@
 
 import crypto from 'node:crypto';
 import { extractSlots, mergeSlots, slotsCompletosPara, parseDictado } from './extractors.js';
+// Acciones comerciales (crear prospecto / mover etapa) — módulo aparte para no
+// inflar este handler. Escrituras atómicas; gateadas a Admin en ejecutarAccion.
+import { crearProspecto, moverEtapaObra } from './intents-comercial.js';
 
 const META_TOKEN      = process.env.META_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
@@ -1574,6 +1577,10 @@ ACCIONES DISPONIBLES:
 
 11. CHEQUE_RECIBIDO: si mandan una FOTO de un cheque/ECheq, o dicen "me dieron un cheque", "cobré con un cheque de X", "recibí un echeq de Y" → accion.tipo='cheque_recibido'. LEÉ de la foto/texto y poné en datos: { numero (N° del cheque), banco, titular (quién lo firma/emite), monto, fechaVencimiento (fecha de cobro/pago en formato YYYY-MM-DD), esEcheq (true si es electrónico/ECheq), clienteNombre? (de quién lo recibimos, si se sabe), obraId? (ID de obra si la menciona), cajaId (SOLO si el usuario dijo EXPLÍCITAMENTE a qué caja entra, ej. "a mi efectivo", "caja Pablo") }. IMPORTANTE: la caja NO se infiere de la obra ni del cheque. Si el usuario NO dijo explícitamente la caja, dejá cajaId vacío y respondé estado:"conversando" preguntando "¿A qué caja entra el cheque?" mostrando sus cajas. Si falta el monto o la fechaVencimiento, preguntá eso. NO lo trates como un gasto.
 
+12. CREAR_PROSPECTO (solo Admin): si el admin dice "nuevo prospecto Shell Ruta 3 cliente Pérez" / "cargá una oportunidad nueva: estación X para Pérez" → accion.tipo='crear_prospecto' con datos: { obraNombre (nombre de la nueva obra/oportunidad), clienteNombre? (nombre del cliente, opcional) }. Crea una OBRA NUEVA en estado en-presupuesto, etapa del embudo = prospecto. Si falta el nombre de la obra, preguntalo. Si NO es Admin, respondé que solo un Admin crea oportunidades por chat. NO lo confundas con un gasto ni con nueva_tarea.
+
+13. MOVER_ETAPA (solo Admin): si el admin dice "pasá Shell Ruta 3 a ganado" / "mové la obra X a negociación" / "Shell a perdido" → accion.tipo='mover_etapa' con datos: { obraNombre (nombre de la obra a mover, matcheá contra OBRAS ACTIVAS por nombre parcial), etapaNueva ('prospecto'|'cotizado'|'negociacion'|'ganado'|'perdido') }. Mueve la oportunidad en el embudo de ventas (a ganado → la obra pasa a activa; a perdido → se archiva). Si falta la etapa o la obra, preguntá eso. Si NO es Admin, respondé que solo un Admin mueve oportunidades por chat. NO lo confundas con un TRASPASO de cajas (eso es plata entre cajas, no etapas de venta).
+
 REGLAS DE FLUJO:
 - El usuario escribe corto y conciso. Interpretá la intención aunque falten datos.
 - Si la caja se resuelve por efectivo automático, NO la preguntes.
@@ -1596,7 +1603,7 @@ Respondé ÚNICAMENTE con JSON válido:
   "mensaje": "texto a enviar al usuario (máx 400 chars)",
   "estado": "conversando" | "confirmando" | "ejecutar" | "cancelar" | "comando",
   "accion": {
-    "tipo": "gasto" | "ingreso" | "factura_compra" | "avance_obra" | "cheque_recibido" | "comando" | "nueva_tarea" | "traspaso" | "pago_proveedor" | null,
+    "tipo": "gasto" | "ingreso" | "factura_compra" | "avance_obra" | "cheque_recibido" | "comando" | "nueva_tarea" | "traspaso" | "pago_proveedor" | "crear_prospecto" | "mover_etapa" | null,
     "datos": {}
   }
 }`;
@@ -2591,6 +2598,36 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
 
   if (tipo === 'comando') {
     return await ejecutarComando(datos.comando, datos, user, ctx);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // COMERCIAL (FASE 4) — crear prospecto / mover etapa del embudo.
+  // Crear o mover oportunidades por chat es SOLO Admin (un Administración no
+  // crea obras por chat). Delegamos al módulo intents-comercial (escrituras
+  // atómicas); acá solo gateamos, validamos y formateamos la respuesta.
+  // ─────────────────────────────────────────────────────────────────────────
+  if (tipo === 'crear_prospecto') {
+    if (user.user_rol !== 'Admin') return '⚠️ Crear oportunidades por chat es solo para un Admin.';
+    const nombreObra = String(datos.obraNombre || datos.nombreObra || '').trim();
+    if (!nombreObra) return '❌ ¿Cómo se llama la obra/oportunidad? Ej: *nuevo prospecto Shell Ruta 3 cliente Pérez*.';
+    const clienteNombre = String(datos.clienteNombre || '').trim() || null;
+    const nueva = await crearProspecto({ nombreObra, clienteNombre, usuario: user.user_name });
+    const cliMsg = nueva.clienteId ? `\n👤 Cliente: *${nueva.cliente}*` : (clienteNombre ? `\n👤 Cliente: *${clienteNombre}* (no estaba en la base, lo dejé como texto)` : '');
+    return `✅ *Prospecto creado*\n🏗 *${nueva.nombre}*${cliMsg}\nEtapa: *Prospecto* · en presupuesto. Editable desde Comercial.`;
+  }
+
+  if (tipo === 'mover_etapa') {
+    if (user.user_rol !== 'Admin') return '⚠️ Mover oportunidades por chat es solo para un Admin.';
+    const ETAPAS_OK = ['prospecto', 'cotizado', 'negociacion', 'ganado', 'perdido'];
+    const obraNombre = String(datos.obraNombre || '').trim();
+    const etapaNueva = String(datos.etapaNueva || '').trim().toLowerCase();
+    if (!obraNombre) return '❌ ¿Qué obra movemos? Ej: *pasá Shell Ruta 3 a ganado*.';
+    if (!ETAPAS_OK.includes(etapaNueva)) return '❌ ¿A qué etapa? Las opciones son: prospecto, cotizado, negociación, ganado o perdido.';
+    const r = await moverEtapaObra({ obraNombre, etapaNueva, usuario: user.user_name });
+    if (r?.error === 'obra_no_encontrada') return `❌ No encontré una obra que matchee con "${obraNombre}".`;
+    const extra = etapaNueva === 'ganado' ? '\n🎉 La pasé a *activa* (ganada).'
+                : etapaNueva === 'perdido' ? '\n📁 La archivé como *perdida*.' : '';
+    return `✅ *${r.obra}* movida a *${etapaNueva}*.${extra}\nQuedó registrado en el timeline.`;
   }
 
   // ── Nueva tarea desde WhatsApp ──────────────────────────────────────────────

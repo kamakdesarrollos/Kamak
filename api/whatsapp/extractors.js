@@ -27,6 +27,10 @@ const INTENT_KEYWORDS = {
   avance:     ['avance', 'avanc', 'avancé', 'hice', 'terminé', 'termine', 'completé', 'complete', 'progreso', 'agenda avance', 'agendar avance', 'registrar avance', 'cargar avance'],
   cheque:     ['cheque', 'echeq', 'e-cheq'],
   tarea:      ['nueva tarea', 'crear tarea', 'creale tarea', 'creale una tarea', 'asigname una tarea', 'asigname tarea', 'agendá tarea', 'agendar tarea'],
+  // Comercial — alta de oportunidad. Específicos ('prospecto') para no chocar con 'gasto'.
+  crear_prospecto: ['nuevo prospecto', 'prospecto nuevo', 'nueva oportunidad', 'oportunidad nueva', 'cargar prospecto', 'crear prospecto', 'nuevo lead'],
+  // Comercial — mover de etapa en el embudo. 'a ganado'/'a perdido' son señales fuertes.
+  mover_etapa: ['a ganado', 'a perdido', 'a negociacion', 'a negociación', 'a cotizado', 'pasa a', 'pasá a', 'pasar a', 'pasalo a', 'mover a', 'moverla a', 'cambiar etapa', 'cambiar de etapa'],
   traspaso:   ['traspaso', 'pasar de', 'pasá de', 'pasame', 'mover de', 'transferir de'],
   consulta:   ['como va', 'cómo va', 'estado de', 'resumen de', 'saldo de', 'cuanto', 'cuánto'],
 };
@@ -34,7 +38,9 @@ const INTENT_KEYWORDS = {
 export function extractIntent(text) {
   const t = normalizar(text);
   // Orden: chequeo más específicos primero para que "agenda avance" no matchee "tarea".
-  const orden = ['avance', 'cheque', 'tarea', 'traspaso', 'ingreso', 'gasto', 'consulta'];
+  // 'crear_prospecto'/'mover_etapa' antes de 'traspaso'/'ingreso'/'gasto' para que
+  // "pasá Shell a ganado" o "nuevo prospecto" no se confundan con traspaso/gasto.
+  const orden = ['avance', 'cheque', 'tarea', 'crear_prospecto', 'mover_etapa', 'traspaso', 'ingreso', 'gasto', 'consulta'];
   for (const intent of orden) {
     for (const kw of INTENT_KEYWORDS[intent]) {
       if (t.includes(kw)) return intent;
@@ -145,6 +151,42 @@ function matchPorNombre(text, items, getNombre = i => i.nombre) {
 // ── Obra ─────────────────────────────────────────────────────────────────────
 export function extractObra(text, obras) {
   return matchPorNombre(text, obras || []);
+}
+
+// ── Comercial: etapa destino del embudo ──────────────────────────────────────
+// Detecta a qué etapa quiere mover la oportunidad. Devuelve la etapa canónica
+// ('prospecto'|'cotizado'|'negociacion'|'ganado'|'perdido') o null.
+const ETAPA_ALIASES = {
+  prospecto: 'prospecto', prospect: 'prospecto', lead: 'prospecto',
+  cotizado: 'cotizado', cotizacion: 'cotizado', cotizada: 'cotizado', presupuestado: 'cotizado', presupuestada: 'cotizado',
+  negociacion: 'negociacion', negociando: 'negociacion', negociar: 'negociacion',
+  ganado: 'ganado', ganada: 'ganado', ganamos: 'ganado', cerrado: 'ganado', cerrada: 'ganado',
+  perdido: 'perdido', perdida: 'perdido', perdimos: 'perdido', caido: 'perdido', caida: 'perdido', descartado: 'perdido', descartada: 'perdido',
+};
+export function extractEtapaDestino(text) {
+  const t = normalizar(text);
+  for (const [alias, etapa] of Object.entries(ETAPA_ALIASES)) {
+    // Match por palabra (con frontera) para no confundir 'ganado' dentro de otra palabra.
+    if (new RegExp(`\\b${alias}\\b`).test(t)) return etapa;
+  }
+  return null;
+}
+
+// ── Comercial: nombre de obra y cliente para un prospecto nuevo ───────────────
+// Parsea "nuevo prospecto <obra> cliente <cliente>" (cliente opcional).
+// Devuelve { obraNombre, clienteNombre } con lo que se pudo extraer.
+const RE_PROSPECTO_PREFIJO = /^\s*(nuev[oa]\s+prospecto|prospecto\s+nuev[oa]|nueva\s+oportunidad|oportunidad\s+nueva|cargar\s+prospecto|crear\s+prospecto|nuevo\s+lead)\s*:?\s*/i;
+const RE_CLIENTE_SPLIT = /\s+(?:cliente|para|de)\s+/i;
+export function extractProspectoSlots(text) {
+  if (!text) return {};
+  if (!RE_PROSPECTO_PREFIJO.test(text)) return {};
+  let cuerpo = text.replace(RE_PROSPECTO_PREFIJO, '').trim();
+  if (!cuerpo) return {};
+  let clienteNombre = null;
+  const m = cuerpo.split(RE_CLIENTE_SPLIT);
+  let obraNombre = (m[0] || '').trim();
+  if (m.length > 1) clienteNombre = m.slice(1).join(' ').trim() || null;
+  return { obraNombre: obraNombre || null, clienteNombre };
 }
 
 // ── Medio de pago ────────────────────────────────────────────────────────────
@@ -282,6 +324,19 @@ export function extractSlots(text, ctx) {
       slots.rubroId = rubro.id;
       slots.rubroNombre = rubro.nombre;
     }
+  }
+
+  // ── Comercial ──────────────────────────────────────────────────────────────
+  // Crear prospecto: obra + cliente del texto (no de la lista, la obra es nueva).
+  if (slots.intent === 'crear_prospecto') {
+    const p = extractProspectoSlots(text);
+    if (p.obraNombre) slots.obraNombre = p.obraNombre;
+    if (p.clienteNombre) slots.clienteNombre = p.clienteNombre;
+  }
+  // Mover etapa: etapa destino (obra ya matcheada arriba por nombre, si existía).
+  if (slots.intent === 'mover_etapa') {
+    const etapa = extractEtapaDestino(text);
+    if (etapa) slots.etapaNueva = etapa;
   }
 
   return slots;
