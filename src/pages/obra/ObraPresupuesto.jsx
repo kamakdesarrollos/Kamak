@@ -2201,6 +2201,8 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
   const fin = detalle.financiacion || {};
   const { dolarVenta } = useDolar();
   const { clientes } = useClientes();
+  const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
   const enviada    = !!fin.propuestaEnviada;
   const confirmada = !!fin.propuestaConfirmada;
   const locked     = enviada || confirmada;
@@ -2273,6 +2275,11 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
         (obra.clienteId && clientes.find(c => c.id === obra.clienteId)) ||
         clientes.find(c => (c.nombre || '').toLowerCase().trim() === (obra.cliente || '').toLowerCase().trim()) ||
         { nombre: obra.cliente };
+      // El contrato congela el monto sobre el interés PERSISTIDO (detalle.financiacion.interes),
+      // no sobre interesLive (preview en vivo del input): si el admin está editando el
+      // interés sin haber guardado, el contrato no debe capturar un valor sin persistir.
+      const interesPersistido = parseFloat(detalle.financiacion?.interes) || 0;
+      const totalUSDContrato = calcTotalClienteUSD(detalle, baseTotal, 0, interesPersistido, tc);
       const cuotasHtml = planCuotasHtml(cuotas, (c) => fmtN(cuotaMonto(c)));
       const valores = {
         'cliente.nombre': clienteActual?.nombre || obra.cliente || '',
@@ -2280,7 +2287,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
         'obra.nombre': obra.nombre || '',
         'obra.direccion': obra.direccion || '',
         alcance: `${(detalle.rubros || []).length} rubros`,
-        montoUSD: fmtN(totalUSD),
+        montoUSD: fmtN(totalUSDContrato),
         planCuotas: cuotasHtml,
         fecha: new Date().toLocaleDateString('es-AR'),
       };
@@ -2622,7 +2629,7 @@ function TabFinanciacion({ obra, detalle, patch, moneda, onExport }) {
                   : <span>Contrato generado (v{detalle.contrato.version || 1}) — el cliente puede firmarlo desde el portal.</span>)
               : <span>Generá el contrato para que el cliente lo firme desde el portal.</span>}
           </div>
-          {detalle.contrato?.estado !== 'firmado' && (
+          {isAdmin && detalle.contrato?.estado !== 'firmado' && (
             <Btn sm onClick={generarContrato} disabled={generandoContrato}>
               {generandoContrato ? 'Generando…' : (detalle.contrato ? '↻ Regenerar contrato' : '📄 Generar contrato')}
             </Btn>
