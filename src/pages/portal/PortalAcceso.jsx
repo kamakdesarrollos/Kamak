@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { T } from '../../theme';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 // PortalAcceso: valida un token magico que el admin envia al cliente por WA.
 // Si es valido, GUARDA el token en sessionStorage y redirige a /portal/cliente/:obraId.
@@ -36,13 +37,14 @@ export default function PortalAcceso() {
     expirado:  { icon: '⏰', title: 'Enlace expirado', sub: 'Este enlace de acceso ya no es válido. Solicitá uno nuevo al equipo de Kamak.' },
   };
   const { icon, title, sub } = msgs[estado] || msgs.invalido;
+  const isMobile = useIsMobile();
 
   return (
-    <div style={{ fontFamily: T.font, background: T.dark, minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-      <div style={{ fontSize: 56 }}>{icon}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{title}</div>
-      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', textAlign: 'center', maxWidth: 360 }}>{sub}</div>
-      <img src="/assets/kamak-logo-light.png" alt="Kamak" style={{ height: 28, opacity: 0.4, marginTop: 32 }} />
+    <div style={{ fontFamily: T.font, background: T.dark, minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 12 : 16 }}>
+      <div style={{ fontSize: isMobile ? 40 : 56 }}>{icon}</div>
+      <div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: '#fff', whiteSpace: 'normal', maxWidth: '90vw', textAlign: 'center' }}>{title}</div>
+      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', textAlign: 'center', maxWidth: isMobile ? '92vw' : 360 }}>{sub}</div>
+      <img src="/assets/kamak-logo-light.png" alt="Kamak" style={{ height: 28, opacity: 0.4, marginTop: isMobile ? 20 : 32 }} />
     </div>
   );
 }
