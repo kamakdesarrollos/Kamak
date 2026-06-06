@@ -51,7 +51,7 @@ export default function Modal({
     <div className="k-modal-overlay" onClick={closeOnOverlay ? onClose : undefined}>
       <div
         className="k-modal"
-        style={{ width, maxHeight, display: maxHeight ? 'flex' : undefined, flexDirection: maxHeight ? 'column' : undefined }}
+        style={{ width: `min(94vw, ${width}px)`, maxHeight, display: maxHeight ? 'flex' : undefined, flexDirection: maxHeight ? 'column' : undefined }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
