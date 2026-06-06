@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Bar, Chip } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
@@ -46,6 +47,7 @@ export default function Reportes() {
   const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
   const tc = dolarVenta || 1070;
+  const isMobile = useIsMobile();
   const [rubroObraId, setRubroObraId] = useState('');
 
   // ── KPIs ──
@@ -167,14 +169,14 @@ export default function Reportes() {
         ]}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 10 : 14 }}>
         {/* Avance por rubro */}
         <Box style={{ padding: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Avance por rubro</div>
+            <div style={{ fontWeight: 700, fontSize: 'clamp(13px, 3vw, 15px)' }}>Avance por rubro</div>
             {obrasConDetalle.length > 0 && (
               <select value={selObraId} onChange={e => setRubroObraId(e.target.value)}
-                style={{ padding: '4px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontSize: 12, fontFamily: T.font, background: T.paper }}>
+                style={{ padding: '4px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontSize: 12, fontFamily: T.font, background: T.paper, width: isMobile ? '100%' : 'auto', maxWidth: '100%' }}>
                 {obrasConDetalle.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
               </select>
             )}
@@ -201,7 +203,7 @@ export default function Reportes() {
 
         {/* Margen por obra */}
         <Box style={{ padding: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Margen por obra</div>
+          <div style={{ fontWeight: 700, fontSize: 'clamp(13px, 3vw, 15px)', marginBottom: 12 }}>Margen por obra</div>
           {obrasConMargen.length === 0 && (
             <div style={{ color: T.ink3, fontSize: 12 }}>Sin obras con margen registrado</div>
           )}
@@ -209,20 +211,20 @@ export default function Reportes() {
             <div key={o.id} style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 10 }}>
               <span style={{ width: 90, fontSize: 12, flexShrink: 0, color: T.accent, cursor: 'pointer', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 onClick={() => navigate(`/obras/${o.id}/presupuesto`)}>{o.nombre}</span>
-              <div style={{ flex: 1, height: 16, background: T.faint2, borderRadius: 8, overflow: 'hidden' }}>
+              <div style={{ flex: 1, minWidth: 0, height: 16, background: T.faint2, borderRadius: 8, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, Math.abs(o.margen) * 2.5))}%`, background: margenColor(o.margen), borderRadius: 8 }} />
               </div>
               <span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 700, color: margenColor(o.margen), width: 38, textAlign: 'right', flexShrink: 0 }}>
                 {o.margen > 0 ? '+' : ''}{o.margen}%
               </span>
-              <Chip style={{ fontSize: 9 }}>{ESTADOS_LABEL[o.estado] || o.estado}</Chip>
+              <Chip style={{ fontSize: 9, flexShrink: 0 }}>{ESTADOS_LABEL[o.estado] || o.estado}</Chip>
             </div>
           ))}
         </Box>
 
         {/* Top proveedores */}
         <Box style={{ padding: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Top proveedores</div>
+          <div style={{ fontWeight: 700, fontSize: 'clamp(13px, 3vw, 15px)', marginBottom: 4 }}>Top proveedores</div>
           <div style={{ fontSize: 11, color: T.ink2, marginBottom: 12 }}>Gasto registrado {CY}</div>
           {topProveedores.length === 0 && (
             <div style={{ color: T.ink3, fontSize: 12 }}>Sin movimientos de gasto en {CY}</div>
@@ -233,10 +235,10 @@ export default function Reportes() {
             <div key={prov} style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 10 }}>
               <span style={{ width: 20, fontFamily: T.fontMono, fontSize: 11, color: T.ink3, flexShrink: 0 }}>#{i+1}</span>
               {provObj
-                ? <span style={{ flex: 2, fontSize: 12, color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate(`/proveedores/${provObj.id}`)}>{prov}</span>
-                : <span style={{ flex: 2, fontSize: 12 }}>{prov}</span>
+                ? <span style={{ flex: 2, minWidth: 0, fontSize: 12, color: T.accent, cursor: 'pointer', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => navigate(`/proveedores/${provObj.id}`)}>{prov}</span>
+                : <span style={{ flex: 2, minWidth: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prov}</span>
               }
-              <div style={{ flex: 2, height: 14, background: T.faint2, borderRadius: 7, overflow: 'hidden' }}>
+              <div style={{ flex: 2, minWidth: 0, height: 14, background: T.faint2, borderRadius: 7, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${(monto / (topProveedores[0]?.[1] || 1)) * 100}%`, background: T.accent, borderRadius: 7 }} />
               </div>
               <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink2, width: 70, textAlign: 'right', flexShrink: 0 }}>{fmtM(monto)}</span>
@@ -248,7 +250,7 @@ export default function Reportes() {
         <Box style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
           {/* Por tipo */}
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Distribución por tipo</div>
+            <div style={{ fontWeight: 700, fontSize: 'clamp(13px, 3vw, 15px)', marginBottom: 10 }}>Distribución por tipo</div>
             {tiposMap.map(([tipo, { count, total }]) => (
               <div key={tipo} style={{ display: 'flex', alignItems: 'center', marginBottom: 7, gap: 10 }}>
                 <span style={{ flex: 2, fontSize: 12 }}>{tipo}</span>
@@ -262,7 +264,7 @@ export default function Reportes() {
           </div>
 
           <div style={{ borderTop: `1px solid ${T.faint2}`, paddingTop: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Exportar datos</div>
+            <div style={{ fontWeight: 700, fontSize: 'clamp(13px, 3vw, 15px)', marginBottom: 10 }}>Exportar datos</div>
             {[
               {
                 label: 'Todas las obras', fmt: 'JSON',
@@ -297,12 +299,12 @@ export default function Reportes() {
       </div>
 
       {/* Financiación cross-obra */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 10 : 14, marginTop: 14 }}>
 
         {/* Adicionales aprobados */}
         <Box style={{ padding: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Adicionales aprobados</div>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'baseline', marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 'clamp(13px, 3vw, 15px)' }}>Adicionales aprobados</div>
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: T.ok }}>
               {adicionalesAprobados.length} · {fmtM(totalAdicionalesCliente)}
             </div>
@@ -331,9 +333,9 @@ export default function Reportes() {
 
         {/* Cuotas próximas */}
         <Box style={{ padding: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'baseline', marginBottom: 12 }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>Cuotas (60 días)</div>
+              <div style={{ fontWeight: 700, fontSize: 'clamp(13px, 3vw, 15px)' }}>Cuotas (60 días)</div>
               <div style={{ fontSize: 11, color: T.ink2 }}>
                 Cobrado: {fmtM(cuotasCobradas)} · Total plan: {fmtM(cuotasTotalesMonto)}
               </div>
