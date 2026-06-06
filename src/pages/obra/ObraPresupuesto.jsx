@@ -348,6 +348,7 @@ function TabResumen({ obra, detalle, moneda, onChangeTab }) {
 
 // ── Autocomplete para nombre de tarea ─────────────────────────────────────────
 function TaskAutocomplete({ value, onChange, suggestions, onSelect }) {
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(-1);
   const wrapRef = useRef(null);
@@ -387,7 +388,9 @@ function TaskAutocomplete({ value, onChange, suggestions, onSelect }) {
         }}
       />
       {open && filtered.length > 0 && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: T.paper, border: `1.5px solid ${T.accent}`, borderTop: 'none', borderRadius: '0 0 5px 5px', zIndex: 200, boxShadow: '0 6px 20px rgba(0,0,0,0.15)', maxHeight: 260, overflow: 'auto' }}>
+        <div style={isMobile
+          ? { position: 'fixed', left: 8, right: 8, width: 'auto', maxWidth: 'min(360px, 92vw)', top: 'auto', background: T.paper, border: `1.5px solid ${T.accent}`, borderRadius: 5, zIndex: 9999, boxShadow: '0 6px 20px rgba(0,0,0,0.25)', maxHeight: '80vh', overflowY: 'auto' }
+          : { position: 'absolute', top: '100%', left: 0, right: 0, background: T.paper, border: `1.5px solid ${T.accent}`, borderTop: 'none', borderRadius: '0 0 5px 5px', zIndex: 200, boxShadow: '0 6px 20px rgba(0,0,0,0.15)', maxHeight: 260, overflow: 'auto' }}>
           {filtered.map((s, i) => (
             <div key={i} onMouseDown={() => select(s)}
               style={{ padding: '6px 10px', cursor: 'pointer', background: i === focused ? T.accentSoft : 'transparent', borderBottom: `1px solid ${T.faint2}` }}>
@@ -2137,7 +2140,7 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
         <div style={{ color: T.ink3, padding: 24, textAlign: 'center' }}>Sin adicionales registrados</div>
       ) : (
         <Box style={{ padding: 0, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 820 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, ...(isMobile ? { minWidth: 300 } : { minWidth: 820 }) }}>
             <thead>
               <tr>
                 {thSpan('', 1, 'left')}
@@ -2148,7 +2151,7 @@ function TabAdicionales({ detalle, patch, moneda, obra }) {
                 {thSpan('', 2, 'center')}
               </tr>
               <tr>
-                <th style={{ ...colH, textAlign: 'left', minWidth: 180 }}>Descripción / Tarea</th>
+                <th style={{ ...colH, textAlign: 'left', minWidth: isMobile ? 120 : 180 }}>Descripción / Tarea</th>
                 <th style={colH}>Cant.</th>
                 <th style={colH}>Unidad</th>
                 <th style={colH}>$/u</th>
@@ -4070,6 +4073,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
 const CARPETAS_FOTO_BASE = ['Antes', 'Después', 'Avance de obra'];
 
 function TabFotos({ detalle, patch, obraId }) {
+  const isMobile = useIsMobile();
   const [adding,      setAdding]      = useState(false);
   const [form,        setForm]        = useState({ label: '', fecha: new Date().toISOString().split('T')[0], rubro: '' });
   const [editingFoto, setEditingFoto] = useState(null);   // foto being edited
@@ -4260,7 +4264,7 @@ function TabFotos({ detalle, patch, obraId }) {
             </div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 12 }}>
                 <FRow label="Fecha">
                   <input style={inputSt} type="date" value={multiFecha} onChange={e => setMultiFecha(e.target.value)} />
                 </FRow>
@@ -4269,7 +4273,7 @@ function TabFotos({ detalle, patch, obraId }) {
                 </FRow>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginBottom: 12, maxHeight: 360, overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(100px, 1fr))' : 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginBottom: 12, maxHeight: 360, overflowY: 'auto' }}>
                 {multiFiles.map((m, i) => (
                   <div key={i} style={{ position: 'relative', borderRadius: 6, overflow: 'hidden', border: `1.5px solid ${m.status === 'error' ? '#dc2626' : T.faint2}`, background: T.faint2 }}>
                     {m.previewUrl ? (
@@ -4285,7 +4289,7 @@ function TabFotos({ detalle, patch, obraId }) {
                         placeholder="Descripción"
                       />
                     </div>
-                    <div style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: statusColor[m.status] || 'white', borderRadius: 3, fontSize: 11, padding: '1px 5px', fontWeight: 700 }}>
+                    <div style={{ position: 'absolute', top: 4, right: isMobile ? 2 : 4, background: 'rgba(0,0,0,0.6)', color: statusColor[m.status] || 'white', borderRadius: 3, fontSize: 11, padding: '1px 5px', fontWeight: 700 }}>
                       {statusIcon[m.status]}
                     </div>
                   </div>
@@ -4323,7 +4327,7 @@ function TabFotos({ detalle, patch, obraId }) {
         <FormPanel title={carpetaActiva ? `Agregar foto → 📁 ${carpetaActiva}` : 'Agregar foto'} onSave={save} onCancel={cancelAdding}
           style={{ marginBottom: 14, maxWidth: 500 }} saveLabel={uploading ? 'Subiendo...' : 'Guardar'} saveDisabled={uploading}>
           <FInput label="Descripción" value={form.label} onChange={v => setForm(p => ({ ...p, label: v }))} placeholder="Ej: Tablero instalado" />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <FInput label="Fecha" value={form.fecha} onChange={v => setForm(p => ({ ...p, fecha: v }))} type="date" />
             <FInput label="Rubro" value={form.rubro} onChange={v => setForm(p => ({ ...p, rubro: v }))} placeholder="Ej: Electricidad" />
           </div>
@@ -4351,7 +4355,7 @@ function TabFotos({ detalle, patch, obraId }) {
           style={{ marginBottom: 14, maxWidth: 500 }}
         >
           <FInput label="Descripción" value={editForm.label} onChange={v => setEditForm(p => ({ ...p, label: v }))} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <FInput label="Fecha" value={editForm.fecha} onChange={v => setEditForm(p => ({ ...p, fecha: v }))} type="date" />
             <FInput label="Tarea / Rubro" value={editForm.rubro} onChange={v => setEditForm(p => ({ ...p, rubro: v }))} />
           </div>
@@ -4391,7 +4395,7 @@ function TabFotos({ detalle, patch, obraId }) {
       {fotosFiltradas.length === 0 ? (
         <div style={{ color: T.ink3, padding: 40, textAlign: 'center' }}>{carpetaSel === 'todas' ? 'Sin fotos. Agregá la primera.' : 'No hay fotos en esta carpeta.'}</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(100px, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
           {fotosFiltradas.map(f => (
             <div key={f.id} style={{ position: 'relative' }}>
               <a href={f.url || undefined} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'block' }}>
@@ -4408,7 +4412,7 @@ function TabFotos({ detalle, patch, obraId }) {
                 </div>
               </a>
               {/* Botones editar / eliminar */}
-              <div style={{ position: 'absolute', top: 5, right: 5, display: 'flex', gap: 4 }}>
+              <div style={{ position: 'absolute', top: isMobile ? 2 : 5, right: isMobile ? 2 : 5, display: 'flex', gap: 4 }}>
                 <span
                   title="Editar"
                   style={{ background: 'rgba(0,0,0,0.6)', color: 'white', borderRadius: 3, fontSize: 10, padding: '2px 6px', cursor: 'pointer' }}
