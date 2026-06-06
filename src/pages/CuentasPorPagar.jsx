@@ -6,6 +6,7 @@ import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import { saldoFacturaPendiente, estadoFacturaPendiente, totalPendiente } from '../lib/facturasPendientes';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
 import FacturaPendienteModal from './modales/FacturaPendienteModal';
@@ -35,6 +36,7 @@ function EstadoChip({ estado }) {
 
 export default function CuentasPorPagar() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { currentUser } = useUsuarios();
   // Admin y Administración gestionan TODAS las órdenes (ven todas, pagan, ven el
   // CBU/alias para transferir). Jefe de obra y Logística pueden CARGAR órdenes y
@@ -128,18 +130,18 @@ export default function CuentasPorPagar() {
 
       {/* Filtros */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div>
+        <div style={isMobile ? { flex: '1 1 100%' } : undefined}>
           <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Proveedor</div>
           <select value={filtroProv} onChange={e => setFiltroProv(e.target.value)}
-            style={{ padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, cursor: 'pointer', minWidth: 180 }}>
+            style={{ padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, cursor: 'pointer', minWidth: 180, width: isMobile ? '100%' : undefined }}>
             <option value="todos">Todos los proveedores</option>
             {proveedoresOrden.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
           </select>
         </div>
-        <div>
+        <div style={isMobile ? { flex: '1 1 100%' } : undefined}>
           <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Estado</div>
           <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
-            style={{ padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, cursor: 'pointer' }}>
+            style={{ padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, cursor: 'pointer', width: isMobile ? '100%' : undefined }}>
             <option value="abiertas">Abiertas (pendiente + parcial)</option>
             <option value="pendiente">Pendiente</option>
             <option value="parcial">Parcial</option>
@@ -176,6 +178,10 @@ export default function CuentasPorPagar() {
                 </span>
               </div>
 
+              {/* En mobile, scroll-x para no aplastar las 8 columnas (preserva
+                  alineación de montos/estados). En desktop, igual que siempre. */}
+              <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+              <div style={{ minWidth: isMobile ? 720 : undefined }}>
               {/* Encabezado de columnas */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.9fr 2fr 1.3fr 1fr 1fr 0.9fr 1.4fr', padding: '7px 14px', borderBottom: `1px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>
                 <span>N°</span>
@@ -232,6 +238,8 @@ export default function CuentasPorPagar() {
                   </div>
                 );
               })}
+              </div>
+              </div>
             </Box>
           ))}
         </div>
