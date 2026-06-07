@@ -39,6 +39,7 @@ export default function PortalCliente() {
   const { movimientos: portalMovs, cajas: portalCajas } = useMovimientos();
   const isMobile = useIsMobile();
   const [tab, setTab] = useState(0);
+  const [carpetaSel, setCarpetaSel] = useState('todos');
 
   // GATE de acceso al portal + modo de operacion.
   //
@@ -761,35 +762,81 @@ export default function PortalCliente() {
         })()}
 
         {/* TAB 3 — DOCUMENTOS */}
-        {tab === 3 && (
-          <Box style={{ padding: 18 }}>
-            <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, marginBottom: 6, color: T.ink }}>Documentos de la obra</div>
-            <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>{documentos.length} {documentos.length === 1 ? 'archivo' : 'archivos'} disponibles</div>
-            {documentos.length === 0 ? (
-              <div style={{ color: T.ink3, fontSize: 13, textAlign: 'center', padding: '48px 0' }}>
-                Sin documentos disponibles en este momento.
-              </div>
-            ) : (
-              documentos.map((doc, i) => (
-                <div key={doc.id} style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: i < documentos.length - 1 ? `1px solid ${T.faint2}` : 'none', gap: 12 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 8, background: T.faint2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
-                    📄
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{doc.nombre}</div>
-                    <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
-                      <span style={{ background: T.faint2, padding: '1px 6px', borderRadius: 3, marginRight: 6, fontWeight: 700 }}>{doc.tipo}</span>
-                      {fmtD(doc.fecha)}
-                    </div>
-                  </div>
-                  <button style={{ background: T.faint, border: `1.5px solid ${T.faint2}`, borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontFamily: T.font, color: T.ink, fontWeight: 600 }}>
-                    ↓ Descargar
-                  </button>
+        {tab === 3 && (() => {
+          const docs = documentos || [];
+          // Carpetas únicas usadas (no vacías), en orden de aparición.
+          const carpetasUsadas = [...new Set(docs.map(d => d.carpeta || '').filter(Boolean))];
+          const docsFiltrados = carpetaSel === 'todos'
+            ? docs
+            : docs.filter(d => (d.carpeta || '') === carpetaSel);
+          return (
+            <Box style={{ padding: 18 }}>
+              <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, marginBottom: 6, color: T.ink }}>Documentos de la obra</div>
+              <div style={{ fontSize: 12, color: T.ink2, marginBottom: carpetasUsadas.length > 0 ? 10 : 16 }}>{docs.length} {docs.length === 1 ? 'archivo' : 'archivos'} disponibles</div>
+
+              {/* Chips de carpetas (solo si hay más de una carpeta usada) */}
+              {carpetasUsadas.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+                  {['todos', ...carpetasUsadas].map(c => {
+                    const activo = carpetaSel === c;
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => setCarpetaSel(c)}
+                        style={{
+                          padding: '4px 12px',
+                          borderRadius: 20,
+                          border: `1.5px solid ${activo ? T.accent : T.faint2}`,
+                          background: activo ? T.accent : T.faint,
+                          color: activo ? '#fff' : T.ink2,
+                          fontSize: 12,
+                          fontWeight: activo ? 700 : 500,
+                          cursor: 'pointer',
+                          fontFamily: T.font,
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {c === 'todos' ? 'Todos' : c}
+                        {c !== 'todos' && (
+                          <span style={{ marginLeft: 4, opacity: 0.7, fontSize: 10 }}>
+                            ({docs.filter(d => (d.carpeta || '') === c).length})
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
-              ))
-            )}
-          </Box>
-        )}
+              )}
+
+              {docsFiltrados.length === 0 ? (
+                <div style={{ color: T.ink3, fontSize: 13, textAlign: 'center', padding: '48px 0' }}>
+                  {docs.length === 0
+                    ? 'Sin documentos disponibles en este momento.'
+                    : 'No hay documentos en esta carpeta.'}
+                </div>
+              ) : (
+                docsFiltrados.map((doc, i) => (
+                  <div key={doc.id} style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: i < docsFiltrados.length - 1 ? `1px solid ${T.faint2}` : 'none', gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 8, background: T.faint2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
+                      📄
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{doc.nombre}</div>
+                      <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
+                        {doc.tipo && <span style={{ background: T.faint2, padding: '1px 6px', borderRadius: 3, marginRight: 6, fontWeight: 700 }}>{doc.tipo}</span>}
+                        {doc.carpeta && <span style={{ background: T.faint2, padding: '1px 6px', borderRadius: 3, marginRight: 6, color: T.ink3 }}>{doc.carpeta}</span>}
+                        {fmtD(doc.fecha)}
+                      </div>
+                    </div>
+                    <button style={{ background: T.faint, border: `1.5px solid ${T.faint2}`, borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontFamily: T.font, color: T.ink, fontWeight: 600 }}>
+                      ↓ Descargar
+                    </button>
+                  </div>
+                ))
+              )}
+            </Box>
+          );
+        })()}
 
         {/* TAB — CONTRATO (solo si hay contrato; índice variable) */}
         {tabs[tab] === 'Contrato' && (

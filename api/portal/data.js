@@ -77,7 +77,7 @@ function sanitizeDetalle(detalle) {
     ventaBaseARS: rubros.reduce((s, r) => s + r.ventaPortal, 0),
     precioVentaUSD: detalle.precioVentaUSD ?? null,   // precio de venta fijo en USD (NO es costo)
     cuotas: detalle.cuotas || [],
-    documentos: (detalle.documentos || []).map(d => ({ id: d.id, nombre: d.nombre, tipo: d.tipo, fecha: d.fecha, url: d.url })),
+    documentos: (detalle.documentos || []).map(d => ({ id: d.id, nombre: d.nombre, tipo: d.tipo, fecha: d.fecha, url: d.url, carpeta: d.carpeta || '' })),
     fotos: (detalle.fotos || []).map(f => ({ id: f.id, label: f.label, rubro: f.rubro, fecha: f.fecha, url: f.url })),
     financiacion: { interes: fin.interes ?? 0, notaPortal: fin.notaPortal || '' },
     // Contrato para firma en el portal: whitelist estricta. NO incluye
