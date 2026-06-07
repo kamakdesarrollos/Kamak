@@ -48,7 +48,11 @@ export default function TabSeguros({ detalle, patch }) {
     resetAndClose();
   };
 
-  const del = (id) => patch(d => ({ ...d, nominaSeguros: (d.nominaSeguros || []).filter(s => s.id !== id) }));
+  const del = (s) => {
+    // Data manual de seguros: no se recupera salvo recargarla a mano. Confirmar.
+    if (!window.confirm(`¿Eliminar a ${s.nombre || 'esta persona'} de la nómina de seguros?`)) return;
+    patch(d => ({ ...d, nominaSeguros: (d.nominaSeguros || []).filter(x => x.id !== s.id) }));
+  };
 
   return (
     <div style={{ maxWidth: 760 }}>
@@ -106,7 +110,7 @@ export default function TabSeguros({ detalle, patch }) {
               <Btn sm onClick={() => startEdit(s)}>Editar</Btn>
               <span
                 style={{ color: T.accent, cursor: 'pointer', fontSize: 12 }}
-                onClick={() => del(s.id)}
+                onClick={() => del(s)}
                 role="button"
                 aria-label="Eliminar persona"
               >🗑</span>

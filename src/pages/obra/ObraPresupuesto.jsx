@@ -33,6 +33,7 @@ import {
   cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado,
   ingresosObraUSD, detallePagosCuotas,
   gastadoPorRubro, desvioRubro,
+  obraConfirmada as obraEstaConfirmada,
 } from './helpers';
 
 // Rediseño "libro único": lo cobrado de cada cuota se DERIVA de los movimientos
@@ -4576,10 +4577,14 @@ export default function ObraPresupuesto() {
     return t;
   });
 
-  // El tab "Seguros" (índice 9) solo existe en obras CONFIRMADAS. Mismo gate que
-  // el plan de pagos: financiacion.propuestaConfirmada. Se excluye su índice de
-  // visibleTabIndices (no solo el contenido) para que NO aparezca en la barra.
-  const obraConfirmada = !!detalle.financiacion?.propuestaConfirmada;
+  // El tab "Seguros" (índice 9) solo existe en obras CONFIRMADAS. Gate canónico
+  // del proyecto: obraConfirmada(obra) = obra.estado !== 'en-presupuesto' (helper
+  // estado-based, mismo criterio que Dashboard/Reportes/plan de pagos). Cubre
+  // aprobar presupuesto y el auto-confirmado al recibir el primer pago, no solo
+  // el botón explícito "Confirmar propuesta" (financiacion.propuestaConfirmada).
+  // Se excluye su índice de visibleTabIndices (no solo el contenido) para que
+  // NO aparezca en la barra.
+  const obraConfirmada = obraEstaConfirmada(obra);
 
   // Filter to visible tab indices; if current tab is hidden, fall back to first visible
   const visibleTabIndices = TABS_DEF.reduce((acc, t, i) => {
