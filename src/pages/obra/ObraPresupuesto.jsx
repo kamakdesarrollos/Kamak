@@ -1331,14 +1331,26 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                     {verMargenes && <span style={{ color: rubro.margen > 0 ? T.ok : '#a85648' }}><b>{rubro.margen > 0 ? '+' : ''}{rubro.margen}%</b></span>}
                   </div>
 
-                  {addingTask === rubro.id ? (
+                  {addingTask === rubro.id ? (() => {
+                    // Sugerencias acotadas al rubro: nombres de tareas del catálogo cuyo
+                    // rubroNombre coincide con este rubro (mismo criterio que "agregar rubro").
+                    // Si el rubro no matchea NADA en el catálogo, degradación suave: todas.
+                    const nombresValidos = new Set(
+                      (catalog.tareas || [])
+                        .filter(t => t.rubroNombre === rubro.nombre)
+                        .map(t => t.nombre)
+                    );
+                    const taskSuggestions = nombresValidos.size > 0
+                      ? allSuggestions.filter(s => nombresValidos.has(s.nombre))
+                      : allSuggestions;
+                    return (
                     <div style={{ padding: '10px 12px', background: T.accentSoft, borderTop: `1px solid ${T.accent}` }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 0.7fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
                         <FRow label="Nombre tarea">
                           <TaskAutocomplete
                             value={newTask.nombre}
                             onChange={v => setNewTask(p => ({ ...p, nombre: v }))}
-                            suggestions={allSuggestions}
+                            suggestions={taskSuggestions}
                             onSelect={s => setNewTask(p => ({ ...p, nombre: s.nombre, unidad: s.unidad, costoMat: s.costoMat, costoSub: s.costoSub, codigo: s.codigo || p.codigo }))}
                           />
                         </FRow>
@@ -1355,7 +1367,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                         <Btn sm accent onClick={saveTask}>+ Agregar</Btn>
                       </div>
                     </div>
-                  ) : (
+                    );
+                  })() : (
                     <div className="k-tr" style={{ cursor: 'pointer', gap: 0 }}>
                       <div className="k-cell" style={{ flex: 1, color: T.accent, fontSize: 12 }} onClick={() => { setAddingTask(rubro.id); setSelTask(null); }}>+ Agregar tarea</div>
                       {puedeEditar && <>
