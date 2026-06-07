@@ -22,6 +22,9 @@ export function normalizar(s) {
 
 // ── Intent ───────────────────────────────────────────────────────────────────
 const INTENT_KEYWORDS = {
+  // Cuenta por pagar: alta de factura pendiente SIN tocar caja. DEBE chequearse
+  // ANTES de 'gasto' (que matchea 'factura'/'comprobante' y se la comería).
+  cargar_factura: ['cargar factura', 'factura pendiente', 'nueva factura', 'orden de pago', 'le debo a', 'debo pagar a'],
   gasto:      ['gasto', 'gaste', 'gasté', 'compre', 'compré', 'pague', 'pagué', 'pagar', 'factura', 'comprobante'],
   ingreso:    ['ingreso', 'cobro', 'cobré', 'cobre', 'cobrar', 'recibi', 'recibí', 'me transfirieron', 'me pagaron', 'me deposito', 'me depositó'],
   avance:     ['avance', 'avanc', 'avancé', 'hice', 'terminé', 'termine', 'completé', 'complete', 'progreso', 'agenda avance', 'agendar avance', 'registrar avance', 'cargar avance'],
@@ -40,7 +43,9 @@ export function extractIntent(text) {
   // Orden: chequeo más específicos primero para que "agenda avance" no matchee "tarea".
   // 'crear_prospecto'/'mover_etapa' antes de 'traspaso'/'ingreso'/'gasto' para que
   // "pasá Shell a ganado" o "nuevo prospecto" no se confundan con traspaso/gasto.
-  const orden = ['avance', 'cheque', 'tarea', 'crear_prospecto', 'mover_etapa', 'traspaso', 'ingreso', 'gasto', 'consulta'];
+  // 'cargar_factura' va ANTES de 'gasto': "cargar factura"/"orden de pago"/"le debo
+  // a" son facturas pendientes (cuentas por pagar), no gastos de caja.
+  const orden = ['avance', 'cheque', 'tarea', 'crear_prospecto', 'mover_etapa', 'cargar_factura', 'traspaso', 'ingreso', 'gasto', 'consulta'];
   for (const intent of orden) {
     for (const kw of INTENT_KEYWORDS[intent]) {
       if (t.includes(kw)) return intent;

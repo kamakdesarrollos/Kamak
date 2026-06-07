@@ -1581,6 +1581,8 @@ ACCIONES DISPONIBLES:
 
 13. MOVER_ETAPA (solo Admin): si el admin dice "pasá Shell Ruta 3 a ganado" / "mové la obra X a negociación" / "Shell a perdido" → accion.tipo='mover_etapa' con datos: { obraNombre (nombre de la obra a mover, matcheá contra OBRAS ACTIVAS por nombre parcial), etapaNueva ('prospecto'|'cotizado'|'negociacion'|'ganado'|'perdido') }. Mueve la oportunidad en el embudo de ventas (a ganado → la obra pasa a activa; a perdido → se archiva). Si falta la etapa o la obra, preguntá eso. Si NO es Admin, respondé que solo un Admin mueve oportunidades por chat. NO lo confundas con un TRASPASO de cajas (eso es plata entre cajas, no etapas de venta).
 
+14. CARGAR_FACTURA (solo Admin): alta MANUAL por texto de una factura de proveedor PENDIENTE DE PAGO (orden de pago / cuenta por pagar) SIN debitar caja. Usalo cuando el admin dice "cargá una factura pendiente de Pérez por $300k" / "nueva factura de Acería del Sur $1.2M" / "orden de pago a Juan $150k" / "le debo a Ferretería Centro $80k" — sin foto y sin que diga que ya la pagó. accion.tipo='cargar_factura' con datos: { proveedorId (ID del proveedor si lo matcheás de la lista) o proveedorNombre (nombre tal cual lo dijo), monto (OBLIGATORIO, total de la factura con IVA), fecha?(YYYY-MM-DD, default hoy), numero?(N° de factura), tipoLetra?('A'/'B'/'C'), cuit?, concepto?, obraId?(ID de obra si la menciona) }. Si falta el monto o el proveedor, preguntá eso. NO debita ninguna caja: queda como deuda y cuenta para el Libro IVA desde su fecha. DISTINTO de: FACTURA_COMPRA (esa es por FOTO/PDF de un comprobante), GASTO (sale de caja) y PAGO_PROVEEDOR ("le pagué $X a alguien" = egreso de plata). Si NO es Admin, respondé que solo un Admin carga facturas por chat.
+
 REGLAS DE FLUJO:
 - El usuario escribe corto y conciso. Interpretá la intención aunque falten datos.
 - Si la caja se resuelve por efectivo automático, NO la preguntes.
@@ -1603,7 +1605,7 @@ Respondé ÚNICAMENTE con JSON válido:
   "mensaje": "texto a enviar al usuario (máx 400 chars)",
   "estado": "conversando" | "confirmando" | "ejecutar" | "cancelar" | "comando",
   "accion": {
-    "tipo": "gasto" | "ingreso" | "factura_compra" | "avance_obra" | "cheque_recibido" | "comando" | "nueva_tarea" | "traspaso" | "pago_proveedor" | "crear_prospecto" | "mover_etapa" | null,
+    "tipo": "gasto" | "ingreso" | "factura_compra" | "cargar_factura" | "avance_obra" | "cheque_recibido" | "comando" | "nueva_tarea" | "traspaso" | "pago_proveedor" | "crear_prospecto" | "mover_etapa" | null,
     "datos": {}
   }
 }`;
@@ -1872,6 +1874,66 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     }
 
     return `✅ Listo. El ${tipoStr} de *${montoFmt}* fue enviado a aprobación.\nLos administradores recibirán una notificación.`;
+  }
+
+  // ── CARGAR_FACTURA: alta MANUAL por texto de una factura pendiente de pago ────
+  // (cuenta por pagar / orden de pago) SIN tocar caja. Espejo de
+  // FacturaPendienteModal/addFacturaPendiente: estado 'pendiente', pagos:[],
+  // saldoPendiente=monto. Lleva comprobanteRecibido fiscal → cuenta para el Libro
+  // IVA desde su fecha (devengado). El PAGO va aparte (pago_proveedor) y ahí debita
+  // la caja — acá NO se toca ninguna caja. Solo Admin.
+  if (tipo === 'cargar_factura') {
+    if (user.user_rol !== 'Admin') return '⚠️ Cargar facturas por chat es solo para un Admin.';
+    const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
+    const monto = Math.round(Number(datos.monto) || 0);
+    if (!(monto > 0)) return '⚠️ Necesito el monto de la factura (mayor a cero) para cargarla. ¿Cuánto es?';
+
+    // Resolver proveedor por id o por nombre (fuzzy, mismo criterio que factura_compra).
+    const provFP = (datos.proveedorId && ctx.proveedores.find(p => p.id === datos.proveedorId))
+                || (datos.proveedorNombre && ctx.proveedores.find(p => p.nombre && (
+                     p.nombre.toLowerCase().includes(datos.proveedorNombre.toLowerCase()) ||
+                     datos.proveedorNombre.toLowerCase().includes(p.nombre.toLowerCase()))))
+                || (datos.proveedor && ctx.proveedores.find(p => p.nombre && (
+                     p.nombre.toLowerCase().includes(datos.proveedor.toLowerCase()) ||
+                     datos.proveedor.toLowerCase().includes(p.nombre.toLowerCase()))));
+    const proveedorNombre = provFP?.nombre || datos.proveedorNombre || datos.proveedor || '';
+    if (!proveedorNombre) return '⚠️ ¿A qué proveedor le cargo esta factura? Decime el nombre.';
+
+    const tipoLetra = String(datos.tipoLetra || datos.tipoFactura || 'A').toUpperCase().charAt(0); // 'A'/'B'/'C'
+    const fechaFP = datos.fecha || new Date().toISOString().split('T')[0];
+    const obraFP = datos.obraId ? ctx.obras.find(o => o.id === datos.obraId) : null;
+    const cuit = (datos.cuit || provFP?.cuit || '').trim();
+    const { neto, iva, alicuota } = desglosarCompraBot({ total: monto, tipoLetra });
+
+    const facturaPendiente = {
+      id: `fp-${Date.now()}`,
+      proveedorId: provFP?.id || null,
+      proveedor: proveedorNombre,
+      fecha: fechaFP,
+      numero: datos.numero || datos.numeroFactura || '',
+      tipoLetra,
+      cuit,
+      monto,
+      comprobanteRecibido: {
+        tipo: tipoLetra, numero: datos.numero || datos.numeroFactura || '', cuit,
+        fecha: fechaFP, neto, iva, alicuota, total: monto,
+      },
+      obraId: obraFP?.id || null,
+      obraNombre: obraFP?.nombre || undefined,
+      concepto: (datos.concepto || `Factura ${tipoLetra}${(datos.numero || datos.numeroFactura) ? ` ${datos.numero || datos.numeroFactura}` : ''}`).trim(),
+      comprobanteUrl: null,
+      estado: 'pendiente',
+      pagos: [],
+      saldoPendiente: monto,
+      createdAt: new Date().toISOString(),
+      createdBy: user.id || user.user_name,
+    };
+    // Atómico: append a proveedores.facturasPendientes sin pisar el resto del blob.
+    await sbAppendArray2('proveedores', 'facturasPendientes', facturaPendiente);
+    return `✅ Orden de pago creada: factura ${tipoLetra}${facturaPendiente.numero ? ` ${facturaPendiente.numero}` : ''} de *${proveedorNombre}* (${fmt(monto)}, *pendiente de pago*).\n` +
+      `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}\n` +
+      `Ya cuenta para tu Libro IVA Compras del mes. No toqué ninguna caja.\n\n` +
+      `Avisame cuando la pagues y la marco saldada.`;
   }
 
   if (tipo === 'factura_compra') {
