@@ -189,7 +189,13 @@ export function MovimientosProvider({ children }) {
   // y la app peleen por el mismo número.
 
   const addMovimiento = useCallback((data) => {
-    const nuevo = { ...data, id: newId(), fecha: data.fecha || today() };
+    const nuevo = {
+      ...data,
+      id: newId(),
+      fecha: data.fecha || today(),
+      creadoPor:   data.creadoPor   ?? 'Sistema',
+      creadoPorWA: data.creadoPorWA ?? false,
+    };
     mark();
     setMovimientos(prev => { const next = [nuevo, ...prev]; persist(LS_MOVS, next); return next; });
     appendObjectItem('movimientos', 'movimientos', nuevo);
@@ -197,9 +203,11 @@ export function MovimientosProvider({ children }) {
   }, []);
 
   const updateMovimiento = useCallback((id, changes) => {
+    // No pisar creadoPor/creadoPorWA: son de autoría, solo se setean al crear.
+    const { creadoPor: _cp, creadoPorWA: _cpwa, ...safeChanges } = changes;
     mark();
-    setMovimientos(prev => { const next = prev.map(m => m.id === id ? { ...m, ...changes } : m); persist(LS_MOVS, next); return next; });
-    patchObjectItem('movimientos', 'movimientos', id, changes);
+    setMovimientos(prev => { const next = prev.map(m => m.id === id ? { ...m, ...safeChanges } : m); persist(LS_MOVS, next); return next; });
+    patchObjectItem('movimientos', 'movimientos', id, safeChanges);
   }, []);
 
   const removeMovimiento = useCallback((id) => {

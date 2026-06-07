@@ -332,6 +332,11 @@ function MovRow({ m, cajas, onRemove, isAdmin, pendingSolIds, onSolicitar }) {
               NC{m.afectaCaja ? '' : ' · solo fiscal'}
             </span>
           )}
+          {(m.creadoPor || m.creadoPorWA) && (
+            <span style={{ color: T.ink3 }}>
+              {m.creadoPorWA ? '· bot' : `· ${m.creadoPor}`}
+            </span>
+          )}
         </div>
       </div>
       <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color: isIngreso ? T.ok : T.warn, flexShrink: 0 }}>
@@ -607,6 +612,8 @@ function QuickAddForm({ tipo, obras, cajas, proveedores, clientes, dolarVenta, o
       referencia:    cheqNumero || '',
       fondoReparo:   false,
       comprobanteUrl: fotoUrl,
+      creadoPor:     currentUser?.nombre || currentUser?.email || 'Usuario',
+      creadoPorWA:   false,
       ...extra,
     });
 
