@@ -124,7 +124,7 @@ function AdjuntosTarea({ tarea, currentUser, addAdjunto, removeAdjunto }) {
   );
 }
 
-function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto, isAdmin, solapaUserId }) {
+function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemTexto, setItemAsignado, addAdjunto, removeAdjunto, isAdmin, solapaUserId }) {
   const isMobile = useIsMobile();
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
   const obra = obras.find(o => o.id === tarea.obraId);
@@ -166,6 +166,10 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
   // Observación en edición (qué ítem del checklist + borrador del texto).
   const [obsEditId, setObsEditId] = useState(null);
   const [obsDraft, setObsDraft] = useState('');
+
+  // Edición del texto de un ítem del checklist.
+  const [textoEditId, setTextoEditId] = useState(null);
+  const [textoDraft, setTextoDraft] = useState('');
 
   return (
     <div style={{ borderBottom: `1px solid ${T.faint2}` }}>
@@ -303,6 +307,12 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                 const completadoPor = it.completadoPor ? usuarios.find(u => u.id === it.completadoPor)?.nombre : null;
                 const editandoObs = obsEditId === it.id;
                 const guardarObs = () => { setItemObservacion(tarea.id, it.id, obsDraft.trim()); setObsEditId(null); };
+                const editandoTexto = textoEditId === it.id;
+                const guardarTexto = () => {
+                  const t2 = textoDraft.trim();
+                  if (t2) setItemTexto(tarea.id, it.id, t2);
+                  setTextoEditId(null);
+                };
                 return (
                   <div
                     key={it.id}
@@ -321,22 +331,39 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                         onChange={() => toggleItem(tarea.id, it.id, currentUser?.id)}
                         style={{ cursor: 'pointer', accentColor: '#059669' }}
                       />
-                      <span
-                        onClick={() => toggleItem(tarea.id, it.id, currentUser?.id)}
-                        style={{
-                          fontSize: 12,
-                          color: it.completado ? T.ink3 : T.ink,
-                          textDecoration: it.completado ? 'line-through' : 'none',
-                          flex: 1,
-                          minWidth: 0,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: isMobile ? 'normal' : 'nowrap',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {it.texto}
-                      </span>
+                      {editandoTexto ? (
+                        <input
+                          type="text"
+                          autoFocus
+                          value={textoDraft}
+                          onChange={e => setTextoDraft(e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          onBlur={e => { e.stopPropagation(); guardarTexto(); }}
+                          onKeyDown={e => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter') { e.preventDefault(); guardarTexto(); }
+                            if (e.key === 'Escape') setTextoEditId(null);
+                          }}
+                          style={{ flex: 1, padding: '2px 6px', fontSize: 12, border: `1px solid ${T.accent}`, borderRadius: 4, fontFamily: T.font, background: T.paper, outline: 'none', minWidth: 0 }}
+                        />
+                      ) : (
+                        <span
+                          onClick={() => toggleItem(tarea.id, it.id, currentUser?.id)}
+                          style={{
+                            fontSize: 12,
+                            color: it.completado ? T.ink3 : T.ink,
+                            textDecoration: it.completado ? 'line-through' : 'none',
+                            flex: 1,
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: isMobile ? 'normal' : 'nowrap',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {it.texto}
+                        </span>
+                      )}
                       {/* El responsable es para repartir trabajo PENDIENTE; en un
                           ítem ya completado solo importa el "✓ quién lo hizo".
                           Solo el gestor (admin o creador) reparte; el que recibe no. */}
@@ -355,6 +382,13 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
                         <span style={{ fontSize: 9.5, color: T.ink3, fontFamily: T.fontMono }} title="Completó">
                           ✓ {completadoPor}
                         </span>
+                      )}
+                      {puedeGestionar && (
+                        <span
+                          onClick={e => { e.stopPropagation(); setTextoEditId(it.id); setTextoDraft(it.texto || ''); }}
+                          title="Editar texto del ítem"
+                          style={{ fontSize: 11, cursor: 'pointer', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
+                        >✏️</span>
                       )}
                       <span
                         onClick={() => { setObsEditId(it.id); setObsDraft(it.observacion || ''); }}
@@ -464,7 +498,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
 export default function Tareas() {
   const { currentUser, usuarios } = useUsuarios();
   const { obras } = useObras();
-  const { tareas, marcarVista, toggleItem, addItem, addComentario, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto } = useTareas();
+  const { tareas, marcarVista, toggleItem, addItem, addComentario, setItemObservacion, setItemTexto, setItemAsignado, addAdjunto, removeAdjunto } = useTareas();
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -680,6 +714,7 @@ export default function Tareas() {
                   addItem={addItem}
                   addComentario={addComentario}
                   setItemObservacion={setItemObservacion}
+                  setItemTexto={setItemTexto}
                   setItemAsignado={setItemAsignado}
                   addAdjunto={addAdjunto}
                   removeAdjunto={removeAdjunto}

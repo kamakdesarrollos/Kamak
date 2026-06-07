@@ -167,6 +167,15 @@ export function TareasProvider({ children }) {
     }));
   }, [aplicarTarea]);
 
+  // Edición del texto de un ítem del checklist (no recalcula estado).
+  const setItemTexto = useCallback((tareaId, itemId, texto) => {
+    aplicarTarea(tareaId, t => ({
+      ...t,
+      checklist: (t.checklist || []).map(it => it.id === itemId ? { ...it, texto } : it),
+      actualizadoAt: new Date().toISOString(),
+    }));
+  }, [aplicarTarea]);
+
   // Responsable de un ítem del checklist (userId o null). Permite repartir los
   // ítems de una tarea grupal entre distintas personas. No afecta el estado.
   const setItemAsignado = useCallback((tareaId, itemId, userId) => {
@@ -227,13 +236,14 @@ export function TareasProvider({ children }) {
       addItem,
       removeItem,
       setItemObservacion,
+      setItemTexto,
       setItemAsignado,
       addAdjunto,
       removeAdjunto,
       addComentario,
       marcarVista,
     }),
-    [tareas, addTarea, updateTarea, deleteTarea, toggleItem, addItem, removeItem, setItemObservacion, setItemAsignado, addAdjunto, removeAdjunto, addComentario, marcarVista]
+    [tareas, addTarea, updateTarea, deleteTarea, toggleItem, addItem, removeItem, setItemObservacion, setItemTexto, setItemAsignado, addAdjunto, removeAdjunto, addComentario, marcarVista]
   );
 
   return <CTX.Provider value={value}>{children}</CTX.Provider>;
