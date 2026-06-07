@@ -107,10 +107,11 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
       {kpis.length > 0 && (
         <div style={{
           display: 'grid',
-          // En mobile bajamos el minmax para que entren 2 columnas en ~360px
-          // sin apretar; en desktop el layout queda igual.
+          // En mobile: 2 columnas PAREJAS (auto-fit dejaba una huérfana, ej. 4
+          // tabs -> 3 arriba + 1 solo abajo, que se ve desconfigurado). En
+          // desktop el layout queda igual.
           gridTemplateColumns: isMobile
-            ? `repeat(auto-fit, minmax(100px, 1fr))`
+            ? `repeat(2, 1fr)`
             : `repeat(auto-fit, minmax(120px, 1fr))`,
           background: '#fbf9f1',
         }}>
@@ -120,11 +121,13 @@ export default function PageHero({ title, subtitle, kpis = [], actions, label })
               onClick={k.onClick}
               style={{
                 padding: isMobile ? '6px 10px' : '8px 14px',
-                borderRight: i < kpis.length - 1 ? `1px solid rgba(212, 207, 191, 0.5)` : 'none',
+                // En mobile (grilla 2 col) el borde derecho va solo en la columna
+                // izquierda (i par); el divisor de filas va por borderBottom.
+                borderRight: (isMobile ? i % 2 === 0 : i < kpis.length - 1) ? `1px solid rgba(212, 207, 191, 0.5)` : 'none',
                 minWidth: 0,
                 cursor: k.onClick ? 'pointer' : 'default',
                 background: k.active ? '#f3eedf' : '',
-                borderBottom: k.active ? `2px solid ${T.accent}` : '2px solid transparent',
+                borderBottom: k.active ? `2px solid ${T.accent}` : (isMobile ? `1px solid rgba(212, 207, 191, 0.5)` : '2px solid transparent'),
                 transition: 'background 0.18s ease, border-bottom 0.18s ease',
               }}
               onMouseEnter={e => { if (k.onClick && !k.active) e.currentTarget.style.background = '#f3eedf'; }}
