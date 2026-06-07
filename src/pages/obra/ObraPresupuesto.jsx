@@ -54,6 +54,7 @@ function buildCuotaDerivados(cuotas, movimientos, cajas, obraId, obraMoneda, tc)
 }
 import { FRow, FInput, FSelect, FormPanel, inputSt, labelSt } from './forms';
 import TabDocumentos from './tabs/TabDocumentos';
+import TabSeguros from './tabs/TabSeguros';
 import ClienteAccesoModal from '../modales/ClienteAccesoModal';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -4489,7 +4490,11 @@ function TabArchivos({ detalle, patch, obraId }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // "Adicionales" eliminado como tab — su contenido vive ahora dentro de
 // "Cuenta corriente" como acordeón. Documentos+Fotos unificados en "Archivos".
-const TABS_DEF = ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Archivos', 'Portal cliente'];
+// 'Seguros' va AL FINAL (índice 9) — NO en el medio: ObraPresupuesto usa
+// índices POSICIONALES para renderizar tabs y para los redirects de Gantt(4)
+// y Portal cliente(8). Insertar en el medio correría todos los índices viejos.
+// Solo visible en obras confirmadas (ver visibleTabIndices más abajo).
+const TABS_DEF = ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Archivos', 'Portal cliente', 'Seguros'];
 
 export default function ObraPresupuesto() {
   const { id } = useParams();
@@ -4555,7 +4560,7 @@ export default function ObraPresupuesto() {
 
   // Labels con contador. Indices:
   // 0 Resumen · 1 Cuenta corriente · 2 Presupuesto · 3 Materiales · 4 Gantt
-  // 5 Movimientos · 6 Contratos MO · 7 Archivos · 8 Portal cliente
+  // 5 Movimientos · 6 Contratos MO · 7 Archivos · 8 Portal cliente · 9 Seguros
   const tabLabels = TABS_DEF.map((t, i) => {
     if (i === 1 && (detalle.adicionales || []).length > 0) return `Cuenta corriente · ${detalle.adicionales.length} adic.`;
     if (i === 5) return `Movimientos${detalle.movimientos.length > 0 ? ' · ' + detalle.movimientos.length : ''}`;
@@ -4564,11 +4569,25 @@ export default function ObraPresupuesto() {
       const total = (detalle.documentos || []).length + (detalle.fotos || []).length;
       return total > 0 ? `Archivos · ${total}` : 'Archivos';
     }
+    if (i === 9) {
+      const total = (detalle.nominaSeguros || []).length;
+      return total > 0 ? `Seguros · ${total}` : 'Seguros';
+    }
     return t;
   });
 
+  // El tab "Seguros" (índice 9) solo existe en obras CONFIRMADAS. Mismo gate que
+  // el plan de pagos: financiacion.propuestaConfirmada. Se excluye su índice de
+  // visibleTabIndices (no solo el contenido) para que NO aparezca en la barra.
+  const obraConfirmada = !!detalle.financiacion?.propuestaConfirmada;
+
   // Filter to visible tab indices; if current tab is hidden, fall back to first visible
-  const visibleTabIndices = TABS_DEF.reduce((acc, t, i) => { if (!allHiddenTabs.has(t)) acc.push(i); return acc; }, []);
+  const visibleTabIndices = TABS_DEF.reduce((acc, t, i) => {
+    if (allHiddenTabs.has(t)) return acc;
+    if (t === 'Seguros' && !obraConfirmada) return acc;
+    acc.push(i);
+    return acc;
+  }, []);
   const displayTab = visibleTabIndices.includes(activeTab) ? activeTab : (visibleTabIndices[0] ?? 0);
 
   const handleTab = (i) => {
@@ -4740,6 +4759,7 @@ export default function ObraPresupuesto() {
       {displayTab === 5 && <TabMovimientos obra={obra} moneda={moneda} />}
       {displayTab === 6 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 7 && <TabArchivos detalle={detalle} patch={patch} obraId={id} />}
+      {displayTab === 9 && <TabSeguros detalle={detalle} patch={patch} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
 
