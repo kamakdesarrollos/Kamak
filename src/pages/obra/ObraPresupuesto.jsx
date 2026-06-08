@@ -5042,7 +5042,7 @@ export default function ObraPresupuesto() {
       {displayTab === 5 && <TabMovimientos obra={obra} moneda={moneda} />}
       {displayTab === 6 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 7 && <TabArchivos detalle={detalle} patch={patch} obraId={id} />}
-      {displayTab === 9 && <TabSeguros detalle={detalle} patch={patch} />}
+      {displayTab === 9 && <TabSeguros detalle={detalle} patch={patch} obraId={id} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
 
