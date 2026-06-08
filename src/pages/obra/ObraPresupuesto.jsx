@@ -13,6 +13,7 @@ import { useClientes } from '../../store/ClientesContext';
 import { useDolar } from '../../store/DolarContext';
 import ExportModal from '../modales/ExportModal';
 import ContratoMOModal from '../modales/ContratoMOModal';
+import DocumentosContratistaModal from '../modales/DocumentosContratistaModal';
 import { useGastosFijos } from '../../store/GastosFijosContext';
 import { useCatalog, calcTarea } from '../../store/CatalogContext';
 import { useUsuarios, ROL_TABS_OCULTAS, ROL_TABS_OCULTAS_DEFAULT } from '../../store/UsuariosContext';
@@ -3750,6 +3751,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   const [editingRubroId, setEditingRubroId] = useState(null);
   const [rubroForm, setRubroForm] = useState(makeRubroFormInit);
   const [printContrato, setPrintContrato] = useState(null);
+  const [docsContrato, setDocsContrato] = useState(null); // contrato cuyo modal "Documentos" está abierto
   const [editPlantillas, setEditPlantillas] = useState(false);
   const { proveedores: proveedoresDyn } = useProveedores();
   const { currentUser } = useUsuarios();
@@ -3916,6 +3918,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   return (
     <div style={{ maxWidth: 800 }}>
       {printContrato && <ContratoMOModal contrato={printContrato} obra={obra} onClose={() => setPrintContrato(null)} />}
+      {docsContrato && <DocumentosContratistaModal contrato={docsContrato} obra={obra} onClose={() => setDocsContrato(null)} />}
       {editPlantillas && <PlantillasContratistaModal onClose={() => setEditPlantillas(false)} />}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
@@ -4249,6 +4252,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
               <Chip ok={c.estado === 'activo'} style={{ fontSize: 10 }}>{c.estado}</Chip>
               <div style={{ display: 'flex', gap: 6 }}>
                 <Btn sm onClick={() => startEditContrato(c)}>✏ Editar</Btn>
+                <Btn sm onClick={() => setDocsContrato(c)}>📄 Documentos</Btn>
                 <Btn sm onClick={() => setPrintContrato(c)}>Imprimir</Btn>
                 <Btn sm onClick={() => toggleEstado(c.id)}>{c.estado === 'activo' ? '✓ Cerrar' : '↩ Reabrir'}</Btn>
                 <span style={{ color: T.accent, cursor: 'pointer' }} onClick={() => del(c.id)}>🗑</span>
