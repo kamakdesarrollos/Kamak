@@ -27,6 +27,7 @@ import { AuthProvider, useAuth } from './store/AuthContext';
 import Login from './pages/Login';
 import WhatsappVerificationBanner from './components/WhatsappVerificationBanner';
 import VentaSync from './components/VentaSync';
+import TareaContratosBridge from './components/TareaContratosBridge';
 import { ToastProvider } from './components/ui/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -243,6 +244,10 @@ function AppShell() {
                 {/* Reconciliador global pago->Ganado: corre una vez, dentro de
                     los Providers de Obras/Movimientos/Dolar del area autenticada. */}
                 <VentaSync />
+                {/* Disparador: al confirmar una obra (mismo evento que la alerta
+                    'obra_iniciada'), crea la tarea para Administración de armar los
+                    contratos de los contratistas. Idempotente por obra. */}
+                <TareaContratosBridge />
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/obras" element={<Obras />} />

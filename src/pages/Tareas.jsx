@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
@@ -126,8 +126,18 @@ function AdjuntosTarea({ tarea, currentUser, addAdjunto, removeAdjunto }) {
 
 function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemTexto, setItemAsignado, addAdjunto, removeAdjunto, isAdmin, solapaUserId }) {
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
   const obra = obras.find(o => o.id === tarea.obraId);
+  // Al hacer clic en la obra, llevar a su detalle. Si la tarea es de armar
+  // contratos (origen 'auto-contratos'), abrir directo la pestaña Contratos MO
+  // (tab=6); el resto, al detalle de la obra sin tab forzado.
+  const irAObra = (e) => {
+    if (!obra) return;
+    e.stopPropagation();
+    const qs = tarea.origen === 'auto-contratos' ? '?tab=6' : '';
+    navigate(`/obras/${obra.id}/presupuesto${qs}`);
+  };
   // Gestiona el checklist (ve TODO + asigna ítems a otros + agrega ítems): el
   // admin o quien CREÓ la tarea (el que delega). Los demás (los que reciben un
   // ítem) ven SOLO sus ítems.
@@ -247,9 +257,11 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
           {asignados || '—'}
         </div>
 
-        {/* Obra */}
+        {/* Obra (linkea al detalle de la obra; las tareas de contratos abren la pestaña Contratos MO) */}
         <div style={{ flex: 1.3, fontSize: 11, color: T.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {obra ? obra.nombre : <span style={{ color: T.ink3 }}>—</span>}
+          {obra
+            ? <span onClick={irAObra} title={`Ir a ${obra.nombre}`} style={{ color: T.accent, cursor: 'pointer', fontWeight: 600 }}>{obra.nombre}</span>
+            : <span style={{ color: T.ink3 }}>—</span>}
         </div>
 
         {/* Checklist progress bar */}
