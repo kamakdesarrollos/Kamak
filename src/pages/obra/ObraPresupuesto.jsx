@@ -59,6 +59,7 @@ import { FRow, FInput, FSelect, FormPanel, inputSt, labelSt } from './forms';
 import TabDocumentos from './tabs/TabDocumentos';
 import TabSeguros from './tabs/TabSeguros';
 import ClienteAccesoModal from '../modales/ClienteAccesoModal';
+import PlantillasContratistaModal from './PlantillasContratistaModal';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -3749,8 +3750,13 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   const [editingRubroId, setEditingRubroId] = useState(null);
   const [rubroForm, setRubroForm] = useState(makeRubroFormInit);
   const [printContrato, setPrintContrato] = useState(null);
+  const [editPlantillas, setEditPlantillas] = useState(false);
   const { proveedores: proveedoresDyn } = useProveedores();
+  const { currentUser } = useUsuarios();
   const navigate = useNavigate();
+  // El editor de plantillas (texto legal de los contratos) es de administración.
+  // La tab ya está gateada a Admin/Administración; igual lo cerramos por las dudas.
+  const puedeEditarPlantillas = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
 
   const rubros = detalle.rubros || [];
   const contratos = detalle.contratos || [];
@@ -3910,8 +3916,12 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   return (
     <div style={{ maxWidth: 800 }}>
       {printContrato && <ContratoMOModal contrato={printContrato} obra={obra} onClose={() => setPrintContrato(null)} />}
+      {editPlantillas && <PlantillasContratistaModal onClose={() => setEditPlantillas(false)} />}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
+        {puedeEditarPlantillas && (
+          <Btn sm onClick={() => setEditPlantillas(true)}>⚙ Plantillas</Btn>
+        )}
         <Btn sm fill onClick={() => { setEditingContratoId(null); setForm(makeFormInit()); setFormError(''); setAddingRubro(false); setEditingRubroId(null); setRubroForm(makeRubroFormInit()); setAdding(true); }}>+ Contrato MO</Btn>
       </div>
 
