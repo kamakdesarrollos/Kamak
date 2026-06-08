@@ -1581,7 +1581,7 @@ ACCIONES DISPONIBLES:
 
 11. CHEQUE_RECIBIDO: si mandan una FOTO de un cheque/ECheq, o dicen "me dieron un cheque", "cobré con un cheque de X", "recibí un echeq de Y" → accion.tipo='cheque_recibido'. LEÉ de la foto/texto y poné en datos: { numero (N° del cheque), banco, titular (quién lo firma/emite), monto, fechaVencimiento (fecha de cobro/pago en formato YYYY-MM-DD), esEcheq (true si es electrónico/ECheq), clienteNombre? (de quién lo recibimos, si se sabe), obraId? (ID de obra si la menciona), cajaId (SOLO si el usuario dijo EXPLÍCITAMENTE a qué caja entra, ej. "a mi efectivo", "caja Pablo") }. IMPORTANTE: la caja NO se infiere de la obra ni del cheque. Si el usuario NO dijo explícitamente la caja, dejá cajaId vacío y respondé estado:"conversando" preguntando "¿A qué caja entra el cheque?" mostrando sus cajas. Si falta el monto o la fechaVencimiento, preguntá eso. NO lo trates como un gasto.
 
-12. CREAR_PROSPECTO (solo Admin): si el admin dice "nuevo prospecto Shell Ruta 3 cliente Pérez" / "cargá una oportunidad nueva: estación X para Pérez" → accion.tipo='crear_prospecto' con datos: { obraNombre (nombre de la nueva obra/oportunidad), clienteNombre? (nombre del cliente, opcional) }. Crea una OBRA NUEVA en estado en-presupuesto, etapa del embudo = prospecto. Si falta el nombre de la obra, preguntalo. Si NO es Admin, respondé que solo un Admin crea oportunidades por chat. NO lo confundas con un gasto ni con nueva_tarea.
+12. CREAR_PROSPECTO / PRIMER CONTACTO (solo Admin): si el admin dice "nuevo prospecto Shell Ruta 3 cliente Pérez" / "cargá una oportunidad nueva: estación X para Pérez" / "primer contacto Pérez" / "me contactó Pérez por Shell Ruta 3" / "me escribió Pérez" / "consulta de Pérez" / "nuevo contacto Pérez" → accion.tipo='crear_prospecto' con datos: { obraNombre? (nombre de la nueva obra/oportunidad, opcional), clienteNombre? (nombre del cliente, opcional) }. Carga un PRIMER CONTACTO: crea/vincula el CLIENTE (si no existe lo crea como prospecto), crea una OBRA NUEVA en estado en-presupuesto con la etapa del embudo = prospecto (sin presupuesto) y registra la actividad. Necesitás AL MENOS el cliente o el nombre de la oportunidad; si tenés cliente pero no obra, dejá obraNombre vacío (el sistema arma "Consulta — <cliente>"). Si no tenés ni cliente ni obra, preguntá de quién es el contacto. Si NO es Admin, respondé que solo un Admin crea oportunidades por chat. NO lo confundas con un gasto ni con nueva_tarea.
 
 13. MOVER_ETAPA (solo Admin): si el admin dice "pasá Shell Ruta 3 a ganado" / "mové la obra X a negociación" / "Shell a perdido" → accion.tipo='mover_etapa' con datos: { obraNombre (nombre de la obra a mover, matcheá contra OBRAS ACTIVAS por nombre parcial), etapaNueva ('prospecto'|'cotizado'|'negociacion'|'ganado'|'perdido') }. Mueve la oportunidad en el embudo de ventas (a ganado → la obra pasa a activa; a perdido → se archiva). Si falta la etapa o la obra, preguntá eso. Si NO es Admin, respondé que solo un Admin mueve oportunidades por chat. NO lo confundas con un TRASPASO de cajas (eso es plata entre cajas, no etapas de venta).
 
@@ -2675,16 +2675,23 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
   if (tipo === 'crear_prospecto') {
     if (user.user_rol !== 'Admin') return '⚠️ Crear oportunidades por chat es solo para un Admin.';
     const nombreObra = String(datos.obraNombre || datos.nombreObra || '').trim();
-    if (!nombreObra) return '❌ ¿Cómo se llama la obra/oportunidad? Ej: *nuevo prospecto Shell Ruta 3 cliente Pérez*.';
     const clienteNombre = String(datos.clienteNombre || '').trim() || null;
+    // Necesitamos al menos un cliente o un nombre de oportunidad. Si hay cliente
+    // pero no obra, crearProspecto arma "Consulta — <cliente>" (igual que la web).
+    if (!nombreObra && !clienteNombre) return '❌ ¿De quién es el primer contacto? Ej: *primer contacto Pérez* o *nuevo prospecto Shell Ruta 3 cliente Pérez*.';
     try {
-      const nueva = await crearProspecto({ nombreObra, clienteNombre, usuario: user.user_name });
+      const nueva = await crearProspecto({
+        nombreObra, clienteNombre, usuario: user.user_name,
+        telefono: user.phone || null, fuente: 'WhatsApp', nota: '',
+      });
       if (nueva.duplicada) return `⚠️ Ya existe una obra *${nueva.existente.nombre}*${nueva.existente.etapa ? ` (etapa ${nueva.existente.etapa})` : ''}. Si la querés mover, decime: *pasá ${nueva.existente.nombre} a cotizado*.`;
-      const cliMsg = nueva.clienteId ? `\n👤 Cliente: *${nueva.cliente}*` : (clienteNombre ? `\n👤 Cliente: *${clienteNombre}* (no estaba en la base, lo dejé como texto)` : '');
-      return `✅ *Prospecto creado*\n🏗 *${nueva.nombre}*${cliMsg}\nEtapa: *Prospecto* · en presupuesto. Editable desde Comercial.`;
+      const cliMsg = nueva.clienteId
+        ? `\n👤 Cliente: *${nueva.cliente}*${nueva.clienteCreado ? ' (ficha nueva, prospecto)' : ''}`
+        : (clienteNombre ? `\n👤 Cliente: *${clienteNombre}* (lo dejé como texto)` : '');
+      return `✅ *Primer contacto cargado*\n🏗 *${nueva.nombre}*${cliMsg}\nQuedó en la columna *Prospecto* del embudo (sin presupuesto). Editable desde Comercial.`;
     } catch (e) {
       console.error('[webhook] crear_prospecto', e.message);
-      return '❌ No pude guardar el prospecto (error de base). Reintentá en un momento; si sigue, avisá.';
+      return '❌ No pude guardar el primer contacto (error de base). Reintentá en un momento; si sigue, avisá.';
     }
   }
 
