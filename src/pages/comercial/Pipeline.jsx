@@ -83,8 +83,11 @@ export default function Pipeline() {
   const crearPrimerContacto = ({ clienteNombre, clienteId, telefono, fuente, nombreOportunidad, nota }) => {
     const cid = clienteId || addCliente({ nombre: clienteNombre, telefono: telefono || '', estado: 'prospecto' });
     const nombre = nombreOportunidad || `Consulta — ${clienteNombre}`;
-    const obraId = addObra({ nombre, cliente: clienteNombre, clienteId: cid, tipo: 'Otro', presupuesto: 0, notas: nota || '' });
-    setVentaEtapa(obraId, 'prospecto', { usuario: currentUser?.id || null });
+    const hoy = new Date().toISOString().split('T')[0];
+    // Se setea venta.etapa DENTRO de addObra (atómico). No usar setVentaEtapa acá:
+    // la obra recién creada todavía no está en obrasRef y setVentaEtapa la ignora.
+    const venta = { etapa: 'prospecto', fechaCambioEtapa: hoy, changelog: [{ etapa: 'prospecto', fecha: hoy, usuario: currentUser?.id || null }] };
+    const obraId = addObra({ nombre, cliente: clienteNombre, clienteId: cid, tipo: 'Otro', presupuesto: 0, notas: nota || '', venta });
     addActividad({
       clienteId: cid,
       obraId,
