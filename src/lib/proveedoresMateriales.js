@@ -1,5 +1,5 @@
 // proveedoresMateriales — agrupa los rubros REALES del catálogo SISMAT (5297
-// materiales en 40 rubros, nombres en castellano CON acentos) en 14 "proveedores
+// materiales en 40 rubros, nombres en castellano CON acentos) en 15 "proveedores
 // tipo" (corralón, electricidad, sanitarios, etc.). Lógica PURA, sin React, para
 // poder testearla y reusarla en scripts/bot.
 //
@@ -10,7 +10,7 @@ import { searchNorm } from './searchNorm.js';
 // match del rubro tolere también espacios sobrantes ("  Pinturas  ").
 const norm = (s) => searchNorm(s).trim();
 
-// Los 14 proveedores tipo. id kebab-case ESTABLE (no cambiar: se persiste), label
+// Los 15 proveedores tipo. id kebab-case ESTABLE (no cambiar: se persiste), label
 // el nombre legible, color distinto del theme T (paleta tierra/acento de Kamak).
 export const PROVEEDORES = [
   { id: 'corralon',        label: 'Corralón de materiales',       color: '#8a5a2b' }, // tierra
@@ -26,6 +26,7 @@ export const PROVEEDORES = [
   { id: 'climatizacion',   label: 'Climatización / Equipamiento', color: '#2f8f6b' }, // verde agua
   { id: 'ferreteria',      label: 'Ferretería / Herrajes',        color: '#9a9892' }, // ink3
   { id: 'mobiliario',      label: 'Mobiliario (San Francisco)',   color: '#c0468a' }, // magenta
+  { id: 'grafica',         label: 'Gráfica',                      color: '#d6259e' }, // fucsia
   { id: 'servicios-otros', label: 'Servicios / Otros',            color: '#5a6b8a' }, // azul gris
 ];
 
@@ -104,9 +105,11 @@ const MAPA_FUENTE = {
     'Mobiliario Shop Express',
     'Amoblamiento para Cocinas, Placares y Vestidores',
   ],
+  'Gráfica': [
+    '46 - GRAFICA',
+  ],
   'Servicios / Otros': [
     'Herramientas y Servicios (Alquiler)',
-    '46 - GRAFICA',
     '47 - LOGISTICA',
   ],
 };
