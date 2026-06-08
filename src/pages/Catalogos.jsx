@@ -4,6 +4,7 @@ import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Divider } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
+import { PROVEEDORES, proveedorDeMaterial, colorProveedor } from '../lib/proveedoresMateriales';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { useDolar } from '../store/DolarContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex, aplicarDolarItems } from '../lib/apuPriceResolver';
@@ -350,18 +351,20 @@ const ordenarRubros = (a, b) => {
   return String(a).localeCompare(String(b), 'es');
 };
 
-function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm, rubroKey = 'rubro', rubros }) {
+function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm, rubroKey = 'rubro', rubros, proveedorFn }) {
   const isMobile = useIsMobile();
   const [sel, setSel] = useState(null);
   const [form, setForm] = useState(null);
   const [search, setSearch] = useState('');
   const [lastAddedId, setLastAddedId] = useState(null);
   const [selRubro, setSelRubro] = useState('');
+  const [selProveedor, setSelProveedor] = useState('');
 
   const filtered = useMemo(() => {
     const q = searchNorm(search);
     const list = items.filter(i =>
       (!selRubro || i[rubroKey] === selRubro) &&
+      (!selProveedor || !proveedorFn || proveedorFn(i) === selProveedor) &&
       Object.values(i).some(v => searchNorm(v).includes(q))
     );
     if (lastAddedId) {
@@ -369,7 +372,7 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
       if (idx > 0) { const [it] = list.splice(idx, 1); list.unshift(it); }
     }
     return list;
-  }, [items, search, lastAddedId, selRubro, rubroKey]);
+  }, [items, search, lastAddedId, selRubro, selProveedor, rubroKey, proveedorFn]);
 
   // Conteo por rubro en UNA pasada. El panel "Por rubro" solo muestra rubros que
   // TIENEN materiales: antes listaba rubros del catálogo sin ítems (ej. un rubro
@@ -381,6 +384,14 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
     for (const i of items) { const k = i[rubroKey]; if (k) m[k] = (m[k] || 0) + 1; }
     return m;
   }, [items, rubroKey]);
+
+  // Conteo por proveedor (solo cuando se pasa proveedorFn, es decir, en la tab Materiales).
+  const proveedorCounts = useMemo(() => {
+    if (!proveedorFn) return {};
+    const m = {};
+    for (const i of items) { const k = proveedorFn(i); if (k) m[k] = (m[k] || 0) + 1; }
+    return m;
+  }, [items, proveedorFn]);
 
   const startAdd  = () => { setForm({ ...emptyForm }); setSel(null); };
   const startEdit = (item) => { setForm({ ...item }); setSel(item.id); };
@@ -416,6 +427,29 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
               </div>
             );
           })}
+
+          {proveedorFn && Object.keys(proveedorCounts).length > 0 && (
+            <>
+              <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, padding: '0 4px', marginBottom: 6, marginTop: 12, borderTop: `1px solid ${T.faint2}`, paddingTop: 10 }}>Por proveedor</div>
+              <div onClick={() => setSelProveedor('')}
+                style={{ padding: '4px 8px', borderRadius: 3, cursor: 'pointer', fontWeight: !selProveedor ? 700 : 400, fontSize: 11, background: !selProveedor ? T.accentSoft : 'transparent', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                <span style={{ color: !selProveedor ? T.ink : T.ink2 }}>Todos</span>
+                <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono }}>{items.length}</span>
+              </div>
+              {PROVEEDORES.filter(p => proveedorCounts[p.label] > 0).map(p => {
+                const count = proveedorCounts[p.label] || 0;
+                const isOn  = selProveedor === p.label;
+                return (
+                  <div key={p.id} onClick={() => setSelProveedor(p.label)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 3, cursor: 'pointer', background: isOn ? T.accentSoft : 'transparent', borderLeft: `2px solid ${isOn ? p.color : 'transparent'}`, marginBottom: 1 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color, flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 11, color: isOn ? T.ink : T.ink2, fontWeight: isOn ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</span>
+                    <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono, flexShrink: 0 }}>{count}</span>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </Box>
       )}
 
@@ -1417,12 +1451,14 @@ export default function Catalogos() {
               onDelete={id => remove('materiales', id)}
               rubros={rs}
               rubroKey="rubro"
+              proveedorFn={proveedorDeMaterial}
               cols={[
                 { key: 'codigo', label: 'Código', mono: true },
                 { key: 'nombre', label: 'Nombre' },
                 precioCol, usdCol,
                 { key: 'unidad', label: 'Unidad' },
                 { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
+                { key: '_proveedor', label: 'Proveedor', render: (_v, item) => { const lbl = proveedorDeMaterial(item); const col = colorProveedor(lbl); return <span style={{ fontSize: 10, background: col+'22', color: col, padding: '2px 6px', borderRadius: 3, fontWeight: 700, whiteSpace: 'nowrap' }}>{lbl}</span>; } },
                 { key: 'updatedAt', label: 'Actualizado', mono: true },
               ]}
               emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, moneda: 'ARS', rubro: rs[0] || '', updatedAt: today() }}
