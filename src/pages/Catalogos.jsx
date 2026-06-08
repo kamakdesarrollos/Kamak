@@ -4,7 +4,7 @@ import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Divider } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
-import { PROVEEDORES, proveedorDeMaterial, colorProveedor } from '../lib/proveedoresMateriales';
+import { PROVEEDORES, proveedorDeMaterial, proveedorDeRubro, colorProveedor } from '../lib/proveedoresMateriales';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { useDolar } from '../store/DolarContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex, aplicarDolarItems } from '../lib/apuPriceResolver';
@@ -351,7 +351,65 @@ const ordenarRubros = (a, b) => {
   return String(a).localeCompare(String(b), 'es');
 };
 
-function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm, rubroKey = 'rubro', rubros, proveedorFn }) {
+// Select OBLIGATORIO "Grupo de materiales" (los 14 PROVEEDORES). Vive en su propio
+// componente porque necesita hooks para: (a) al CREAR, prefijar el grupo con
+// proveedorDeRubro(rubro) como SUGERENCIA cuando el usuario elige/escribe un rubro,
+// dejando que lo cambie a mano; (b) al EDITAR un material sin grupo guardado,
+// inicializarlo con proveedorDeMaterial(m). Escribe form.grupo (el label) para que
+// el material lo persista y la columna "Proveedor" lo respete.
+function MaterialGrupoSelect({ form, setForm }) {
+  const creando = !form.id; // emptyForm no trae id; un material existente sí.
+  // Recuerda el último valor auto-sugerido para distinguir "el usuario lo eligió a
+  // mano" de "lo pusimos nosotros": si el grupo actual sigue siendo el sugerido (o
+  // está vacío) lo re-sugerimos al cambiar el rubro; si lo cambió, no lo pisamos.
+  const sugeridoRef = useRef(null);
+
+  // Inicialización: dejamos el grupo como un LABEL canónico de los 14 para que el
+  // <select> (cuyas options usan p.label) lo matchee y se persista bien.
+  //  · sin grupo guardado → sugerimos (creando: por rubro; editando: proveedorDeMaterial).
+  //  · con grupo guardado como id/label no-canónico (ej. 'corralon') → lo canonizamos
+  //    vía proveedorDeMaterial, que respeta m.grupo y devuelve el label.
+  useEffect(() => {
+    const g = (form.grupo || '').trim();
+    const esLabelCanonico = PROVEEDORES.some(p => p.label === g);
+    if (esLabelCanonico) { sugeridoRef.current = g; return; }
+    const inicial = (creando && !g) ? proveedorDeRubro(form.rubro) : proveedorDeMaterial(form);
+    sugeridoRef.current = inicial;
+    setForm(f => ({ ...f, grupo: inicial }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Al CREAR: si cambia el rubro y el grupo sigue siendo el último sugerido (o
+  // está vacío), re-sugerimos por el nuevo rubro. Si el usuario ya lo cambió a
+  // mano, respetamos su elección.
+  useEffect(() => {
+    if (!creando) return;
+    const actual = (form.grupo || '').trim();
+    if (actual && actual !== (sugeridoRef.current || '').trim()) return; // elegido a mano
+    const sug = proveedorDeRubro(form.rubro);
+    if (sug === actual) return;
+    sugeridoRef.current = sug;
+    setForm(f => ({ ...f, grupo: sug }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.rubro]);
+
+  const sinGrupo = !form.grupo || !String(form.grupo).trim();
+  return (
+    <FRow label="Grupo de materiales *">
+      <select
+        style={{ ...inputSt, cursor: 'pointer', borderColor: sinGrupo ? T.accent : T.faint2 }}
+        value={form.grupo || ''}
+        onChange={e => { sugeridoRef.current = null; setForm(f => ({ ...f, grupo: e.target.value })); }}
+      >
+        <option value="" disabled>Elegí un grupo…</option>
+        {PROVEEDORES.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}
+      </select>
+      {sinGrupo && <div style={{ fontSize: 10.5, color: T.accent, marginTop: 2 }}>Obligatorio para guardar el material.</div>}
+    </FRow>
+  );
+}
+
+function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm, rubroKey = 'rubro', rubros, proveedorFn, validate }) {
   const isMobile = useIsMobile();
   const [sel, setSel] = useState(null);
   const [form, setForm] = useState(null);
@@ -396,8 +454,10 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
   const startAdd  = () => { setForm({ ...emptyForm }); setSel(null); };
   const startEdit = (item) => { setForm({ ...item }); setSel(item.id); };
   const cancel    = () => { setForm(null); setSel(null); setLastAddedId(null); };
+  const formValido = !validate || !form || validate(form);
   const save = () => {
     if (!form) return;
+    if (!formValido) return; // p.ej. material sin grupo: no se puede guardar
     if (sel) onUpdate(sel, form);
     else onAdd(form);
     setForm(null); setSel(null); setLastAddedId(null);
@@ -534,7 +594,7 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
           {renderForm(form, setForm)}
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
             <Btn sm onClick={cancel} style={{ flex: 1 }}>Cancelar</Btn>
-            <Btn sm fill onClick={save} style={{ flex: 1 }}>Guardar</Btn>
+            <Btn sm fill onClick={save} style={{ flex: 1, opacity: formValido ? 1 : 0.4, pointerEvents: formValido ? 'auto' : 'none' }}>Guardar</Btn>
           </div>
         </Box>
       )}
@@ -1461,7 +1521,8 @@ export default function Catalogos() {
                 { key: '_proveedor', label: 'Proveedor', render: (_v, item) => { const lbl = proveedorDeMaterial(item); const col = colorProveedor(lbl); return <span style={{ fontSize: 10, background: col+'22', color: col, padding: '2px 6px', borderRadius: 3, fontWeight: 700, whiteSpace: 'nowrap' }}>{lbl}</span>; } },
                 { key: 'updatedAt', label: 'Actualizado', mono: true },
               ]}
-              emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, moneda: 'ARS', rubro: rs[0] || '', updatedAt: today() }}
+              emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, moneda: 'ARS', rubro: rs[0] || '', grupo: '', updatedAt: today() }}
+              validate={f => !!(f.grupo && String(f.grupo).trim())}
               renderForm={(form, setForm) => (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -1474,6 +1535,7 @@ export default function Catalogos() {
                     <input list="mat-rubros" style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))} placeholder="Elegí o escribí un rubro…" />
                     <datalist id="mat-rubros">{rs.map(r => <option key={r} value={r} />)}</datalist>
                   </FRow>
+                  <MaterialGrupoSelect key={form.id || 'nuevo'} form={form} setForm={setForm} />
                 </>
               )}
             />
