@@ -571,6 +571,24 @@ export default function Tareas() {
     });
   }, [tareas, tab, filtroPrio, filtroObra, currentUser, isAdmin]);
 
+  // Agrupado por OBRA dentro de la solapa (persona). El orden de los grupos sigue
+  // la urgencia (la obra aparece según su tarea más urgente); "Sin obra" al final.
+  const grupos = useMemo(() => {
+    const map = new Map();
+    for (const t of tareasVisibles) {
+      const k = t.obraId || '__sin__';
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(t);
+    }
+    const arr = [...map.entries()].map(([k, items]) => ({
+      key: k,
+      obraNombre: k === '__sin__' ? 'Sin obra' : (obras.find(o => o.id === k)?.nombre || 'Obra'),
+      items,
+    }));
+    arr.sort((a, b) => (a.key === '__sin__' ? 1 : 0) - (b.key === '__sin__' ? 1 : 0));
+    return arr;
+  }, [tareasVisibles, obras]);
+
   // KPIs del usuario de la solapa activa (en 'Completadas', del usuario actual).
   const kpiUserId = tab === 'completadas' ? currentUser?.id : tab;
   const kpis = useMemo(() => {
@@ -699,27 +717,37 @@ export default function Tareas() {
                 No hay tareas en esta vista.
               </div>
             ) : (
-              tareasVisibles.map(t => (
-                <TareaRow
-                  key={t.id}
-                  tarea={t}
-                  currentUser={currentUser}
-                  usuarios={usuarios}
-                  obras={obras}
-                  solapaUserId={solapaEsUsuario ? tab : null}
-                  expanded={expandedId === t.id}
-                  onToggleExpand={() => setExpandedId(expandedId === t.id ? null : t.id)}
-                  onEdit={() => setEditingId(t.id)}
-                  toggleItem={toggleItem}
-                  addItem={addItem}
-                  addComentario={addComentario}
-                  setItemObservacion={setItemObservacion}
-                  setItemTexto={setItemTexto}
-                  setItemAsignado={setItemAsignado}
-                  addAdjunto={addAdjunto}
-                  removeAdjunto={removeAdjunto}
-                  isAdmin={isAdmin}
-                />
+              grupos.map(g => (
+                <div key={g.key}>
+                  {/* Banda de la obra (agrupado por obra dentro de la solapa) */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', background: '#f3efe2', borderTop: `1px solid ${T.faint2}`, borderBottom: `1px solid ${T.faint2}` }}>
+                    <span style={{ fontSize: 12 }}>🏗️</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: T.ink, textTransform: 'uppercase', letterSpacing: 0.4 }}>{g.obraNombre}</span>
+                    <span style={{ fontSize: 9.5, fontFamily: T.fontMono, color: T.ink3, fontWeight: 700, background: T.faint2, borderRadius: 8, padding: '1px 6px' }}>{g.items.length}</span>
+                  </div>
+                  {g.items.map(t => (
+                    <TareaRow
+                      key={t.id}
+                      tarea={t}
+                      currentUser={currentUser}
+                      usuarios={usuarios}
+                      obras={obras}
+                      solapaUserId={solapaEsUsuario ? tab : null}
+                      expanded={expandedId === t.id}
+                      onToggleExpand={() => setExpandedId(expandedId === t.id ? null : t.id)}
+                      onEdit={() => setEditingId(t.id)}
+                      toggleItem={toggleItem}
+                      addItem={addItem}
+                      addComentario={addComentario}
+                      setItemObservacion={setItemObservacion}
+                      setItemTexto={setItemTexto}
+                      setItemAsignado={setItemAsignado}
+                      addAdjunto={addAdjunto}
+                      removeAdjunto={removeAdjunto}
+                      isAdmin={isAdmin}
+                    />
+                  ))}
+                </div>
               ))
             )}
           </div>
