@@ -102,7 +102,7 @@ export async function crearProspecto({ nombreObra, clienteNombre, usuario, telef
   const nueva = {
     id: newId('obra'), nombre: nombreOportunidad, cliente: cliente?.nombre || cliNombre || '', clienteId: cliente?.id || null,
     estado: 'en-presupuesto', moneda: 'USD', presupuesto: 0, gastado: 0, avance: 0, margen: 0, direccion: '', tipo: 'Otro',
-    notas: nota || '',
+    notas: nota || '', esLead: true,   // primer contacto: lead, no aparece en "En presupuesto" hasta iniciarlo
     venta: { etapa: 'prospecto', responsable: usuario || null, origen: 'whatsapp', fechaCambioEtapa: today, motivoPerdida: null, changelog: [{ etapa: 'prospecto', fecha: today, usuario: usuario || 'bot' }] },
     createdAt: new Date().toISOString(), created_by: usuario || 'bot',
   };

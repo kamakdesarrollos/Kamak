@@ -533,7 +533,11 @@ export default function Obras() {
   }, [searchParams]);
 
   const activas      = byEstado('activa').filter(puedeVer);
-  const enPresu      = byEstado('en-presupuesto').filter(puedeVer);
+  // Los leads (primer contacto) NO aparecen acá hasta que se les inicia el
+  // presupuesto: o con el botón "Iniciar presupuesto" del embudo (limpia esLead),
+  // o cuando ya tienen rubros cargados (= ya les estás armando el presupuesto).
+  const enPresu      = byEstado('en-presupuesto').filter(puedeVer)
+    .filter(o => !o.esLead || ((detalles?.[o.id]?.rubros?.length || 0) > 0));
   const finalizadas  = byEstado('finalizada').filter(puedeVer);
   const archivadas   = byEstado('archivada').filter(puedeVer);
 

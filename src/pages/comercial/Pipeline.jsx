@@ -27,7 +27,7 @@ const tint = (hex, a) => {
 };
 
 export default function Pipeline() {
-  const { obras, getDetalle, setVentaEtapa, addObra } = useObras();
+  const { obras, getDetalle, setVentaEtapa, addObra, updateObra } = useObras();
   const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
@@ -89,7 +89,7 @@ export default function Pipeline() {
     // Se setea venta.etapa DENTRO de addObra (atómico). No usar setVentaEtapa acá:
     // la obra recién creada todavía no está en obrasRef y setVentaEtapa la ignora.
     const venta = { etapa: 'prospecto', fechaCambioEtapa: hoy, changelog: [{ etapa: 'prospecto', fecha: hoy, usuario: currentUser?.id || null }] };
-    const obraId = addObra({ nombre, cliente: clienteNombre, clienteId: cid, tipo: 'Otro', presupuesto: 0, notas: nota || '', venta });
+    const obraId = addObra({ nombre, cliente: clienteNombre, clienteId: cid, tipo: 'Otro', presupuesto: 0, notas: nota || '', venta, esLead: true });
     addActividad({
       clienteId: cid,
       obraId,
@@ -206,6 +206,13 @@ export default function Pipeline() {
                         {obra.tipo && <span style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 'clamp(50px, 8vw, 65px)' : 100 }}>{obra.tipo}</span>}
                       </span>
                     </div>
+                    {obra.esLead && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); updateObra(obra.id, { esLead: false }); navigate(`/obras/${obra.id}/presupuesto`); }}
+                        title="Pasarlo a 'En presupuesto' y empezar a cotizar"
+                        style={{ marginTop: 8, width: '100%', fontSize: 11, fontWeight: 700, color: meta.color, background: tint(meta.color, 0.1), border: `1px solid ${meta.color}`, borderRadius: 5, padding: '4px 6px', cursor: 'pointer', fontFamily: T.font }}
+                      >▶ Iniciar presupuesto</button>
+                    )}
                   </div>
                 );
               })}
