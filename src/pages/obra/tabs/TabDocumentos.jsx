@@ -4,6 +4,7 @@ import { T } from '../../../theme';
 import { supabase } from '../../../lib/supabase';
 import { newId } from '../../../lib/id';
 import { FInput, FSelect, FormPanel } from '../forms';
+import { useUsuarios } from '../../../store/UsuariosContext';
 
 const TIPOS_DOC = ['Contrato', 'Presupuesto', 'Planos', 'Certificado', 'Factura', 'Permiso', 'Otro'];
 // Carpetas de documentos siempre disponibles. Podés crear más con "+ Carpeta".
@@ -20,6 +21,14 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
   const [uploading,    setUploading]    = useState(false);
   const [uploadErr,    setUploadErr]    = useState('');
   const fileRef = useRef(null);
+  const { currentUser } = useUsuarios();
+  // El Ingeniero externo (tercerizado) NO ve CONTRATOS (ni la carpeta Contratos):
+  // son documentos comerciales/sensibles. Solo ve el resto de los archivos/planos.
+  const esExterno = currentUser?.rol === 'Ingeniero externo';
+  const esContratoDoc = (d) => d.tipo === 'Contrato' || (d.carpeta || '') === 'Contratos';
+  const docsBase = esExterno
+    ? (detalle.documentos || []).filter(d => !esContratoDoc(d))
+    : (detalle.documentos || []);
 
   const resetAndClose = () => {
     setAdding(false);
@@ -98,11 +107,12 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
   const [carpetaSel,    setCarpetaSel]    = useState('todos');
   const [carpetasExtra, setCarpetasExtra] = useState([]);
   const carpetaActiva = carpetaSel === 'todos' ? '' : carpetaSel;
-  const usadas = Array.from(new Set((detalle.documentos || []).map(d => d.carpeta).filter(Boolean)));
-  const carpetas = Array.from(new Set([...CARPETAS_DOC_BASE, ...carpetasExtra, ...usadas]));
+  const usadas = Array.from(new Set(docsBase.map(d => d.carpeta).filter(Boolean)));
+  const carpetas = Array.from(new Set([...CARPETAS_DOC_BASE, ...carpetasExtra, ...usadas]))
+    .filter(c => !(esExterno && c === 'Contratos'));   // el externo no ve la carpeta Contratos
   const docsFiltrados = carpetaSel === 'todos'
-    ? (detalle.documentos || [])
-    : (detalle.documentos || []).filter(d => (d.carpeta || '') === carpetaSel);
+    ? docsBase
+    : docsBase.filter(d => (d.carpeta || '') === carpetaSel);
   const moverDoc = (id, carpeta) => patch(d => ({ ...d, documentos: d.documentos.map(dc => dc.id === id ? { ...dc, carpeta } : dc) }));
 
   return (
@@ -115,7 +125,7 @@ export default function TabDocumentos({ detalle, patch, obraId }) {
           documentos que subas. "+ Carpeta" crea una nueva. */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
         {['todos', ...carpetas].map(c => {
-          const count = c === 'todos' ? (detalle.documentos || []).length : (detalle.documentos || []).filter(d => (d.carpeta || '') === c).length;
+          const count = c === 'todos' ? docsBase.length : docsBase.filter(d => (d.carpeta || '') === c).length;
           const on = carpetaSel === c;
           return (
             <span key={c} onClick={() => setCarpetaSel(c)}
