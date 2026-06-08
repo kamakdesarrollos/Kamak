@@ -24,6 +24,7 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             if (id.includes('@supabase')) return 'supabase';
             if (id.includes('jszip')) return 'jszip';
+            if (id.includes('/xlsx/')) return 'xlsx';
             if (id.includes('react-router')) return 'router';
             if (id.includes('react-dom') || (/\/react\//.test(id) && !id.includes('react-router'))) return 'react';
           }
