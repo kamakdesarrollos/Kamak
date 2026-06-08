@@ -12,6 +12,7 @@ import { ccObra, cobradoObraUSD } from '../obra/helpers';
 import { ETAPA_META, etapaEfectiva, esArrastrableEnEmbudo } from '../../lib/ventaEtapa';
 import { derivaClienteEstado } from '../../lib/derivaClienteEstado';
 import { fmtN, fmtFecha } from '../../lib/format';
+import { googleCalendarUrl } from '../../lib/calendarLinks';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 
 const TIPO_ICON = {
@@ -82,6 +83,18 @@ export default function ClienteFicha360Modal({ cliente, onClose }) {
             <input type="date" value={cliente.fechaProximoContacto || ''}
               onChange={e => updateCliente(cliente.id, { fechaProximoContacto: e.target.value || null })}
               style={{ padding: '3px 6px', border: `1px solid ${T.faint2}`, borderRadius: 4, fontSize: 12, fontFamily: T.font, flex: isMobile ? 1 : 'none' }} />
+            {cliente.fechaProximoContacto && (
+              <a
+                href={googleCalendarUrl({
+                  titulo: `Contactar a ${cliente.nombre}`,
+                  fecha: cliente.fechaProximoContacto,
+                  detalles: [`Cliente Kamak: ${cliente.nombre}`, cliente.telefono && `Tel: ${cliente.telefono}`, respNombre && `Responsable: ${respNombre}`].filter(Boolean).join('\n'),
+                })}
+                target="_blank" rel="noreferrer"
+                title="Agendar este contacto en Google Calendar"
+                style={{ fontSize: 11, fontWeight: 700, color: T.accent, textDecoration: 'none', whiteSpace: 'nowrap', padding: '3px 8px', border: `1px solid ${T.faint2}`, borderRadius: 4, background: T.faint }}
+              >📅 Agendar</a>
+            )}
           </div>
         </div>
 

@@ -16,6 +16,7 @@ import { fmtN } from '../../lib/format';
 import { Btn } from '../../components/ui';
 import PerdidaModal from './PerdidaModal';
 import PrimerContactoModal from './PrimerContactoModal';
+import ClienteFicha360Modal from '../Clientes/ClienteFicha360Modal';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 
 // Convierte un hex (#rrggbb) a rgba con alpha — para tintes suaves de columna.
@@ -45,6 +46,7 @@ export default function Pipeline() {
   const [dragOver, setDragOver] = useState(null);  // etapa bajo el cursor
   const [perdida, setPerdida] = useState(null);    // { obraId, nombre } -> modal
   const [nuevoContacto, setNuevoContacto] = useState(false);  // modal "+ Primer contacto"
+  const [fichaCliente, setFichaCliente] = useState(null);     // panel de info al click en una card
 
   // Una oportunidad por obra VISIBLE (las terminadas no van al board), con su
   // etapa efectiva y su monto USD.
@@ -96,6 +98,14 @@ export default function Pipeline() {
       usuario: currentUser?.id || null,
     });
     setNuevoContacto(false);
+  };
+
+  // Click en una card del embudo: abre la ficha 360 del cliente de esa oportunidad.
+  const abrirFicha = (obra) => {
+    const cli = clientes.find(c => c.id === obra.clienteId)
+      || (obra.cliente && clientes.find(c => (c.nombre || '').trim().toLowerCase() === obra.cliente.trim().toLowerCase()))
+      || null;
+    if (cli) setFichaCliente(cli);
   };
 
   return (
@@ -168,7 +178,8 @@ export default function Pipeline() {
                     draggable={arrastrable}
                     onDragStart={() => { if (arrastrable) setDrag(obra.id); }}
                     onDragEnd={() => { setDrag(null); setDragOver(null); }}
-                    title={arrastrable ? undefined : 'Obra confirmada — se gestiona desde Obras'}
+                    onClick={() => { if (!drag) abrirFicha(obra); }}
+                    title={arrastrable ? 'Ver ficha del cliente' : 'Obra confirmada — clic para ver la ficha del cliente'}
                     style={{
                       background: '#fff',
                       border: `1px solid ${T.faint2}`,
@@ -237,6 +248,10 @@ export default function Pipeline() {
           onClose={() => setNuevoContacto(false)}
           onCrear={crearPrimerContacto}
         />
+      )}
+
+      {fichaCliente && (
+        <ClienteFicha360Modal cliente={fichaCliente} onClose={() => setFichaCliente(null)} />
       )}
     </PageLayout>
   );
