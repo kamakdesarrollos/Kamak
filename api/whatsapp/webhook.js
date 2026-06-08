@@ -5,6 +5,10 @@ import { extractSlots, mergeSlots, slotsCompletosPara, parseDictado } from './ex
 // Acciones comerciales (crear prospecto / mover etapa) — módulo aparte para no
 // inflar este handler. Escrituras atómicas; gateadas a Admin en ejecutarAccion.
 import { crearProspecto, moverEtapaObra } from './intents-comercial.js';
+// Agrupación de materiales por "proveedor tipo" (corralón, electricidad, etc.).
+// Lógica PURA compartida con la app — se reusa para el atajo NL "lista de
+// materiales de [obra] del [proveedor]". ESM hermano, importable (type:module).
+import { proveedorDeMaterial, labelProveedor, PROVEEDORES } from '../../src/lib/proveedoresMateriales.js';
 
 const META_TOKEN      = process.env.META_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
@@ -3547,6 +3551,71 @@ function pideCCProveedor(texto) {
   return null;
 }
 
+// "pasame la lista del corralón de la obra Km711" / "materiales de electricidad
+// de Km711" / "cotización de sanitarios en Shell Ruta 3" → { obraQuery, grupoQuery }.
+// Atajo READ-ONLY: lista de materiales de una obra filtrados por proveedor tipo.
+// EXIGE 'material(es)' o 'cotiz' o 'lista de' para no chocar con otros detectores.
+function pideCotizarProveedor(texto) {
+  const t = (texto || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[¡!¿?.,;:]/g, '');
+  if (!t) return null;
+  // Gatillo: tiene que hablar de materiales / cotización / "lista de".
+  if (!/\b(materiales?|cotiz\w*)\b/.test(t) && !/\blista de\b/.test(t)) return null;
+
+  // Sinónimos laxos → label canónico de PROVEEDORES. La PRIMERA keyword que
+  // aparezca en el texto define el grupo (orden de especificidad razonable).
+  const SINONIMOS = [
+    [['corralon', 'corralones', 'ferreteria de obra'], 'Corralón de materiales'],
+    [['electricidad', 'electrico', 'electrica', 'casa de electricidad'], 'Casa de electricidad'],
+    [['sanitarios', 'sanitario', 'plomeria', 'plomero'], 'Sanitarios / Plomería'],
+    [['revestimientos', 'revestimiento', 'ceramicos', 'porcelanato', 'pisos'], 'Casa de revestimientos'],
+    [['pintureria', 'pinturas', 'pintura'], 'Pinturería'],
+    [['aberturas', 'abertura', 'ventanas', 'puertas'], 'Aberturas'],
+    [['maderera', 'madera', 'maderas', 'carpinteria'], 'Maderera / Carpintería'],
+    [['vidrieria', 'vidrio', 'vidrios', 'cristales', 'espejos'], 'Vidriería'],
+    [['marmoleria', 'marmol', 'marmoles', 'granito', 'granitos'], 'Marmolería'],
+    [['durlock', 'construccion en seco', 'steel framing', 'placa de yeso'], 'Construcción en seco'],
+    [['climatizacion', 'equipamiento', 'aire acondicionado', 'calefaccion'], 'Climatización / Equipamiento'],
+    [['ferreteria', 'herrajes', 'herraje', 'herramientas'], 'Ferretería / Herrajes'],
+    [['mobiliario', 'muebles', 'amoblamiento'], 'Mobiliario (San Francisco)'],
+    [['grafica', 'cartel', 'carteles', 'carteleria', 'senaletica'], 'Gráfica'],
+    [['servicios', 'logistica', 'alquiler'], 'Servicios / Otros'],
+  ];
+  let grupoQuery = null;
+  let grupoIdx = -1; // posición del keyword en el texto, para poder recortar la obra
+  let grupoKw = '';
+  for (const [kws, label] of SINONIMOS) {
+    for (const kw of kws) {
+      const idx = t.indexOf(kw);
+      if (idx >= 0 && (grupoIdx === -1 || idx < grupoIdx)) {
+        grupoQuery = label; grupoIdx = idx; grupoKw = kw;
+      }
+    }
+  }
+
+  // Obra: lo que viene tras "de la obra" / "obra" / "en" / "de" / "para".
+  // Probamos los conectores más específicos primero.
+  let obraQuery = '';
+  const conectores = [/de la obra\s+(.+)$/, /\bobra\s+(.+)$/, /\bpara\s+(.+)$/, /\ben\s+(.+)$/, /\bde\s+(.+)$/];
+  // Si tenemos keyword del grupo, recortamos lo que está DESPUÉS del grupo para
+  // no capturar el propio nombre del proveedor como obra ("de electricidad de X").
+  const cola = grupoIdx >= 0 ? t.slice(grupoIdx + grupoKw.length) : t;
+  for (const re of conectores) {
+    const m = cola.match(re);
+    if (m && m[1]) {
+      obraQuery = m[1].trim()
+        // limpiar palabras de relleno frecuentes al inicio
+        .replace(/^(la\s+obra|obra|de|del|en|para)\s+/i, '')
+        .trim();
+      if (obraQuery.length > 1) break;
+      obraQuery = '';
+    }
+  }
+
+  // Sin grupo Y sin obra no hay nada útil que hacer (lo agarra Claude).
+  if (!grupoQuery && !obraQuery) return null;
+  return { obraQuery: obraQuery || '', grupoQuery: grupoQuery || '' };
+}
+
 // "dejá nota en Baradero: faltan ladrillos" → { obra, texto }.
 function pideNotaObra(texto) {
   const t = (texto || '').trim();
@@ -3651,6 +3720,120 @@ function pideTareas(texto) {
   return false;
 }
 
+// Normalizador para match de nombres (minúsculas + sin acentos + trim). Igual al
+// searchNorm de la app, para reusar el índice del catálogo por nombre.
+function _norm(s) {
+  return String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+}
+
+// Handler del atajo "lista de materiales de [obra] del [proveedor]". READ-ONLY:
+// cualquier usuario del bot puede pedirlo. Devuelve el texto WhatsApp (Markdown-WA).
+//   1) resuelve la obra por nombre (match laxo como en como_va_obra)
+//   2) matchea el grupoQuery a un label EXACTO de PROVEEDORES
+//   3) junta materiales del detalle (rubros[].tareas[].receta.materiales o, si la
+//      tarea no tiene receta, los del APU del catálogo por nombre)
+//   4) resuelve el proveedor de cada material (grupo guardado o vía rubro del
+//      catálogo por nombre) y filtra los del grupo pedido, agregando por nombre.
+async function cotizarProveedorObra({ obraQuery, grupoQuery }, ctx) {
+  // (a) obra ─────────────────────────────────────────────────────────────────
+  const oq = (obraQuery || '').toLowerCase().trim();
+  if (!oq) {
+    return '🤔 ¿De qué obra? Ej: *materiales del corralón de Km711*';
+  }
+  const obra = ctx.obras.find(o =>
+    o.id?.toLowerCase() === oq ||
+    o.nombre?.toLowerCase().includes(oq) ||
+    oq.includes(o.nombre?.toLowerCase())
+  );
+  if (!obra) {
+    const activas = ctx.obras.slice(0, 6).map(o => o.nombre).join(', ');
+    return `❌ No encontré una obra con "${obraQuery}". Obras: ${activas}`;
+  }
+
+  // (b) grupo → label exacto de PROVEEDORES ────────────────────────────────────
+  let grupoLabel = grupoQuery || '';
+  if (grupoLabel) {
+    const lbl = labelProveedor(grupoLabel);
+    const ok = PROVEEDORES.some(p => p.label === lbl);
+    grupoLabel = ok ? lbl : '';
+  }
+  if (!grupoLabel) {
+    const lista = PROVEEDORES.map(p => `• ${p.label}`).join('\n');
+    return `🤔 ¿De qué proveedor? Decime uno de:\n${lista}`;
+  }
+
+  // (c) juntar materiales del detalle ──────────────────────────────────────────
+  const det = ctx.detalles?.[obra.id] || {};
+  // Índice del catálogo por nombre normalizado (materiales: traen rubro/grupo;
+  // tareas: traen su receta de materiales para tareas sin receta propia).
+  const catalog = (await loadSharedData('catalog')) || {};
+  const catMatByNombre = new Map();
+  for (const cm of (catalog.materiales || [])) {
+    if (!cm?.nombre) continue;
+    const k = _norm(cm.nombre);
+    if (!catMatByNombre.has(k)) catMatByNombre.set(k, cm);
+  }
+  const catTareaByNombre = new Map((catalog.tareas || []).map(ct => [ct.nombre, ct]));
+
+  // nombreMaterial → { nombre, unidad, cantidad }
+  const acumulado = new Map();
+  for (const rubro of (det.rubros || [])) {
+    for (const t of (rubro.tareas || []).filter(t => t.tipo !== 'seccion' && t.cantidad != null)) {
+      const recipeMats = (t.receta?.materiales || []).length > 0
+        ? t.receta.materiales
+        : (catTareaByNombre.get(t.nombre)?.materiales || []);
+      for (const m of recipeMats) {
+        if (!m?.nombre) continue;
+        // Cantidad por unidad de tarea (mismo cálculo que ObraPresupuesto): si el
+        // costoUnit no cuadra con cantidad*precio, derivar cantidad de costoUnit.
+        const stored = m.cantidad || 0;
+        const precio = m.precio || 0;
+        const costoUnit = m.costoUnit || 0;
+        let cantUnit = stored;
+        if (stored > 0 && precio > 0 && costoUnit > 0 && Math.abs(stored * precio - costoUnit) > costoUnit * 0.01 + 0.01) {
+          cantUnit = costoUnit / precio;
+        } else if (stored === 0 && precio > 0 && costoUnit > 0) {
+          cantUnit = costoUnit / precio;
+        }
+        const qty = cantUnit * (t.cantidad || 0);
+
+        // Resolver el proveedor del material. La receta NO trae rubro/grupo, así
+        // que lo buscamos en el catálogo por nombre (que sí tiene grupo/rubro).
+        const catMat = catMatByNombre.get(_norm(m.nombre));
+        const proveedor = proveedorDeMaterial(
+          catMat
+            ? { grupo: catMat.grupo, rubro: catMat.rubro, nombre: m.nombre }
+            : { grupo: m.grupo, rubro: m.rubro, nombre: m.nombre }
+        );
+        if (proveedor !== grupoLabel) continue;
+
+        const key = _norm(m.nombre);
+        if (acumulado.has(key)) {
+          acumulado.get(key).cantidad += qty;
+        } else {
+          acumulado.set(key, { nombre: m.nombre, unidad: m.unidad || (catMat?.unidad || ''), cantidad: qty });
+        }
+      }
+    }
+  }
+
+  // (d) respuesta WhatsApp ─────────────────────────────────────────────────────
+  const items = [...acumulado.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  if (!items.length) {
+    return `🧾 *Materiales de ${grupoLabel}* — ${obra.nombre}\n\nNo hay materiales de este proveedor en el presupuesto de la obra.`;
+  }
+  const fmtCant = n => {
+    const r = Math.round((n + Number.EPSILON) * 100) / 100;
+    return r.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  };
+  const CAP = 30;
+  const visibles = items.slice(0, CAP);
+  let r = `🧾 *Materiales de ${grupoLabel}* — ${obra.nombre}\n\n`;
+  r += visibles.map(it => `• ${it.nombre} — ${fmtCant(it.cantidad)}${it.unidad ? ' ' + it.unidad : ''}`).join('\n');
+  if (items.length > CAP) r += `\n…y ${items.length - CAP} más`;
+  return r;
+}
+
 async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv) {
   const ctx = await getSystemContext();
 
@@ -3700,6 +3883,15 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     const obraQuery = pideEstadoObra(messageText);
     if (obraQuery) {
       const respuesta = await ejecutarComando('como_va_obra', { obra: obraQuery }, { ...user, phone }, ctx);
+      await sendWA(phone, respuesta);
+      return;
+    }
+    // "materiales del corralón de Km711" → lista de materiales filtrada por
+    // proveedor. ANTES de cc/saldo para que "materiales del corralón en X" no
+    // se confunda con un saldo de cuenta corriente.
+    const cotiz = pideCotizarProveedor(messageText);
+    if (cotiz) {
+      const respuesta = await cotizarProveedorObra(cotiz, ctx);
       await sendWA(phone, respuesta);
       return;
     }

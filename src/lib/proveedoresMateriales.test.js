@@ -8,8 +8,8 @@ import {
 } from './proveedoresMateriales';
 
 describe('PROVEEDORES — catálogo de proveedores tipo', () => {
-  it('son 14 proveedores tipo', () => {
-    expect(PROVEEDORES).toHaveLength(14);
+  it('son 15 proveedores tipo', () => {
+    expect(PROVEEDORES).toHaveLength(15);
   });
   it('cada uno tiene id (kebab-case), label y color distinto', () => {
     const ids = new Set();
@@ -24,10 +24,10 @@ describe('PROVEEDORES — catálogo de proveedores tipo', () => {
       ids.add(p.id);
       colors.add(p.color);
     }
-    expect(ids.size).toBe(14); // ids únicos
-    expect(colors.size).toBe(14); // colores únicos
+    expect(ids.size).toBe(15); // ids únicos
+    expect(colors.size).toBe(15); // colores únicos
   });
-  it('incluye los 14 labels aprobados', () => {
+  it('incluye los 15 labels aprobados', () => {
     const labels = PROVEEDORES.map((p) => p.label);
     for (const l of [
       'Corralón de materiales',
@@ -43,6 +43,7 @@ describe('PROVEEDORES — catálogo de proveedores tipo', () => {
       'Climatización / Equipamiento',
       'Ferretería / Herrajes',
       'Mobiliario (San Francisco)',
+      'Gráfica',
       'Servicios / Otros',
     ]) {
       expect(labels).toContain(l);
@@ -113,9 +114,11 @@ describe('proveedorDeRubro — mapea rubro real → proveedor tipo', () => {
     expect(proveedorDeRubro('Mobiliario Shop Express')).toBe('Mobiliario (San Francisco)');
     expect(proveedorDeRubro('Amoblamiento para Cocinas, Placares y Vestidores')).toBe('Mobiliario (San Francisco)');
   });
+  it('Gráfica', () => {
+    expect(proveedorDeRubro('46 - GRAFICA')).toBe('Gráfica');
+  });
   it('Servicios / Otros', () => {
     expect(proveedorDeRubro('Herramientas y Servicios (Alquiler)')).toBe('Servicios / Otros');
-    expect(proveedorDeRubro('46 - GRAFICA')).toBe('Servicios / Otros');
     expect(proveedorDeRubro('47 - LOGISTICA')).toBe('Servicios / Otros');
   });
 
