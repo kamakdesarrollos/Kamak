@@ -11,7 +11,6 @@
     }
   ],
   "crons": [
-    { "path": "/api/whatsapp/daily-summary", "schedule": "0 10 * * *" },
     { "path": "/api/whatsapp/payment-reminders", "schedule": "0 13 * * *" },
     { "path": "/api/cron/sync-sanfrancisco", "schedule": "0 8 * * *" }
   ]
