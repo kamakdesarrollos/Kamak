@@ -17,6 +17,7 @@ const ALL_ITEMS = [
   { icon: '◎', label: 'Clientes',       path: '/clientes',     allowedRoles: ['Admin'] },
   { section: 'Administración' },
   { icon: '◉', label: 'Proveedores',    path: '/proveedores',  allowedRoles: ['Admin', 'Administración', 'Logística y compras'] },
+  { icon: '📋', label: 'Contratos',      path: '/contratos',    allowedRoles: ['Admin', 'Administración'] },
   { icon: '⇄', label: 'Movimientos',    path: '/movimientos',  perm: 'verCaja' },
   { icon: '$', label: 'Cajas',          path: '/cajas',        perm: 'verCaja' },
   { icon: '✓', label: 'Cheques',        path: '/cheques',      allowedRoles: ['Admin', 'Administración'] },
