@@ -259,10 +259,15 @@ function procesarMatriz(matriz) {
     return { lineas, periodoDesde: null, periodoHasta: null, saldoFinal: null, errores: ['El archivo está vacío.'] };
   }
 
-  // Buscar la fila de encabezado dentro de las primeras ~15 (algunos extractos
-  // traen título/razón social/CBU antes de la grilla).
+  // Buscar la PRIMER fila de encabezado (algunos extractos traen
+  // título/razón social/CBU antes de la grilla; otros, como el de Banco Nación,
+  // REPITEN el encabezado en cada sección). Usamos el PRIMER encabezado válido
+  // para fijar las posiciones de columnas; los encabezados repetidos de las
+  // secciones siguientes se descartan después como "ruido" (no son filas de
+  // datos porque su columna fecha no es una fecha). Buscamos amplio (no solo las
+  // primeras 15 filas) por si hay bastante preámbulo.
   let headerIdx = -1;
-  for (let i = 0; i < Math.min(filas.length, 15); i++) {
+  for (let i = 0; i < filas.length; i++) {
     if (pareceEncabezado(filas[i])) { headerIdx = i; break; }
   }
   if (headerIdx === -1) {
@@ -296,7 +301,17 @@ function procesarMatriz(matriz) {
 
   const fechas = [];
   let saldoFinal = null;
+  let saldoEtiquetado = null; // saldo leído de una línea "Saldo al …", si hay
 
+  // Recorremos TODO lo que sigue al primer encabezado. El extracto puede tener
+  // VARIAS SECCIONES (p.ej. Banco Nación: "Movimientos del Día" + "Últimos
+  // Movimientos") con encabezados, títulos y subtotales REPETIDOS en el medio.
+  // En vez de asumir "una grilla contigua", clasificamos CADA fila:
+  //   • Fila de DATOS  → su columna fecha es una fecha válida Y tiene importe.
+  //   • Ruido          → encabezados repetidos, títulos ("Cuenta Corriente…"),
+  //                      líneas de saldo ("Saldo al …"), timestamps, vacías.
+  // El ruido se DESCARTA en silencio (no es error). Solo reportamos error cuando
+  // una fila parece de datos (fecha válida) pero su importe no se pudo leer.
   for (let r = headerIdx + 1; r < filas.length; r++) {
     const fila = filas[r];
     const cell = (i) => (i == null ? '' : fila[i]);
@@ -304,11 +319,34 @@ function procesarMatriz(matriz) {
     const fecha = parseFecha(cell(cols.fecha));
     const descripcion = String(cell(cols.descripcion) ?? '').trim();
 
-    // Monto con signo:
+    // Texto crudo de la fila (para detectar líneas tipo "Saldo al …").
+    const textoFila = fila.map((c) => String(c ?? '').trim()).filter(Boolean).join(' ');
+
+    // ¿Es la línea de SALDO FINAL declarado, tipo "Saldo al 08/06/2026
+    // 1.234,56" (Banco Nación)? Es el saldo de cierre de la cuenta: no es un
+    // movimiento, pero lo usamos como saldoFinal autorizado. OJO: solo "Saldo
+    // al …", NO un genérico "SALDO ANTERIOR" (que es el saldo de APERTURA y no
+    // debe pisar el saldo final de la grilla).
+    const mSaldoAl = /^saldo\s+al\b/i.test(textoFila)
+      ? textoFila.match(/(-?\(?[\d.,]+\)?)\s*$/)
+      : null;
+    if (mSaldoAl) {
+      const s = parseMonto(mSaldoAl[1]);
+      if (s != null) saldoEtiquetado = s;
+      continue; // línea de saldo: nunca es movimiento
+    }
+
+    // Sin fecha válida en su columna → no es una fila de datos (encabezado
+    // repetido, título de sección, timestamp suelto, etc.). Se descarta.
+    if (fecha == null) continue;
+
+    // Importe con signo:
     let monto = null;
+    let importeCrudo = '';
     if (tieneDebCred) {
       const deb = parseMonto(cell(cols.debito));
       const cred = parseMonto(cell(cols.credito));
+      importeCrudo = `${String(cell(cols.debito) ?? '').trim()}${String(cell(cols.credito) ?? '').trim()}`;
       // Débito = gasto (−), crédito = ingreso (+). Usamos valor absoluto por las
       // dudas que el extracto ya traiga el débito en negativo.
       if (deb != null && deb !== 0) monto = -Math.abs(deb);
@@ -316,25 +354,22 @@ function procesarMatriz(matriz) {
       else if (deb === 0 && cred != null && cred !== 0) monto = Math.abs(cred);
       else if (cred === 0 && deb != null && deb !== 0) monto = -Math.abs(deb);
     } else if (cols.importe != null) {
-      monto = parseMonto(cell(cols.importe)); // ya viene con signo
+      importeCrudo = String(cell(cols.importe) ?? '').trim();
+      // Importe ÚNICO con signo: positivo plano = crédito/ingreso; negativo
+      // (paréntesis contables "(8.539,28)" o signo) = débito/gasto. parseMonto
+      // ya resuelve los paréntesis y el formato argentino.
+      monto = parseMonto(cell(cols.importe));
     }
 
     const saldo = cols.saldo != null ? parseMonto(cell(cols.saldo)) : null;
-
-    // Una fila es válida si tiene fecha Y algún monto. Las que solo traen saldo
-    // (líneas de "saldo anterior"/"saldo final") no son movimientos: igual
-    // actualizan saldoFinal pero no entran como línea.
-    const esMovimiento = fecha != null && monto != null;
-
     if (saldo != null) saldoFinal = saldo;
 
-    if (!esMovimiento) {
-      // Si la fila tenía contenido real pero no pudimos sacar fecha+monto, la
-      // reportamos como error (salvo que sea claramente una línea de saldo).
-      const tieneAlgo = fila.some((c) => c != null && String(c).trim() !== '');
-      const soloSaldo = fecha == null && monto == null && saldo != null;
-      if (tieneAlgo && !soloSaldo) {
-        errores.push(`Fila ${r + 1}: no se pudo interpretar (fecha="${cell(cols.fecha)}", monto sin valor).`);
+    // Fila con fecha válida pero SIN importe interpretable: si la celda de
+    // importe traía algo (no estaba vacía), es un dato roto → lo reportamos.
+    // Si estaba vacía, la tratamos como ruido con fecha (no molestamos).
+    if (monto == null) {
+      if (importeCrudo !== '') {
+        errores.push(`Fila ${r + 1}: no se pudo interpretar el importe ("${importeCrudo}").`);
       }
       continue;
     }
@@ -354,7 +389,12 @@ function procesarMatriz(matriz) {
     lineas,
     periodoDesde: fechas[0] ?? null,
     periodoHasta: fechas[fechas.length - 1] ?? null,
-    saldoFinal,
+    // Saldo final: si el extracto trae una línea explícita "Saldo al …" la
+    // preferimos (es el saldo declarado de la cuenta, p.ej. Banco Nación, donde
+    // además las filas vienen al revés y por secciones, así que "último saldo de
+    // la grilla" no sería el final). Si no, usamos el último saldo leído de la
+    // grilla (caso Galicia: filas en orden cronológico).
+    saldoFinal: saldoEtiquetado != null ? saldoEtiquetado : saldoFinal,
     banco,
     errores,
   };
@@ -365,6 +405,36 @@ function redondear(n) {
   return Math.round(n * 100) / 100;
 }
 
+// ───────────────────────── encoding (CSV) ─────────────────────────
+
+// Decodifica los BYTES de un CSV a string tolerando encoding LATIN-1. Muchos
+// bancos (Banco Nación, p.ej.) exportan en windows-1252/ISO-8859-1, no UTF-8:
+// leídos como UTF-8 aparecen � (U+FFFD) en los acentos ("Día", "Últimos",
+// "Anulación", nombres con tilde/ñ). Estrategia: probamos UTF-8 estricto; si
+// falla o aparece algún carácter de reemplazo, reintentamos con windows-1252.
+export function decodeCSVBytes(buffer) {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+
+  // 1) UTF-8 estricto: si los bytes NO son UTF-8 válido, tira y caemos al catch.
+  try {
+    const utf8 = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return utf8;
+  } catch {
+    /* no era UTF-8 válido → probamos latin-1 abajo */
+  }
+
+  // 2) UTF-8 tolerante: puede colar pero metiendo U+FFFD donde había Latin-1.
+  const tolerante = new TextDecoder('utf-8').decode(bytes);
+  if (!tolerante.includes('�')) return tolerante; // limpio, lo usamos
+
+  // 3) Hubo caracteres de reemplazo → casi seguro es Latin-1. Reintentamos.
+  try {
+    return new TextDecoder('windows-1252').decode(bytes);
+  } catch {
+    return tolerante; // último recurso: lo que haya salido de UTF-8
+  }
+}
+
 // ───────────────────────── API pública ─────────────────────────
 
 // Parsea un extracto desde TEXTO CSV ya leído.
@@ -372,6 +442,17 @@ export function parseExtractoCSV(texto) {
   try {
     const matriz = parseCSV(texto);
     return procesarMatriz(matriz);
+  } catch (e) {
+    return { lineas: [], periodoDesde: null, periodoHasta: null, saldoFinal: null, errores: ['Error al leer el CSV: ' + (e?.message || e)] };
+  }
+}
+
+// Parsea un extracto desde los BYTES de un CSV (ArrayBuffer/Uint8Array),
+// decidiendo el encoding (UTF-8 con fallback a windows-1252/Latin-1). Es la vía
+// recomendada desde la UI: no asume UTF-8 como hace File.text().
+export function parseExtractoCSVBytes(buffer) {
+  try {
+    return parseExtractoCSV(decodeCSVBytes(buffer));
   } catch (e) {
     return { lineas: [], periodoDesde: null, periodoHasta: null, saldoFinal: null, errores: ['Error al leer el CSV: ' + (e?.message || e)] };
   }
@@ -400,7 +481,9 @@ export async function parseExtractoFile(file) {
     const buffer = await file.arrayBuffer();
     return parseExtractoXLSX(buffer);
   }
-  // Por defecto, CSV / texto.
-  const texto = await file.text();
-  return parseExtractoCSV(texto);
+  // Por defecto, CSV. Leemos los BYTES (no file.text(), que asume UTF-8) y
+  // decidimos el encoding: UTF-8 con fallback a windows-1252/Latin-1, para que
+  // los acentos de extractos en Latin-1 (Banco Nación) se lean bien.
+  const buffer = await file.arrayBuffer();
+  return parseExtractoCSVBytes(buffer);
 }
