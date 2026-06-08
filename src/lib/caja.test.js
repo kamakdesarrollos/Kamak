@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { efectoEnCaja, calcSaldoCaja, montoEnARS } from './caja';
+import { efectoEnCaja, calcSaldoCaja, calcSaldoCajaHasta, montoEnARS } from './caja';
 
 describe('montoEnARS — consolidación de monedas', () => {
   const cajas = [
@@ -69,5 +69,33 @@ describe('calcSaldoCaja', () => {
 
   it('sin movimientos = saldoInicial', () => {
     expect(calcSaldoCaja({ id: 'x', saldoInicial: 42000 }, [])).toBe(42000);
+  });
+});
+
+describe('calcSaldoCajaHasta — saldo al cierre del período', () => {
+  const caja = { id: 'cj-1', saldoInicial: 100000 };
+  const movs = [
+    { tipo: 'ingreso', cajaId: 'cj-1', monto: 50000, fecha: '2026-05-10' },
+    { tipo: 'gasto',   cajaId: 'cj-1', monto: 30000, fecha: '2026-05-20' },
+    { tipo: 'gasto',   cajaId: 'cj-1', monto: 70000, fecha: '2026-06-05' }, // fuera del período
+  ];
+
+  it('solo cuenta movimientos con fecha <= hasta', () => {
+    // hasta fin de mayo: 100000 + 50000 - 30000 = 120000 (no incluye el de junio)
+    expect(calcSaldoCajaHasta(caja, movs, '2026-05-31')).toBe(120000);
+  });
+
+  it('incluye los movimientos del propio día de cierre (<=)', () => {
+    // hasta el 20/05: incluye ingreso 10/05 y gasto 20/05 = 120000
+    expect(calcSaldoCajaHasta(caja, movs, '2026-05-20')).toBe(120000);
+  });
+
+  it('sin fecha de corte = saldo total (equivale a calcSaldoCaja)', () => {
+    expect(calcSaldoCajaHasta(caja, movs, null)).toBe(calcSaldoCaja(caja, movs));
+  });
+
+  it('un movimiento sin fecha no se cuenta cuando hay corte', () => {
+    const conSinFecha = [...movs, { tipo: 'ingreso', cajaId: 'cj-1', monto: 999, fecha: null }];
+    expect(calcSaldoCajaHasta(caja, conSinFecha, '2026-05-31')).toBe(120000);
   });
 });

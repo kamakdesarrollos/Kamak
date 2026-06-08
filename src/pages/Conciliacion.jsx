@@ -9,10 +9,11 @@ import { useMovimientos } from '../store/MovimientosContext';
 import { useObras } from '../store/ObrasContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useIsMobile } from '../hooks/useMediaQuery';
-import { calcSaldoCaja } from '../lib/caja';
+import { calcSaldoCajaHasta } from '../lib/caja';
 import { parseExtractoFile } from '../lib/parseExtractoBancario';
 import { matchearExtracto, esGastoBancario } from '../lib/matchExtracto';
 import useSyncedSharedData from '../lib/useSyncedSharedData';
+import { guardarConciliacion, marcarMovimientoConciliado } from '../lib/conciliaciones';
 
 // ── helpers de formato ────────────────────────────────────────────────────────
 const fmtN = (n) => Math.round(Math.abs(n || 0)).toLocaleString('es-AR');
@@ -180,7 +181,12 @@ export default function Conciliacion() {
   const { cajas, movimientos, addMovimiento, updateMovimiento } = useMovimientos();
 
   // Historial de conciliaciones (colección nueva, persistida en shared_data).
-  const [historial, setHistorial] = useSyncedSharedData('conciliaciones', [], { lsKey: 'kamak_conciliaciones_v1', skipMarkReady: true });
+  // `atomic: true`: el hook LEE/sincroniza el array compartido pero NO reescribe
+  // el blob entero (last-write-wins). La persistencia de cada conciliación va por
+  // los helpers ATÓMICOS de lib/conciliaciones (guardarConciliacion → append por
+  // ítem); el setHistorial local es solo eco optimista para la UI. Así dos admins
+  // conciliando a la vez no se pisan el historial.
+  const [historial, setHistorial] = useSyncedSharedData('conciliaciones', [], { lsKey: 'kamak_conciliaciones_v1', skipMarkReady: true, atomic: true });
 
   // Guard: solo Admin (conciliación bancaria es operación financiera).
   useEffect(() => {
@@ -215,6 +221,8 @@ export default function Conciliacion() {
   // Movimientos creados/clasificados en ESTA sesión, por idx de línea.
   const [creados, setCreados] = useState({});           // { [idx]: movimientoId }
   const [confirmada, setConfirmada] = useState(false);
+  const [guardando, setGuardando] = useState(false);    // confirmación en curso
+  const [confirmError, setConfirmError] = useState(''); // aviso si algo no se pudo
 
   const fileRef = useRef(null);
 
@@ -238,6 +246,7 @@ export default function Conciliacion() {
   const resetSesion = () => {
     setParseRes(null); setFileName(''); setErrorMsg('');
     setConfirmados({}); setRechazados({}); setCreados({}); setConfirmada(false);
+    setGuardando(false); setConfirmError('');
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -246,7 +255,7 @@ export default function Conciliacion() {
   const onFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setCargando(true); setErrorMsg(''); setConfirmada(false);
+    setCargando(true); setErrorMsg(''); setConfirmada(false); setConfirmError('');
     setConfirmados({}); setRechazados({}); setCreados({});
     try {
       const res = await parseExtractoFile(file);
@@ -303,7 +312,10 @@ export default function Conciliacion() {
   // ── Resumen / saldos ────────────────────────────────────────────────────────
   const resumen = useMemo(() => {
     if (!caja || !parseRes) return null;
-    const saldoApp = calcSaldoCaja(caja, movimientos);
+    // Saldo de la app AL CIERRE del período del extracto (no el saldo vigente de
+    // hoy): así cuadra con el saldo FINAL del banco a esa fecha, sobre todo si se
+    // concilia un mes pasado. Solo cuenta movimientos con fecha <= periodoHasta.
+    const saldoApp = calcSaldoCajaHasta(caja, movimientos, parseRes.periodoHasta);
     const saldoBanco = parseRes.saldoFinal;
     const diferencia = saldoBanco != null ? Math.round(saldoBanco - saldoApp) : null;
     const totalDebitos = parseRes.lineas.filter(l => l.monto < 0).reduce((s, l) => s + Math.abs(l.monto), 0);
@@ -323,17 +335,18 @@ export default function Conciliacion() {
 
   const sym = caja?.moneda === 'USD' ? 'U$S' : '$';
 
-  const confirmarConciliacion = () => {
-    if (!caja || !parseRes || !grupos) return;
-    // 1) marcar conciliados los movimientos resueltos.
-    movsAConciliar.forEach(id => updateMovimiento(id, { conciliado: true, conciliadoEn: new Date().toISOString().split('T')[0] }));
-    // 2) guardar la conciliación en el historial.
+  const confirmarConciliacion = async () => {
+    if (!caja || !parseRes || !grupos || guardando || confirmada) return;
+    setGuardando(true);
+    setConfirmError('');
+
+    const hoy = new Date().toISOString().split('T')[0];
     const registro = {
       id: `conc-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       cajaId: caja.id,
       cajaNombre: caja.nombre,
       moneda: caja.moneda,
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: hoy,
       periodoDesde: parseRes.periodoDesde,
       periodoHasta: parseRes.periodoHasta,
       archivo: fileName,
@@ -349,8 +362,51 @@ export default function Conciliacion() {
       movimientosConciliados: movsAConciliar,
       creadoPor: currentUser?.nombre || currentUser?.email || 'Admin',
     };
-    setHistorial(prev => [registro, ...(prev || [])]);
+
+    // 1) GUARDAR la conciliación PRIMERO (es el registro de la verdad). Vía
+    //    helper ATÓMICO (append por ítem, RPC + fallback RMW): NO pisa el blob
+    //    entero, así dos admins conciliando a la vez no se borran mutuamente.
+    let guardada = null; // objeto si se persistió, null si falló
+    try {
+      guardada = await guardarConciliacion(registro);
+    } catch (e) {
+      guardada = null;
+      console.error('[conciliación] error al guardar el registro:', e);
+    }
+
+    if (!guardada) {
+      // No marcamos movimientos si el registro no se guardó: evitamos dejar
+      // movimientos "conciliados" sin su conciliación de respaldo.
+      setConfirmError('No se pudo guardar la conciliación (sin conexión con la base). No se marcó ningún movimiento. Reintentá.');
+      setGuardando(false);
+      return;
+    }
+
+    // Reflejarla en el historial local de inmediato (la lectura del historial
+    // sigue siendo el array compartido; el append atómico ya lo persistió).
+    setHistorial(prev => [registro, ...(prev || []).filter(h => h.id !== registro.id)]);
+
+    // 2) Marcar los movimientos como conciliados. updateMovimiento ya escribe
+    //    atómico por ítem (patchObjectItem). Usamos el shape único del helper
+    //    marcarMovimientoConciliado para enlazar movimiento ↔ conciliación.
+    const fallidos = [];
+    for (const id of movsAConciliar) {
+      try {
+        updateMovimiento(id, {
+          ...marcarMovimientoConciliado(registro.id, null),
+          conciliadoEn: hoy,
+        });
+      } catch (e) {
+        console.error('[conciliación] no se pudo marcar el movimiento:', id, e);
+        fallidos.push(id);
+      }
+    }
+
+    if (fallidos.length) {
+      setConfirmError(`La conciliación se guardó, pero ${fallidos.length} de ${movsAConciliar.length} movimiento(s) no se pudieron marcar como conciliados. Volvé a intentar o marcalos a mano.`);
+    }
     setConfirmada(true);
+    setGuardando(false);
   };
 
   if (!isAdmin) return null;
@@ -411,7 +467,7 @@ export default function Conciliacion() {
               <Stat label="Saldo banco (extracto)" value={resumen.saldoBanco != null ? fmtMonto(resumen.saldoBanco, sym) : '—'} />
             </div>
             <div style={{ padding: '10px 14px', borderRight: `1px solid ${T.faint2}` }}>
-              <Stat label="Saldo sistema (app)" value={fmtMonto(resumen.saldoApp, sym)} />
+              <Stat label={parseRes.periodoHasta ? `Saldo app al ${fmtFechaLarga(parseRes.periodoHasta)}` : 'Saldo sistema (app)'} value={fmtMonto(resumen.saldoApp, sym)} />
             </div>
             <div style={{ padding: '10px 14px', borderRight: `1px solid ${T.faint2}`, background: resumen.diferencia ? '#fff7ed' : '#f0fdf4' }}>
               <Stat label="Diferencia"
@@ -465,12 +521,16 @@ export default function Conciliacion() {
           display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: 10, justifyContent: 'space-between',
         }}>
           <div style={{ fontSize: 12, color: T.ink2 }}>
-            {confirmada
-              ? <span style={{ color: T.ok, fontWeight: 700 }}>✓ Conciliación guardada · {movsAConciliar.length} movimiento(s) marcados como conciliados.</span>
-              : <>Se marcarán <strong>{movsAConciliar.length}</strong> movimiento(s) como conciliados y se guardará esta conciliación en el historial.</>}
+            {confirmError
+              ? <span style={{ color: NEG, fontWeight: 700 }}>{confirmError}</span>
+              : confirmada
+                ? <span style={{ color: T.ok, fontWeight: 700 }}>✓ Conciliación guardada · {movsAConciliar.length} movimiento(s) marcados como conciliados.</span>
+                : guardando
+                  ? <>Guardando conciliación…</>
+                  : <>Se marcarán <strong>{movsAConciliar.length}</strong> movimiento(s) como conciliados y se guardará esta conciliación en el historial.</>}
           </div>
-          <Btn fill onClick={confirmarConciliacion} style={{ opacity: confirmada ? 0.5 : 1 }}>
-            {confirmada ? 'Conciliación confirmada' : 'Confirmar conciliación'}
+          <Btn fill onClick={confirmarConciliacion} disabled={confirmada || guardando} style={{ opacity: (confirmada || guardando) ? 0.5 : 1 }}>
+            {guardando ? 'Guardando…' : confirmada ? 'Conciliación confirmada' : 'Confirmar conciliación'}
           </Btn>
         </div>
       )}

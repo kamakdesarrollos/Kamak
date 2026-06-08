@@ -27,6 +27,20 @@ export function calcSaldoCaja(caja, movimientos) {
   return Math.round((caja.saldoInicial || 0) + efecto);
 }
 
+// Saldo de una caja AL CIERRE de un período: saldoInicial + efecto de los
+// movimientos con fecha <= `hasta` (ISO 'YYYY-MM-DD'). Sirve para conciliar un
+// extracto: el saldo de la app tiene que cuadrar con el saldo FINAL del banco a
+// esa fecha, no con el saldo vigente de hoy (clave si se concilia un mes pasado).
+// Si `hasta` es null/undefined, equivale a calcSaldoCaja (todos los movimientos).
+export function calcSaldoCajaHasta(caja, movimientos, hasta) {
+  if (!hasta) return calcSaldoCaja(caja, movimientos);
+  const efecto = (movimientos || []).reduce(
+    (s, m) => (m.fecha && m.fecha <= hasta ? s + efectoEnCaja(m, caja.id) : s),
+    0
+  );
+  return Math.round((caja.saldoInicial || 0) + efecto);
+}
+
 // Convierte el monto de un movimiento a ARS según la moneda de SU caja. Para KPIs
 // y reportes consolidados que NO deben sumar pesos y dólares como si fueran la
 // misma moneda. Si el movimiento guardó su equivalente en pesos (montoARS) lo usa;

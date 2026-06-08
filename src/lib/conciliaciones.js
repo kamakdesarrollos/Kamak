@@ -94,11 +94,16 @@ export async function leerConciliacionesDeCaja(cajaId) {
 
 // ── Escritura (atómica por ítem) ─────────────────────────────────────────────
 
-/** Guarda una conciliación NUEVA (append atómico). Devuelve el objeto guardado. */
+/**
+ * Guarda una conciliación NUEVA (append atómico por ítem, RPC + fallback RMW).
+ * Devuelve el objeto guardado si se persistió, o null si NO se pudo (sin sesión /
+ * sin conexión) — el caller debe chequearlo antes de marcar movimientos, así no
+ * deja movimientos "conciliados" sin su conciliación de respaldo.
+ */
 export async function guardarConciliacion(conc) {
   const c = conc.id ? conc : { ...conc, id: newId('conc') };
-  await appendItemInSharedArray(CONCILIACIONES_KEY, c);
-  return c;
+  const ok = await appendItemInSharedArray(CONCILIACIONES_KEY, c);
+  return ok ? c : null;
 }
 
 /** Aplica cambios puntuales a una conciliación ya guardada (patch atómico). */

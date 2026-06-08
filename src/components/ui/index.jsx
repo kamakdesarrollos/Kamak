@@ -5,9 +5,9 @@ export function Box({ children, style, dashed, dbl, className = '', ...rest }) {
   return <div className={`${cls} ${className}`} style={style} {...rest}>{children}</div>;
 }
 
-export function Btn({ children, fill, accent, sm, style, onClick, className = '' }) {
+export function Btn({ children, fill, accent, sm, style, onClick, className = '', ...rest }) {
   const cls = ['k-btn', fill && 'k-btn-fill', accent && 'k-btn-accent', sm && 'k-btn-sm'].filter(Boolean).join(' ');
-  return <button className={`${cls} ${className}`} style={style} onClick={onClick}>{children}</button>;
+  return <button className={`${cls} ${className}`} style={style} onClick={onClick} {...rest}>{children}</button>;
 }
 
 export function Chip({ children, fill, accent, warn, ok, style, className = '' }) {
