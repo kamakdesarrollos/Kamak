@@ -3727,7 +3727,16 @@ function EstadoDeCuenta({ obra, detalle, tc }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 5: CONTRATOS MO
 // ─────────────────────────────────────────────────────────────────────────────
-const makeFormInit = () => ({ proveedor: '', cuit: '', fechaInicio: '', fechaFin: '', fondoReparo: 5, formaPago: 'Por avance certificado mensualmente', rubrosAgregados: [] });
+// Plan de pagos por defecto (Régimen PADIC). Cada cuota = { id, concepto, pct }.
+// El monto de la cuota se calcula = monto del contrato × pct/100 (no se persiste,
+// se deriva). La suma de pct debería dar 100.
+const makePlanPagosInit = () => ([
+  { id: newId(), concepto: 'Firma del contrato',     pct: 10 },
+  { id: newId(), concepto: 'Avance 50%',             pct: 30 },
+  { id: newId(), concepto: 'Recepción definitiva',   pct: 50 },
+  { id: newId(), concepto: 'Garantía (3ª etapa)',    pct: 10 },
+]);
+const makeFormInit = () => ({ proveedor: '', cuit: '', domicilio: '', categoriaPADIC: '', fechaInicio: '', fechaFin: '', fondoReparo: 5, formaPago: 'Por avance certificado mensualmente', rubrosAgregados: [], colaboradores: [], planPagos: makePlanPagosInit() });
 const makeRubroFormInit = () => ({ rubroId: '', tareasSel: {} });
 
 function TabContratosMO({ detalle, patch, moneda, obra }) {
@@ -3795,6 +3804,17 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
     setAddingRubro(true);
   };
 
+  // ── Colaboradores (los carga Administración; empleados del contratista) ──
+  const addColaborador = () => setForm(p => ({ ...p, colaboradores: [...(p.colaboradores || []), { id: newId(), nombre: '', dni: '', cuit: '', domicilio: '', montoDia: '' }] }));
+  const updColaborador = (id, campo, val) => setForm(p => ({ ...p, colaboradores: (p.colaboradores || []).map(co => co.id === id ? { ...co, [campo]: val } : co) }));
+  const removeColaborador = (id) => setForm(p => ({ ...p, colaboradores: (p.colaboradores || []).filter(co => co.id !== id) }));
+
+  // ── Plan de pagos (cuotas con % sobre el monto del contrato) ──
+  const addCuota = () => setForm(p => ({ ...p, planPagos: [...(p.planPagos || []), { id: newId(), concepto: '', pct: 0 }] }));
+  const updCuota = (id, campo, val) => setForm(p => ({ ...p, planPagos: (p.planPagos || []).map(c => c.id === id ? { ...c, [campo]: val } : c) }));
+  const removeCuota = (id) => setForm(p => ({ ...p, planPagos: (p.planPagos || []).filter(c => c.id !== id) }));
+  const sumaPct = (form.planPagos || []).reduce((s, c) => s + (+c.pct || 0), 0);
+
   const totalContrato = form.rubrosAgregados.reduce((sum, ra) =>
     sum + Object.values(ra.tareasSel).reduce((s, v) => s + (v.cantidad || 0) * (v.precioUnit || 0), 0), 0);
 
@@ -3814,7 +3834,13 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
         })
         .filter(Boolean);
     });
-    patch(d => ({ ...d, contratos: [...(d.contratos || []), { id: newId(), proveedor: form.proveedor, cuit: form.cuit, fechaInicio: form.fechaInicio, fechaFin: form.fechaFin, fondoReparo: +form.fondoReparo, formaPago: form.formaPago, estado: 'activo', tareas, monto: totalContrato }] }));
+    const colaboradores = (form.colaboradores || [])
+      .filter(co => (co.nombre || '').trim() || (co.dni || '').trim() || (co.cuit || '').trim())
+      .map(co => ({ id: co.id || newId(), nombre: co.nombre || '', dni: co.dni || '', cuit: co.cuit || '', domicilio: co.domicilio || '', montoDia: +co.montoDia || 0 }));
+    const planPagos = (form.planPagos || [])
+      .filter(p => (p.concepto || '').trim() || (+p.pct || 0) > 0)
+      .map(p => ({ id: p.id || newId(), concepto: p.concepto || '', pct: +p.pct || 0 }));
+    patch(d => ({ ...d, contratos: [...(d.contratos || []), { id: newId(), proveedor: form.proveedor, cuit: form.cuit, domicilio: form.domicilio, categoriaPADIC: form.categoriaPADIC, fechaInicio: form.fechaInicio, fechaFin: form.fechaFin, fondoReparo: +form.fondoReparo, formaPago: form.formaPago, estado: 'activo', tareas, monto: totalContrato, colaboradores, planPagos }] }));
     setAdding(false);
     setForm(makeFormInit());
     setAddingRubro(false);
@@ -3855,6 +3881,12 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
               </datalist>
             </FRow>
             <FInput label="CUIT contratista" value={form.cuit} onChange={v => setForm(p => ({ ...p, cuit: v }))} placeholder="20-XXXXXXXX-X" />
+          </div>
+
+          {/* Fila 1b: datos fiscales del contratista (Régimen PADIC) */}
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap: 10 }}>
+            <FInput label="Domicilio fiscal" value={form.domicilio} onChange={v => setForm(p => ({ ...p, domicilio: v }))} placeholder="Calle, número, localidad" />
+            <FInput label="Categoría PADIC" value={form.categoriaPADIC} onChange={v => setForm(p => ({ ...p, categoriaPADIC: v }))} placeholder="Ej: Monotributo A" />
           </div>
 
           {/* Fila 2: fechas + fondo + forma de pago */}
@@ -4023,6 +4055,84 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
               Total contrato: $ {Math.round(totalContrato).toLocaleString('es-AR')}
             </div>
           )}
+
+          {/* ── Colaboradores (empleados del contratista; los carga Administración) ── */}
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.faint2}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Colaboradores{(form.colaboradores || []).length > 0 ? ` · ${form.colaboradores.length}` : ''}
+              </div>
+              <span style={{ fontSize: 12, color: T.accent, cursor: 'pointer', fontWeight: 700 }} onClick={addColaborador}>+ Agregar colaborador</span>
+            </div>
+            {(form.colaboradores || []).length === 0 ? (
+              <div style={{ fontSize: 11, color: T.ink3, padding: '2px 0' }}>Sin colaboradores cargados.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {form.colaboradores.map(co => (
+                  <div key={co.id} style={{ background: T.faint, borderRadius: 5, border: `1px solid ${T.faint2}`, padding: '8px 10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1.4fr 1fr 1fr 1.4fr 0.9fr', gap: 8 }}>
+                      <FInput label="Nombre" value={co.nombre} onChange={v => updColaborador(co.id, 'nombre', v)} placeholder="Nombre y apellido" />
+                      <FInput label="DNI" value={co.dni} onChange={v => updColaborador(co.id, 'dni', v)} placeholder="00.000.000" />
+                      <FInput label="CUIT" value={co.cuit} onChange={v => updColaborador(co.id, 'cuit', v)} placeholder="20-XXXXXXXX-X" />
+                      <FInput label="Domicilio" value={co.domicilio} onChange={v => updColaborador(co.id, 'domicilio', v)} placeholder="Domicilio" />
+                      <FInput label="$ / día" value={co.montoDia} onChange={v => updColaborador(co.id, 'montoDia', v)} type="number" />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                      <span style={{ fontSize: 10, color: '#dc2626', cursor: 'pointer', fontWeight: 700 }} onClick={() => removeColaborador(co.id)}>✕ quitar</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── Plan de pagos (cuotas con % sobre el monto del contrato) ── */}
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.faint2}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>Plan de pagos</div>
+              <span style={{ fontSize: 12, color: T.accent, cursor: 'pointer', fontWeight: 700 }} onClick={addCuota}>+ Agregar cuota</span>
+            </div>
+            {(form.planPagos || []).length === 0 ? (
+              <div style={{ fontSize: 11, color: T.ink3, padding: '2px 0' }}>Sin cuotas definidas.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {form.planPagos.map(c => {
+                  const montoCuota = Math.round(totalContrato * (+c.pct || 0) / 100);
+                  return (
+                    <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.faint, borderRadius: 5, border: `1px solid ${T.faint2}`, padding: '6px 10px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+                      <input
+                        style={{ ...inputSt, flex: 1, minWidth: isMobile ? '100%' : 140 }}
+                        value={c.concepto}
+                        placeholder="Concepto (ej: Firma del contrato)"
+                        onChange={e => updCuota(c.id, 'concepto', e.target.value)}
+                      />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input
+                          type="number"
+                          min="0"
+                          value={c.pct}
+                          onChange={e => updCuota(c.id, 'pct', +e.target.value)}
+                          style={{ width: 64, padding: '4px 6px', border: `1px solid ${T.faint2}`, borderRadius: 3, fontFamily: T.fontMono, fontSize: 12, textAlign: 'right', background: T.paper, outline: 'none' }}
+                        />
+                        <span style={{ fontSize: 11, color: T.ink3 }}>%</span>
+                      </div>
+                      <span style={{ width: 110, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700, fontSize: 12, color: T.accent, whiteSpace: 'nowrap' }}>
+                        $ {montoCuota.toLocaleString('es-AR')}
+                      </span>
+                      <span style={{ fontSize: 11, color: '#dc2626', cursor: 'pointer', fontWeight: 700 }} onClick={() => removeCuota(c.id)}>✕</span>
+                    </div>
+                  );
+                })}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 2, fontSize: 11 }}>
+                  <span style={{ color: T.ink2, fontWeight: 700 }}>Suma %:</span>
+                  <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: sumaPct === 100 ? T.ok : T.warn }}>{sumaPct}%</span>
+                  {sumaPct !== 100 && (
+                    <span style={{ color: T.warn, fontWeight: 700 }}>⚠ La suma de % debería dar 100</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </FormPanel>
       )}
 
@@ -4035,6 +4145,8 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
         const reparo = Math.round(cert * (c.fondoReparo || 0) / 100);
         const aLiquidar = cert - reparo;
         const tareas = Array.isArray(c.tareas) ? c.tareas : [];
+        const colaboradores = Array.isArray(c.colaboradores) ? c.colaboradores : [];
+        const planPagos = Array.isArray(c.planPagos) ? c.planPagos : [];
         const rubrosNombres = c.gremio
           ? [c.gremio]
           : [...new Set(tareas.map(t => t.rubroNombre).filter(Boolean))];
@@ -4053,6 +4165,18 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                 </div>
                 {rubrosNombres.length > 0 && (
                   <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>{rubrosNombres.join(' · ')}</div>
+                )}
+                {(c.categoriaPADIC || c.domicilio) && (
+                  <div style={{ fontSize: 10.5, color: T.ink3, marginTop: 2 }}>
+                    {c.categoriaPADIC && <span>{c.categoriaPADIC}</span>}
+                    {c.categoriaPADIC && c.domicilio && <span> · </span>}
+                    {c.domicilio && <span>{c.domicilio}</span>}
+                  </div>
+                )}
+                {colaboradores.length > 0 && (
+                  <div style={{ fontSize: 10.5, color: T.ink3, marginTop: 2 }}>
+                    {colaboradores.length} colaborador{colaboradores.length === 1 ? '' : 'es'}
+                  </div>
                 )}
               </div>
               <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 16 }}>{fmtM(monto, moneda)}</div>
@@ -4103,6 +4227,31 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
               <span>Fondo reparo: {c.fondoReparo}%</span>
               {c.formaPago && <span>Pago: {c.formaPago}</span>}
             </div>
+
+            {planPagos.length > 0 && (
+              <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${T.faint2}` }}>
+                <div style={{ fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 5 }}>Plan de pagos</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {planPagos.map(p => (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
+                      <span style={{ color: T.ink2 }}>{p.concepto || '—'}</span>
+                      <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <span style={{ color: T.ink3, fontFamily: T.fontMono, width: 38, textAlign: 'right' }}>{p.pct}%</span>
+                        <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.accent, width: 110, textAlign: 'right' }}>
+                          {fmtM(Math.round(monto * (+p.pct || 0) / 100), moneda)}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                  {(() => {
+                    const suma = planPagos.reduce((s, p) => s + (+p.pct || 0), 0);
+                    return suma !== 100 ? (
+                      <div style={{ fontSize: 10.5, color: T.warn, fontWeight: 700, marginTop: 2 }}>⚠ La suma de % es {suma}% (debería dar 100)</div>
+                    ) : null;
+                  })()}
+                </div>
+              </div>
+            )}
           </Box>
         );
       })}
