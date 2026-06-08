@@ -10,6 +10,7 @@ import { useUsuarios } from '../store/UsuariosContext';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
 import { facturasPendientesDeProveedor, totalPendiente } from '../lib/facturasPendientes';
+import { PROVEEDORES, colorProveedor } from '../lib/proveedoresMateriales';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -59,6 +60,55 @@ function CatBadge({ cat }) {
   );
 }
 
+// ── Chips de grupos de materiales del proveedor ───────────────────────────────
+// Muestra los "grupos" (proveedor tipo: corralón, electricidad, etc.) a los que
+// pertenece el proveedor, cada uno con su color de lib/proveedoresMateriales.
+function GrupoChips({ grupos, size = 9 }) {
+  if (!Array.isArray(grupos) || grupos.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+      {grupos.map(g => {
+        const c = colorProveedor(g);
+        return (
+          <span key={g}
+            style={{ fontSize: size, fontWeight: 700, padding: '2px 6px', borderRadius: 10, letterSpacing: 0.2, background: c + '1f', color: c, border: `1px solid ${c}55`, whiteSpace: 'nowrap' }}>
+            {g}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Selector múltiple de grupos de materiales (chips toggle) ───────────────────
+// Las 14 opciones vienen de PROVEEDORES (lib). Un proveedor puede pertenecer a
+// 1 o varios grupos. value/onChange manejan un array de labels.
+function GruposSelector({ value = [], onChange }) {
+  const sel = Array.isArray(value) ? value : [];
+  const toggle = (label) => {
+    onChange(sel.includes(label) ? sel.filter(x => x !== label) : [...sel, label]);
+  };
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {PROVEEDORES.map(p => {
+        const on = sel.includes(p.label);
+        return (
+          <span key={p.id} onClick={() => toggle(p.label)}
+            style={{
+              fontSize: 11, fontWeight: 700, padding: '4px 9px', borderRadius: 12, cursor: 'pointer', userSelect: 'none',
+              background: on ? p.color : T.faint,
+              color: on ? '#fff' : T.ink2,
+              border: `1.2px solid ${on ? p.color : T.faint2}`,
+              transition: 'all .12s',
+            }}>
+            {p.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── KPI card ──────────────────────────────────────────────────────────────────
 function KPI({ label, value, color, sub }) {
   return (
@@ -79,7 +129,7 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
   const initCat = initial ? getCat(initial) : 'Mano de obra';
   const [form, setForm] = useState(initial
     ? { ...initial, categoria: initCat }
-    : { nombre: '', categoria: 'Mano de obra', tipo: '', cuit: '', telefono: '', email: '', condicion: 'Responsable Inscripto', cbu: '', alias: '', calificacion: 0, notas: '' });
+    : { nombre: '', categoria: 'Mano de obra', tipo: '', cuit: '', telefono: '', email: '', condicion: 'Responsable Inscripto', cbu: '', alias: '', calificacion: 0, grupos: [], notas: '' });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   return (
@@ -105,6 +155,13 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
               <label style={labelSt}>Especialidad / Rubro</label>
               <input style={inputSt} value={form.tipo} onChange={e => set('tipo', e.target.value)} placeholder="Ej: Electricidad, Pintura…" />
             </div>
+          </div>
+          <div>
+            <label style={labelSt}>Grupos de materiales</label>
+            <div style={{ fontSize: 10, color: T.ink3, marginBottom: 6, marginTop: -1 }}>
+              ¿De qué provee este proveedor? Elegí uno o varios.
+            </div>
+            <GruposSelector value={form.grupos || []} onChange={v => set('grupos', v)} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div>
@@ -296,6 +353,8 @@ export default function Proveedores() {
                     </div>
                   </div>
                 </div>
+                {/* Grupos de materiales */}
+                <GrupoChips grupos={p.grupos} size={9} />
                 {/* Datos clave en pares label/valor */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
@@ -402,8 +461,11 @@ export default function Proveedores() {
                     <CatBadge cat={cat} />
                   </div>
                 </span>
-                {/* Especialidad */}
-                <span style={{ color: T.ink2, fontSize: 11 }}>{p.tipo || '—'}</span>
+                {/* Especialidad + grupos de materiales */}
+                <span style={{ color: T.ink2, fontSize: 11, display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                  <span>{p.tipo || '—'}</span>
+                  <GrupoChips grupos={p.grupos} size={8} />
+                </span>
                 {/* CUIT */}
                 <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink2 }}>{p.cuit || '—'}</span>
                 {/* Contacto */}
@@ -492,6 +554,7 @@ export default function Proveedores() {
                   </div>
                 </div>
                 {p.tipo && <div style={{ fontSize: 11, color: T.ink2 }}>{p.tipo}</div>}
+                <GrupoChips grupos={p.grupos} size={9} />
                 <StarRating value={p.calificacion || 0} size={13} />
                 {/* Contacto */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }} onClick={e => e.stopPropagation()}>

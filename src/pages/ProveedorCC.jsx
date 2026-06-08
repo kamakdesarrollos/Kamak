@@ -9,6 +9,7 @@ import { useUsuarios } from '../store/UsuariosContext';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
 import { facturasPendientesDeProveedor, saldoFacturaPendiente, estadoFacturaPendiente, totalPendiente } from '../lib/facturasPendientes';
+import { colorProveedor } from '../lib/proveedoresMateriales';
 
 const fmtN = (n) => Math.abs(Math.round(n)).toLocaleString('es-AR');
 const fmtFecha = (iso) => {
@@ -144,6 +145,20 @@ export default function ProveedorCC() {
                 </a>
               )}
             </div>
+            {/* Grupos de materiales del proveedor (proveedor tipo: corralón, etc.) */}
+            {Array.isArray(proveedor.grupos) && proveedor.grupos.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                {proveedor.grupos.map(g => {
+                  const c = colorProveedor(g);
+                  return (
+                    <span key={g}
+                      style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 10, letterSpacing: 0.2, background: c + '1f', color: c, border: `1px solid ${c}55`, whiteSpace: 'nowrap' }}>
+                      {g}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>

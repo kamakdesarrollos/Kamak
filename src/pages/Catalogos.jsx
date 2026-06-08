@@ -4,6 +4,7 @@ import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Divider } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
+import { PROVEEDORES, proveedorDeMaterial, proveedorDeRubro, colorProveedor } from '../lib/proveedoresMateriales';
 import { useCatalog, calcTarea } from '../store/CatalogContext';
 import { useDolar } from '../store/DolarContext';
 import { resolverItemAPU, resolverMOAPU, buildCatalogItemsIndex, aplicarDolarItems } from '../lib/apuPriceResolver';
@@ -14,6 +15,7 @@ import { normUnidad } from '../lib/unidad';
 import { searchNorm } from '../lib/searchNorm';
 import TareasEstandarEditor from './modales/TareasEstandarEditor';
 import { useUsuarios, ROLES } from '../store/UsuariosContext';
+import { useProveedores } from '../store/ProveedoresContext';
 import { useIndices } from '../store/IndicesContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
@@ -350,18 +352,79 @@ const ordenarRubros = (a, b) => {
   return String(a).localeCompare(String(b), 'es');
 };
 
-function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm, rubroKey = 'rubro', rubros }) {
+// Select OBLIGATORIO "Grupo de materiales" (los 14 PROVEEDORES). Vive en su propio
+// componente porque necesita hooks para: (a) al CREAR, prefijar el grupo con
+// proveedorDeRubro(rubro) como SUGERENCIA cuando el usuario elige/escribe un rubro,
+// dejando que lo cambie a mano; (b) al EDITAR un material sin grupo guardado,
+// inicializarlo con proveedorDeMaterial(m). Escribe form.grupo (el label) para que
+// el material lo persista y la columna "Proveedor" lo respete.
+function MaterialGrupoSelect({ form, setForm }) {
+  const creando = !form.id; // emptyForm no trae id; un material existente sí.
+  // Recuerda el último valor auto-sugerido para distinguir "el usuario lo eligió a
+  // mano" de "lo pusimos nosotros": si el grupo actual sigue siendo el sugerido (o
+  // está vacío) lo re-sugerimos al cambiar el rubro; si lo cambió, no lo pisamos.
+  const sugeridoRef = useRef(null);
+
+  // Inicialización: dejamos el grupo como un LABEL canónico de los 14 para que el
+  // <select> (cuyas options usan p.label) lo matchee y se persista bien.
+  //  · sin grupo guardado → sugerimos (creando: por rubro; editando: proveedorDeMaterial).
+  //  · con grupo guardado como id/label no-canónico (ej. 'corralon') → lo canonizamos
+  //    vía proveedorDeMaterial, que respeta m.grupo y devuelve el label.
+  useEffect(() => {
+    const g = (form.grupo || '').trim();
+    const esLabelCanonico = PROVEEDORES.some(p => p.label === g);
+    if (esLabelCanonico) { sugeridoRef.current = g; return; }
+    const inicial = (creando && !g) ? proveedorDeRubro(form.rubro) : proveedorDeMaterial(form);
+    sugeridoRef.current = inicial;
+    setForm(f => ({ ...f, grupo: inicial }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Al CREAR: si cambia el rubro y el grupo sigue siendo el último sugerido (o
+  // está vacío), re-sugerimos por el nuevo rubro. Si el usuario ya lo cambió a
+  // mano, respetamos su elección.
+  useEffect(() => {
+    if (!creando) return;
+    const actual = (form.grupo || '').trim();
+    if (actual && actual !== (sugeridoRef.current || '').trim()) return; // elegido a mano
+    const sug = proveedorDeRubro(form.rubro);
+    if (sug === actual) return;
+    sugeridoRef.current = sug;
+    setForm(f => ({ ...f, grupo: sug }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.rubro]);
+
+  const sinGrupo = !form.grupo || !String(form.grupo).trim();
+  return (
+    <FRow label="Grupo de materiales *">
+      <select
+        style={{ ...inputSt, cursor: 'pointer', borderColor: sinGrupo ? T.accent : T.faint2 }}
+        value={form.grupo || ''}
+        onChange={e => { sugeridoRef.current = null; setForm(f => ({ ...f, grupo: e.target.value })); }}
+      >
+        <option value="" disabled>Elegí un grupo…</option>
+        {PROVEEDORES.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}
+      </select>
+      {sinGrupo && <div style={{ fontSize: 10.5, color: T.accent, marginTop: 2 }}>Obligatorio para guardar el material.</div>}
+    </FRow>
+  );
+}
+
+function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm, rubroKey = 'rubro', rubros, proveedorFn, validate }) {
   const isMobile = useIsMobile();
+  const { proveedores: proveedoresReales } = useProveedores() || {};
   const [sel, setSel] = useState(null);
   const [form, setForm] = useState(null);
   const [search, setSearch] = useState('');
   const [lastAddedId, setLastAddedId] = useState(null);
   const [selRubro, setSelRubro] = useState('');
+  const [selProveedor, setSelProveedor] = useState('');
 
   const filtered = useMemo(() => {
     const q = searchNorm(search);
     const list = items.filter(i =>
       (!selRubro || i[rubroKey] === selRubro) &&
+      (!selProveedor || !proveedorFn || proveedorFn(i) === selProveedor) &&
       Object.values(i).some(v => searchNorm(v).includes(q))
     );
     if (lastAddedId) {
@@ -369,7 +432,7 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
       if (idx > 0) { const [it] = list.splice(idx, 1); list.unshift(it); }
     }
     return list;
-  }, [items, search, lastAddedId, selRubro, rubroKey]);
+  }, [items, search, lastAddedId, selRubro, selProveedor, rubroKey, proveedorFn]);
 
   // Conteo por rubro en UNA pasada. El panel "Por rubro" solo muestra rubros que
   // TIENEN materiales: antes listaba rubros del catálogo sin ítems (ej. un rubro
@@ -382,11 +445,27 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
     return m;
   }, [items, rubroKey]);
 
+  // Conteo por proveedor (solo cuando se pasa proveedorFn, es decir, en la tab Materiales).
+  const proveedorCounts = useMemo(() => {
+    if (!proveedorFn) return {};
+    const m = {};
+    for (const i of items) { const k = proveedorFn(i); if (k) m[k] = (m[k] || 0) + 1; }
+    return m;
+  }, [items, proveedorFn]);
+
+  // Proveedores reales vinculados al grupo seleccionado (p.grupos[] incluye el label del grupo).
+  const proveedoresDeGrupo = useMemo(() => {
+    if (!proveedorFn || !selProveedor || !proveedoresReales) return null;
+    return (proveedoresReales || []).filter(p => (p.grupos || []).includes(selProveedor));
+  }, [proveedorFn, selProveedor, proveedoresReales]);
+
   const startAdd  = () => { setForm({ ...emptyForm }); setSel(null); };
   const startEdit = (item) => { setForm({ ...item }); setSel(item.id); };
   const cancel    = () => { setForm(null); setSel(null); setLastAddedId(null); };
+  const formValido = !validate || !form || validate(form);
   const save = () => {
     if (!form) return;
+    if (!formValido) return; // p.ej. material sin grupo: no se puede guardar
     if (sel) onUpdate(sel, form);
     else onAdd(form);
     setForm(null); setSel(null); setLastAddedId(null);
@@ -416,6 +495,29 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
               </div>
             );
           })}
+
+          {proveedorFn && Object.keys(proveedorCounts).length > 0 && (
+            <>
+              <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, padding: '0 4px', marginBottom: 6, marginTop: 12, borderTop: `1px solid ${T.faint2}`, paddingTop: 10 }}>Por proveedor</div>
+              <div onClick={() => setSelProveedor('')}
+                style={{ padding: '4px 8px', borderRadius: 3, cursor: 'pointer', fontWeight: !selProveedor ? 700 : 400, fontSize: 11, background: !selProveedor ? T.accentSoft : 'transparent', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                <span style={{ color: !selProveedor ? T.ink : T.ink2 }}>Todos</span>
+                <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono }}>{items.length}</span>
+              </div>
+              {PROVEEDORES.filter(p => proveedorCounts[p.label] > 0).map(p => {
+                const count = proveedorCounts[p.label] || 0;
+                const isOn  = selProveedor === p.label;
+                return (
+                  <div key={p.id} onClick={() => setSelProveedor(p.label)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 3, cursor: 'pointer', background: isOn ? T.accentSoft : 'transparent', borderLeft: `2px solid ${isOn ? p.color : 'transparent'}`, marginBottom: 1 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color, flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 11, color: isOn ? T.ink : T.ink2, fontWeight: isOn ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</span>
+                    <span style={{ fontSize: 9, color: T.ink3, fontFamily: T.fontMono, flexShrink: 0 }}>{count}</span>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </Box>
       )}
 
@@ -425,6 +527,23 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
             style={{ ...inputSt, flex: 1, padding: '4px 8px' }} />
           <Btn sm fill onClick={startAdd}>+ Agregar</Btn>
         </div>
+        {proveedoresDeGrupo !== null && (
+          <div style={{ padding: '6px 10px', background: proveedoresDeGrupo.length > 0 ? T.accentSoft : T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, flexShrink: 0 }}>
+              {proveedoresDeGrupo.length > 0 ? 'Proveedores de este grupo:' : 'Proveedores:'}
+            </span>
+            {proveedoresDeGrupo.length > 0
+              ? proveedoresDeGrupo.map(p => (
+                  <span key={p.id} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: T.accent + '22', color: T.accent, whiteSpace: 'nowrap' }}>
+                    {p.nombre}
+                  </span>
+                ))
+              : <span style={{ fontSize: 11, color: T.ink3, fontStyle: 'italic' }}>
+                  Ningún proveedor asignado a este grupo — asignalos en Proveedores.
+                </span>
+            }
+          </div>
+        )}
         <div style={{ flex: 1, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: isMobile ? 600 : 'auto' }}>
             <thead>
@@ -500,7 +619,7 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
           {renderForm(form, setForm)}
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
             <Btn sm onClick={cancel} style={{ flex: 1 }}>Cancelar</Btn>
-            <Btn sm fill onClick={save} style={{ flex: 1 }}>Guardar</Btn>
+            <Btn sm fill onClick={save} style={{ flex: 1, opacity: formValido ? 1 : 0.4, pointerEvents: formValido ? 'auto' : 'none' }}>Guardar</Btn>
           </div>
         </Box>
       )}
@@ -1417,15 +1536,18 @@ export default function Catalogos() {
               onDelete={id => remove('materiales', id)}
               rubros={rs}
               rubroKey="rubro"
+              proveedorFn={proveedorDeMaterial}
               cols={[
                 { key: 'codigo', label: 'Código', mono: true },
                 { key: 'nombre', label: 'Nombre' },
                 precioCol, usdCol,
                 { key: 'unidad', label: 'Unidad' },
                 { key: 'rubro', label: 'Rubro', render: v => <span style={{ fontSize: 10, background: rCol(v)+'22', color: rCol(v), padding: '2px 6px', borderRadius: 3, fontWeight: 700 }}>{v}</span> },
+                { key: '_proveedor', label: 'Proveedor', render: (_v, item) => { const lbl = proveedorDeMaterial(item); const col = colorProveedor(lbl); return <span style={{ fontSize: 10, background: col+'22', color: col, padding: '2px 6px', borderRadius: 3, fontWeight: 700, whiteSpace: 'nowrap' }}>{lbl}</span>; } },
                 { key: 'updatedAt', label: 'Actualizado', mono: true },
               ]}
-              emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, moneda: 'ARS', rubro: rs[0] || '', updatedAt: today() }}
+              emptyForm={{ codigo: '', nombre: '', unidad: 'm', precio: 0, moneda: 'ARS', rubro: rs[0] || '', grupo: '', updatedAt: today() }}
+              validate={f => !!(f.grupo && String(f.grupo).trim())}
               renderForm={(form, setForm) => (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -1438,6 +1560,7 @@ export default function Catalogos() {
                     <input list="mat-rubros" style={inputSt} value={form.rubro||''} onChange={e => setForm(f=>({...f, rubro:e.target.value}))} placeholder="Elegí o escribí un rubro…" />
                     <datalist id="mat-rubros">{rs.map(r => <option key={r} value={r} />)}</datalist>
                   </FRow>
+                  <MaterialGrupoSelect key={form.id || 'nuevo'} form={form} setForm={setForm} />
                 </>
               )}
             />

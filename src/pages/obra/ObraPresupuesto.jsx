@@ -25,6 +25,8 @@ import { renderPlantilla, planCuotasHtml, hashDocumento } from '../../lib/contra
 import { onRemoteChange } from '../../lib/syncBus';
 import { esc, abrirHTML } from '../../lib/html';
 import { BASE_CSS } from '../../lib/printTheme';
+import { proveedorDeMaterial, colorProveedor } from '../../lib/proveedoresMateriales';
+import { searchNorm } from '../../lib/searchNorm';
 import { cajasDelUsuario } from '../../lib/permisosCaja';
 import {
   cuotaMontoFn, cuotaCobrado, cuotaEstadoCalc,
@@ -1529,10 +1531,27 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
 // ─────────────────────────────────────────────────────────────────────────────
 function TabMateriales({ detalle, obra }) {
   const isMobile = useIsMobile();
-  const [selCategoria, setSelCategoria] = useState(null);
+  const [selProveedor, setSelProveedor] = useState(null);
   const { catalog } = useCatalog();
 
-  // Aggregate all materials globally, grouped by material category
+  // Índice del catálogo por NOMBRE normalizado → material del catálogo (que SÍ
+  // tiene rubro). El material de la receta (t.receta.materiales[i]) NO trae
+  // rubro, así que para saber de qué proveedor es hay que reencontrarlo en el
+  // catálogo por nombre y de ahí sacar el rubro para proveedorDeMaterial().
+  const catMatByNombre = useMemo(() => {
+    const map = new Map();
+    for (const cm of (catalog.materiales || [])) {
+      if (!cm?.nombre) continue;
+      const k = searchNorm(cm.nombre).trim();
+      // El primero gana (nombres repetidos en distintos rubros son raros y el
+      // primero del catálogo es suficiente para resolver el proveedor tipo).
+      if (!map.has(k)) map.set(k, cm);
+    }
+    return map;
+  }, [catalog.materiales]);
+
+  // Aggregate all materials globally, grouped by PROVEEDOR tipo (resuelto por el
+  // rubro del catálogo). Lo que no matchea el catálogo → 'Otros'.
   const catMats = useMemo(() => {
     const catalogByNombre = new Map((catalog.tareas || []).map(ct => [ct.nombre, ct]));
     const globalMap = new Map();
@@ -1556,41 +1575,48 @@ function TabMateriales({ detalle, obra }) {
           if (globalMap.has(m.nombre)) {
             globalMap.get(m.nombre).cantidad += qty;
           } else {
-            globalMap.set(m.nombre, { nombre: m.nombre, unidad: m.unidad || '', categoria: m.categoria || 'General', cantidad: qty });
+            // Resolver el rubro del material vía catálogo (por nombre) y de ahí
+            // el proveedor tipo. Sin match en catálogo → 'Otros'.
+            const catMat = catMatByNombre.get(searchNorm(m.nombre).trim());
+            const proveedor = catMat
+              ? proveedorDeMaterial({ rubro: catMat.rubro, nombre: m.nombre })
+              : 'Otros';
+            globalMap.set(m.nombre, { nombre: m.nombre, unidad: m.unidad || '', proveedor, cantidad: qty });
           }
         }
       }
     }
-    // Group by material category
-    const catMap = new Map();
+    // Group by proveedor tipo
+    const provMap = new Map();
     for (const mat of globalMap.values()) {
-      const cat = mat.categoria;
-      if (!catMap.has(cat)) catMap.set(cat, []);
-      catMap.get(cat).push(mat);
+      const prov = mat.proveedor;
+      if (!provMap.has(prov)) provMap.set(prov, []);
+      provMap.get(prov).push(mat);
     }
-    return [...catMap.entries()]
-      .sort(([a], [b]) => a.localeCompare(b, 'es'))
-      .map(([categoria, materiales]) => ({ categoria, materiales: materiales.sort((a, b) => a.nombre.localeCompare(b.nombre)) }));
-  }, [detalle.rubros, catalog.tareas]);
+    return [...provMap.entries()]
+      // 'Otros' siempre al final; el resto alfabético.
+      .sort(([a], [b]) => (a === 'Otros') - (b === 'Otros') || a.localeCompare(b, 'es'))
+      .map(([proveedor, materiales]) => ({ proveedor, materiales: materiales.sort((a, b) => a.nombre.localeCompare(b.nombre)) }));
+  }, [detalle.rubros, catalog.tareas, catMatByNombre]);
 
   const globalMats = useMemo(() => {
     return catMats.flatMap(c => c.materiales).sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [catMats]);
 
-  const visibleMats = selCategoria
-    ? (catMats.find(c => c.categoria === selCategoria)?.materiales || [])
+  const visibleMats = selProveedor
+    ? (catMats.find(c => c.proveedor === selProveedor)?.materiales || [])
     : globalMats;
 
   const exportarLista = () => {
-    const titulo = selCategoria
-      ? selCategoria
+    const titulo = selProveedor
+      ? selProveedor
       : 'Todos los materiales';
     const fecha = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' });
     const rows = visibleMats.map((m, i) => `
       <tr>
         <td>${i + 1}</td>
         <td><b>${esc(m.nombre)}</b></td>
-        <td>${esc(m.categoria)}</td>
+        <td>${esc(m.proveedor)}</td>
         <td>${esc(m.unidad)}</td>
         <td style="text-align:right;font-family:monospace">${fmtQ(m.cantidad)}</td>
         <td style="width:120px"></td>
@@ -1615,7 +1641,7 @@ function TabMateriales({ detalle, obra }) {
   <thead><tr>
     <th style="width:32px">#</th>
     <th>Material / Descripción</th>
-    <th>Categoría</th>
+    <th>Proveedor</th>
     <th>Unidad</th>
     <th style="text-align:right;width:90px">Cantidad</th>
     <th style="text-align:right;width:120px">Precio unitario</th>
@@ -1631,33 +1657,39 @@ function TabMateriales({ detalle, obra }) {
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 12, height: isMobile ? 'auto' : 'calc(100vh - 240px)' }}>
 
-      {/* Sidebar: material categories. En mobile pasa a una fila scrolleable arriba. */}
+      {/* Sidebar: PROVEEDORES tipo. En mobile pasa a una fila scrolleable arriba. */}
       <div style={isMobile
         ? { width: '100%', flexShrink: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'row', gap: 6 }
-        : { width: 200, flexShrink: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div onClick={() => setSelCategoria(null)}
-          style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${!selCategoria ? T.accent : T.faint2}`, background: !selCategoria ? T.accentSoft : T.paper, ...(isMobile ? { flexShrink: 0, whiteSpace: 'nowrap' } : {}) }}>
-          <div style={{ fontSize: 12, fontWeight: !selCategoria ? 700 : 400 }}>Todos los materiales</div>
+        : { width: 210, flexShrink: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div onClick={() => setSelProveedor(null)}
+          style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${!selProveedor ? T.accent : T.faint2}`, background: !selProveedor ? T.accentSoft : T.paper, ...(isMobile ? { flexShrink: 0, whiteSpace: 'nowrap' } : {}) }}>
+          <div style={{ fontSize: 12, fontWeight: !selProveedor ? 700 : 400 }}>Todos los materiales</div>
           <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, marginTop: 2 }}>{globalMats.length} materiales</div>
         </div>
-        {catMats.map(({ categoria, materiales }) => (
-          <div key={categoria} onClick={() => setSelCategoria(categoria)}
-            style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${selCategoria === categoria ? T.accent : T.faint2}`, background: selCategoria === categoria ? T.accentSoft : T.paper, ...(isMobile ? { flexShrink: 0, whiteSpace: 'nowrap' } : {}) }}>
-            <div style={{ fontSize: 12, fontWeight: 600 }}>{categoria}</div>
-            <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, marginTop: 2 }}>{materiales.length} materiales</div>
-          </div>
-        ))}
+        {catMats.map(({ proveedor, materiales }) => {
+          const col = colorProveedor(proveedor);
+          return (
+            <div key={proveedor} onClick={() => setSelProveedor(proveedor)}
+              style={{ padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${selProveedor === proveedor ? T.accent : T.faint2}`, background: selProveedor === proveedor ? T.accentSoft : T.paper, ...(isMobile ? { flexShrink: 0, whiteSpace: 'nowrap' } : {}) }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: col, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{proveedor}</span>
+              </div>
+              <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink3, marginTop: 2 }}>{materiales.length} materiales</div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Main table */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header bar */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexShrink: 0, gap: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
             {visibleMats.length} {visibleMats.length === 1 ? 'material' : 'materiales'}
           </div>
           <Btn sm onClick={exportarLista} disabled={visibleMats.length === 0}>
-            📋 Exportar para cotización
+            📋 {selProveedor ? `Cotizar / Exportar ${selProveedor}` : 'Exportar para cotización'}
           </Btn>
         </div>
 
@@ -1672,20 +1704,23 @@ function TabMateriales({ detalle, obra }) {
             <>
               <div className="k-tr" style={{ background: T.faint, fontWeight: 700, fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.4 }}>
                 <div className="k-cell" style={{ flex: 3 }}>Material</div>
-                <div className="k-cell" style={{ flex: 0.9 }}>Categoría</div>
+                <div className="k-cell" style={{ flex: 0.9 }}>Proveedor</div>
                 <div className="k-cell" style={{ flex: 0.6, textAlign: 'right' }}>Unidad</div>
                 <div className="k-cell" style={{ flex: 0.9, textAlign: 'right' }}>Cantidad total</div>
               </div>
-              {visibleMats.map((m, i) => (
+              {visibleMats.map((m, i) => {
+                const col = colorProveedor(m.proveedor);
+                return (
                 <div key={m.nombre} className="k-tr" style={{ alignItems: 'center' }}>
                   <div className="k-cell" style={{ flex: 3, fontWeight: 600, fontSize: 12 }}>{m.nombre}</div>
                   <div className="k-cell" style={{ flex: 0.9 }}>
-                    <Chip style={{ fontSize: 9 }}>{m.categoria}</Chip>
+                    <span style={{ fontSize: 9, background: col + '22', color: col, padding: '2px 6px', borderRadius: 3, fontWeight: 700, whiteSpace: 'nowrap' }}>{m.proveedor}</span>
                   </div>
                   <div className="k-cell" style={{ flex: 0.6, fontFamily: T.fontMono, textAlign: 'right', fontSize: 12, color: T.ink2 }}>{m.unidad}</div>
                   <div className="k-cell" style={{ flex: 0.9, fontFamily: T.fontMono, textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmtQ(m.cantidad)}</div>
                 </div>
-              ))}
+                );
+              })}
             </>
           )}
         </Box>
