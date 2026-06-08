@@ -3742,6 +3742,7 @@ const makeRubroFormInit = () => ({ rubroId: '', tareasSel: {} });
 function TabContratosMO({ detalle, patch, moneda, obra }) {
   const isMobile = useIsMobile();
   const [adding, setAdding] = useState(false);
+  const [editingContratoId, setEditingContratoId] = useState(null); // null = nuevo; id = editando ese contrato
   const [form, setForm] = useState(makeFormInit);
   const [formError, setFormError] = useState('');
   const [addingRubro, setAddingRubro] = useState(false);
@@ -3753,6 +3754,12 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
 
   const rubros = detalle.rubros || [];
   const contratos = detalle.contratos || [];
+  // Para el cálculo de "disponible" dentro del form: si estamos EDITANDO un
+  // contrato, sus propias cantidades no deben contar contra sí mismas (si no, no
+  // se podría mantener ni subir lo ya contratado en este contrato). Se excluye.
+  const contratosParaCalc = editingContratoId
+    ? contratos.filter(c => c.id !== editingContratoId)
+    : contratos;
 
   const allTareasSel = form.rubrosAgregados
     .filter(r => r.rubroId !== editingRubroId)
@@ -3761,7 +3768,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   const tareasDisponibles = rubroSel
     ? (rubroSel.tareas || []).filter(t =>
         t.tipo !== 'seccion' &&
-        calcTareaContratada(t.id, contratos) < (t.cantidad || 0) &&
+        calcTareaContratada(t.id, contratosParaCalc) < (t.cantidad || 0) &&
         !allTareasSel.includes(t.id))
     : [];
 
@@ -3772,7 +3779,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
         delete next[t.id];
         return { ...p, tareasSel: next };
       }
-      const disponible = t.cantidad - calcTareaContratada(t.id, contratos);
+      const disponible = t.cantidad - calcTareaContratada(t.id, contratosParaCalc);
       return { ...p, tareasSel: { ...p.tareasSel, [t.id]: { cantidad: disponible, precioUnit: Math.round(t.costoSub || t.costoMO) || 0 } } };
     });
   };
@@ -3840,9 +3847,58 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
     const planPagos = (form.planPagos || [])
       .filter(p => (p.concepto || '').trim() || (+p.pct || 0) > 0)
       .map(p => ({ id: p.id || newId(), concepto: p.concepto || '', pct: +p.pct || 0 }));
-    patch(d => ({ ...d, contratos: [...(d.contratos || []), { id: newId(), proveedor: form.proveedor, cuit: form.cuit, domicilio: form.domicilio, categoriaPADIC: form.categoriaPADIC, fechaInicio: form.fechaInicio, fechaFin: form.fechaFin, fondoReparo: +form.fondoReparo, formaPago: form.formaPago, estado: 'activo', tareas, monto: totalContrato, colaboradores, planPagos }] }));
+    const campos = { proveedor: form.proveedor, cuit: form.cuit, domicilio: form.domicilio, categoriaPADIC: form.categoriaPADIC, fechaInicio: form.fechaInicio, fechaFin: form.fechaFin, fondoReparo: +form.fondoReparo, formaPago: form.formaPago, tareas, monto: totalContrato, colaboradores, planPagos };
+    if (editingContratoId) {
+      // EDITAR: reemplazar el contrato por id, conservando id/estado/avancePct y
+      // cualquier otro campo no editable del form (escritura atómica, igual patch).
+      patch(d => ({ ...d, contratos: (d.contratos || []).map(c => c.id === editingContratoId ? { ...c, ...campos } : c) }));
+    } else {
+      // NUEVO
+      patch(d => ({ ...d, contratos: [...(d.contratos || []), { id: newId(), estado: 'activo', ...campos }] }));
+    }
+    resetForm();
+  };
+
+  // Cierra y limpia todo el form (sirve para guardar y para cancelar).
+  const resetForm = () => {
     setAdding(false);
+    setEditingContratoId(null);
     setForm(makeFormInit());
+    setFormError('');
+    setAddingRubro(false);
+    setEditingRubroId(null);
+    setRubroForm(makeRubroFormInit());
+  };
+
+  // Carga un contrato existente en el form para editarlo. Reconstruye
+  // rubrosAgregados (agrupando tareas[] por rubro) desde el contrato guardado.
+  const startEditContrato = (c) => {
+    const rubrosMap = {};
+    (Array.isArray(c.tareas) ? c.tareas : []).forEach(t => {
+      const rid = t.rubroId;
+      if (!rid) return;
+      if (!rubrosMap[rid]) {
+        const rubro = rubros.find(r => r.id === rid);
+        rubrosMap[rid] = { rubroId: rid, rubroNombre: t.rubroNombre || rubro?.nombre || '', tareasSel: {} };
+      }
+      rubrosMap[rid].tareasSel[t.tareaId] = { cantidad: +t.cantidadContratada || 0, precioUnit: +t.precioUnit || 0 };
+    });
+    setForm({
+      proveedor: c.proveedor || '',
+      cuit: c.cuit || '',
+      domicilio: c.domicilio || '',
+      categoriaPADIC: c.categoriaPADIC || '',
+      fechaInicio: c.fechaInicio || '',
+      fechaFin: c.fechaFin || '',
+      fondoReparo: c.fondoReparo ?? 5,
+      formaPago: c.formaPago || 'Por avance certificado mensualmente',
+      rubrosAgregados: Object.values(rubrosMap),
+      colaboradores: (Array.isArray(c.colaboradores) ? c.colaboradores : []).map(co => ({ id: co.id || newId(), nombre: co.nombre || '', dni: co.dni || '', cuit: co.cuit || '', domicilio: co.domicilio || '', montoDia: co.montoDia ?? '' })),
+      planPagos: (Array.isArray(c.planPagos) ? c.planPagos : []).map(p => ({ id: p.id || newId(), concepto: p.concepto || '', pct: p.pct ?? 0 })),
+    });
+    setEditingContratoId(c.id);
+    setAdding(true);
+    setFormError('');
     setAddingRubro(false);
     setEditingRubroId(null);
     setRubroForm(makeRubroFormInit());
@@ -3856,11 +3912,11 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
       {printContrato && <ContratoMOModal contrato={printContrato} obra={obra} onClose={() => setPrintContrato(null)} />}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-        <Btn sm fill onClick={() => setAdding(true)}>+ Contrato MO</Btn>
+        <Btn sm fill onClick={() => { setEditingContratoId(null); setForm(makeFormInit()); setFormError(''); setAddingRubro(false); setEditingRubroId(null); setRubroForm(makeRubroFormInit()); setAdding(true); }}>+ Contrato MO</Btn>
       </div>
 
       {adding && (
-        <FormPanel title="Nuevo contrato MO" onSave={save} onCancel={() => { setAdding(false); setForm(makeFormInit()); setAddingRubro(false); setEditingRubroId(null); setRubroForm(makeRubroFormInit()); setFormError(''); }} style={{ marginBottom: 14 }}>
+        <FormPanel title={editingContratoId ? 'Editar contrato MO' : 'Nuevo contrato MO'} onSave={save} onCancel={resetForm} style={{ marginBottom: 14 }}>
           {formError && <div style={{ color: '#dc2626', fontSize: 12, fontWeight: 600, padding: '4px 0' }}>{formError}</div>}
 
           {/* Fila 1: proveedor + cuit */}
@@ -3946,7 +4002,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                     if (rubroForm.rubroId && r.id === rubroForm.rubroId) return true;
                     if (form.rubrosAgregados.find(ra => ra.rubroId === r.id)) return false;
                     const tareasSinSec = (r.tareas || []).filter(t => t.tipo !== 'seccion' && (t.cantidad || 0) > 0);
-                    return tareasSinSec.some(t => calcTareaContratada(t.id, contratos) < t.cantidad);
+                    return tareasSinSec.some(t => calcTareaContratada(t.id, contratosParaCalc) < t.cantidad);
                   }).map(r => (
                     <option key={r.id} value={r.id}>{r.nombre}</option>
                   ))}
@@ -3979,7 +4035,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                             const next = { ...rubroForm.tareasSel };
                             tareasDisponibles.forEach(t => {
                               if (!next[t.id]) {
-                                const disponible = t.cantidad - calcTareaContratada(t.id, contratos);
+                                const disponible = t.cantidad - calcTareaContratada(t.id, contratosParaCalc);
                                 next[t.id] = { cantidad: disponible, precioUnit: Math.round(t.costoSub || t.costoMO) || 0 };
                               }
                             });
@@ -3995,7 +4051,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {tareasDisponibles.map(t => {
-                        const disponible = t.cantidad - calcTareaContratada(t.id, contratos);
+                        const disponible = t.cantidad - calcTareaContratada(t.id, contratosParaCalc);
                         const sel = rubroForm.tareasSel[t.id];
                         return (
                           <div key={t.id} style={{ padding: '6px 8px', background: sel ? T.accentSoft : T.paper, borderRadius: 4, border: `1px solid ${sel ? T.accent : T.faint2}` }}>
@@ -4182,6 +4238,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
               <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 16 }}>{fmtM(monto, moneda)}</div>
               <Chip ok={c.estado === 'activo'} style={{ fontSize: 10 }}>{c.estado}</Chip>
               <div style={{ display: 'flex', gap: 6 }}>
+                <Btn sm onClick={() => startEditContrato(c)}>✏ Editar</Btn>
                 <Btn sm onClick={() => setPrintContrato(c)}>Imprimir</Btn>
                 <Btn sm onClick={() => toggleEstado(c.id)}>{c.estado === 'activo' ? '✓ Cerrar' : '↩ Reabrir'}</Btn>
                 <span style={{ color: T.accent, cursor: 'pointer' }} onClick={() => del(c.id)}>🗑</span>
