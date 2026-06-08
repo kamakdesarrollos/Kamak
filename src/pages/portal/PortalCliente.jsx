@@ -294,7 +294,20 @@ export default function PortalCliente() {
     ? Math.max(0, Math.ceil((new Date(obra.fechaFinEstim) - new Date()) / 86400000))
     : null;
 
-  const tabs = ['Resumen', 'Avance', 'Cuenta corriente', 'Documentos', ...(detalle.contrato ? ['Contrato'] : [])];
+  // Seguros (transparencia de cobertura en obra). En modo cliente viene
+  // sanitizado del server (sin nombres/DNI). En admin-preview lo derivamos del
+  // detalle crudo replicando el shape del server (anónimo).
+  const seguros = isClienteMode
+    ? (detalle.seguros || [])
+    : (detalle.contratos || []).map((c, i) => ({
+        id: c.id,
+        label: `Contratista ${i + 1}`,
+        asegurados: 1 + ((c.colaboradores || []).length),
+        polizaCargada: !!(detalle.segurosPorContrato?.[c.id]?.polizaUrl),
+        polizaVence: detalle.segurosPorContrato?.[c.id]?.polizaVence || null,
+      }));
+
+  const tabs = ['Resumen', 'Avance', 'Cuenta corriente', 'Documentos', ...(seguros.length > 0 ? ['Seguros'] : []), ...(detalle.contrato ? ['Contrato'] : [])];
 
   // Estado chip colors
   const estadoChip = {
@@ -907,6 +920,49 @@ export default function PortalCliente() {
                   </div>
                 ))
               )}
+            </Box>
+          );
+        })()}
+
+        {/* TAB — SEGUROS (solo si hay contratistas; índice variable) ──────────
+            Transparencia de cobertura: por cada contratista (anónimo) mostramos
+            cuántas personas tiene aseguradas y si la póliza está vigente. NO se
+            exponen nombres, DNI, CUIT ni números de póliza (sanitizado en server). */}
+        {tabs[tab] === 'Seguros' && (() => {
+          const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+          const estado = (s) => {
+            if (!s.polizaCargada) return { label: 'Pendiente', color: T.warn };
+            if (!s.polizaVence)   return { label: 'Cubierto', color: T.ok };
+            const dias = Math.ceil((new Date(s.polizaVence + 'T00:00:00') - hoy) / 86400000);
+            if (dias < 0)   return { label: 'Vencida', color: T.warn };
+            if (dias <= 30) return { label: 'Por vencer', color: T.warn };
+            return { label: 'Vigente', color: T.ok };
+          };
+          const totalAsegurados = seguros.reduce((s, g) => s + (g.asegurados || 0), 0);
+          const cubiertos = seguros.filter(s => s.polizaCargada).length;
+          return (
+            <Box style={{ padding: 18 }}>
+              <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, marginBottom: 6, color: T.ink }}>Seguros del personal en obra</div>
+              <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>
+                {totalAsegurados} {totalAsegurados === 1 ? 'persona asegurada' : 'personas aseguradas'} ·
+                {' '}{cubiertos} de {seguros.length} {seguros.length === 1 ? 'contratista con póliza' : 'contratistas con póliza'}
+              </div>
+              {seguros.map((s, i) => {
+                const e = estado(s);
+                return (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: i < seguros.length - 1 ? `1px solid ${T.faint2}` : 'none', gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 8, background: T.faint2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🛡️</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{s.label}</div>
+                      <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
+                        {s.asegurados} {s.asegurados === 1 ? 'persona asegurada' : 'personas aseguradas'}
+                        {s.polizaCargada && s.polizaVence ? ` · vence ${fmtD(s.polizaVence)}` : ''}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: e.color, padding: '3px 10px', borderRadius: 12, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.label}</span>
+                  </div>
+                );
+              })}
             </Box>
           );
         })()}
