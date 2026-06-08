@@ -136,10 +136,32 @@ export function proveedorDeRubro(rubro) {
   return RUBRO_A_PROVEEDOR.get(rn) || FALLBACK_LABEL;
 }
 
-// proveedorDeMaterial(material) → label. Usa material.rubro; si es el rubro mixto,
-// parte por keyword del nombre. Fallback 'Otros'.
+// grupoGuardado(material) → label canónico del grupo elegido A MANO, o null si no
+// hay grupo guardado. El material puede traer material.grupo seteado (id kebab,
+// label, o cualquier string no vacío). Si matchea uno de los 14 (por id o label,
+// tolerando acentos/mayúsculas) devuelve el label canónico; si es otro string no
+// vacío lo devuelve tal cual (respeta lo que el usuario guardó). '' / null → null.
+function grupoGuardado(material) {
+  const g = material?.grupo;
+  if (typeof g !== 'string') return null;
+  const t = g.trim();
+  if (!t) return null;
+  // ¿es uno de los 14? (por id kebab o por label, normalizado)
+  if (POR_ID.has(t)) return POR_ID.get(t).label;
+  const byLabel = POR_LABEL_NORM.get(norm(t));
+  if (byLabel) return byLabel.label;
+  // string no vacío que no es de los 14: respetarlo tal cual.
+  return t;
+}
+
+// proveedorDeMaterial(material) → label. PRIORIDAD: si el material tiene un 'grupo'
+// guardado a mano (no vacío) gana y se devuelve ese. SOLO si no hay grupo guardado
+// se deriva del rubro: usa material.rubro; si es el rubro mixto, parte por keyword
+// del nombre. Fallback 'Otros'.
 export function proveedorDeMaterial(material) {
   if (!material) return FALLBACK_LABEL;
+  const guardado = grupoGuardado(material);
+  if (guardado) return guardado;
   const rn = norm(material.rubro);
   if (!rn) return FALLBACK_LABEL;
   if (rn === RUBRO_MIXTO_CEMENTOS) return partirRubroMixto(material.nombre);

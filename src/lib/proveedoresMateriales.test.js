@@ -184,6 +184,52 @@ describe('proveedorDeMaterial — usa material.rubro y parte el rubro mixto por 
   });
 });
 
+describe('proveedorDeMaterial — el grupo GUARDADO a mano gana sobre el rubro', () => {
+  it('grupo guardado (label) pisa al rubro: rubro Pinturas pero grupo Aberturas → Aberturas', () => {
+    // El rubro mapearía a Pinturería, pero el usuario eligió Aberturas a mano.
+    expect(proveedorDeMaterial({ rubro: 'Pinturas', nombre: 'algo', grupo: 'Aberturas' })).toBe('Aberturas');
+  });
+
+  it('grupo guardado como id (kebab) → devuelve el label canónico', () => {
+    // 'corralon' es el id; debe devolver el label 'Corralón de materiales'.
+    expect(proveedorDeMaterial({ rubro: 'Pinturas', nombre: 'algo', grupo: 'corralon' })).toBe('Corralón de materiales');
+    expect(proveedorDeMaterial({ rubro: 'Maderas', nombre: 'algo', grupo: 'sanitarios' })).toBe('Sanitarios / Plomería');
+  });
+
+  it('grupo guardado como label tolera acentos/mayúsculas y devuelve el canónico', () => {
+    expect(proveedorDeMaterial({ rubro: 'Pinturas', nombre: 'algo', grupo: 'sanitarios / plomeria' })).toBe('Sanitarios / Plomería');
+    expect(proveedorDeMaterial({ rubro: 'Pinturas', nombre: 'algo', grupo: '  Marmolería  ' })).toBe('Marmolería');
+  });
+
+  it('grupo guardado pisa incluso al rubro MIXTO de cementos', () => {
+    const mixto = 'Cales, Cementos, Finos, Pegamentos, Pastina y Hormigones';
+    // Sin grupo, "Cemento Portland" iría a Corralón; con grupo elegido manda el grupo.
+    expect(proveedorDeMaterial({ rubro: mixto, nombre: 'Cemento Portland', grupo: 'Pinturería' })).toBe('Pinturería');
+  });
+
+  it('grupo guardado que NO es de los 14 pero es string no vacío → se respeta tal cual', () => {
+    expect(proveedorDeMaterial({ rubro: 'Pinturas', nombre: 'algo', grupo: 'Proveedor a medida' })).toBe('Proveedor a medida');
+  });
+
+  it('grupo guardado funciona aunque el material NO tenga rubro', () => {
+    expect(proveedorDeMaterial({ nombre: 'sin rubro', grupo: 'Vidriería' })).toBe('Vidriería');
+    expect(proveedorDeMaterial({ grupo: 'vidrieria' })).toBe('Vidriería');
+  });
+
+  it('grupo vacío / no string → se ignora y se deriva del rubro (comportamiento actual)', () => {
+    expect(proveedorDeMaterial({ rubro: 'Pinturas', nombre: 'algo', grupo: '' })).toBe('Pinturería');
+    expect(proveedorDeMaterial({ rubro: 'Pinturas', nombre: 'algo', grupo: '   ' })).toBe('Pinturería');
+    expect(proveedorDeMaterial({ rubro: 'Pinturas', nombre: 'algo', grupo: null })).toBe('Pinturería');
+    expect(proveedorDeMaterial({ rubro: 'Pinturas', nombre: 'algo', grupo: undefined })).toBe('Pinturería');
+  });
+
+  it('sin grupo → deriva del rubro como hasta ahora (no rompe el comportamiento previo)', () => {
+    expect(proveedorDeMaterial({ rubro: 'Instalaciones Eléctricas', nombre: 'Cable 2.5mm' })).toBe('Casa de electricidad');
+    const mixto = 'Cales, Cementos, Finos, Pegamentos, Pastina y Hormigones';
+    expect(proveedorDeMaterial({ rubro: mixto, nombre: 'Pegamento Klaukol' })).toBe('Casa de revestimientos');
+  });
+});
+
 describe('helpers labelProveedor / colorProveedor', () => {
   it('labelProveedor(id) → label', () => {
     const p = PROVEEDORES[0];
