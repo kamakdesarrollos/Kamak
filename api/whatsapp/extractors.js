@@ -30,8 +30,10 @@ const INTENT_KEYWORDS = {
   avance:     ['avance', 'avanc', 'avancé', 'hice', 'terminé', 'termine', 'completé', 'complete', 'progreso', 'agenda avance', 'agendar avance', 'registrar avance', 'cargar avance'],
   cheque:     ['cheque', 'echeq', 'e-cheq'],
   tarea:      ['nueva tarea', 'crear tarea', 'creale tarea', 'creale una tarea', 'asigname una tarea', 'asigname tarea', 'agendá tarea', 'agendar tarea'],
-  // Comercial — alta de oportunidad. Específicos ('prospecto') para no chocar con 'gasto'.
-  crear_prospecto: ['nuevo prospecto', 'prospecto nuevo', 'nueva oportunidad', 'oportunidad nueva', 'cargar prospecto', 'crear prospecto', 'nuevo lead'],
+  // Comercial — alta de oportunidad / primer contacto. Específicos ('prospecto',
+  // 'me contacto'…) para no chocar con 'gasto'. 'primer contacto'/'me escribio'/
+  // 'consulta de' arrancan el alta de un primer contacto en el embudo.
+  crear_prospecto: ['nuevo prospecto', 'prospecto nuevo', 'nueva oportunidad', 'oportunidad nueva', 'cargar prospecto', 'crear prospecto', 'nuevo lead', 'primer contacto', 'nuevo contacto', 'me contacto', 'me escribio', 'me escribió', 'consulta de'],
   // Comercial — mover de etapa en el embudo. 'a ganado'/'a perdido' son señales fuertes.
   mover_etapa: ['a ganado', 'a perdido', 'a negociacion', 'a negociación', 'a cotizado', 'pasa a', 'pasá a', 'pasar a', 'pasalo a', 'mover a', 'moverla a', 'cambiar etapa', 'cambiar de etapa'],
   traspaso:   ['traspaso', 'pasar de', 'pasá de', 'pasame', 'mover de', 'transferir de'],
@@ -177,13 +179,32 @@ export function extractEtapaDestino(text) {
   return null;
 }
 
-// ── Comercial: nombre de obra y cliente para un prospecto nuevo ───────────────
-// Parsea "nuevo prospecto <obra> cliente <cliente>" (cliente opcional).
+// ── Comercial: nombre de obra y cliente para un prospecto / primer contacto ───
+// Dos formas:
+//  A) "obra primero":   "nuevo prospecto <obra> cliente <cliente>"
+//     (prefijos prospecto/oportunidad/lead). Lo de antes: el cuerpo es la OBRA,
+//     y tras "cliente|para|de" viene el CLIENTE (opcional).
+//  B) "cliente primero": "primer contacto <cliente> ...", "me contactó <cliente>",
+//     "me escribió <cliente>", "consulta de <cliente>", "nuevo contacto <cliente>".
+//     Acá el cuerpo arranca con el CLIENTE; tras "por|obra|sobre" puede venir el
+//     nombre de la oportunidad (si no, lo arma crearProspecto como "Consulta — X").
 // Devuelve { obraNombre, clienteNombre } con lo que se pudo extraer.
 const RE_PROSPECTO_PREFIJO = /^\s*(nuev[oa]\s+prospecto|prospecto\s+nuev[oa]|nueva\s+oportunidad|oportunidad\s+nueva|cargar\s+prospecto|crear\s+prospecto|nuevo\s+lead)\s*:?\s*/i;
+const RE_CONTACTO_PREFIJO = /^\s*(primer\s+contacto|nuevo\s+contacto|me\s+contact[oó]|me\s+escribi[oó]|consulta\s+de)\s*:?\s*/i;
 const RE_CLIENTE_SPLIT = /\s+(?:cliente|para|de)\s+/i;
+const RE_OBRA_SPLIT = /\s+(?:por|obra|sobre|para\s+la\s+obra)\s+/i;
 export function extractProspectoSlots(text) {
   if (!text) return {};
+  // Forma B: el primer término es el cliente.
+  if (RE_CONTACTO_PREFIJO.test(text)) {
+    let cuerpo = text.replace(RE_CONTACTO_PREFIJO, '').trim();
+    if (!cuerpo) return {};
+    const m = cuerpo.split(RE_OBRA_SPLIT);
+    const clienteNombre = (m[0] || '').trim() || null;
+    const obraNombre = m.length > 1 ? (m.slice(1).join(' ').trim() || null) : null;
+    return { obraNombre, clienteNombre };
+  }
+  // Forma A: el primer término es la obra.
   if (!RE_PROSPECTO_PREFIJO.test(text)) return {};
   let cuerpo = text.replace(RE_PROSPECTO_PREFIJO, '').trim();
   if (!cuerpo) return {};
