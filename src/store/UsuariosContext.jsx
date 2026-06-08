@@ -44,7 +44,7 @@ export const ROL_TABS_OCULTAS = {
   'Jefe de obra':        ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Movimientos', 'Contratos MO', 'Portal cliente'],                     // ve: Materiales, Gantt, Archivos
   'Logística y compras': ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Gantt', 'Movimientos', 'Contratos MO', 'Portal cliente'],           // ve: Materiales, Archivos
   'Contador externo':    ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Archivos', 'Portal cliente'],
-  'Ingeniero externo':   ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Portal cliente'], // ve SOLO: Archivos
+  'Ingeniero externo':   ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Portal cliente', 'Seguros'], // ve SOLO: Archivos
 };
 
 // ── Conversión entre formato DB y formato app ─────────────────────────────────
