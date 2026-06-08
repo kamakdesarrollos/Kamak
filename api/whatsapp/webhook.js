@@ -2675,14 +2675,26 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
   if (tipo === 'crear_prospecto') {
     if (user.user_rol !== 'Admin') return '⚠️ Crear oportunidades por chat es solo para un Admin.';
     const nombreObra = String(datos.obraNombre || datos.nombreObra || '').trim();
-    const clienteNombre = String(datos.clienteNombre || '').trim() || null;
+    // Si compartieron un contacto, su nombre/teléfono mandan sobre lo que haya
+    // inferido Claude del texto: el primer contacto es de ESE contacto, no del
+    // que escribe. Fallback al clienteNombre del texto y al phone del usuario.
+    const compartido = user.contactoCompartido || null;
+    const telefonoContacto = compartido?.telefono || user.phone || null;
+    // Nombre del cliente: el del contacto compartido manda sobre el del texto.
+    // Borde: contacto SIN nombre pero CON teléfono → sintetizamos un nombre con
+    // el teléfono ("Contacto +549...") para que crearProspecto cree la ficha y
+    // guarde el teléfono (si va vacío, no crea cliente ni persiste el número).
+    let clienteNombre = (compartido?.nombre || String(datos.clienteNombre || '').trim()) || null;
+    if (!clienteNombre && compartido && telefonoContacto) clienteNombre = `Contacto ${telefonoContacto}`;
     // Necesitamos al menos un cliente o un nombre de oportunidad. Si hay cliente
     // pero no obra, crearProspecto arma "Consulta — <cliente>" (igual que la web).
-    if (!nombreObra && !clienteNombre) return '❌ ¿De quién es el primer contacto? Ej: *primer contacto Pérez* o *nuevo prospecto Shell Ruta 3 cliente Pérez*.';
+    // Con un contacto compartido sin nombre pero con teléfono, igual seguimos:
+    // crearProspecto puede crear/vincular el cliente por teléfono.
+    if (!nombreObra && !clienteNombre && !(compartido && telefonoContacto)) return '❌ ¿De quién es el primer contacto? Ej: *primer contacto Pérez* o *nuevo prospecto Shell Ruta 3 cliente Pérez*.';
     try {
       const nueva = await crearProspecto({
         nombreObra, clienteNombre, usuario: user.user_name,
-        telefono: user.phone || null, fuente: 'WhatsApp', nota: '',
+        telefono: telefonoContacto, fuente: 'WhatsApp', nota: '',
       });
       if (nueva.duplicada) return `⚠️ Ya existe una obra *${nueva.existente.nombre}*${nueva.existente.etapa ? ` (etapa ${nueva.existente.etapa})` : ''}. Si la querés mover, decime: *pasá ${nueva.existente.nombre} a cotizado*.`;
       const cliMsg = nueva.clienteId
@@ -4470,6 +4482,10 @@ export default async function handler(req, res) {
     let text    = '';
     let mediaId = null;
     let mimeType = null;
+    // Contacto compartido por WhatsApp ("compartir contacto" → vCard). Cuando
+    // viene, el primer contacto va para crear el prospecto: nombre + teléfono
+    // son los del CONTACTO compartido, NO los del que escribe. null si no aplica.
+    let contactoCompartido = null;
 
     if (messageType === 'text') {
       text = message.text?.body || '';
@@ -4483,6 +4499,36 @@ export default async function handler(req, res) {
       // Preferimos el caption (lo que escribió el usuario al mandar el PDF) sobre
       // el nombre del archivo, que suele ser inútil ("Factura_001.pdf").
       text     = message.document?.caption || message.document?.filename || '';
+    } else if (messageType === 'contacts') {
+      // El usuario COMPARTIÓ un contacto (función "compartir contacto" de WA).
+      // Llega message.contacts = [{ name: {...}, phones: [{ phone, wa_id }] }].
+      // Lo interpretamos como un PRIMER CONTACTO de ESE contacto: extraemos su
+      // nombre y teléfono y disparamos el intent crear_prospecto con esos datos.
+      const c = Array.isArray(message.contacts) ? message.contacts[0] : null;
+      const nombre = (
+        c?.name?.formatted_name ||
+        [c?.name?.first_name, c?.name?.last_name].filter(Boolean).join(' ')
+      ).trim() || null;
+      const phoneObj = Array.isArray(c?.phones) ? c.phones[0] : null;
+      let telCompartido = phoneObj?.phone || phoneObj?.wa_id || null;
+      if (telCompartido) {
+        telCompartido = String(telCompartido).trim();
+        // wa_id suele venir sin '+' (ej "5491122334455"); el campo phone suele
+        // traer el '+'. Normalizamos a E.164 con '+' adelante para guardar bien.
+        if (!telCompartido.startsWith('+')) telCompartido = '+' + telCompartido.replace(/[^\d]/g, '');
+      }
+      contactoCompartido = { nombre, telefono: telCompartido || null };
+      // Disparamos el flujo de primer contacto. Si el contacto trae nombre lo
+      // usamos para que Claude lo tome como clienteNombre; si no, igual marcamos
+      // la intención y el handler usa el teléfono compartido.
+      const captionContacto = (text || '').trim();
+      // Construimos un texto que Claude routea a crear_prospecto. Le pasamos un
+      // identificador del cliente (nombre, o el teléfono si no hay nombre) para
+      // que NO repregunte "¿de quién es el contacto?" y emita el intent: el
+      // handler luego pisa nombre/teléfono con los del contacto compartido.
+      const idContacto = nombre || telCompartido || '';
+      text = idContacto ? `primer contacto ${idContacto}` : 'primer contacto';
+      if (captionContacto) text += `. ${captionContacto}`;
     } else if (messageType === 'interactive') {
       // Respuesta a botón o lista. El id que mandamos vuelve acá. Lo
       // tratamos como texto para que el resto del flujo lo procese igual:
@@ -4532,6 +4578,10 @@ export default async function handler(req, res) {
 
     if (user) {
       // Usuario interno (Admin, Compras, Capataz, etc.)
+      // Si llegó un contacto compartido, lo adjuntamos al user para que el
+      // handler crear_prospecto use el teléfono/nombre del CONTACTO compartido
+      // (no los del que escribe). Viaja con el spread { ...user } a ejecutarAccion.
+      if (contactoCompartido) user.contactoCompartido = contactoCompartido;
       await handleMainFlow(phone, user, text, mediaId, mimeType, conv);
     } else if (cliente) {
       // Cliente vinculado al portal (read-only, comandos limitados)
