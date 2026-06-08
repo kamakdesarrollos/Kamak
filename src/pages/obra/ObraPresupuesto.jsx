@@ -14,6 +14,7 @@ import { useDolar } from '../../store/DolarContext';
 import ExportModal from '../modales/ExportModal';
 import ContratoMOModal from '../modales/ContratoMOModal';
 import DocumentosContratistaModal from '../modales/DocumentosContratistaModal';
+import { resumenDocsEstado } from '../../lib/contratistaDocs';
 import { useGastosFijos } from '../../store/GastosFijosContext';
 import { useCatalog, calcTarea } from '../../store/CatalogContext';
 import { useUsuarios, ROL_TABS_OCULTAS, ROL_TABS_OCULTAS_DEFAULT } from '../../store/UsuariosContext';
@@ -3918,7 +3919,19 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
   return (
     <div style={{ maxWidth: 800 }}>
       {printContrato && <ContratoMOModal contrato={printContrato} obra={obra} onClose={() => setPrintContrato(null)} />}
-      {docsContrato && <DocumentosContratistaModal contrato={docsContrato} obra={obra} onClose={() => setDocsContrato(null)} />}
+      {docsContrato && (
+        <DocumentosContratistaModal
+          contrato={docsContrato}
+          obra={obra}
+          onClose={() => setDocsContrato(null)}
+          onUpdate={(fn) => {
+            // Escritura atómica del docsEstado sobre ESE contrato; refrescamos
+            // también el contrato abierto en el modal para que vea el cambio.
+            setDocsContrato(prev => (prev ? fn(prev) : prev));
+            patch(d => ({ ...d, contratos: (d.contratos || []).map(c => c.id === docsContrato.id ? fn(c) : c) }));
+          }}
+        />
+      )}
       {editPlantillas && <PlantillasContratistaModal onClose={() => setEditPlantillas(false)} />}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
@@ -4247,6 +4260,16 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
                     {colaboradores.length} colaborador{colaboradores.length === 1 ? '' : 'es'}
                   </div>
                 )}
+                {(() => {
+                  const r = resumenDocsEstado(c);
+                  if (!r.total) return null;
+                  const ok = r.confeccion === r.total && r.firma === r.total;
+                  return (
+                    <div style={{ fontSize: 10.5, marginTop: 3, color: ok ? T.ok : T.ink2, fontWeight: ok ? 700 : 500 }}>
+                      📋 Docs: {r.confeccion}/{r.total} confeccionados · {r.firma}/{r.total} firmados
+                    </div>
+                  );
+                })()}
               </div>
               <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 16 }}>{fmtM(monto, moneda)}</div>
               <Chip ok={c.estado === 'activo'} style={{ fontSize: 10 }}>{c.estado}</Chip>
@@ -5019,7 +5042,7 @@ export default function ObraPresupuesto() {
       {displayTab === 5 && <TabMovimientos obra={obra} moneda={moneda} />}
       {displayTab === 6 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 7 && <TabArchivos detalle={detalle} patch={patch} obraId={id} />}
-      {displayTab === 9 && <TabSeguros detalle={detalle} patch={patch} />}
+      {displayTab === 9 && <TabSeguros detalle={detalle} patch={patch} obraId={id} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
 

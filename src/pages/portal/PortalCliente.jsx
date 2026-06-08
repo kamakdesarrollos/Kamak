@@ -294,7 +294,34 @@ export default function PortalCliente() {
     ? Math.max(0, Math.ceil((new Date(obra.fechaFinEstim) - new Date()) / 86400000))
     : null;
 
-  const tabs = ['Resumen', 'Avance', 'Cuenta corriente', 'Documentos', ...(detalle.contrato ? ['Contrato'] : [])];
+  // Seguros (transparencia de cobertura en obra). En modo cliente viene
+  // sanitizado del server (sin nombres/DNI). En admin-preview lo derivamos del
+  // detalle crudo replicando el shape del server (anónimo).
+  const seguros = isClienteMode
+    ? (detalle.seguros || [])
+    : (detalle.contratos || []).map((c, i) => ({
+        id: c.id,
+        label: `Contratista ${i + 1}`,
+        asegurados: 1 + ((c.colaboradores || []).length),
+        polizaCargada: !!(detalle.segurosPorContrato?.[c.id]?.polizaUrl),
+        polizaVence: detalle.segurosPorContrato?.[c.id]?.polizaVence || null,
+      }));
+
+  // Pólizas descargables (Anexo V): el cliente puede abrir/descargar el documento
+  // de cada contratista que la tenga cargada. En modo cliente viene sanitizado del
+  // server (solo contratista + url + vencimiento). En admin-preview se deriva del
+  // detalle crudo replicando el shape del server (solo contratos con póliza).
+  const polizas = isClienteMode
+    ? (detalle.polizas || [])
+    : (detalle.contratos || [])
+        .map(c => {
+          const seg = detalle.segurosPorContrato?.[c.id];
+          if (!seg?.polizaUrl) return null;
+          return { id: c.id, contratista: c.proveedor || 'Contratista', polizaUrl: seg.polizaUrl, polizaVence: seg.polizaVence || null };
+        })
+        .filter(Boolean);
+
+  const tabs = ['Resumen', 'Avance', 'Cuenta corriente', 'Documentos', ...(seguros.length > 0 || polizas.length > 0 ? ['Seguros'] : []), ...(detalle.contrato ? ['Contrato'] : [])];
 
   // Estado chip colors
   const estadoChip = {
@@ -906,6 +933,81 @@ export default function PortalCliente() {
                     )}
                   </div>
                 ))
+              )}
+            </Box>
+          );
+        })()}
+
+        {/* TAB — SEGUROS (solo si hay contratistas; índice variable) ──────────
+            Transparencia de cobertura: por cada contratista (anónimo) mostramos
+            cuántas personas tiene aseguradas y si la póliza está vigente. NO se
+            exponen nombres, DNI, CUIT ni números de póliza (sanitizado en server). */}
+        {tabs[tab] === 'Seguros' && (() => {
+          const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+          const estado = (s) => {
+            if (!s.polizaCargada) return { label: 'Pendiente', color: T.warn };
+            if (!s.polizaVence)   return { label: 'Cubierto', color: T.ok };
+            const dias = Math.ceil((new Date(s.polizaVence + 'T00:00:00') - hoy) / 86400000);
+            if (dias < 0)   return { label: 'Vencida', color: T.warn };
+            if (dias <= 30) return { label: 'Por vencer', color: T.warn };
+            return { label: 'Vigente', color: T.ok };
+          };
+          const totalAsegurados = seguros.reduce((s, g) => s + (g.asegurados || 0), 0);
+          const cubiertos = seguros.filter(s => s.polizaCargada).length;
+          return (
+            <Box style={{ padding: 18 }}>
+              <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, marginBottom: 6, color: T.ink }}>Seguros del personal en obra</div>
+              <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>
+                {totalAsegurados} {totalAsegurados === 1 ? 'persona asegurada' : 'personas aseguradas'} ·
+                {' '}{cubiertos} de {seguros.length} {seguros.length === 1 ? 'contratista con póliza' : 'contratistas con póliza'}
+              </div>
+              {seguros.map((s, i) => {
+                const e = estado(s);
+                return (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: i < seguros.length - 1 ? `1px solid ${T.faint2}` : 'none', gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 8, background: T.faint2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🛡️</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{s.label}</div>
+                      <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
+                        {s.asegurados} {s.asegurados === 1 ? 'persona asegurada' : 'personas aseguradas'}
+                        {s.polizaCargada && s.polizaVence ? ` · vence ${fmtD(s.polizaVence)}` : ''}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: e.color, padding: '3px 10px', borderRadius: 12, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.label}</span>
+                  </div>
+                );
+              })}
+
+              {/* Pólizas descargables (Anexo V): documento de cada contratista que
+                  la tenga cargada. El cliente puede abrirlo/descargarlo. */}
+              {polizas.length > 0 && (
+                <div style={{ marginTop: 22 }}>
+                  <div style={{ fontWeight: 700, fontSize: isMobile ? 12 : 13, marginBottom: 4, color: T.ink }}>Pólizas (Anexo V)</div>
+                  <div style={{ fontSize: 11, color: T.ink2, marginBottom: 12 }}>
+                    Documentos de cobertura de los contratistas. Podés abrirlos o descargarlos.
+                  </div>
+                  {polizas.map((p, i) => {
+                    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+                    const dias = p.polizaVence ? Math.ceil((new Date(p.polizaVence + 'T00:00:00') - hoy) / 86400000) : null;
+                    const venceColor = dias == null ? T.ink3 : dias < 0 ? T.warn : dias <= 30 ? T.warn : T.ok;
+                    return (
+                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: i < polizas.length - 1 ? `1px solid ${T.faint2}` : 'none', gap: 12 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: 8, background: T.faint2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>📄</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.contratista}</div>
+                          <div style={{ fontSize: 11, color: T.ink2, marginTop: 2 }}>
+                            Póliza de seguro
+                            {p.polizaVence ? <span style={{ color: venceColor, fontWeight: 600 }}> · vence {fmtD(p.polizaVence)}</span> : ''}
+                          </div>
+                        </div>
+                        <a href={p.polizaUrl} target="_blank" rel="noopener noreferrer"
+                          style={{ background: T.faint, border: `1.5px solid ${T.faint2}`, borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontFamily: T.font, color: T.ink, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          ↓ Ver póliza
+                        </a>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </Box>
           );

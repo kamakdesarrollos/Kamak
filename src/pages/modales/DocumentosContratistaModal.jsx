@@ -3,7 +3,7 @@ import { Btn } from '../../components/ui';
 import { T } from '../../theme';
 import { abrirHTML } from '../../lib/html';
 import useSyncedSharedData from '../../lib/useSyncedSharedData';
-import { TIPOS_DOC, renderDocContratista, datosDocContratista } from '../../lib/contratistaDocs';
+import { renderDocContratista, datosDocContratista, docsListForContrato } from '../../lib/contratistaDocs';
 
 // Generador / impresión de los documentos de contratista (Régimen PADIC).
 //
@@ -54,7 +54,7 @@ const wrapHtml = (title, innerHtml) => `<!DOCTYPE html>
 <body><div class="doc-wrap">${innerHtml}</div></body>
 </html>`;
 
-export default function DocumentosContratistaModal({ contrato, obra, onClose }) {
+export default function DocumentosContratistaModal({ contrato, obra, onClose, onUpdate }) {
   // Mismo patrón de lectura que el editor de plantillas (y el resto de la app).
   const [plantillas] = useSyncedSharedData(KEY, [], { lsKey: LS_KEY });
 
@@ -62,10 +62,10 @@ export default function DocumentosContratistaModal({ contrato, obra, onClose }) 
   // armar la fecha del documento).
   const hoyISO = useMemo(() => new Date().toISOString(), []);
 
-  const colaboradores = useMemo(
-    () => (Array.isArray(contrato?.colaboradores) ? contrato.colaboradores : []),
-    [contrato],
-  );
+  // Estado del checklist por documento. Vive en el contrato (docsEstado), por eso
+  // se lee directo del prop: cuando onUpdate persiste el cambio, el contrato
+  // re-renderiza con el nuevo estado.
+  const docsEstado = contrato?.docsEstado || {};
 
   // Mapa tipo → plantilla (la primera de cada tipo). Si faltara alguna, el item
   // queda marcado como "sin plantilla" y no se puede imprimir.
@@ -75,28 +75,13 @@ export default function DocumentosContratistaModal({ contrato, obra, onClose }) 
     return m;
   }, [plantillas]);
 
-  // Lista de documentos a generar. Cada item del set PADIC genera un doc; el
-  // tipo porColaborador genera uno por cada colaborador del contrato.
-  const docs = useMemo(() => {
-    const out = [];
-    TIPOS_DOC.forEach(tipo => {
-      const plantilla = plantillaPorTipo[tipo.id] || null;
-      if (tipo.porColaborador) {
-        if (colaboradores.length === 0) {
-          // Sin colaboradores no hay locación de servicios que emitir; dejamos
-          // un item informativo (sin colaborador) para que se entienda por qué.
-          out.push({ key: `${tipo.id}__none`, tipo, plantilla, colaborador: null, sinColaboradores: true });
-        } else {
-          colaboradores.forEach(co => {
-            out.push({ key: `${tipo.id}__${co.id || co.dni || co.cuit || co.nombre}`, tipo, plantilla, colaborador: co, sinColaboradores: false });
-          });
-        }
-      } else {
-        out.push({ key: tipo.id, tipo, plantilla, colaborador: null, sinColaboradores: false });
-      }
-    });
-    return out;
-  }, [plantillaPorTipo, colaboradores]);
+  // Lista de documentos a generar (canónica, compartida con la tarjeta del
+  // contrato). Cada item del set PADIC genera un doc; el tipo porColaborador
+  // genera uno por cada colaborador. Le anexamos su plantilla por tipo.
+  const docs = useMemo(
+    () => docsListForContrato(contrato).map(d => ({ ...d, key: d.docKey, plantilla: plantillaPorTipo[d.tipo.id] || null })),
+    [contrato, plantillaPorTipo],
+  );
 
   const [selKey, setSelKey] = useState(null);
 
@@ -131,6 +116,43 @@ export default function DocumentosContratistaModal({ contrato, obra, onClose }) 
     const w = abrirHTML(html, { width: 860, height: 1200 });
     if (w) setTimeout(() => { try { w.focus(); w.print(); } catch { /* noop */ } }, 600);
   };
+
+  // Marca/desmarca Confección o Firma de un documento. Persiste atómico vía
+  // onUpdate (el contenedor hace patchDetalle sobre ese contrato).
+  const toggleEstadoDoc = (docKey, campo) => {
+    if (!onUpdate) return;
+    onUpdate(prev => {
+      const estado = prev?.docsEstado || {};
+      const actual = estado[docKey] || { confeccion: false, firma: false };
+      return {
+        ...prev,
+        docsEstado: { ...estado, [docKey]: { ...actual, [campo]: !actual[campo] } },
+      };
+    });
+  };
+
+  // Checkbox compacto reutilizable (Confección / Firma).
+  const Checkbox = ({ checked, onChange, label, disabled }) => (
+    <label
+      onClick={e => { e.stopPropagation(); if (!disabled) onChange(); }}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5,
+        cursor: disabled ? 'default' : 'pointer', userSelect: 'none',
+        color: disabled ? T.ink3 : (checked ? T.ok : T.ink2), fontWeight: checked ? 700 : 500,
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <span
+        style={{
+          width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+          border: `1.5px solid ${checked ? T.ok : T.faint2}`,
+          background: checked ? T.ok : T.paper,
+          color: '#fff', fontSize: 10, lineHeight: '12px', textAlign: 'center', fontWeight: 900,
+        }}
+      >{checked ? '✓' : ''}</span>
+      {label}
+    </label>
+  );
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
@@ -181,6 +203,20 @@ export default function DocumentosContratistaModal({ contrato, obra, onClose }) 
                       ? 'sin colaboradores'
                       : (d.plantilla ? d.tipo.id : 'sin plantilla')}
                   </div>
+                  {!d.sinColaboradores && onUpdate && (
+                    <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+                      <Checkbox
+                        label="Confección"
+                        checked={!!docsEstado[d.docKey]?.confeccion}
+                        onChange={() => toggleEstadoDoc(d.docKey, 'confeccion')}
+                      />
+                      <Checkbox
+                        label="Firma"
+                        checked={!!docsEstado[d.docKey]?.firma}
+                        onChange={() => toggleEstadoDoc(d.docKey, 'firma')}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}

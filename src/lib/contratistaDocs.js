@@ -17,6 +17,54 @@ export const TIPOS_DOC = [
   { id: 'locacion_servicios',  nombre: 'Contrato de Locación de Servicios',      porColaborador: true  },
 ];
 
+// Clave de estado (checklist) de un documento dentro de un contrato.
+// Para los docs porColaborador (locación de servicios) la clave incluye el id
+// del colaborador, así cada copia tiene su propio estado de Confección/Firma.
+export function docKeyFor(tipoId, colaboradorId = null) {
+  return colaboradorId ? `${tipoId}:${colaboradorId}` : tipoId;
+}
+
+// Lista canónica de documentos a confeccionar para un contrato. La usan tanto el
+// modal de Documentos (para listar/imprimir) como la tarjeta del contrato (para
+// el resumen del checklist), de modo que el conteo coincida siempre.
+// Cada item: { docKey, tipo, colaborador, sinColaboradores }.
+export function docsListForContrato(contrato) {
+  const colaboradores = Array.isArray(contrato?.colaboradores) ? contrato.colaboradores : [];
+  const out = [];
+  TIPOS_DOC.forEach(tipo => {
+    if (tipo.porColaborador) {
+      if (colaboradores.length === 0) {
+        // Sin colaboradores no hay locación de servicios que emitir; el item
+        // queda informativo (no cuenta para el checklist).
+        out.push({ docKey: docKeyFor(tipo.id, null), tipo, colaborador: null, sinColaboradores: true });
+      } else {
+        colaboradores.forEach(co => {
+          const coId = co.id || co.dni || co.cuit || co.nombre;
+          out.push({ docKey: docKeyFor(tipo.id, coId), tipo, colaborador: co, sinColaboradores: false });
+        });
+      }
+    } else {
+      out.push({ docKey: docKeyFor(tipo.id, null), tipo, colaborador: null, sinColaboradores: false });
+    }
+  });
+  return out;
+}
+
+// Resumen del checklist de un contrato: total de docs emitibles + cuántos están
+// confeccionados / firmados según contrato.docsEstado.
+// docsEstado = { [docKey]: { confeccion: bool, firma: bool } }.
+export function resumenDocsEstado(contrato) {
+  const docs = docsListForContrato(contrato).filter(d => !d.sinColaboradores);
+  const estado = contrato?.docsEstado || {};
+  let confeccion = 0, firma = 0;
+  docs.forEach(d => {
+    const e = estado[d.docKey] || {};
+    if (e.confeccion) confeccion++;
+    if (e.firma) firma++;
+  });
+  return { total: docs.length, confeccion, firma };
+}
+
 // Variables soportadas en las plantillas (las que NO son tabla se escapan).
 export const PLACEHOLDERS = [
   'contratista.nombre', 'contratista.cuit', 'contratista.categoriaPADIC', 'contratista.domicilio',

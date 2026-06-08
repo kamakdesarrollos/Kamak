@@ -47,6 +47,47 @@ function ventaRubro(rubro) {
 }
 // Detalle SANITIZADO: whitelist. NO incluye costoMat/costoSub/costoGral/margen*
 // ni cantidades — solo venta ya calculada, avance, plan de pagos, docs y fotos.
+// Seguros para el portal del cliente: transparencia de seguridad en obra SIN
+// exponer quiénes son los contratistas/personal (dato comercial sensible) ni
+// DNI/CUIT. Solo: por cada contrato, cuántos asegurados hay + estado de la
+// póliza (cargada o no) + vencimiento. Sin nombres, sin números de póliza.
+function segurosPortal(detalle) {
+  const contratos = detalle.contratos || [];
+  const segMap = detalle.segurosPorContrato || {};
+  return contratos.map((c, i) => {
+    const seg = segMap[c.id] || {};
+    const asegurados = 1 + ((c.colaboradores || []).length); // líder + colaboradores
+    return {
+      id: c.id,
+      label: `Contratista ${i + 1}`,        // anónimo: NO se expone el nombre real
+      asegurados,
+      polizaCargada: !!seg.polizaUrl,
+      polizaVence: seg.polizaVence || null,
+    };
+  });
+}
+// PÓLIZAS para el portal del cliente (Anexo V / transparencia de cobertura):
+// el cliente PUEDE ver el documento de la póliza de cada contratista para
+// descargarlo/abrirlo. Whitelist estricta: SOLO nombre del contratista + link
+// de la póliza + vencimiento. NO se exponen montos, costos, márgenes, planes de
+// pago, colaboradores, DNI ni CUIT. Solo se devuelven los contratos que TIENEN
+// una póliza cargada (no se filtra la nómina completa de contratistas).
+function polizasPortal(detalle) {
+  const contratos = detalle.contratos || [];
+  const segMap = detalle.segurosPorContrato || {};
+  return contratos
+    .map(c => {
+      const seg = segMap[c.id] || {};
+      if (!seg.polizaUrl) return null;       // sin póliza subida → no se publica
+      return {
+        id: c.id,
+        contratista: c.proveedor || 'Contratista',  // nombre, sin CUIT/domicilio
+        polizaUrl: seg.polizaUrl,
+        polizaVence: seg.polizaVence || null,
+      };
+    })
+    .filter(Boolean);
+}
 function sanitizeDetalle(detalle) {
   if (!detalle) return null;
   const rubros = (detalle.rubros || []).map(r => ({
@@ -79,6 +120,11 @@ function sanitizeDetalle(detalle) {
     cuotas: detalle.cuotas || [],
     documentos: (detalle.documentos || []).map(d => ({ id: d.id, nombre: d.nombre, tipo: d.tipo, fecha: d.fecha, url: d.url, carpeta: d.carpeta || '' })),
     fotos: (detalle.fotos || []).map(f => ({ id: f.id, label: f.label, rubro: f.rubro, fecha: f.fecha, url: f.url, carpeta: f.carpeta || '' })),
+    // Seguros: solo estado de cobertura por contratista (anónimo), sin nombres/DNI/CUIT.
+    seguros: segurosPortal(detalle),
+    // Pólizas (Anexo V): documento descargable por contratista. Nombre + link +
+    // vencimiento, SIN montos/costos/colaboradores/DNI/CUIT. Solo las cargadas.
+    polizas: polizasPortal(detalle),
     financiacion: { interes: fin.interes ?? 0, notaPortal: fin.notaPortal || '' },
     // Contrato para firma en el portal: whitelist estricta. NO incluye
     // hashDocumento, ip, dni ni nada de costos/margen.
