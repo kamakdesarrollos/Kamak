@@ -22,7 +22,7 @@ const fmtFecha = (iso) => {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
-function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, cuotasUrgentes, tareasNuevas, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate, isMobile = false }) {
+function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, cuotasUrgentes, tareasNuevas, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate, isMobile = false, esBackoffice = false }) {
   const items = [];
 
   // Cuotas vencidas o próximas a vencer (≤3 días). Vencidas primero.
@@ -111,20 +111,27 @@ function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, 
     });
   });
 
-  // WA alerts (unread)
-  alertas.filter(a => !a.leida).slice(0, 15).forEach(a => {
-    items.push({
-      id:     a.id,
-      icon:   a.tipo === 'exceso' ? '📊' : a.tipo === 'obra_iniciada' ? '🏗️' : '⚠️',
-      titulo: a.obra ? `${a.obra}${a.tarea ? ' · ' + a.tarea : ''}` : 'Alerta',
-      subtit: a.texto,
-      fecha:  fmtFecha(a.fecha),
-      leida:  false,
-      ruta:   '/',
-      tipo:   'alerta',
-      alertaId: a.id,
+  // WA alerts (unread). La alerta "faltan seguros" es de backoffice: solo la ven
+  // Admin/Administración (esBackoffice). El resto de las alertas globales (obra
+  // iniciada, exceso…) las ve todo el equipo, como hasta ahora.
+  alertas
+    .filter(a => !a.leida)
+    .filter(a => a.tipo !== 'seguros_faltantes' || esBackoffice)
+    .slice(0, 15)
+    .forEach(a => {
+      items.push({
+        id:     a.id,
+        icon:   a.tipo === 'exceso' ? '📊' : a.tipo === 'obra_iniciada' ? '🏗️' : a.tipo === 'seguros_faltantes' ? '🛡️' : '⚠️',
+        titulo: a.obra ? `${a.obra}${a.tarea ? ' · ' + a.tarea : ''}` : 'Alerta',
+        subtit: a.texto,
+        fecha:  fmtFecha(a.fecha),
+        leida:  false,
+        // La de seguros lleva directo a la pestaña Seguros de la obra (tab 9).
+        ruta:   a.tipo === 'seguros_faltantes' && a.obraId ? `/obras/${a.obraId}/presupuesto?tab=9` : '/',
+        tipo:   'alerta',
+        alertaId: a.id,
+      });
     });
-  });
 
   const handleClick = (item) => {
     if (item.tipo === 'alerta') marcarLeida(item.alertaId);
@@ -253,6 +260,8 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
   const displayName = currentUser?.nombre || authUser?.email?.split('@')[0] || 'Usuario';
   const displayRol  = currentUser?.rol || 'Administrador';
   const isAdmin = currentUser?.rol === 'Admin';
+  // Backoffice = Admin o Administración. La alerta "faltan seguros" es para ellos.
+  const esBackoffice = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
 
   const pendientesWA = (pending || []).filter(p => p.status === 'pendiente').length;
   const solicitudesPendientes = isAdmin ? solicitudes.filter(s => s.estado === 'pendiente') : [];
@@ -317,7 +326,14 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
       )
     : [];
 
-  const totalNotif = noLeidas + pendientesWA + solicitudesPendientes.length + chequesUrgentes.length + tareasNuevas.length + cuotasUrgentes.length;
+  // Las alertas "faltan seguros" solo cuentan para el badge si el usuario es
+  // backoffice (es la única que filtramos por rol en el panel). Para el resto
+  // de los usuarios no inflan el contador de una notificación que no van a ver.
+  const noLeidasVisible = esBackoffice
+    ? noLeidas
+    : (alertas || []).filter(a => !a.leida && a.tipo !== 'seguros_faltantes').length;
+
+  const totalNotif = noLeidasVisible + pendientesWA + solicitudesPendientes.length + chequesUrgentes.length + tareasNuevas.length + cuotasUrgentes.length;
 
   // Cerrar panel al hacer click fuera
   useEffect(() => {
@@ -426,6 +442,7 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
                 onClose={() => setShowNotif(false)}
                 navigate={navigate}
                 isMobile={isMobile}
+                esBackoffice={esBackoffice}
               />
             )}
           </div>
