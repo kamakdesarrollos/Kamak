@@ -30,6 +30,9 @@ function CajaMovimientosModal({ caja, onClose }) {
   const { movimientos } = useMovimientos();
   const { cheques } = useCheques();
   const { proveedores } = useProveedores();
+  const { currentUser } = useUsuarios();
+  const isAdmin = currentUser?.rol === 'Admin';
+  const esBanco = caja.tipo === 'banco' || caja.tipo === 'billetera';
   const navigate = useNavigate();
   const [tab, setTab] = useState('movimientos');
 
@@ -175,7 +178,10 @@ function CajaMovimientosModal({ caja, onClose }) {
 
         </div>
 
-        <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, textAlign: 'right' }}>
+        <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: isAdmin && esBanco ? 'space-between' : 'flex-end', gap: 8 }}>
+          {isAdmin && esBanco && (
+            <Btn sm fill onClick={() => { onClose(); navigate(`/cajas/conciliacion?cajaId=${caja.id}`); }}>⇄ Conciliación bancaria</Btn>
+          )}
           <Btn sm onClick={onClose}>Cerrar</Btn>
         </div>
       </div>
@@ -330,6 +336,7 @@ function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0, canRe
 
 export default function Cajas() {
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const { cajas, removeCaja } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
@@ -463,6 +470,11 @@ export default function Cajas() {
                     {seccion.isARS ? '$' : 'U$S'} {fmtN(saldo)}
                   </span>
                   <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                    {isAdmin && (c.tipo === 'banco' || c.tipo === 'billetera') && (
+                      <span title="Conciliación bancaria" style={{ display: 'inline-flex' }}>
+                        <Btn sm onClick={() => navigate(`/cajas/conciliacion?cajaId=${c.id}`)}>⇄</Btn>
+                      </span>
+                    )}
                     <Btn sm onClick={() => setTraspaso(true)}>↔</Btn>
                     {isAdmin && (
                       <span style={{ color: T.warn, cursor: 'pointer', fontSize: 16, padding: '0 4px', lineHeight: 1 }}
