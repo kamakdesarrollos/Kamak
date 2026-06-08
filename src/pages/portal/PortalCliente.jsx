@@ -764,21 +764,33 @@ export default function PortalCliente() {
         {/* TAB 3 — DOCUMENTOS */}
         {tab === 3 && (() => {
           const docs = documentos || [];
-          // Carpetas únicas usadas (no vacías), en orden de aparición.
+          // Carpetas base (mismas que la obra; mantener sincronizado con TabDocumentos)
+          // + las realmente usadas: así el cliente ve la ESTRUCTURA de carpetas igual
+          // que en la obra, aunque alguna esté vacía. 'General' agrupa los sueltos.
+          const CARPETAS_BASE = ['Planos', 'Contratos'];
           const carpetasUsadas = [...new Set(docs.map(d => d.carpeta || '').filter(Boolean))];
+          const carpetas = [...new Set([...CARPETAS_BASE, ...carpetasUsadas])];
+          const haySinCarpeta = docs.some(d => !d.carpeta);
           const docsFiltrados = carpetaSel === 'todos'
             ? docs
-            : docs.filter(d => (d.carpeta || '') === carpetaSel);
+            : carpetaSel === '__general__'
+              ? docs.filter(d => !d.carpeta)
+              : docs.filter(d => (d.carpeta || '') === carpetaSel);
           return (
             <Box style={{ padding: 18 }}>
               <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, marginBottom: 6, color: T.ink }}>Documentos de la obra</div>
               <div style={{ fontSize: 12, color: T.ink2, marginBottom: carpetasUsadas.length > 0 ? 10 : 16 }}>{docs.length} {docs.length === 1 ? 'archivo' : 'archivos'} disponibles</div>
 
-              {/* Chips de carpetas (solo si hay más de una carpeta usada) */}
-              {carpetasUsadas.length > 0 && (
+              {/* Carpetas: Todos + carpetas (base + usadas) + General (sueltos), como
+                  en la obra. Se muestra siempre que haya documentos. */}
+              {docs.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
-                  {['todos', ...carpetasUsadas].map(c => {
+                  {['todos', ...carpetas, ...(haySinCarpeta ? ['__general__'] : [])].map(c => {
                     const activo = carpetaSel === c;
+                    const count = c === 'todos' ? docs.length
+                      : c === '__general__' ? docs.filter(d => !d.carpeta).length
+                      : docs.filter(d => (d.carpeta || '') === c).length;
+                    const nombre = c === 'todos' ? 'Todos' : c === '__general__' ? 'General' : c;
                     return (
                       <button
                         key={c}
@@ -796,11 +808,9 @@ export default function PortalCliente() {
                           transition: 'all 0.15s',
                         }}
                       >
-                        {c === 'todos' ? 'Todos' : c}
+                        {nombre}
                         {c !== 'todos' && (
-                          <span style={{ marginLeft: 4, opacity: 0.7, fontSize: 10 }}>
-                            ({docs.filter(d => (d.carpeta || '') === c).length})
-                          </span>
+                          <span style={{ marginLeft: 4, opacity: 0.7, fontSize: 10 }}>({count})</span>
                         )}
                       </button>
                     );
@@ -828,9 +838,14 @@ export default function PortalCliente() {
                         {fmtD(doc.fecha)}
                       </div>
                     </div>
-                    <button style={{ background: T.faint, border: `1.5px solid ${T.faint2}`, borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontFamily: T.font, color: T.ink, fontWeight: 600 }}>
-                      ↓ Descargar
-                    </button>
+                    {doc.url ? (
+                      <a href={doc.url} target="_blank" rel="noopener noreferrer"
+                        style={{ background: T.faint, border: `1.5px solid ${T.faint2}`, borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontFamily: T.font, color: T.ink, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        ↓ Descargar
+                      </a>
+                    ) : (
+                      <span style={{ fontSize: 11, color: T.ink3, fontStyle: 'italic', flexShrink: 0 }}>sin archivo</span>
+                    )}
                   </div>
                 ))
               )}
