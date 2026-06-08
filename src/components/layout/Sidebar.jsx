@@ -68,8 +68,11 @@ export default function Sidebar({ active, onNavigate }) {
   // El rol Contador SOLO ve Facturación — escondemos todo lo demás (incluso
   // los encabezados de sección, así no le queda una sección vacía).
   const isContador = currentUser?.rol === 'Contador externo';
+  // El Ingeniero externo SOLO ve Obras en el menú (adentro solo la pestaña Archivos).
+  const isIngExterno = currentUser?.rol === 'Ingeniero externo';
   const items = ALL_ITEMS.filter(it => {
     if (isContador) return it.label === 'Facturación';
+    if (isIngExterno) return it.label === 'Obras';
     if (it.section) return true;
     if (it.adminOnly && !isAdmin) return false;
     if (it.allowedRoles && !it.allowedRoles.includes(currentUser?.rol)) return false;

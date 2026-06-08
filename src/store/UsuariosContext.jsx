@@ -29,6 +29,9 @@ export const ROLES = {
   'Logística y compras': { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:true,  cargarAvance:false, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
   // Contador externo: solo Facturación (rol especial, se mantiene).
   'Contador externo':    { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:false, cargarAvance:false, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
+  // Ingeniero externo: ingeniero tercerizado. Ve y sube SOLO documentación/planos
+  // (pestaña Archivos). Sin finanzas/presupuestos/caja. En el menú solo ve Obras.
+  'Ingeniero externo':   { verCostos:false, verMargenes:false, verCaja:false, cargarGastos:true,  cargarAvance:true,  editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
 };
 
 // Pestañas DENTRO de la obra ocultas por rol (solo aplica a no-admin; Admin ve todo).
@@ -41,6 +44,7 @@ export const ROL_TABS_OCULTAS = {
   'Jefe de obra':        ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Movimientos', 'Contratos MO', 'Portal cliente'],                     // ve: Materiales, Gantt, Archivos
   'Logística y compras': ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Gantt', 'Movimientos', 'Contratos MO', 'Portal cliente'],           // ve: Materiales, Archivos
   'Contador externo':    ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Archivos', 'Portal cliente'],
+  'Ingeniero externo':   ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Portal cliente'], // ve SOLO: Archivos
 };
 
 // ── Conversión entre formato DB y formato app ─────────────────────────────────
