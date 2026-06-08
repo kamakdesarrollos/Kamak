@@ -270,6 +270,7 @@ function NuevaCajaModal({ onClose }) {
 }
 
 function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0, canRemove = true }) {
+  const isMobile = useIsMobile();
   const isARS = caja.moneda === 'ARS';
   const saldo = caja.saldo || 0;
   const efectivo = saldo - saldoCheques;
@@ -295,15 +296,15 @@ function CajaCard({ caja, onTraspaso, onRemove, onClick, saldoCheques = 0, canRe
       </div>
 
       {tieneChecks ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr', alignItems: 'stretch', marginBottom: 10 }}>
-          <div style={{ paddingRight: 12, minWidth: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1px 1fr', alignItems: 'stretch', marginBottom: 10 }}>
+          <div style={{ paddingRight: isMobile ? 0 : 12, minWidth: 0, marginBottom: isMobile ? 8 : 0 }}>
             <div style={{ fontSize: 9, color: T.ink3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Efectivo</div>
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 16, color: efectivo < 0 ? NEG : T.ink, lineHeight: 1 }}>
               {fmtMonto(efectivo, '$')}
             </div>
           </div>
-          <div style={{ background: T.faint2 }} />
-          <div style={{ paddingLeft: 12, minWidth: 0 }}>
+          {!isMobile && <div style={{ background: T.faint2 }} />}
+          <div style={{ paddingLeft: isMobile ? 0 : 12, minWidth: 0 }}>
             <div style={{ fontSize: 9, color: '#1a9b9c', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Cheques</div>
             <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 16, color: '#1a9b9c', lineHeight: 1 }}>
               $ {fmtN(saldoCheques)}
