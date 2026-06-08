@@ -167,7 +167,11 @@ export function ProveedoresProvider({ children }) {
   // ── Proveedores CRUD ──────────────────────────────────────────────────────
   const addProveedor = useCallback((data) => {
     mark();
-    const nuevo = { ...data, id: newId() };
+    // grupos: labels de "proveedor tipo" (de lib/proveedoresMateriales) a los que
+    // pertenece este proveedor real (1 o varios; ej. corralón → 'Corralón de
+    // materiales'). Default [] para que el campo exista siempre en el shape.
+    const nuevo = { grupos: [], ...data, id: newId() };
+    if (!Array.isArray(nuevo.grupos)) nuevo.grupos = [];
     setProveedores(prev => { const next = [...prev, nuevo]; save(LS_PROVS, next); return next; });
     appendObjectItem('proveedores', 'proveedores', nuevo);
     return nuevo.id;
