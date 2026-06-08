@@ -40,6 +40,7 @@ export default function PortalCliente() {
   const isMobile = useIsMobile();
   const [tab, setTab] = useState(0);
   const [carpetaSel, setCarpetaSel] = useState('todos');
+  const [carpetaFotoSel, setCarpetaFotoSel] = useState('todas');
 
   // GATE de acceso al portal + modo de operacion.
   //
@@ -554,17 +555,72 @@ export default function PortalCliente() {
         })()}
 
         {/* TAB 1 — AVANCE / FOTOS */}
-        {tab === 1 && (
+        {tab === 1 && (() => {
+          // Carpetas base (mismas que la obra; mantener sincronizado con TabFotos
+          // en ObraPresupuesto → CARPETAS_FOTO_BASE) + las realmente usadas: así el
+          // cliente ve la ESTRUCTURA de carpetas igual que en la obra, aunque alguna
+          // esté vacía. 'General' agrupa las fotos sueltas (sin carpeta). El bot tira
+          // las fotos de avance en la carpeta "Avance de obra".
+          const CARPETAS_FOTO_BASE = ['Antes', 'Después', 'Avance de obra'];
+          const carpetasUsadas = [...new Set(fotos.map(f => f.carpeta || '').filter(Boolean))];
+          const carpetasFoto = [...new Set([...CARPETAS_FOTO_BASE, ...carpetasUsadas])];
+          const haySinCarpeta = fotos.some(f => !f.carpeta);
+          const fotosFiltradas = carpetaFotoSel === 'todas'
+            ? fotos
+            : carpetaFotoSel === '__general__'
+              ? fotos.filter(f => !f.carpeta)
+              : fotos.filter(f => (f.carpeta || '') === carpetaFotoSel);
+          return (
           <Box style={{ padding: 18 }}>
             <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, marginBottom: 6, color: T.ink }}>Registro fotográfico de obra</div>
-            <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>{fotos.length} {fotos.length === 1 ? 'foto' : 'fotos'} disponibles</div>
-            {fotos.length === 0 ? (
+            <div style={{ fontSize: 12, color: T.ink2, marginBottom: fotos.length > 0 ? 10 : 16 }}>{fotos.length} {fotos.length === 1 ? 'foto' : 'fotos'} disponibles</div>
+
+            {/* Carpetas: Todas + carpetas (base + usadas) + General (sueltas), como
+                en la obra. Se muestra siempre que haya fotos. */}
+            {fotos.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+                {['todas', ...carpetasFoto, ...(haySinCarpeta ? ['__general__'] : [])].map(c => {
+                  const activo = carpetaFotoSel === c;
+                  const count = c === 'todas' ? fotos.length
+                    : c === '__general__' ? fotos.filter(f => !f.carpeta).length
+                    : fotos.filter(f => (f.carpeta || '') === c).length;
+                  const nombre = c === 'todas' ? 'Todas' : c === '__general__' ? 'General' : c;
+                  return (
+                    <button
+                      key={c}
+                      onClick={() => setCarpetaFotoSel(c)}
+                      style={{
+                        padding: '4px 12px',
+                        borderRadius: 20,
+                        border: `1.5px solid ${activo ? T.accent : T.faint2}`,
+                        background: activo ? T.accent : T.faint,
+                        color: activo ? '#fff' : T.ink2,
+                        fontSize: 12,
+                        fontWeight: activo ? 700 : 500,
+                        cursor: 'pointer',
+                        fontFamily: T.font,
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {nombre}
+                      {c !== 'todas' && (
+                        <span style={{ marginLeft: 4, opacity: 0.7, fontSize: 10 }}>({count})</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {fotosFiltradas.length === 0 ? (
               <div style={{ color: T.ink3, fontSize: 13, textAlign: 'center', padding: '48px 0' }}>
-                Sin fotos disponibles por el momento.
+                {fotos.length === 0
+                  ? 'Sin fotos disponibles por el momento.'
+                  : 'No hay fotos en esta carpeta.'}
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(140px, 1fr))' : 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-                {fotos.map((f) => (
+                {fotosFiltradas.map((f) => (
                   <a key={f.id} href={f.url || undefined} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: T.faint, borderRadius: 8, overflow: 'hidden', border: `1.5px solid ${T.faint2}`, cursor: 'pointer', transition: 'box-shadow 0.15s', display: 'block' }}>
                     <div style={{ background: T.faint2, aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42, color: T.ink3, overflow: 'hidden' }}>
                       {f.url ? (
@@ -574,6 +630,7 @@ export default function PortalCliente() {
                     <div style={{ padding: '10px 12px' }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{f.label}</div>
                       <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>
+                        {f.carpeta && <span style={{ background: T.faint2, padding: '1px 6px', borderRadius: 3, marginRight: 6 }}>{f.carpeta}</span>}
                         {f.rubro && <span style={{ background: T.faint2, padding: '1px 6px', borderRadius: 3, marginRight: 6 }}>{f.rubro}</span>}
                         {fmtD(f.fecha)}
                       </div>
@@ -583,7 +640,8 @@ export default function PortalCliente() {
               </div>
             )}
           </Box>
-        )}
+          );
+        })()}
 
         {/* TAB 2 — CUENTA CORRIENTE */}
         {tab === 2 && (() => {
