@@ -8,11 +8,14 @@ import { useMovimientos } from '../../store/MovimientosContext';
 import { useDolar } from '../../store/DolarContext';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useComercial } from '../../store/ComercialContext';
+import { useClientes } from '../../store/ClientesContext';
 import { ccObra, cobradoObraUSD } from '../obra/helpers';
 import { ETAPAS_VENTA } from '../../lib/constants';
 import { ETAPA_META, etapaEfectiva, resumenEmbudo, visibleEnEmbudo, esArrastrableEnEmbudo } from '../../lib/ventaEtapa';
 import { fmtN } from '../../lib/format';
+import { Btn } from '../../components/ui';
 import PerdidaModal from './PerdidaModal';
+import PrimerContactoModal from './PrimerContactoModal';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 
 // Convierte un hex (#rrggbb) a rgba con alpha — para tintes suaves de columna.
@@ -23,11 +26,12 @@ const tint = (hex, a) => {
 };
 
 export default function Pipeline() {
-  const { obras, getDetalle, setVentaEtapa } = useObras();
+  const { obras, getDetalle, setVentaEtapa, addObra } = useObras();
   const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
   const { addActividad } = useComercial();
+  const { clientes, addCliente } = useClientes();
   const navigate = useNavigate();
   const tc = dolarVenta || 1070;
 
@@ -40,6 +44,7 @@ export default function Pipeline() {
   const [drag, setDrag] = useState(null);          // obraId arrastrándose
   const [dragOver, setDragOver] = useState(null);  // etapa bajo el cursor
   const [perdida, setPerdida] = useState(null);    // { obraId, nombre } -> modal
+  const [nuevoContacto, setNuevoContacto] = useState(false);  // modal "+ Primer contacto"
 
   // Una oportunidad por obra VISIBLE (las terminadas no van al board), con su
   // etapa efectiva y su monto USD.
@@ -73,6 +78,23 @@ export default function Pipeline() {
     });
   };
 
+  // Carga un primer contacto: crea/vincula cliente + obra prospecto SIN presupuesto
+  // + actividad inicial. Aparece en la columna Prospecto del embudo.
+  const crearPrimerContacto = ({ clienteNombre, clienteId, telefono, fuente, nombreOportunidad, nota }) => {
+    const cid = clienteId || addCliente({ nombre: clienteNombre, telefono: telefono || '', estado: 'prospecto' });
+    const nombre = nombreOportunidad || `Consulta — ${clienteNombre}`;
+    const obraId = addObra({ nombre, cliente: clienteNombre, clienteId: cid, tipo: 'Otro', presupuesto: 0, notas: nota || '' });
+    setVentaEtapa(obraId, 'prospecto', { usuario: currentUser?.id || null });
+    addActividad({
+      clienteId: cid,
+      obraId,
+      tipo: 'primer_contacto',
+      texto: `Primer contacto${fuente ? ` (${fuente})` : ''}${nota ? `: ${nota}` : ''}`,
+      usuario: currentUser?.id || null,
+    });
+    setNuevoContacto(false);
+  };
+
   return (
     <PageLayout breadcrumb={[{ label: 'Inicio', to: '/' }, 'Comercial']} active="Embudo">
       <PageHero
@@ -85,6 +107,11 @@ export default function Pipeline() {
           color: ETAPA_META[e].color,
         }))}
       />
+
+      {/* Acción: cargar un primer contacto (prospecto sin presupuesto) */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '2px 0 12px' }}>
+        <Btn sm accent onClick={() => setNuevoContacto(true)}>+ Primer contacto</Btn>
+      </div>
 
       {/* Tablero Kanban — scroll horizontal, columnas por etapa */}
       <div style={{
@@ -198,6 +225,14 @@ export default function Pipeline() {
             });
             setPerdida(null);
           }}
+        />
+      )}
+
+      {nuevoContacto && (
+        <PrimerContactoModal
+          clientes={clientes}
+          onClose={() => setNuevoContacto(false)}
+          onCrear={crearPrimerContacto}
         />
       )}
     </PageLayout>
