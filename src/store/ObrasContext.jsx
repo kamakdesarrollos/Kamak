@@ -30,6 +30,59 @@ function emitAlertaObraIniciada(obra, yaAlertadas) {
   });
 }
 
+// Fecha YYYY-MM-DD de hoy (local). Comparamos en string para evitar líos de
+// huso horario con Date.
+const hoyISO = () => new Date().toISOString().split('T')[0];
+
+// ¿La fecha de inicio (YYYY-MM-DD) es hoy o mañana? (dentro de 1 día). Si la
+// obra ya empezó (ayer o antes) NO alertamos: el aviso es preventivo, "está por
+// arrancar". Devuelve null si no aplica.
+function diasParaInicio(fechaInicio) {
+  if (!fechaInicio) return null;
+  const hoy = new Date(hoyISO() + 'T00:00:00');
+  const ini = new Date(fechaInicio + 'T00:00:00');
+  if (Number.isNaN(ini.getTime())) return null;
+  return Math.round((ini - hoy) / 86400000);
+}
+
+// Alerta preventiva: una obra a punto de arrancar (inicia hoy o mañana) que
+// TIENE contratos pero a alguno le falta la póliza/seguro cargado. Mismo
+// mecanismo que obra_iniciada (append atómico en shared_data 'alertas', dedupe
+// por sesión vía ref Set). La clave de de-dupe es obraId+fechaInicio: si el
+// inicio se reprograma, vuelve a poder avisar para la nueva fecha; mientras la
+// fecha no cambie no se re-emite, aunque obras/detalles cambien muchas veces.
+function emitAlertaSegurosFaltantes(obra, detalle, yaAlertadas) {
+  if (!obra || !detalle) return;
+  const contratos = detalle.contratos || [];
+  if (contratos.length === 0) return;
+  const dias = diasParaInicio(obra.fechaInicio);
+  if (dias === null || dias < 0 || dias > 1) return; // solo hoy o mañana
+  const segMap = detalle.segurosPorContrato || {};
+  const sinPoliza = contratos.filter(c => !segMap[c.id]?.polizaUrl);
+  if (sinPoliza.length === 0) return; // todos con póliza → nada que avisar
+
+  const dedupeKey = `${obra.id}|${obra.fechaInicio}`;
+  if (yaAlertadas.has(dedupeKey)) return;
+  yaAlertadas.add(dedupeKey);
+
+  const cuando = dias === 0 ? 'hoy' : 'mañana';
+  const fechaTxt = obra.fechaInicio.split('-').reverse().join('/');
+  const detalleContratos = sinPoliza
+    .map(c => c.proveedor || c.gremio || 'contratista')
+    .join(', ');
+  appendItemInSharedArray('alertas', {
+    id:     `alerta-seguros-${obra.id}-${obra.fechaInicio}`,
+    tipo:   'seguros_faltantes',
+    texto:  `Faltan los seguros/pólizas de "${obra.nombre}" (inicia ${cuando} ${fechaTxt}). Sin póliza: ${detalleContratos}.`,
+    obra:   obra.nombre,
+    obraId: obra.id,
+    tarea:  '',
+    fecha:  new Date().toISOString(),
+    leida:  false,
+    fuente: 'app',
+  });
+}
+
 // ── Datos semilla obras ───────────────────────────────────────────────────────
 const SEED_OBRAS = [
   { id: 'baradero', nombre: 'Baradero', cliente: 'Familia Pérez', direccion: 'San Martín 420, Baradero', tipo: 'Estación de Servicio', estado: 'activa', moneda: 'ARS', presupuesto: 18500000, gastado: 11800000, avance: 64, margen: 28, fechaInicio: '2026-01-15', fechaFinEstim: '2026-08-12', fechaFin: '', notas: '', createdAt: '2026-01-10T10:00:00Z' },
@@ -213,6 +266,11 @@ const ObrasContext = createContext(null);
 export function ObrasProvider({ children }) {
   const [obras, setObras] = useState(loadObras);
   const [detalles, setDetalles] = useState(loadDet);
+  // Flag de "ya llegó (o falló) el primer fetch a Supabase". Sirve para que el
+  // barrido de alertas "faltan seguros" corra recién con datos reales (no con el
+  // seed/localStorage viejo). Es state — no ref — para que el efecto se re-dispare
+  // cuando pasa a true, incluso si obras/detalles no cambian en ese load.
+  const [dataReady, setDataReady] = useState(false);
   const sbLoaded    = useRef(false);
   const fromRemote  = useRef(false);
   const obrasRef    = useRef(obras);
@@ -228,6 +286,9 @@ export function ObrasProvider({ children }) {
   // De-dupe de alertas "obra iniciada" POR SESIÓN. Antes era un Set module-level
   // que sobrevivía remounts/sesiones y silenciaba la alerta para siempre.
   const obrasYaAlertadas = useRef(new Set());
+  // De-dupe de alertas "faltan seguros" POR SESIÓN. Clave obraId|fechaInicio
+  // (si la obra se reprograma vuelve a poder avisar). Ver emitAlertaSegurosFaltantes.
+  const segurosYaAlertados = useRef(new Set());
   const { markReady } = useAppLoading();
   useEffect(() => { obrasRef.current = obras; }, [obras]);
   useEffect(() => { detallesRef.current = detalles; }, [detalles]);
@@ -245,6 +306,7 @@ export function ObrasProvider({ children }) {
         // el mismo error). Marcamos ready para que la app se renderee con
         // el localStorage que ya tenemos.
         sbLoaded.current = true;
+        setDataReady(true);
         markReady();
         return;
       }
@@ -262,6 +324,7 @@ export function ObrasProvider({ children }) {
         saveSharedData('obras', { obras: obrasRef.current, detalles: detallesRef.current });
       }
       sbLoaded.current = true;
+      setDataReady(true);
       markReady();
     });
 
@@ -317,6 +380,21 @@ export function ObrasProvider({ children }) {
       if (det) patchDetalleObra(obraId, det);
     });
   }, []);
+
+  // Aviso preventivo "faltan los seguros". Barre obras+detalles y emite una
+  // alerta global por cada obra que arranca hoy/mañana, tiene contratos y le
+  // falta la póliza de al menos uno. Corre cuando cambian obras o detalles, y
+  // recién una vez que llegó (o falló) el fetch de Supabase (dataReady): antes
+  // estaríamos mirando el seed/localStorage viejo. El de-dupe vive en
+  // segurosYaAlertados (por obra+fechaInicio) → no spamea aunque corra muchas veces.
+  useEffect(() => {
+    if (!dataReady) return;
+    obras.forEach(o => {
+      if (o.estado === 'finalizada' || o.estado === 'archivada' || o.estado === 'pausada') return;
+      const det = detalles[o.id];
+      if (det) emitAlertaSegurosFaltantes(o, det, segurosYaAlertados.current);
+    });
+  }, [obras, detalles, dataReady]);
 
   // Helper: marcar que el usuario hizo un cambio antes del primer fetch a
   // Supabase (el load remoto no debe pisar los cambios locales) y sellar el
