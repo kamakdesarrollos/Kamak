@@ -15,6 +15,7 @@ import { normUnidad } from '../lib/unidad';
 import { searchNorm } from '../lib/searchNorm';
 import TareasEstandarEditor from './modales/TareasEstandarEditor';
 import { useUsuarios, ROLES } from '../store/UsuariosContext';
+import { useProveedores } from '../store/ProveedoresContext';
 import { useIndices } from '../store/IndicesContext';
 import { useObras } from '../store/ObrasContext';
 import { useMovimientos } from '../store/MovimientosContext';
@@ -411,6 +412,7 @@ function MaterialGrupoSelect({ form, setForm }) {
 
 function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderForm, rubroKey = 'rubro', rubros, proveedorFn, validate }) {
   const isMobile = useIsMobile();
+  const { proveedores: proveedoresReales } = useProveedores() || {};
   const [sel, setSel] = useState(null);
   const [form, setForm] = useState(null);
   const [search, setSearch] = useState('');
@@ -450,6 +452,12 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
     for (const i of items) { const k = proveedorFn(i); if (k) m[k] = (m[k] || 0) + 1; }
     return m;
   }, [items, proveedorFn]);
+
+  // Proveedores reales vinculados al grupo seleccionado (p.grupos[] incluye el label del grupo).
+  const proveedoresDeGrupo = useMemo(() => {
+    if (!proveedorFn || !selProveedor || !proveedoresReales) return null;
+    return (proveedoresReales || []).filter(p => (p.grupos || []).includes(selProveedor));
+  }, [proveedorFn, selProveedor, proveedoresReales]);
 
   const startAdd  = () => { setForm({ ...emptyForm }); setSel(null); };
   const startEdit = (item) => { setForm({ ...item }); setSel(item.id); };
@@ -519,6 +527,23 @@ function TabSimple({ items, onAdd, onUpdate, onDelete, cols, emptyForm, renderFo
             style={{ ...inputSt, flex: 1, padding: '4px 8px' }} />
           <Btn sm fill onClick={startAdd}>+ Agregar</Btn>
         </div>
+        {proveedoresDeGrupo !== null && (
+          <div style={{ padding: '6px 10px', background: proveedoresDeGrupo.length > 0 ? T.accentSoft : T.faint, borderBottom: `1px solid ${T.faint2}`, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, flexShrink: 0 }}>
+              {proveedoresDeGrupo.length > 0 ? 'Proveedores de este grupo:' : 'Proveedores:'}
+            </span>
+            {proveedoresDeGrupo.length > 0
+              ? proveedoresDeGrupo.map(p => (
+                  <span key={p.id} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: T.accent + '22', color: T.accent, whiteSpace: 'nowrap' }}>
+                    {p.nombre}
+                  </span>
+                ))
+              : <span style={{ fontSize: 11, color: T.ink3, fontStyle: 'italic' }}>
+                  Ningún proveedor asignado a este grupo — asignalos en Proveedores.
+                </span>
+            }
+          </div>
+        )}
         <div style={{ flex: 1, overflow: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: isMobile ? 600 : 'auto' }}>
             <thead>
