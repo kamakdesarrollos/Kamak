@@ -23,15 +23,23 @@ const ESTADO_CHIP = {
   cliente: { label: 'Cliente', color: T.ok }, prospecto: { label: 'Prospecto', color: T.accent }, inactivo: { label: 'Inactivo', color: T.ink3 },
 };
 
-export default function ClienteFicha360Modal({ cliente, onClose }) {
+export default function ClienteFicha360Modal({ cliente: clienteProp, onClose }) {
   const { obras, getDetalle, setVentaEtapa } = useObras();
   const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { usuarios, currentUser } = useUsuarios();
-  const { updateCliente } = useClientes();
+  const { clientes, updateCliente } = useClientes();
   const { actividades, addActividad } = useComercial();
   const isMobile = useIsMobile();
   const tc = dolarVenta || 1070;
+
+  // SIEMPRE el cliente LIVE del context. El prop puede ser una copia vieja del
+  // call site (embudo/Clientes lo guardan en estado): sin esto, al editar el
+  // próximo contacto / tags el valor se "borraba" (el modal mostraba la copia vieja).
+  const cliente = useMemo(
+    () => (clientes || []).find(c => c.id === clienteProp?.id) || clienteProp,
+    [clientes, clienteProp]
+  );
 
   const [nuevaAct, setNuevaAct] = useState({ tipo: 'llamada', texto: '' });
   const [agendar, setAgendar] = useState(false);
