@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Bar, Label } from '../components/ui';
@@ -549,6 +549,23 @@ export default function Obras() {
   // 2 tipos de finalizadas, calculado solo desde la cuenta corriente (saldo).
   const finConSaldo = finalizadas.filter(o => !getCC(o).saldada);
   const finSaldadas = finalizadas.filter(o => getCC(o).saldada);
+
+  // Seguro: si no hay obras 'activa', el backoffice abre en la primera pestaña que
+  // tenga obras (sino la página abre vacía en "Activas" y parece que las obras
+  // "desaparecieron" — sobre todo Administración, que entra a presupuestos/contratos
+  // de obras nuevas). Solo backoffice: los roles de campo siguen viendo solo Activas.
+  const tabInitRef = useRef(false);
+  useEffect(() => {
+    if (tabInitRef.current || !esBackoffice) return;
+    const counts = [activas.length, enPresu.length, finalizadas.length, archivadas.length];
+    if (counts.some(c => c > 0)) {
+      tabInitRef.current = true;
+      if (activas.length === 0) {
+        const first = counts.findIndex(c => c > 0);
+        if (first > 0) setTabIdx(first);
+      }
+    }
+  }, [esBackoffice, activas.length, enPresu.length, finalizadas.length, archivadas.length]);
 
   const TABS = [
     { label: 'Activas',        count: activas.length },
