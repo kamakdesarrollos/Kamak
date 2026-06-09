@@ -510,6 +510,11 @@ export default function Obras() {
   const { currentUser } = useUsuarios();
   const isMobile = useIsMobile();
   const isAdmin = currentUser?.rol === 'Admin';
+  // Administración es backoffice: ve las obras en TODOS los estados (en-presupuesto/
+  // finalizadas/archivadas), no solo "Activas", para administrar contratos, pagos y
+  // documentación de obras confirmadas. Las cards igual le ocultan costo/margen
+  // (el flag isAdmin de CardActiva): solo ve venta/cuenta corriente, que es lo suyo.
+  const esBackoffice = isAdmin || currentUser?.rol === 'Administración';
   const tc = dolarVenta || 1070;
 
   const ov = currentUser?.obrasVisibles ?? '*';
@@ -551,7 +556,7 @@ export default function Obras() {
     { label: 'Finalizadas',    count: finalizadas.length },
     { label: 'Archivadas',     count: archivadas.length },
   ];
-  const visibleTabs = isAdmin ? TABS : TABS.slice(0, 1); // non-admin: only "Activas"
+  const visibleTabs = esBackoffice ? TABS : TABS.slice(0, 1); // field-roles: solo "Activas"
 
   // Filtro de búsqueda sobre la lista activa
   const filtrar = (lista) => {
@@ -611,7 +616,7 @@ export default function Obras() {
             {canCreate && <Btn sm fill onClick={() => setShowNueva(true)}>+ Nueva obra</Btn>}
           </div>
         }
-        kpis={(isAdmin
+        kpis={(esBackoffice
           ? [
               { label: 'Activas',        value: activas.length,     color: T.ok,    onClick: () => setTabIdx(0), active: tabIdx === 0 },
               { label: 'En presupuesto', value: enPresu.length,     color: T.accent, onClick: () => setTabIdx(1), active: tabIdx === 1 },
