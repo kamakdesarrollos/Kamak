@@ -534,8 +534,8 @@ export function ObrasProvider({ children }) {
   // las obras / detalles no hayan cambiado. Era la causa principal de lentitud
   // al editar inputs (ObraPresupuesto consume 9 contexts).
   const value = useMemo(
-    () => ({ obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch }),
-    [obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch]
+    () => ({ obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch, dataReady }),
+    [obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch, dataReady]
   );
 
   return (

@@ -10,13 +10,18 @@ import { necesitaGanarPorPago } from '../lib/ventaEtapa';
 // venta no es ganado/perdido, la mueve a 'ganado'. Centraliza la regla que antes
 // solo corría dentro de ObraPresupuesto (PIEZA 2). No renderiza nada.
 export default function VentaSync() {
-  const { obras, setVentaEtapa } = useObras();
+  const { obras, setVentaEtapa, dataReady } = useObras();
   const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { addActividad } = useComercial();
   const enProceso = useRef(new Set()); // evita re-disparos mientras propaga el state
 
   useEffect(() => {
+    // GATE anti race: no barrer 'obras' hasta que las obras REALES estén
+    // cargadas de Supabase. Antes de dataReady, 'obras' es el seed/localStorage
+    // (obras DEMO) y este barrido llamaría setVentaEtapa -> markUserEdit,
+    // dejando al usuario pegado en las obras demo (mismo bug que el bridge).
+    if (!dataReady) return;
     const tc = dolarVenta || 1070;
     for (const o of obras) {
       if (enProceso.current.has(o.id)) continue;
@@ -28,7 +33,7 @@ export default function VentaSync() {
         addActividad({ clienteId: o.clienteId || null, obraId: o.id, tipo: 'cambio_etapa', texto: `Ganada automáticamente por cobro — ${o.nombre}`, usuario: 'sistema' });
       }
     }
-  }, [obras, movimientos, cajas, dolarVenta, setVentaEtapa, addActividad]);
+  }, [dataReady, obras, movimientos, cajas, dolarVenta, setVentaEtapa, addActividad]);
 
   return null;
 }

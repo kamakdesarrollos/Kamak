@@ -24,12 +24,17 @@ import { obraConfirmada } from '../pages/obra/helpers';
 const ORIGEN = 'auto-contratos';
 
 export default function TareaContratosBridge() {
-  const { obras, detalles, patchDetalle } = useObras();
+  const { obras, detalles, patchDetalle, dataReady } = useObras();
   const tareasCtx = useTareas();
   const { usuarios, currentUser } = useUsuarios();
   const enProceso = useRef(new Set());
 
   useEffect(() => {
+    // GATE anti race: no barrer 'obras' hasta que las obras REALES estén
+    // cargadas de Supabase. Antes de dataReady, 'obras' es el seed/localStorage
+    // (obras DEMO confirmadas) y este barrido escribía tareas basura + disparaba
+    // markUserEdit, dejando al usuario pegado en las obras demo.
+    if (!dataReady) return;
     if (!tareasCtx) return;
     const { tareas, addTarea } = tareasCtx;
     if (!Array.isArray(usuarios) || usuarios.length === 0) return; // sin usuarios aún (carga)
@@ -68,7 +73,7 @@ export default function TareaContratosBridge() {
       // Sellar el flag durable (idempotencia entre sesiones/equipos).
       patchDetalle(o.id, d => ({ ...d, tareaContratosCreada: true }));
     }
-  }, [obras, detalles, tareasCtx, usuarios, currentUser, patchDetalle]);
+  }, [dataReady, obras, detalles, tareasCtx, usuarios, currentUser, patchDetalle]);
 
   return null;
 }
