@@ -1,10 +1,10 @@
 // Meta WhatsApp Cloud API — solo dependencias built-in de Node
 
 import crypto from 'node:crypto';
-import { extractSlots, mergeSlots, slotsCompletosPara, parseDictado } from './extractors.js';
+import { extractSlots, mergeSlots, slotsCompletosPara, parseDictado } from './_extractors.js';
 // Acciones comerciales (crear prospecto / mover etapa) — módulo aparte para no
 // inflar este handler. Escrituras atómicas; gateadas a Admin en ejecutarAccion.
-import { crearProspecto, moverEtapaObra } from './intents-comercial.js';
+import { crearProspecto, moverEtapaObra } from './_intents-comercial.js';
 // Agrupación de materiales por "proveedor tipo" (corralón, electricidad, etc.).
 // Lógica PURA compartida con la app — se reusa para el atajo NL "lista de
 // materiales de [obra] del [proveedor]". ESM hermano, importable (type:module).
