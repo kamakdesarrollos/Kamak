@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Bar, Label } from '../components/ui';
@@ -526,7 +526,13 @@ export default function Obras() {
   const getCC = (obra) => ccObra(obra, detalles[obra.id] || EMPTY_DETALLE, movimientos, cajas, tc);
 
   const [searchParams] = useSearchParams();
-  const [tabIdx, setTabIdx] = useState(0);
+  // La pestaña se RECUERDA (sessionStorage): si entrás a una obra (ej. a armar
+  // contratos) y volvés, la lista queda en la MISMA pestaña — antes reseteaba a
+  // Activas y "saltaba" a otras obras (el bug que sufría Administración).
+  const [tabIdx, setTabIdx] = useState(() => {
+    const s = parseInt(sessionStorage.getItem('kamak_obras_tab') || '0', 10);
+    return Number.isInteger(s) && s >= 0 && s <= 3 ? s : 0;
+  });
   const [showNueva, setShowNueva] = useState(false);
   const [editando, setEditando] = useState(null);
   const [busqueda, setBusqueda] = useState(() => searchParams.get('q') || '');
@@ -550,22 +556,12 @@ export default function Obras() {
   const finConSaldo = finalizadas.filter(o => !getCC(o).saldada);
   const finSaldadas = finalizadas.filter(o => getCC(o).saldada);
 
-  // Seguro: si no hay obras 'activa', el backoffice abre en la primera pestaña que
-  // tenga obras (sino la página abre vacía en "Activas" y parece que las obras
-  // "desaparecieron" — sobre todo Administración, que entra a presupuestos/contratos
-  // de obras nuevas). Solo backoffice: los roles de campo siguen viendo solo Activas.
-  const tabInitRef = useRef(false);
+  // Persistir la pestaña elegida: navegar a una obra y volver NO mueve la lista a
+  // otra pestaña. NO auto-saltamos de pestaña (eso confundía: parecía que las obras
+  // "se movían" o "abrían en otras obras"). La lista abre donde la dejaste.
   useEffect(() => {
-    if (tabInitRef.current || !esBackoffice) return;
-    const counts = [activas.length, enPresu.length, finalizadas.length, archivadas.length];
-    if (counts.some(c => c > 0)) {
-      tabInitRef.current = true;
-      if (activas.length === 0) {
-        const first = counts.findIndex(c => c > 0);
-        if (first > 0) setTabIdx(first);
-      }
-    }
-  }, [esBackoffice, activas.length, enPresu.length, finalizadas.length, archivadas.length]);
+    try { sessionStorage.setItem('kamak_obras_tab', String(tabIdx)); } catch { /* ignore */ }
+  }, [tabIdx]);
 
   const TABS = [
     { label: 'Activas',        count: activas.length },
@@ -673,6 +669,17 @@ export default function Obras() {
           )}
           {filtrar(activas).length === 0 && busqueda && (
             <div style={{ gridColumn: '1/-1', color: T.ink3, padding: 24 }}>Sin resultados para "{busqueda}"</div>
+          )}
+          {filtrar(activas).length === 0 && !busqueda && esBackoffice && (
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', color: T.ink3, padding: '44px 20px' }}>
+              <div style={{ fontSize: 38, marginBottom: 6 }}>🏗️</div>
+              <div style={{ fontSize: 15, color: T.ink2, fontWeight: 600 }}>No hay obras en ejecución en este momento.</div>
+              <div style={{ fontSize: 13, marginTop: 8 }}>
+                Tenés <b style={{ color: T.accent, cursor: 'pointer' }} onClick={() => setTabIdx(1)}>{enPresu.length} en presupuesto</b>
+                {finalizadas.length > 0 && <> · <b style={{ color: T.accent, cursor: 'pointer' }} onClick={() => setTabIdx(2)}>{finalizadas.length} finalizada{finalizadas.length !== 1 ? 's' : ''}</b></>}.
+                <div style={{ marginTop: 4, color: T.ink3, fontSize: 12 }}>Tocá una pestaña arriba para verlas.</div>
+              </div>
+            </div>
           )}
         </div>
       )}
