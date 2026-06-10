@@ -22,7 +22,7 @@ import { useTareas } from '../../store/TareasContext';
 import { generarTareasObra } from '../../lib/generarTareasObra';
 import { normUnidad } from '../../lib/unidad';
 import { supabase } from '../../lib/supabase';
-import { loadSharedData, saveSharedData } from '../../lib/dbHelpers';
+import { loadSharedData, saveSharedData, patchDetalleObra } from '../../lib/dbHelpers';
 import { renderPlantilla, planCuotasHtml, hashDocumento } from '../../lib/contrato';
 import { onRemoteChange } from '../../lib/syncBus';
 import { esc, abrirHTML } from '../../lib/html';
@@ -506,7 +506,17 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const { plantillas, add: addPlantilla, incrementUso } = usePlantillas();
   const [showSavePlantilla, setShowSavePlantilla] = useState(false);
   const [savePlantillaForm, setSavePlantillaForm] = useState({ nombre: '', tipo: 'Comercial', descripcion: '' });
-  const { obras: todasObras, detalles } = useObras();
+  // ── Duplicar presupuesto a otra obra ──────────────────────────────────────
+  // showDuplicar: abre el modal. dupDestino: obraId destino elegido. dupModo:
+  // 'reemplazar' | 'agregar' (solo aplica si la destino YA tiene rubros).
+  // dupBusca: filtro de la lista de obras. dupHecho: { obraId, nombre } tras
+  // copiar, para mostrar el feedback con botón "Ir a la obra".
+  const [showDuplicar, setShowDuplicar] = useState(false);
+  const [dupDestino, setDupDestino] = useState('');
+  const [dupModo, setDupModo] = useState('reemplazar');
+  const [dupBusca, setDupBusca] = useState('');
+  const [dupHecho, setDupHecho] = useState(null);
+  const { obras: todasObras, detalles, getDetalle } = useObras();
   const { totalMensual: gfMensual } = useGastosFijos();
   const { catalog, catalogIndex, sismatCostMap } = useCatalog();
   const { dolarVenta } = useDolar();
@@ -754,6 +764,69 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
     setSelectedTareas(new Set());
   };
 
+  // ── Duplicar presupuesto a OTRA obra ───────────────────────────────────────
+  // Clona PROFUNDO los rubros de esta obra (regenerando rubro.id, tarea.id y
+  // material.id para que no colisionen con los de la destino) y los escribe en
+  // el detalle de la obra destino vía patchDetalleObra (RPC atómico server-side:
+  // mergea SOLO en detalles[destino], sin pisar la lista de obras ni los detalles
+  // de otras obras editadas en paralelo). Modo 'reemplazar' pisa los rubros de la
+  // destino; 'agregar' hace append. NO toca cuotas/contratos/movimientos/cobros
+  // de la destino. El margenDefault de la origen se copia SOLO si la destino no
+  // tiene uno (no pisar la config de márgenes default de la obra destino).
+  const clonarRubrosProfundo = (rubros) => (rubros || []).map((r, i) => ({
+    ...r,
+    id: newId(),
+    orden: typeof r.orden === 'number' ? r.orden : i,
+    tareas: (r.tareas || []).map(t => ({
+      ...t,
+      id: newId(),
+      receta: t.receta
+        ? { ...t.receta, materiales: (t.receta.materiales || []).map(m => ({ ...m, id: newId() })) }
+        : { materiales: [] },
+    })),
+  }));
+
+  const duplicarPresupuesto = async (obraDestinoId, modo /* 'reemplazar' | 'agregar' */) => {
+    const obraDestino = todasObras.find(o => o.id === obraDestinoId);
+    if (!obraDestino) return;
+    const detalleDestino = getDetalle(obraDestinoId);
+
+    const rubrosClonados = clonarRubrosProfundo(detalle.rubros);
+    const rubrosDestinoPrevios = detalleDestino.rubros || [];
+
+    // Append: continuar la numeración de orden a partir de los existentes.
+    const nuevoArrayRubros = modo === 'agregar'
+      ? [
+          ...rubrosDestinoPrevios,
+          ...rubrosClonados.map((r, i) => ({ ...r, orden: rubrosDestinoPrevios.length + i })),
+        ]
+      : rubrosClonados;
+
+    const patchObj = { rubros: nuevoArrayRubros };
+    // margenDefault: copiar el de la origen SOLO si la destino no tiene uno.
+    if (!detalleDestino.margenDefault && detalle.margenDefault) {
+      patchObj.margenDefault = detalle.margenDefault;
+    }
+
+    // Escritura ATÓMICA (RPC patch_detalle_obra con fallback RMW seguro).
+    patchDetalleObra(obraDestinoId, patchObj);
+
+    const nRubros = rubrosClonados.length;
+    const nTareas = rubrosClonados.reduce((s, r) => s + (r.tareas || []).filter(t => t.tipo !== 'seccion').length, 0);
+    window.dispatchEvent(new CustomEvent('kamak:toast', {
+      detail: { type: 'ok', msg: `Presupuesto copiado a "${obraDestino.nombre}" · ${nRubros} rubro${nRubros === 1 ? '' : 's'}, ${nTareas} tarea${nTareas === 1 ? '' : 's'}.` },
+    }));
+    setDupHecho({ obraId: obraDestinoId, nombre: obraDestino.nombre });
+  };
+
+  const cerrarDuplicar = () => {
+    setShowDuplicar(false);
+    setDupDestino('');
+    setDupModo('reemplazar');
+    setDupBusca('');
+    setDupHecho(null);
+  };
+
   const saveEditTask = () => {
     if (!editTask) return;
     patch(d => ({ ...d, rubros: d.rubros.map(r => ({ ...r, tareas: r.tareas.map(t => t.id === editTask.id ? editTask : t) })) }));
@@ -871,6 +944,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
           {!collapsed && puedeEditar && <Btn sm fill onClick={() => setAddingRubro(true)}>+ Rubro</Btn>}
           {!collapsed && puedeEditar && <Btn sm onClick={() => setShowPlantillas(true)}>📋</Btn>}
           {!collapsed && puedeEditar && <Btn sm onClick={() => { setSavePlantillaForm({ nombre: obra.nombre || '', tipo: 'Comercial', descripcion: '' }); setShowSavePlantilla(true); }}>💾</Btn>}
+          {!collapsed && puedeEditar && detalle.rubros.length > 0 && (
+            <Btn sm onClick={() => { setDupDestino(''); setDupModo('reemplazar'); setDupBusca(''); setDupHecho(null); setShowDuplicar(true); }} title="Copiar estos rubros, tareas y márgenes a otra obra">⧉ Duplicar</Btn>
+          )}
           <span style={{ fontSize: 10.5, color: T.ink3, fontWeight: 600, fontFamily: `'JetBrains Mono', monospace`, letterSpacing: 0.5, marginLeft: 4 }}>{collapsed ? '▼ Ver' : '▲ Cerrar'}</span>
         </div>
       </div>
@@ -1516,6 +1592,104 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
           </div>
         </div>
       )}
+
+      {/* Modal: Duplicar presupuesto a otra obra */}
+      {showDuplicar && (() => {
+        // Obras destino candidatas: todas menos la actual, solo en-presupuesto/activas.
+        const obrasDestino = todasObras
+          .filter(o => o.id !== obra.id && ['en-presupuesto', 'activa'].includes(o.estado));
+        const filtradas = dupBusca.trim()
+          ? obrasDestino.filter(o => searchNorm(`${o.nombre || ''} ${o.cliente || ''}`).includes(searchNorm(dupBusca)))
+          : obrasDestino;
+        const destSel = dupDestino ? todasObras.find(o => o.id === dupDestino) : null;
+        const destTieneRubros = dupDestino ? ((getDetalle(dupDestino).rubros || []).length > 0) : false;
+        const nRubrosOrigen = (detalle.rubros || []).length;
+        const nTareasOrigen = (detalle.rubros || []).reduce((s, r) => s + (r.tareas || []).filter(t => t.tipo !== 'seccion').length, 0);
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={cerrarDuplicar}>
+            <div style={{ background: T.paper, borderRadius: 8, padding: 22, ...(isMobile ? { width: 'calc(100vw - 32px)', maxWidth: '100%', maxHeight: '80vh' } : { width: 540, maxHeight: '78vh' }), overflow: 'auto', boxShadow: '0 6px 32px rgba(0,0,0,0.22)' }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>Duplicar presupuesto a otra obra</div>
+              <div style={{ fontSize: 12, color: T.ink2, marginBottom: 16 }}>
+                Se copiarán {nRubrosOrigen} rubro{nRubrosOrigen === 1 ? '' : 's'} y {nTareasOrigen} tarea{nTareasOrigen === 1 ? '' : 's'} (con sus márgenes) a la obra que elijas. No se copian cuotas, contratos, movimientos ni cobros.
+              </div>
+
+              {dupHecho ? (
+                /* Paso final: feedback de éxito + ir a la obra */
+                <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                  <div style={{ fontSize: 34, marginBottom: 8 }}>✓</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.ok, marginBottom: 4 }}>Presupuesto copiado</div>
+                  <div style={{ fontSize: 12, color: T.ink2, marginBottom: 18 }}>Los rubros y tareas se agregaron a <b>{dupHecho.nombre}</b>.</div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <Btn sm onClick={cerrarDuplicar}>Cerrar</Btn>
+                    <Btn sm fill onClick={() => { const dest = dupHecho.obraId; cerrarDuplicar(); navigate(`/obras/${dest}/presupuesto`); }}>Ir a la obra →</Btn>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Buscador (solo si hay muchas obras) */}
+                  {obrasDestino.length > 6 && (
+                    <input autoFocus style={{ ...inputSt, marginBottom: 10 }} value={dupBusca}
+                      onChange={e => setDupBusca(e.target.value)}
+                      placeholder="Buscar obra por nombre o cliente…" />
+                  )}
+
+                  {/* Lista de obras destino */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto', marginBottom: 14 }}>
+                    {filtradas.length === 0 && (
+                      <div style={{ color: T.ink3, fontSize: 12, padding: 16, textAlign: 'center' }}>
+                        {obrasDestino.length === 0 ? 'No hay otras obras en presupuesto o activas.' : 'Ninguna obra coincide con la búsqueda.'}
+                      </div>
+                    )}
+                    {filtradas.map(o => {
+                      const sel = dupDestino === o.id;
+                      const tiene = (getDetalle(o.id).rubros || []).length;
+                      return (
+                        <div key={o.id} onClick={() => setDupDestino(o.id)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 5, cursor: 'pointer',
+                            background: sel ? T.accentSoft : T.faint, border: `1.5px solid ${sel ? T.accent : T.faint2}` }}>
+                          <input type="radio" readOnly checked={sel} style={{ cursor: 'pointer', flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: sel ? 700 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.nombre}</div>
+                            <div style={{ fontSize: 10.5, color: T.ink3 }}>{o.estado === 'activa' ? 'Activa' : 'En presupuesto'}{o.cliente ? ` · ${o.cliente}` : ''}</div>
+                          </div>
+                          {tiene > 0 && <Chip style={{ fontSize: 10 }}>{tiene} rubro{tiene === 1 ? '' : 's'}</Chip>}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Aviso + modo si la destino YA tiene rubros */}
+                  {dupDestino && destTieneRubros && (
+                    <div style={{ background: '#fef3c7', border: '1px solid #d97706', borderRadius: 6, padding: '10px 12px', marginBottom: 14 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 8 }}>
+                        ⚠ "{destSel?.nombre}" ya tiene {(getDetalle(dupDestino).rubros || []).length} rubro{(getDetalle(dupDestino).rubros || []).length === 1 ? '' : 's'} cargado{(getDetalle(dupDestino).rubros || []).length === 1 ? '' : 's'}.
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', marginBottom: 6 }}>
+                        <input type="radio" name="dupModo" checked={dupModo === 'reemplazar'} onChange={() => setDupModo('reemplazar')} style={{ marginTop: 2 }} />
+                        <span style={{ fontSize: 12, color: T.ink }}><b>Reemplazar</b> — pisa los rubros existentes de la obra destino.</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+                        <input type="radio" name="dupModo" checked={dupModo === 'agregar'} onChange={() => setDupModo('agregar')} style={{ marginTop: 2 }} />
+                        <span style={{ fontSize: 12, color: T.ink }}><b>Agregar</b> — suma estos rubros a los que ya tiene.</span>
+                      </label>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <Btn sm onClick={cerrarDuplicar}>Cancelar</Btn>
+                    <Btn sm fill style={{ opacity: dupDestino ? 1 : 0.5, pointerEvents: dupDestino ? 'auto' : 'none' }}
+                      onClick={() => duplicarPresupuesto(dupDestino, destTieneRubros ? dupModo : 'reemplazar')}>
+                      {destTieneRubros ? (dupModo === 'agregar' ? 'Agregar →' : 'Reemplazar →') : 'Copiar →'}
+                    </Btn>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Panel APU eliminado: la edicion de cantidad, costo mat, costo sub,
           margen, venta y avance ya se hace inline en la tabla del cómputo.
