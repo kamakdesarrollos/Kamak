@@ -1752,12 +1752,18 @@ function TabMateriales({ detalle, obra }) {
           if (globalMap.has(m.nombre)) {
             globalMap.get(m.nombre).cantidad += qty;
           } else {
-            // Resolver el rubro del material vía catálogo (por nombre) y de ahí
-            // el proveedor tipo. Sin match en catálogo → 'Otros'.
+            // Resolver el grupo/proveedor del material vía CATÁLOGO VIVO (por
+            // nombre). El embebido en la receta es un snapshot SIN grupo/rubro,
+            // así que el grupo manual hay que sacarlo del catálogo vivo
+            // (catMat.grupo) para que el cambio de grupo en Catálogo→Materiales se
+            // refleje acá al instante, en vez de caer siempre al grupo viejo
+            // derivado del rubro. Sin match en catálogo → caer al embebido
+            // (m.grupo/rubro), que normalmente da 'Otros'. Mismo criterio que el
+            // bot de WhatsApp (api/whatsapp/webhook.js).
             const catMat = catMatByNombre.get(searchNorm(m.nombre).trim());
             const proveedor = catMat
-              ? proveedorDeMaterial({ rubro: catMat.rubro, nombre: m.nombre })
-              : 'Otros';
+              ? proveedorDeMaterial({ grupo: catMat.grupo, rubro: catMat.rubro, nombre: m.nombre })
+              : proveedorDeMaterial({ grupo: m.grupo, rubro: m.rubro, nombre: m.nombre });
             globalMap.set(m.nombre, { nombre: m.nombre, unidad: m.unidad || '', proveedor, cantidad: qty });
           }
         }
