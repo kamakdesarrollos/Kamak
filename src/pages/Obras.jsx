@@ -376,8 +376,63 @@ function CardPausada({ obra, stats, onClick, onTransicion, onEditar, onEliminar 
   );
 }
 
+// ── Control rápido "destacada + N° prioridad" para la web, editable desde la
+// tarjeta de obra finalizada SIN entrar a la obra. Escribe en obra.web vía
+// setWebObra (mismo patch atómico que la pestaña Web). El N° prioridad (orden)
+// se persiste on-blur/Enter para no escribir en cada tecla.
+function WebDestacadaControl({ obra, setWebObra }) {
+  const web = obra.web || {};
+  const [orden, setOrden] = useState(web.orden ?? '');
+  useEffect(() => { setOrden(web.orden ?? ''); }, [web.orden]);
+
+  const commitOrden = () => {
+    const raw = String(orden).trim();
+    const n = raw === '' ? null : Number(raw);
+    const next = Number.isFinite(n) ? n : null;
+    if (next !== (web.orden ?? null)) setWebObra(obra.id, { orden: next });
+  };
+
+  return (
+    <div
+      onClick={e => e.stopPropagation()}
+      style={{
+        marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${T.faint2}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap',
+      }}
+    >
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: T.ink2, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={!!web.destacada}
+          onChange={e => setWebObra(obra.id, { destacada: e.target.checked })}
+        />
+        ★ Destacada en home
+      </label>
+      {web.destacada && (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.ink2 }}>
+          N° prioridad
+          <input
+            type="number"
+            value={orden}
+            onChange={e => setOrden(e.target.value)}
+            onBlur={commitOrden}
+            onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+            placeholder="—"
+            title="Menor número aparece primero en el Home"
+            style={{
+              width: 54, padding: '3px 6px', fontSize: 12, textAlign: 'center',
+              fontFamily: T.fontMono, border: `1.2px solid ${T.faint2}`, borderRadius: 4,
+              outline: 'none', background: '#fff', color: T.ink,
+            }}
+          />
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── Card: finalizada — con estado de la cuenta corriente (Total/Cobrado/Saldo) ──
-function CardFinalizada({ obra, cc, onClick, onTransicion, onEditar }) {
+function CardFinalizada({ obra, cc, onClick, onTransicion, onEditar, setWebObra }) {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const fmtU = (n) => `U$S ${Math.round(n).toLocaleString('es-AR')}`;
@@ -424,6 +479,11 @@ function CardFinalizada({ obra, cc, onClick, onTransicion, onEditar }) {
         <span>Inicio: {fmtDate(obra.fechaInicio)}</span>
         <span>Cierre: {fmtDate(obra.fechaFin)}</span>
       </div>
+
+      {/* Web: destacar + N° prioridad sin entrar a la obra (solo si está publicada) */}
+      {setWebObra && obra.web?.publicar && (
+        <WebDestacadaControl obra={obra} setWebObra={setWebObra} />
+      )}
 
       <div style={{ display: 'flex', gap: 6, marginTop: 10 }} onClick={e => e.stopPropagation()}>
         <Btn sm style={{ flex: 1, justifyContent: 'center' }} onClick={onClick}>Ver cuenta corriente</Btn>
@@ -504,7 +564,7 @@ function FilaArchivada({ obra, onClick, onTransicion, onEliminar, isMobile }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Obras() {
   const navigate = useNavigate();
-  const { obras, detalles, addObra, updateObra, setEstado, deleteObra, byEstado } = useObras();
+  const { obras, detalles, addObra, updateObra, setEstado, deleteObra, byEstado, setWebObra } = useObras();
   const { movimientos, cajas } = useMovimientos();
   const { dolarVenta } = useDolar();
   const { currentUser } = useUsuarios();
@@ -740,6 +800,7 @@ export default function Obras() {
                       onClick={() => goObra(o)}
                       onTransicion={(est) => handleTransicion(o.id, est)}
                       onEditar={() => setEditando(o)}
+                      setWebObra={setWebObra}
                     />
                   ))}
                 </div>
