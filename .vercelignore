@@ -1,0 +1,9 @@
+# No deployar a Vercel (no afecta el build): tests, scripts de migración, docs,
+# backups con datos de producción. Evita además que archivos *.test.js dentro de
+# api/ se traten como funciones serverless (rompían el build y contaban al límite).
+**/*.test.js
+scripts/
+docs/
+.claude/
+*.md
+APUS.xlsx
