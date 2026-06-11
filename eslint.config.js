@@ -18,4 +18,17 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  {
+    // Código server-side (Vercel functions + módulos compartidos + scripts):
+    // corre en Node, no en el browser. Habilita los globals de Node (process,
+    // Buffer, etc.) y apaga reglas de React/fast-refresh que no aplican.
+    files: ['api/**/*.js', 'lib/**/*.js', 'scripts/**/*.{js,mjs}'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+    rules: {
+      'react-refresh/only-export-components': 'off',
+      'react-hooks/rules-of-hooks': 'off',
+    },
+  },
 ])

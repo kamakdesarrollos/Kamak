@@ -477,6 +477,22 @@ export function ObrasProvider({ children }) {
     // (El detalle[id] queda huérfano — la limpieza con cascada es IR-01, aparte.)
   }, []);
 
+  // Edita el sub-objeto `web` de la obra (datos de la web pública: slug, m², marca,
+  // localidad, coords, antes/después, galería, copy, publicar). Mergea sobre el web
+  // previo (no pisa otros campos) y persiste atómico por obra (patchObjectItem).
+  const setWebObra = useCallback((id, webPatch) => {
+    markUserEdit();
+    const prev = obrasRef.current.find(o => o.id === id);
+    const web = { ...(prev?.web || {}), ...webPatch };
+    setObras(prevA => prevA.map(o => o.id === id ? { ...o, web } : o));
+    patchObjectItem('obras', 'obras', id, { web });
+  }, []);
+
+  // Publica / despublica la obra en la web pública (toggle de web.publicar).
+  const togglePublicar = useCallback((id, on) => {
+    setWebObra(id, { publicar: !!on });
+  }, [setWebObra]);
+
   // byEstado y getDetalle son derivados — devuelven nueva referencia cada
   // call (es lo correcto: usar useMemo en el consumidor cuando se necesite).
   //
@@ -534,8 +550,8 @@ export function ObrasProvider({ children }) {
   // las obras / detalles no hayan cambiado. Era la causa principal de lentitud
   // al editar inputs (ObraPresupuesto consume 9 contexts).
   const value = useMemo(
-    () => ({ obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch, dataReady }),
-    [obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch, dataReady]
+    () => ({ obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, setWebObra, togglePublicar, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch, dataReady }),
+    [obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, setWebObra, togglePublicar, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch, dataReady]
   );
 
   return (
