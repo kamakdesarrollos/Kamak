@@ -4,9 +4,10 @@ vi.mock('../../lib/web/supabaseRest.js', () => ({
   applyCors: vi.fn(() => true),
   loadSharedData: vi.fn(async () => ({
     obras: [
-      { id: 'a', nombre: 'A', web: { publicar: true, orden: 1 } },
-      { id: 'b', nombre: 'B', web: { publicar: false } },
-      { id: 'c', nombre: 'C' },
+      { id: 'a', nombre: 'A', estado: 'finalizada', web: { publicar: true, orden: 1 } },
+      { id: 'b', nombre: 'B', estado: 'finalizada', web: { publicar: false } },
+      { id: 'c', nombre: 'C', estado: 'activa', web: { publicar: true } }, // no finalizada → excluida
+      { id: 'd', nombre: 'D' },
     ],
   })),
 }));

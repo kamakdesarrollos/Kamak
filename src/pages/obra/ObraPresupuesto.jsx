@@ -60,6 +60,7 @@ function buildCuotaDerivados(cuotas, movimientos, cajas, obraId, obraMoneda, tc)
 import { FRow, FInput, FSelect, FormPanel, inputSt, labelSt } from './forms';
 import TabDocumentos from './tabs/TabDocumentos';
 import TabSeguros from './tabs/TabSeguros';
+import TabWeb from './tabs/TabWeb';
 import ClienteAccesoModal from '../modales/ClienteAccesoModal';
 import PlantillasContratistaModal from './PlantillasContratistaModal';
 
@@ -4953,7 +4954,7 @@ function TabArchivos({ detalle, patch, obraId }) {
 // índices POSICIONALES para renderizar tabs y para los redirects de Gantt(4)
 // y Portal cliente(8). Insertar en el medio correría todos los índices viejos.
 // Solo visible en obras confirmadas (ver visibleTabIndices más abajo).
-const TABS_DEF = ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Archivos', 'Portal cliente', 'Seguros'];
+const TABS_DEF = ['Resumen', 'Cuenta corriente', 'Presupuesto', 'Materiales', 'Gantt', 'Movimientos', 'Contratos MO', 'Archivos', 'Portal cliente', 'Seguros', 'Web'];
 
 export default function ObraPresupuesto() {
   const { id } = useParams();
@@ -5032,6 +5033,7 @@ export default function ObraPresupuesto() {
       const total = (detalle.nominaSeguros || []).length;
       return total > 0 ? `Seguros · ${total}` : 'Seguros';
     }
+    if (i === 10) return obra.web?.publicar ? 'Web ✓' : 'Web';
     return t;
   });
 
@@ -5048,6 +5050,7 @@ export default function ObraPresupuesto() {
   const visibleTabIndices = TABS_DEF.reduce((acc, t, i) => {
     if (allHiddenTabs.has(t)) return acc;
     if (t === 'Seguros' && !obraConfirmada) return acc;
+    if (t === 'Web' && !isAdmin) return acc;   // pestaña Web: solo Admin (curar + publicar)
     acc.push(i);
     return acc;
   }, []);
@@ -5223,6 +5226,7 @@ export default function ObraPresupuesto() {
       {displayTab === 6 && <TabContratosMO detalle={detalle} patch={patch} moneda={moneda} obra={obra} />}
       {displayTab === 7 && <TabArchivos detalle={detalle} patch={patch} obraId={id} />}
       {displayTab === 9 && <TabSeguros detalle={detalle} patch={patch} obraId={id} />}
+      {displayTab === 10 && <TabWeb obra={obra} obraId={id} />}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} obra={obra} detalle={detalle} />}
 
