@@ -58,7 +58,7 @@ const CORNER_BRACKETS = `
   <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:2px solid #1a9b9c;border-right:2px solid #1a9b9c;"></div>`;
 
 // ── HTML generator ────────────────────────────────────────────────────────────
-function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo }) {
+function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands }) {
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
   const rubros = detalle?.rubros || [];
@@ -202,7 +202,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       ${imgDark}
       <div class="comp-meta">CÓMPUTO Y PRESUPUESTO · ${esc((obra?.nombre || '').toUpperCase())} · ${esc(numPresu)}</div>
     </div>
-    <div class="comp-claim">Una sola empresa, una sola responsable: obra civil, mobiliario propio, equipamiento e imagen de marca. No coordinás cinco gremios — nos coordinás a nosotros.</div>
+    <div class="comp-claim">Una sola empresa, una sola responsable.</div>
     <div class="comp-body">${rubroSections}</div>
     <div class="totales-strip">
       <div class="rubros-list">
@@ -301,13 +301,14 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
   const franja = !mecanismo ? '' : `
   <div class="franja dark">
     <div class="franja-in">
-      <div class="franja-creds-row">
-        <span class="dmnd-sm"></span>
-        <div>
-          <div class="franja-creds-main">40+ TIENDAS ENTREGADAS · SHOP EXPRESS · SUPER 7 · PUMA · SUBWAY · CENCOSUD</div>
-          <div class="franja-creds-sub">EMPRESA HABILITADA · SEGUROS Y ART VIGENTES · SEGURIDAD E HIGIENE EN OBRA · COBERTURA NACIONAL</div>
-        </div>
+      <div class="franja-head">
+        <div class="franja-lead">Las marcas líderes nos eligen.</div>
+        <div class="franja-stat">40+ TIENDAS ENTREGADAS</div>
       </div>
+      <div class="franja-logos">
+        ${(brands || []).map(b => `<div class="brand-chip"><img src="${b.url}" alt="${esc(b.n)}" /></div>`).join('')}
+      </div>
+      <div class="franja-creds-sub">EMPRESA HABILITADA · SEGUROS Y ART VIGENTES · SEGURIDAD E HIGIENE EN OBRA · COBERTURA NACIONAL</div>
     </div>
   </div>`;
 
@@ -444,11 +445,14 @@ body{font-family:'Montserrat',sans-serif}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
 /* franja "cómo lo logramos" */
 .franja{background:#1f2024;color:#fff;page-break-inside:avoid;break-inside:avoid}
-.franja-in{padding:14px 44px}
-.franja-creds-row{display:flex;align-items:flex-start;gap:11px}
-.franja-creds-row .dmnd-sm{margin-top:3px}
-.franja-creds-main{font-size:9.5px;font-weight:700;color:#fff;font-family:'JetBrains Mono',monospace;letter-spacing:1.3px;line-height:1.7}
-.franja-creds-sub{font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.3px;line-height:1.7;margin-top:3px}
+.franja-in{padding:18px 44px 16px}
+.franja-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:14px}
+.franja-lead{font-size:14px;font-weight:800;color:#fff;letter-spacing:.3px}
+.franja-stat{font-size:10px;font-weight:700;color:#1a9b9c;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;flex-shrink:0}
+.franja-logos{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.brand-chip{background:#fff;border-radius:5px;padding:8px 14px;height:42px;display:flex;align-items:center;justify-content:center}
+.brand-chip img{max-height:26px;max-width:120px;object-fit:contain;display:block}
+.franja-creds-sub{margin-top:14px;padding-top:11px;border-top:1px solid #2a2c30;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.3px}
 @media screen{
   html{background:#555}
   body{padding:16px 0;margin:0 auto}
@@ -664,6 +668,14 @@ export default function ExportModal({ onClose, obra, detalle }) {
       const origin = window.location.origin;
       const logoLight = `${origin}/assets/kamak-logo-light.png`;
       const logoDark = `${origin}/assets/kamak-logo.png`;
+      // Logos de las marcas para la tira de credenciales (mismas que en la web).
+      const brands = [
+        { n: 'Puma Energy', f: 'puma-energy.svg' },
+        { n: 'Dean & Dennys', f: 'dean-dennys.png' },
+        { n: 'Fan de Pan', f: 'fan-de-pan.png' },
+        { n: 'Subway', f: 'subway.svg' },
+        { n: 'Cencosud', f: 'cencosud.svg' },
+      ].map(b => ({ n: b.n, url: `${origin}/assets/brands/${b.f}` }));
 
       // Generar el QR del cliente (opcional — si falla no rompemos la
       // impresion: imprimimos sin QR).
@@ -678,7 +690,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
         qrDataUrl = null;
       }
 
-      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo });
+      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands });
 
       // Abrir pestaña nueva con el HTML. NO disparamos w.print() automatico:
       // cuando print se dispara programaticamente, Chrome aplica preferencias
