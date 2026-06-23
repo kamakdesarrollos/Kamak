@@ -5050,7 +5050,7 @@ export default function ObraPresupuesto() {
   const visibleTabIndices = TABS_DEF.reduce((acc, t, i) => {
     if (allHiddenTabs.has(t)) return acc;
     if (t === 'Seguros' && !obraConfirmada) return acc;
-    if (t === 'Web' && !isAdmin) return acc;   // pestaña Web: solo Admin (curar + publicar)
+    if (t === 'Web' && !(isAdmin || currentUser?.rol === 'Administración')) return acc;   // pestaña Web: Admin + Administración (curar + publicar)
     acc.push(i);
     return acc;
   }, []);
