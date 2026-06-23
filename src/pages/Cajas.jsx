@@ -130,6 +130,13 @@ function CajaMovimientosModal({ caja, onClose }) {
                               ? <span style={{ color: T.accent, cursor: 'pointer', textDecoration: 'underline' }} onClick={e => { e.stopPropagation(); onClose(); navigate(`/proveedores/${prov.id}`); }}>· {m.proveedor}</span>
                               : <span>· {m.proveedor}</span>;
                           })()}
+                          {m.comprobanteUrl && (
+                            <a href={m.comprobanteUrl} target="_blank" rel="noreferrer"
+                              style={{ textDecoration: 'none', opacity: 0.7 }}
+                              title="Ver comprobante" onClick={e => e.stopPropagation()}>
+                              {m.comprobanteUrl.split('?')[0].endsWith('.pdf') ? '📄' : '🖼'}
+                            </a>
+                          )}
                         </div>
                       </div>
                       <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 13, color, textAlign: 'right' }}>
