@@ -308,7 +308,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       <div class="franja-logos">
         ${(brands || []).map(b => `<div class="brand-chip"><img class="brand-logo" src="${b.url}" alt="${esc(b.n)}" /></div>`).join('')}
       </div>
-      <div class="franja-creds-sub">EMPRESA HABILITADA · SEGUROS Y ART VIGENTES · SEGURIDAD E HIGIENE EN OBRA · COBERTURA NACIONAL</div>
+      <div class="franja-creds-sub">EMPRESA HABILITADA · SEGUROS · SEGURIDAD E HIGIENE EN OBRA · COBERTURA NACIONAL</div>
     </div>
   </div>`;
 
