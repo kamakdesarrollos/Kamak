@@ -58,7 +58,7 @@ const CORNER_BRACKETS = `
   <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:2px solid #1a9b9c;border-right:2px solid #1a9b9c;"></div>`;
 
 // ── HTML generator ────────────────────────────────────────────────────────────
-function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias }) {
+function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo }) {
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
   const rubros = detalle?.rubros || [];
@@ -177,6 +177,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
     return `<div class="rubro-sec">
       <div class="rubro-ttl"><span class="dmnd-sm"></span>RUBRO ${String(ri + 1).padStart(2, '0')} · ${esc(rubro.nombre)}</div>
       ${rubro.materialesACargoComprador ? `<div style="font-size:10.5px;font-style:italic;color:#8a6d2a;background:#fcf6e3;border:1px solid #e6d9a8;border-radius:3px;padding:4px 9px;margin:3px 0 6px;">⚑ Materiales de ${esc(rubro.nombre)} <b>a cargo del comprador</b> (no incluidos en este precio).</div>` : ''}
+      ${/mobiliario/i.test(rubro.nombre || '') ? `<div class="rubro-claim">El mobiliario se fabrica en nuestro taller propio, mientras avanza la obra.</div>` : ''}
       <div class="tbl-hdr">
         <div class="tc tc-name">TAREA / DESCRIPCIÓN</div>
         <div class="tc tc-un">UN</div>
@@ -201,6 +202,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       ${imgDark}
       <div class="comp-meta">CÓMPUTO Y PRESUPUESTO · ${esc((obra?.nombre || '').toUpperCase())} · ${esc(numPresu)}</div>
     </div>
+    <div class="comp-claim">Una sola empresa, una sola responsable: obra civil, mobiliario propio, equipamiento e imagen de marca. No coordinás cinco gremios — nos coordinás a nosotros.</div>
     <div class="comp-body">${rubroSections}</div>
     <div class="totales-strip">
       <div class="rubros-list">
@@ -220,6 +222,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
           <span class="total-val">U$S ${toUSD(totalVenta)} <span class="iva">+ IVA</span></span>
         </div>
         <div style="margin-top:4px;font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1px;text-align:right">TC BNA $${Math.round(tc).toLocaleString('es-AR')}</div>
+        ${tieneTiempo ? `<div class="totales-tiempo">◆ ${diasMas} días más atendiendo a tus clientes</div>` : ''}
         ${nota ? `<div class="nota-pie">${esc(nota)}</div>` : ''}
       </div>
     </div>
@@ -289,6 +292,22 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       <span>7630 NECOCHEA · BUENOS AIRES · ARGENTINA</span>
       <span>KAMAKDESARROLLOS@GMAIL.COM</span>
       <span>${totalPags} / ${totalPags}</span>
+    </div>
+  </div>`;
+
+  // ─ Tira de credenciales (dark, opcional) ─
+  // Prueba social/autoridad (tiendas, marcas, seguros, cobertura). NO mostramos el
+  // mecanismo (el "cómo" no se regala). Va entre la portada y el cómputo. Toggle.
+  const franja = !mecanismo ? '' : `
+  <div class="franja dark">
+    <div class="franja-in">
+      <div class="franja-creds-row">
+        <span class="dmnd-sm"></span>
+        <div>
+          <div class="franja-creds-main">40+ TIENDAS ENTREGADAS · SHOP EXPRESS · SUPER 7 · PUMA · SUBWAY · CENCOSUD</div>
+          <div class="franja-creds-sub">EMPRESA HABILITADA · SEGUROS Y ART VIGENTES · SEGURIDAD E HIGIENE EN OBRA · COBERTURA NACIONAL</div>
+        </div>
+      </div>
     </div>
   </div>`;
 
@@ -402,6 +421,9 @@ body{font-family:'Montserrat',sans-serif}
 .total-val{font-size:14px}
 .iva{font-size:8.5px;letter-spacing:1px;color:#1a9b9c;font-weight:700;margin-left:4px;font-family:'JetBrains Mono',monospace}
 .nota-pie{margin-top:7px;font-size:8px;color:#9a9892;border-top:1px solid #333;padding-top:5px}
+.comp-claim{padding:7px 30px 2px;font-size:10px;font-style:italic;color:#5a5a58;line-height:1.5}
+.rubro-claim{font-size:9.5px;font-style:italic;color:#0d7475;margin:2px 0 5px;padding-left:14px}
+.totales-tiempo{margin-top:6px;font-size:9.5px;font-weight:700;color:#1a9b9c}
 .comp-ftr{padding:6px 30px;border-top:1.5px solid #1f2024;display:flex;justify-content:space-between;font-size:7.5px;color:#5a5a58;font-family:'JetBrains Mono',monospace}
 /* condiciones */
 .cond-hdr{padding:16px 44px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
@@ -420,10 +442,17 @@ body{font-family:'Montserrat',sans-serif}
 .firma-name{font-size:12px;font-weight:700;margin-top:4px;color:#fff}
 .firma-sub{font-size:9px;color:#9a9892}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
+/* franja "cómo lo logramos" */
+.franja{background:#1f2024;color:#fff;page-break-inside:avoid;break-inside:avoid}
+.franja-in{padding:14px 44px}
+.franja-creds-row{display:flex;align-items:flex-start;gap:11px}
+.franja-creds-row .dmnd-sm{margin-top:3px}
+.franja-creds-main{font-size:9.5px;font-weight:700;color:#fff;font-family:'JetBrains Mono',monospace;letter-spacing:1.3px;line-height:1.7}
+.franja-creds-sub{font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.3px;line-height:1.7;margin-top:3px}
 @media screen{
   html{background:#555}
   body{padding:16px 0;margin:0 auto}
-  .portada-page,.comp-flow,.cond-page{width:794px;margin:0 auto 16px;box-shadow:0 4px 24px rgba(0,0,0,.4)}
+  .portada-page,.comp-flow,.cond-page,.franja{width:794px;margin:0 auto 16px;box-shadow:0 4px 24px rgba(0,0,0,.4)}
 }
 /* Banner instructivo arriba de la pestaña. Solo en pantalla — se oculta al
    imprimir (display:none en @media print) asi no aparece en el PDF final. */
@@ -449,6 +478,7 @@ body{font-family:'Montserrat',sans-serif}
   <span class="close" onclick="this.parentElement.style.display='none';document.body.style.paddingTop='0'">×</span>
 </div>
 ${portada}
+${franja}
 ${computo}
 ${condicionesPage}
 <script>
@@ -596,6 +626,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
   const [vigencia, setVigencia] = useState(30);
   const [nota, setNota] = useState('');
   const [condiciones, setCondiciones] = useState(true);
+  const [mecanismo, setMecanismo] = useState(true);   // franja "cómo lo logramos"
   const [formaPago, setFormaPago] = useState(() => {
     const cuotas = detalle?.cuotas || [];
     if (!cuotas.length) return FORMA_PAGO_DEFAULT;
@@ -647,7 +678,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
         qrDataUrl = null;
       }
 
-      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias });
+      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo });
 
       // Abrir pestaña nueva con el HTML. NO disparamos w.print() automatico:
       // cuando print se dispara programaticamente, Chrome aplica preferencias
@@ -730,6 +761,10 @@ export default function ExportModal({ onClose, obra, detalle }) {
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer', lineHeight: 1.3, marginTop: 8 }}>
                 <ToggleCheck on={condiciones} onClick={() => setCondiciones(v => !v)} />
                 Página de condiciones de pago
+              </label>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer', lineHeight: 1.3, marginTop: 8 }}>
+                <ToggleCheck on={mecanismo} onClick={() => setMecanismo(v => !v)} />
+                Tira de credenciales (tiendas · marcas · seguros)
               </label>
             </div>
 
