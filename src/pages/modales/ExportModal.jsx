@@ -101,13 +101,23 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div><div class="cell-lbl">TIPO DE OBRA</div><div class="cell-val-sm">${esc(obra?.tipo || '—')}</div></div>
         <div class="pf-fecha"><div class="cell-lbl">FECHA · VIGENCIA</div><div class="cell-val-sm">${fecha}</div><div class="cell-sub">Vigencia: ${vigencia} días</div></div>
       </div>
-      <div class="pf-trad">Obra tradicional: estimado ~${tradicionalDias} días, coordinando cada gremio por separado.</div>
       <div class="pf-heroes">
         <div><div class="cell-lbl">INVERSIÓN</div><div class="cell-val-lg">U$S ${toUSD(totalVenta)}</div><div class="cell-sub">+ IVA</div></div>
         <div class="pf-entrega"><div class="cell-lbl">ENTREGA</div><div class="cell-val-lg">${N} DÍAS</div><div class="cell-sub">llave en mano</div></div>
       </div>
-      <div class="pf-micro">Plazo estimado desde el inicio de obra, con anticipos al día.</div>
-      <div class="pf-remate">${diasMas} DÍAS MÁS ATENDIENDO A TUS CLIENTES</div>
+      <div class="pf-cmp">
+        <div class="pf-cmp-row">
+          <span class="pf-cmp-lbl">CON KAMAK</span>
+          <span class="pf-cmp-track"><span class="pf-cmp-fill kamak" style="width:33.3%"></span></span>
+          <span class="pf-cmp-num kamak">${N} días</span>
+        </div>
+        <div class="pf-cmp-row">
+          <span class="pf-cmp-lbl">TRADICIONAL</span>
+          <span class="pf-cmp-track"><span class="pf-cmp-fill trad" style="width:100%"></span></span>
+          <span class="pf-cmp-num trad">~${tradicionalDias} días</span>
+        </div>
+      </div>
+      <div class="pf-conclusion">${diasMas} DÍAS MÁS ATENDIENDO A TUS CLIENTES</div>
     </div>`
     : `<div class="portada-ftr ftr-grid">
       <div><div class="cell-lbl">CLIENTE</div><div class="cell-val">${esc(obra?.cliente || '—')}</div></div>
@@ -338,11 +348,19 @@ body{font-family:'Montserrat',sans-serif}
 /* Pie con TIEMPO: meta arriba, contraste, héroes (inversión+entrega), remate. */
 .pf-meta{display:flex;align-items:flex-start;gap:30px}
 .pf-meta .pf-fecha{margin-left:auto;text-align:right}
-.pf-trad{margin-top:12px;font-size:10px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:.4px}
-.pf-heroes{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:4px;align-items:end}
+.pf-heroes{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:13px;align-items:end}
 .pf-heroes .pf-entrega{text-align:right}
-.pf-micro{margin-top:8px;font-size:8.5px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:.5px}
-.pf-remate{margin-top:11px;background:#1a9b9c;color:#fff;text-align:center;padding:9px 12px;font-size:13px;font-weight:800;letter-spacing:1.2px}
+.pf-cmp{margin-top:14px}
+.pf-cmp-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.pf-cmp-lbl{width:92px;font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1px;flex-shrink:0}
+.pf-cmp-track{flex:1;height:10px;background:#26282b;border-radius:2px;overflow:hidden}
+.pf-cmp-fill{display:block;height:100%;border-radius:2px}
+.pf-cmp-fill.trad{background:#4a4d52}
+.pf-cmp-fill.kamak{background:#1a9b9c}
+.pf-cmp-num{width:66px;font-size:10.5px;font-family:'JetBrains Mono',monospace;flex-shrink:0;text-align:right}
+.pf-cmp-num.trad{color:#9a9892}
+.pf-cmp-num.kamak{color:#fff;font-weight:700}
+.pf-conclusion{margin-top:10px;font-size:12.5px;font-weight:800;color:#1a9b9c;letter-spacing:.6px}
 /* cómputo */
 .comp-hdr{padding:10px 30px;display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px solid #1f2024;position:relative;z-index:1}
 .logo-sm{font-weight:900;font-size:15px;letter-spacing:2px;color:#1f2024}
@@ -523,12 +541,21 @@ function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta, plazoDias }) {
               <div><div style={lbl}>TIPO DE OBRA</div><div style={valSm}>{obra?.tipo || '—'}</div></div>
               <div style={{ marginLeft: 'auto', textAlign: 'right' }}><div style={lbl}>FECHA · VIGENCIA</div><div style={valSm}>{fecha}</div><div style={subSt}>Vig. {vigencia}</div></div>
             </div>
-            <div style={{ marginTop: 9, fontSize: 7.5, color: '#9a9892', fontFamily: T.fontMono }}>Obra tradicional: estimado ~{N * 3} días.</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 3, alignItems: 'end' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 12, alignItems: 'end' }}>
               <div><div style={lbl}>INVERSIÓN</div><div style={valLg}>{fmtV(totalVenta)}</div><div style={subSt}>+ IVA</div></div>
               <div style={{ textAlign: 'right' }}><div style={lbl}>ENTREGA</div><div style={valLg}>{N} DÍAS</div><div style={subSt}>llave en mano</div></div>
             </div>
-            <div style={{ marginTop: 9, background: '#1a9b9c', color: '#fff', textAlign: 'center', padding: '6px 8px', fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>{N * 2} DÍAS MÁS ATENDIENDO A TUS CLIENTES</div>
+            <div style={{ marginTop: 10 }}>
+              {[{ lab: 'CON KAMAK', w: '33.3%', col: '#1a9b9c', num: `${N} días`, numCol: '#fff', numW: 700 },
+                { lab: 'TRADICIONAL', w: '100%', col: '#4a4d52', num: `~${N * 3} días`, numCol: '#9a9892', numW: 600 }].map((b, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+                  <span style={{ width: 56, fontSize: 6.5, color: '#9a9892', fontFamily: T.fontMono, letterSpacing: 0.5, flexShrink: 0 }}>{b.lab}</span>
+                  <span style={{ flex: 1, height: 7, background: '#26282b', borderRadius: 2, overflow: 'hidden' }}><span style={{ display: 'block', height: '100%', width: b.w, background: b.col, borderRadius: 2 }} /></span>
+                  <span style={{ width: 42, fontSize: 7, fontFamily: T.fontMono, color: b.numCol, fontWeight: b.numW, textAlign: 'right', flexShrink: 0 }}>{b.num}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 7, fontSize: 8.5, fontWeight: 800, color: '#1a9b9c', letterSpacing: 0.4 }}>{N * 2} DÍAS MÁS ATENDIENDO A TUS CLIENTES</div>
           </div>
         );
       })()}
