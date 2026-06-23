@@ -1306,8 +1306,9 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                         onDragEnd={onTaskDragEnd}
                         style={{ alignItems: 'center', background: isSelected ? T.accentSoft : (i % 2 ? T.faint : 'transparent'), cursor: 'pointer', borderTop: dragOverTaskId === tarea.id ? `2px solid ${T.accent}` : '2px solid transparent', transition: 'border-top 0.1s, background 0.12s' }}
                         onClick={() => { setSelTask(tarea); setSelRubroId(rubro.id); setEditTask(null); }}>
-                        <div className="k-cell" style={{ flex: '1 1 150px', minWidth: 150, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ color: T.ink3, cursor: 'grab', userSelect: 'none', fontSize: 10 }}>⋮⋮</span>
+                        <div className="k-cell" style={{ flex: '1 1 150px', minWidth: 150, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                          <span style={{ color: T.ink3, cursor: 'grab', userSelect: 'none', fontSize: 10, marginTop: 3 }}>⋮⋮</span>
+                          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
                           {ie?.field === 'nombre' ? (
                             <input
                               autoFocus
@@ -1329,7 +1330,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                                 if (e.key === 'Escape') { setInlineEdit(null); e.target.blur(); }
                               }}
                               onClick={e => e.stopPropagation()}
-                              style={{ flex: 1, padding: '2px 6px', border: `1.2px solid ${T.accent}`, borderRadius: 3, fontFamily: T.font, fontSize: 13, background: T.paper, outline: 'none' }}
+                              style={{ width: '100%', padding: '2px 6px', border: `1.2px solid ${T.accent}`, borderRadius: 3, fontFamily: T.font, fontSize: 13, background: T.paper, outline: 'none' }}
                             />
                           ) : (
                             <span
@@ -1339,11 +1340,53 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                                 setInlineEdit({ taskId: tarea.id, field: 'nombre', value: tarea.nombre });
                               }}
                               title={puedeEditar ? 'Doble click para editar' : ''}
-                              style={{ flex: 1, cursor: puedeEditar ? 'text' : 'inherit' }}
+                              style={{ cursor: puedeEditar ? 'text' : 'inherit' }}
                             >
                               {tarea.nombre}
                             </span>
                           )}
+                          {/* Nota de la tarea: debajo del nombre, clarito y entre paréntesis.
+                              Se ve también en el PDF/export del cliente. Click para editar (puedeEditar). */}
+                          {ie?.field === 'nota' ? (
+                            <input
+                              autoFocus
+                              defaultValue={tarea.nota || ''}
+                              placeholder="Nota: sector, qué no incluye…"
+                              onClick={e => e.stopPropagation()}
+                              onBlur={e => {
+                                const val = e.target.value.trim();
+                                patch(d => ({
+                                  ...d,
+                                  rubros: d.rubros.map(r => r.id === rubro.id
+                                    ? { ...r, tareas: r.tareas.map(t => t.id === tarea.id ? { ...t, nota: val || undefined } : t) }
+                                    : r),
+                                }));
+                                setInlineEdit(null);
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') e.target.blur();
+                                if (e.key === 'Escape') { setInlineEdit(null); e.target.blur(); }
+                              }}
+                              style={{ width: '100%', padding: '1px 5px', border: `1px solid ${T.faint2}`, borderRadius: 3, fontFamily: T.font, fontSize: 11, fontStyle: 'italic', background: T.paper, outline: 'none', color: T.ink2 }}
+                            />
+                          ) : tarea.nota ? (
+                            <span
+                              onClick={e => { if (puedeEditar) { e.stopPropagation(); setInlineEdit({ taskId: tarea.id, field: 'nota', value: tarea.nota }); } }}
+                              title={puedeEditar ? 'Click para editar la nota' : ''}
+                              style={{ fontSize: 10.5, color: T.ink3, fontStyle: 'italic', lineHeight: 1.25, cursor: puedeEditar ? 'text' : 'default' }}
+                            >
+                              ({tarea.nota})
+                            </span>
+                          ) : (puedeEditar && (
+                            <span
+                              onClick={e => { e.stopPropagation(); setInlineEdit({ taskId: tarea.id, field: 'nota', value: '' }); }}
+                              title="Agregar una nota"
+                              style={{ fontSize: 9.5, color: T.ink3, opacity: 0.5, cursor: 'pointer', userSelect: 'none', alignSelf: 'flex-start' }}
+                            >
+                              + nota
+                            </span>
+                          ))}
+                          </div>
                         </div>
                         {InlineNum({ field: 'cantidad', value: tarea.cantidad, w: CW.cantidad })}
                         <div className="k-cell" style={{ ...fcol(CW.u) }}>{tarea.unidad}</div>
@@ -1996,7 +2039,8 @@ function generarHTMLResumen({ obra, detalle, moneda, incluirPagos, dolarVenta, l
       const vu = t.margenLinea != null ? cu * (1 + t.margenLinea / 100) : t.costoMat * (1 + (rubro.margenMat || 0) / 100) + (t.costoSub || 0) * (1 + (rubro.margenMO || 0) / 100);
       const vt = Math.round(vu * t.cantidad);
       rubroVenta += vt;
-      return `<tr${ti % 2 === 1 ? ' class="alt"' : ''}><td style="padding-left:20px">${t.nombre}</td><td class="r">${fmtNE(t.cantidad)}</td><td class="r">${t.unidad}</td><td class="r">${toUSD(vt)}</td></tr>`;
+      const notaHtml = t.nota ? `<div style="font-size:8.5px;color:#9a9892;font-style:italic;margin-top:1px">(${String(t.nota).replace(/&/g, '&amp;').replace(/</g, '&lt;')})</div>` : '';
+      return `<tr${ti % 2 === 1 ? ' class="alt"' : ''}><td style="padding-left:20px">${t.nombre}${notaHtml}</td><td class="r">${fmtNE(t.cantidad)}</td><td class="r">${t.unidad}</td><td class="r">${toUSD(vt)}</td></tr>`;
     }).join('');
     ventaBase += rubroVenta;
     return `<tr class="rubro"><td colspan="3">RUBRO ${String(ri+1).padStart(2,'0')} · ${rubro.nombre.toUpperCase()}</td><td class="r">${toUSD(rubroVenta)}</td></tr>${tareaRows}`;

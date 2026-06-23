@@ -99,6 +99,7 @@ function sanitizeDetalle(detalle) {
       id: t.id,
       tipo: t.tipo || null,
       nombre: t.nombre || t.descripcion || '',
+      nota: t.nota || '',          // nota de alcance (sector / qué no incluye) — visible al cliente
       avance: t.avance || 0,
     })),
   }));
