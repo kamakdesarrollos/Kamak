@@ -58,7 +58,7 @@ const CORNER_BRACKETS = `
   <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:2px solid #1a9b9c;border-right:2px solid #1a9b9c;"></div>`;
 
 // ── HTML generator ────────────────────────────────────────────────────────────
-function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl }) {
+function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias }) {
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
   const rubros = detalle?.rubros || [];
@@ -85,6 +85,37 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
     ? `<img src="${logoDark}" style="height:22px;object-fit:contain;display:block" />`
     : `<div class="logo-sm">KAMAK</div>`;
 
+  // ─ Bloque TIEMPO de la portada ─
+  // El plazo (N días) es el héroe junto a la inversión. Derivados automáticos:
+  // tradicional = N×3 (mostrado como "estimado", nunca el multiplicador literal),
+  // "días más atendiendo" = N×2. Si no hay plazo cargado, el pie cae al clásico
+  // (ftr-grid 2×2: cliente/tipo/fecha/monto). Regla de credibilidad del spec.
+  const N = Math.round(Number(plazoDias) || 0);
+  const tieneTiempo = N > 0;
+  const tradicionalDias = N * 3;
+  const diasMas = N * 2;
+  const portadaFtr = tieneTiempo
+    ? `<div class="portada-ftr">
+      <div class="pf-meta">
+        <div><div class="cell-lbl">CLIENTE</div><div class="cell-val-sm">${esc(obra?.cliente || '—')}</div></div>
+        <div><div class="cell-lbl">TIPO DE OBRA</div><div class="cell-val-sm">${esc(obra?.tipo || '—')}</div></div>
+        <div class="pf-fecha"><div class="cell-lbl">FECHA · VIGENCIA</div><div class="cell-val-sm">${fecha}</div><div class="cell-sub">Vigencia: ${vigencia} días</div></div>
+      </div>
+      <div class="pf-trad">Obra tradicional: estimado ~${tradicionalDias} días, coordinando cada gremio por separado.</div>
+      <div class="pf-heroes">
+        <div><div class="cell-lbl">INVERSIÓN</div><div class="cell-val-lg">U$S ${toUSD(totalVenta)}</div><div class="cell-sub">+ IVA</div></div>
+        <div class="pf-entrega"><div class="cell-lbl">ENTREGA</div><div class="cell-val-lg">${N} DÍAS</div><div class="cell-sub">llave en mano</div></div>
+      </div>
+      <div class="pf-micro">Plazo estimado desde el inicio de obra, con anticipos al día.</div>
+      <div class="pf-remate">${diasMas} DÍAS MÁS ATENDIENDO A TUS CLIENTES</div>
+    </div>`
+    : `<div class="portada-ftr ftr-grid">
+      <div><div class="cell-lbl">CLIENTE</div><div class="cell-val">${esc(obra?.cliente || '—')}</div></div>
+      <div><div class="cell-lbl">TIPO DE OBRA</div><div class="cell-val">${esc(obra?.tipo || '—')}</div></div>
+      <div><div class="cell-lbl">FECHA · VIGENCIA</div><div class="cell-val">${fecha}</div><div class="cell-sub">Vigencia: ${vigencia} días</div></div>
+      <div><div class="cell-lbl">MONTO TOTAL</div><div class="cell-val-lg">U$S ${toUSD(totalVenta)}</div><div class="cell-sub">+ IVA</div></div>
+    </div>`;
+
   // ─ Portada (dark, fixed A4 portrait page) ─
   const portada = `
   <div class="portada-page dark">
@@ -108,12 +139,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       </div>
       <div class="portada-num">${numPresu} &nbsp;·&nbsp; ${fecha}</div>
     </div>
-    <div class="portada-ftr">
-      <div><div class="cell-lbl">CLIENTE</div><div class="cell-val">${esc(obra?.cliente || '—')}</div></div>
-      <div><div class="cell-lbl">TIPO DE OBRA</div><div class="cell-val">${esc(obra?.tipo || '—')}</div></div>
-      <div><div class="cell-lbl">FECHA · VIGENCIA</div><div class="cell-val">${fecha}</div><div class="cell-sub">Vigencia: ${vigencia} días</div></div>
-      <div><div class="cell-lbl">MONTO TOTAL</div><div class="cell-val-lg">U$S ${toUSD(totalVenta)}</div><div class="cell-sub">+ IVA</div></div>
-    </div>
+    ${portadaFtr}
   </div>`;
 
   // ─ Cómputo (light, flows naturally across print pages — no fixed height) ─
@@ -300,14 +326,23 @@ body{font-family:'Montserrat',sans-serif}
 .hairline{flex:1;height:1px;background:#3a3a3e}
 .subtitle{font-weight:700;font-size:11px;letter-spacing:5px;color:#9a9892;white-space:nowrap}
 .portada-num{margin-top:10px;font-size:9.5px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:2px}
-.portada-ftr{background:#171818;padding:18px 44px 20px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:18px 28px;position:relative;z-index:1}
+.portada-ftr{background:#171818;padding:16px 44px 18px;position:relative;z-index:1}
 .cell-lbl{font-size:10px;color:#1a9b9c;letter-spacing:2px;font-family:'JetBrains Mono',monospace}
 .cell-val{font-size:15px;font-weight:700;margin-top:5px;color:#fff;line-height:1.2}
+.cell-val-sm{font-size:12px;font-weight:700;margin-top:4px;color:#fff;line-height:1.2}
 .cell-val-lg{font-size:22px;font-weight:800;margin-top:3px;color:#fff;line-height:1.1}
 .cell-sub{font-size:11px;color:#9a9892;margin-top:3px}
-/* Columna derecha del pie (Tipo de obra · Monto total) alineada al borde
-   derecho: misma distancia al margen que la izquierda, sin el hueco grande. */
-.portada-ftr>div:nth-child(even){text-align:right}
+/* Pie clásico (sin plazo cargado): grilla 2×2, columna derecha alineada al borde. */
+.ftr-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:18px 28px}
+.ftr-grid>div:nth-child(even){text-align:right}
+/* Pie con TIEMPO: meta arriba, contraste, héroes (inversión+entrega), remate. */
+.pf-meta{display:flex;align-items:flex-start;gap:30px}
+.pf-meta .pf-fecha{margin-left:auto;text-align:right}
+.pf-trad{margin-top:12px;font-size:10px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:.4px}
+.pf-heroes{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:4px;align-items:end}
+.pf-heroes .pf-entrega{text-align:right}
+.pf-micro{margin-top:8px;font-size:8.5px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:.5px}
+.pf-remate{margin-top:11px;background:#1a9b9c;color:#fff;text-align:center;padding:9px 12px;font-size:13px;font-weight:800;letter-spacing:1.2px}
 /* cómputo */
 .comp-hdr{padding:10px 30px;display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px solid #1f2024;position:relative;z-index:1}
 .logo-sm{font-weight:900;font-size:15px;letter-spacing:2px;color:#1f2024}
@@ -408,7 +443,7 @@ ${condicionesPage}
 }
 
 // ── Mini portada preview (React, portrait ratio) ──────────────────────────────
-function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta }) {
+function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta, plazoDias }) {
   const fecha = fmtFecha();
   const fmtV = (n) => `U$S ${fmtN(Math.round(n / (dolarVenta || 1)))}`;
   const W = 560, H = 792; // A4 portrait ratio ~1:1.414
@@ -456,21 +491,47 @@ function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta }) {
           PRES-{new Date().getFullYear()}-042 &nbsp;·&nbsp; {fecha}
         </div>
       </div>
-      {/* Bottom band — 2×2 grid */}
-      <div style={{ background: '#171818', padding: '13px 38px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'auto auto', gap: '14px 20px', position: 'relative', zIndex: 1 }}>
-        {[
-          { label: 'CLIENTE', val: obra?.cliente || '—' },
-          { label: 'TIPO DE OBRA', val: obra?.tipo || '—' },
-          { label: 'FECHA · VIGENCIA', val: fecha, sub: `Vigencia: ${vigencia}` },
-          { label: 'MONTO TOTAL', val: fmtV(totalVenta), sub: '+ IVA', big: true },
-        ].map((c, i) => (
-          <div key={i} style={{ textAlign: i % 2 === 1 ? 'right' : 'left' }}>
-            <div style={{ fontSize: 7, color: '#1a9b9c', letterSpacing: 2, fontFamily: T.fontMono }}>{c.label}</div>
-            <div style={{ fontSize: c.big ? 14 : 11, fontWeight: c.big ? 800 : 700, marginTop: 3, color: '#fff', lineHeight: 1.2 }}>{c.val}</div>
-            {c.sub && <div style={{ fontSize: 8, color: '#9a9892', marginTop: 2 }}>{c.sub}</div>}
+      {/* Bottom band — con TIEMPO (si hay plazo) o 2×2 clásico. Espeja el PDF. */}
+      {(() => {
+        const N = Math.round(Number(plazoDias) || 0);
+        const lbl = { fontSize: 7, color: '#1a9b9c', letterSpacing: 2, fontFamily: T.fontMono };
+        const subSt = { fontSize: 8, color: '#9a9892', marginTop: 2 };
+        if (!(N > 0)) {
+          return (
+            <div style={{ background: '#171818', padding: '13px 38px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'auto auto', gap: '14px 20px', position: 'relative', zIndex: 1 }}>
+              {[
+                { label: 'CLIENTE', val: obra?.cliente || '—' },
+                { label: 'TIPO DE OBRA', val: obra?.tipo || '—' },
+                { label: 'FECHA · VIGENCIA', val: fecha, sub: `Vigencia: ${vigencia}` },
+                { label: 'MONTO TOTAL', val: fmtV(totalVenta), sub: '+ IVA', big: true },
+              ].map((c, i) => (
+                <div key={i} style={{ textAlign: i % 2 === 1 ? 'right' : 'left' }}>
+                  <div style={lbl}>{c.label}</div>
+                  <div style={{ fontSize: c.big ? 14 : 11, fontWeight: c.big ? 800 : 700, marginTop: 3, color: '#fff', lineHeight: 1.2 }}>{c.val}</div>
+                  {c.sub && <div style={subSt}>{c.sub}</div>}
+                </div>
+              ))}
+            </div>
+          );
+        }
+        const valSm = { fontSize: 9.5, fontWeight: 700, marginTop: 3, color: '#fff' };
+        const valLg = { fontSize: 15, fontWeight: 800, marginTop: 2, color: '#fff', lineHeight: 1.1 };
+        return (
+          <div style={{ background: '#171818', padding: '12px 34px 14px', position: 'relative', zIndex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 22 }}>
+              <div><div style={lbl}>CLIENTE</div><div style={valSm}>{obra?.cliente || '—'}</div></div>
+              <div><div style={lbl}>TIPO DE OBRA</div><div style={valSm}>{obra?.tipo || '—'}</div></div>
+              <div style={{ marginLeft: 'auto', textAlign: 'right' }}><div style={lbl}>FECHA · VIGENCIA</div><div style={valSm}>{fecha}</div><div style={subSt}>Vig. {vigencia}</div></div>
+            </div>
+            <div style={{ marginTop: 9, fontSize: 7.5, color: '#9a9892', fontFamily: T.fontMono }}>Obra tradicional: estimado ~{N * 3} días.</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 3, alignItems: 'end' }}>
+              <div><div style={lbl}>INVERSIÓN</div><div style={valLg}>{fmtV(totalVenta)}</div><div style={subSt}>+ IVA</div></div>
+              <div style={{ textAlign: 'right' }}><div style={lbl}>ENTREGA</div><div style={valLg}>{N} DÍAS</div><div style={subSt}>llave en mano</div></div>
+            </div>
+            <div style={{ marginTop: 9, background: '#1a9b9c', color: '#fff', textAlign: 'center', padding: '6px 8px', fontSize: 9, fontWeight: 800, letterSpacing: 0.6 }}>{N * 2} DÍAS MÁS ATENDIENDO A TUS CLIENTES</div>
           </div>
-        ))}
-      </div>
+        );
+      })()}
     </div>
   );
 }
@@ -509,6 +570,17 @@ export default function ExportModal({ onClose, obra, detalle }) {
     return lines.join('\n');
   });
 
+  // Plazo de entrega (días) para el bloque de TIEMPO de la portada. Auto desde
+  // las fechas de la obra (fin estimada − inicio); editable a mano (las obras en
+  // presupuesto suelen no tener fecha de inicio). Vacío = sin bloque de tiempo.
+  const plazoDiasAuto = (() => {
+    const ini = obra?.fechaInicio, fin = obra?.fechaFinEstim;
+    if (!ini || !fin) return '';
+    const d = Math.round((new Date(fin + 'T00:00:00') - new Date(ini + 'T00:00:00')) / 86400000);
+    return d > 0 ? String(d) : '';
+  })();
+  const [plazoDias, setPlazoDias] = useState(plazoDiasAuto);
+
   const rr = (detalle?.rubros || []).map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
   const totalTareas = rr.reduce((s, r) => s + (r.tareas?.length || 0), 0);
@@ -534,7 +606,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
         qrDataUrl = null;
       }
 
-      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl });
+      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias });
 
       // Abrir pestaña nueva con el HTML. NO disparamos w.print() automatico:
       // cuando print se dispara programaticamente, Chrome aplica preferencias
@@ -575,6 +647,22 @@ export default function ExportModal({ onClose, obra, detalle }) {
                   onChange={e => setVigencia(Math.max(1, parseInt(e.target.value) || 1))}
                   style={{ width: 64, padding: '5px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 16, fontWeight: 700, textAlign: 'center', outline: 'none', background: T.paper }} />
                 <span style={{ fontSize: 13, color: T.ink2 }}>días</span>
+              </div>
+            </div>
+
+            <Divider />
+
+            <div>
+              <Label>Plazo de entrega</Label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <input
+                  type="number" min="0" max="999" value={plazoDias} placeholder="—"
+                  onChange={e => setPlazoDias(e.target.value)}
+                  style={{ width: 64, padding: '5px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 16, fontWeight: 700, textAlign: 'center', outline: 'none', background: T.paper }} />
+                <span style={{ fontSize: 13, color: T.ink2 }}>días</span>
+              </div>
+              <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>
+                {plazoDiasAuto ? `Auto: ${plazoDiasAuto} días (de las fechas). ` : 'Sin fechas cargadas. '}Vacío = sin bloque de tiempo.
               </div>
             </div>
 
@@ -633,7 +721,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
             {/* Scaled portada (portrait) */}
             <div style={{ width: PW * PREVIEW_SCALE, height: PH * PREVIEW_SCALE, overflow: 'hidden', position: 'relative', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', flexShrink: 0, borderRadius: 2 }}>
               <div style={{ transform: `scale(${PREVIEW_SCALE})`, transformOrigin: 'top left' }}>
-                <PortadaPreview obra={obra} vigencia={vigencia} totalVenta={totalVenta} dolarVenta={dolarVenta} />
+                <PortadaPreview obra={obra} vigencia={vigencia} totalVenta={totalVenta} dolarVenta={dolarVenta} plazoDias={plazoDias} />
               </div>
             </div>
 
