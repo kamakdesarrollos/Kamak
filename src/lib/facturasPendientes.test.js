@@ -18,6 +18,23 @@ describe('estadoFacturaPendiente', () => {
   it('pago parcial = parcial', () => expect(estadoFacturaPendiente(fac({ pagos: [{ monto: 40000 }] }))).toBe('parcial'));
   it('pago total = pagada', () => expect(estadoFacturaPendiente(fac({ pagos: [{ monto: 100000 }] }))).toBe('pagada'));
   it('anulada se respeta', () => expect(estadoFacturaPendiente(fac({ estado: 'anulada' }))).toBe('anulada'));
+  it('registrada se respeta (solo fiscal)', () => expect(estadoFacturaPendiente(fac({ estado: 'registrada' }))).toBe('registrada'));
+});
+
+describe('registrada (factura solo fiscal, sin deuda)', () => {
+  it('NO es abierta → excluida de facturasPendientesDeProveedor', () => {
+    const list = [fac({ id: 'a', proveedorId: 'p1' }), fac({ id: 'r', proveedorId: 'p1', estado: 'registrada' })];
+    const r = facturasPendientesDeProveedor(list, { id: 'p1', nombre: 'Don Luis' });
+    expect(r.map(f => f.id)).toEqual(['a']);
+  });
+  it('NO suma a totalPendiente', () => {
+    const list = [fac({ id: 'a', monto: 100000 }), fac({ id: 'r', monto: 141033, estado: 'registrada' })];
+    expect(totalPendiente(list)).toBe(100000);
+  });
+  it('NO matchea contra un pago (no es deuda a pagar)', () => {
+    const list = [fac({ id: 'r', proveedorId: 'p1', monto: 141033, estado: 'registrada' })];
+    expect(matchFacturasPorPago(list, { proveedorId: 'p1', monto: 141033 })).toEqual([]);
+  });
 });
 
 describe('facturasPendientesDeProveedor', () => {

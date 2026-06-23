@@ -42,6 +42,9 @@ export default function FacturaPendienteModal({ onClose }) {
   const [obraId, setObraId]     = useState('');
   const [rubroId, setRubroId]   = useState('');
   const [calcIVA, setCalcIVA]   = useState(false);
+  // Solo registrar = factura solo fiscal (cuenta para Libro IVA pero NO es deuda ni
+  // mueve caja). Caso: factura personal a nombre de la empresa sin gasto a pagar.
+  const [soloRegistrar, setSoloRegistrar] = useState(false);
   const [percepcionIIBB, setPercepcionIIBB] = useState('');
   const [percepcionIVA, setPercepcionIVA]   = useState('');
   const [file, setFile]         = useState(null);
@@ -99,6 +102,10 @@ export default function FacturaPendienteModal({ onClose }) {
     };
     if (pIIBB > 0) data.percepcionIIBB = pIIBB;
     if (pIVA > 0)  data.percepcionIVA = pIVA;
+
+    // Solo registrar → estado 'registrada': cuenta para Libro IVA (si se calculó)
+    // pero no figura como deuda en Cuentas por Pagar ni mueve caja.
+    if (soloRegistrar) data.estado = 'registrada';
 
     // Si se pidió calcular IVA, armamos el comprobante fiscal (Libro IVA) con
     // el desglose central de afip.js: total → neto + IVA, descontando percepciones.
@@ -230,6 +237,16 @@ export default function FacturaPendienteModal({ onClose }) {
             </div>
           </label>
 
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer', padding: '7px 10px', borderRadius: 4, border: `1.5px solid ${soloRegistrar ? '#4f5bd5' : T.faint2}`, background: soloRegistrar ? '#eef0ff' : 'transparent' }}>
+            <input type="checkbox" checked={soloRegistrar}
+              onChange={e => { setSoloRegistrar(e.target.checked); if (e.target.checked) setCalcIVA(true); }}
+              style={{ accentColor: '#4f5bd5', marginTop: 2 }} />
+            <div>
+              <div style={{ fontWeight: 700 }}>Solo registrar — no es deuda ni mueve caja</div>
+              <div style={{ fontSize: 10, color: T.ink2 }}>Cuenta para el Libro IVA pero no figura como orden de pago pendiente. Para facturas personales a nombre de la empresa que no son un gasto a pagar.</div>
+            </div>
+          </label>
+
           {calcIVA && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -265,7 +282,7 @@ export default function FacturaPendienteModal({ onClose }) {
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn sm onClick={onClose}>Cancelar</Btn>
           <Btn sm fill onClick={guardar} style={{ opacity: canSave && !subiendo ? 1 : 0.5 }}>
-            {subiendo ? 'Subiendo…' : 'Crear orden de pago'}
+            {subiendo ? 'Subiendo…' : soloRegistrar ? 'Registrar factura' : 'Crear orden de pago'}
           </Btn>
         </div>
       </div>

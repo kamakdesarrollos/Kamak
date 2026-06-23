@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, us
 import { loadSharedData, saveSharedData, patchObjectItem, appendObjectItem, removeObjectItem } from '../lib/dbHelpers';
 import { onRemoteChange } from '../lib/syncBus';
 import { useAppLoading } from './AppLoadingContext';
-import { aplicarPagoAFactura, saldoFacturaPendiente } from '../lib/facturasPendientes';
+import { aplicarPagoAFactura, saldoFacturaPendiente, estadoFacturaPendiente } from '../lib/facturasPendientes';
 
 const CTX = createContext(null);
 const LS_PROVS = 'kamak_proveedores_v1';
@@ -230,7 +230,9 @@ export function ProveedoresProvider({ children }) {
       pagos,
       createdAt: new Date().toISOString(),
     };
-    nuevo.saldoPendiente = saldoFacturaPendiente(nuevo);
+    // 'registrada' = factura solo fiscal (cuenta para Libro IVA pero no es deuda ni
+    // mueve caja) → saldoPendiente 0 para que no figure como adeudada.
+    nuevo.saldoPendiente = nuevo.estado === 'registrada' ? 0 : saldoFacturaPendiente(nuevo);
     setFacturasPendientes(prev => { const next = [...prev, nuevo]; save(LS_FAC, next); return next; });
     appendObjectItem('proveedores', 'facturasPendientes', nuevo);
     return nuevo.id;
@@ -255,6 +257,10 @@ export function ProveedoresProvider({ children }) {
   const registrarPagoFactura = useCallback((facturaId, pago) => {
     const actual = (facRef.current || []).find(f => f.id === facturaId);
     if (!actual) return null;
+    // Defensa: una factura 'registrada' (solo fiscal) o 'anulada' no es deuda → no
+    // recibe pagos. Evita que un pago la "salde" o mueva caja contra ella por error.
+    const est = estadoFacturaPendiente(actual);
+    if (est === 'registrada' || est === 'anulada') return actual;
     const next = aplicarPagoAFactura(actual, pago);
     mark();
     setFacturasPendientes(prev => { const n = prev.map(f => f.id === facturaId ? next : f); save(LS_FAC, n); return n; });

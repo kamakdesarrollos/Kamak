@@ -119,10 +119,13 @@ function saldoFacturaPendienteBot(f) {
   return Math.max(0, (Number(f.monto) || 0) - pagado);
 }
 
-// Estado derivado de los pagos. 'anulada' es el único estado que se guarda y no se deriva.
+// Estado derivado de los pagos. 'anulada' y 'registrada' se guardan y no se derivan.
+// 'registrada' = factura solo fiscal (cuenta para Libro IVA pero NO es deuda ni mueve
+// caja) → no abierta, no matchea pagos, no figura en el resumen de pendientes.
 function estadoFacturaPendienteBot(f) {
   if (!f) return 'pendiente';
   if (f.estado === 'anulada') return 'anulada';
+  if (f.estado === 'registrada') return 'registrada';
   const saldo = saldoFacturaPendienteBot(f);
   const pagado = (Number(f.monto) || 0) - saldo;
   if (saldo <= 1) return 'pagada';
@@ -1567,8 +1570,9 @@ ACCIONES DISPONIBLES:
    Son impuestos DISTINTOS: NO las sumes juntas, NO las confundas entre sí, y NO las confundas con el IVA del comprobante ni con el neto. Si el ticket discrimina las dos, completá AMBOS campos con sus montos en pesos. Si solo aparece una, completá solo esa. Si no aparece ninguna discriminada, no completes ninguno. El total del gasto ya las incluye (son lo que pagaste); el sistema las resta de la base del IVA y las descuenta del impuesto que corresponde (IIBB o IVA del mes).
    RECIBO DE SUELDO / CARGAS / SINDICATO / ALQUILER / SERVICIOS: si el texto o la foto refieren a "recibo de sueldo", "haberes", "liquidación", "sueldo de X", "F.931" (cargas sociales), "boleta UOCRA"/"sindicato", "alquiler", o servicios (luz/gas/internet) — completá el campo categoriaFiscal con la opción que corresponda y NO incluyas tipoFactura/numeroFactura/cuit/montoNeto (estos comprobantes NO generan IVA crédito y no van al Libro IVA Compras; el panel Financiero los suma a su columna por categoría). El gasto sigue siendo un GASTO normal con su monto y su foto.
 2. INGRESO: monto, descripción, obraId, cajaId
-3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(TOTAL del comprobante con IVA y percepciones — lo que paga la empresa, NUNCA el neto), montoNeto(opcional, solo si la foto discrimina el neto sin IVA), percepcionIIBB(opcional), jurisdiccionIIBB(opcional: 'PBA'|'CABA'|'CBA'|'OTRA', default PBA), percepcionIVA(opcional), claseComprobante('factura'|'nota_credito'), concepto, yaPagada(opcional, booleano)
+3. FACTURA_COMPRA: foto/PDF de factura de proveedor. Extraé: tipoFactura('A'/'B'/'C'), numeroFactura, proveedor, cuit, fecha(YYYY-MM-DD), monto(TOTAL del comprobante con IVA y percepciones — lo que paga la empresa, NUNCA el neto), montoNeto(opcional, solo si la foto discrimina el neto sin IVA), percepcionIIBB(opcional), jurisdiccionIIBB(opcional: 'PBA'|'CABA'|'CBA'|'OTRA', default PBA), percepcionIVA(opcional), claseComprobante('factura'|'nota_credito'), concepto, yaPagada(opcional, booleano), soloRegistrar(opcional, booleano)
    IMPORTANTE — FACTURA PENDIENTE DE PAGO (default): por DEFECTO una factura de proveedor que llega se carga como PENDIENTE DE PAGO (deuda devengada: cuenta para el Libro IVA desde su fecha aunque todavía no se haya pagado). NO pongas yaPagada salvo que el usuario aclare explícitamente que la factura YA SE PAGÓ ("ya la pagué", "esta ya está paga", "la abonamos", "pagada"). Si el usuario lo aclara → yaPagada=true (el sistema la carga como gasto debitando la caja). Si solo manda la factura sin decir nada de pago → dejá yaPagada sin completar (queda pendiente). OJO: si el mensaje es "le pagué $X a [proveedor]" eso NO es factura_compra, es PAGO_PROVEEDOR (acción 10).
+   FACTURA SOLO REGISTRAR (sin movimiento de caja ni deuda): si el usuario aclara que la factura NO es un gasto/deuda a pagar — "es personal", "a nombre de la empresa pero es mía/personal", "no la vamos a pagar", "no es un gasto", "solo registrala", "cargala sin pago", "que no mueva caja", "sin movimiento", o es una "venta por cuenta y orden" (típico combustible ACA/YPF) — poné soloRegistrar=true. El sistema la carga SOLO para el Libro IVA (cuenta para IVA/AFIP) pero NO como deuda ni mueve ninguna caja (no figura en Cuentas por Pagar). Las tres opciones son excluyentes: yaPagada (sale de caja ahora) ≠ pendiente (deuda a pagar, default) ≠ soloRegistrar (ni deuda ni caja). Si NO queda claro si es una deuda a pagar o solo un registro, PREGUNTÁ: "¿Es una factura a pagar o solo la registro sin mover caja?".
    NOTA DE CRÉDITO DE PROVEEDOR: si la foto/PDF dice "Nota de Crédito" / "NOTA DE CREDITO A/B/C" / "NC" (no confundir con "Nota de Débito") → poné claseComprobante='nota_credito'. Es un comprobante que el proveedor emite para REVERTIR (total o parcial) una factura anterior — devolución, bonificación, error. El monto sigue siendo el total del comprobante (positivo); el sistema lo registra en negativo en el Libro IVA Compras. Para facturas/tickets normales, claseComprobante='factura' o dejalo vacío.
 4. AVANCE_OBRA: obraId(ID exacto de la lista), rubroId(ID del rubro), tareaId(ID de la tarea), cantidadAvance(unidades completadas, ej:75), unidad(ej:'m²'), porcentajeAvance(% a sumar si no hay cantidad), descripcion
 5. CHEQUE_RECIBIDO: obraId, cajaDestinoId
@@ -1585,7 +1589,7 @@ ACCIONES DISPONIBLES:
 
 13. MOVER_ETAPA (solo Admin): si el admin dice "pasá Shell Ruta 3 a ganado" / "mové la obra X a negociación" / "Shell a perdido" → accion.tipo='mover_etapa' con datos: { obraNombre (nombre de la obra a mover, matcheá contra OBRAS ACTIVAS por nombre parcial), etapaNueva ('prospecto'|'cotizado'|'negociacion'|'ganado'|'perdido') }. Mueve la oportunidad en el embudo de ventas (a ganado → la obra pasa a activa; a perdido → se archiva). Si falta la etapa o la obra, preguntá eso. Si NO es Admin, respondé que solo un Admin mueve oportunidades por chat. NO lo confundas con un TRASPASO de cajas (eso es plata entre cajas, no etapas de venta).
 
-14. CARGAR_FACTURA (solo Admin): alta MANUAL por texto de una factura de proveedor PENDIENTE DE PAGO (orden de pago / cuenta por pagar) SIN debitar caja. Usalo cuando el admin dice "cargá una factura pendiente de Pérez por $300k" / "nueva factura de Acería del Sur $1.2M" / "orden de pago a Juan $150k" / "le debo a Ferretería Centro $80k" — sin foto y sin que diga que ya la pagó. accion.tipo='cargar_factura' con datos: { proveedorId (ID del proveedor si lo matcheás de la lista) o proveedorNombre (nombre tal cual lo dijo), monto (OBLIGATORIO, total de la factura con IVA), fecha?(YYYY-MM-DD, default hoy), numero?(N° de factura), tipoLetra?('A'/'B'/'C'), cuit?, concepto?, obraId?(ID de obra si la menciona) }. Si falta el monto o el proveedor, preguntá eso. NO debita ninguna caja: queda como deuda y cuenta para el Libro IVA desde su fecha. DISTINTO de: FACTURA_COMPRA (esa es por FOTO/PDF de un comprobante), GASTO (sale de caja) y PAGO_PROVEEDOR ("le pagué $X a alguien" = egreso de plata). Si NO es Admin, respondé que solo un Admin carga facturas por chat.
+14. CARGAR_FACTURA (solo Admin): alta MANUAL por texto de una factura de proveedor PENDIENTE DE PAGO (orden de pago / cuenta por pagar) SIN debitar caja. Usalo cuando el admin dice "cargá una factura pendiente de Pérez por $300k" / "nueva factura de Acería del Sur $1.2M" / "orden de pago a Juan $150k" / "le debo a Ferretería Centro $80k" — sin foto y sin que diga que ya la pagó. accion.tipo='cargar_factura' con datos: { proveedorId (ID del proveedor si lo matcheás de la lista) o proveedorNombre (nombre tal cual lo dijo), monto (OBLIGATORIO, total de la factura con IVA), fecha?(YYYY-MM-DD, default hoy), numero?(N° de factura), tipoLetra?('A'/'B'/'C'), cuit?, concepto?, obraId?(ID de obra si la menciona), soloRegistrar?(booleano) }. Si falta el monto o el proveedor, preguntá eso. NO debita ninguna caja: queda como deuda y cuenta para el Libro IVA desde su fecha. soloRegistrar=true si el admin aclara que NO es una deuda a pagar sino solo un registro fiscal ("es personal", "no la vamos a pagar", "solo registrala", "sin movimiento", "que no mueva caja"): el sistema la deja registrada (cuenta para IVA) pero NO como deuda. DISTINTO de: FACTURA_COMPRA (esa es por FOTO/PDF de un comprobante), GASTO (sale de caja) y PAGO_PROVEEDOR ("le pagué $X a alguien" = egreso de plata). Si NO es Admin, respondé que solo un Admin carga facturas por chat.
 
 REGLAS DE FLUJO:
 - El usuario escribe corto y conciso. Interpretá la intención aunque falten datos.
@@ -1909,6 +1913,11 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     const cuit = (datos.cuit || provFP?.cuit || '').trim();
     const { neto, iva, alicuota } = desglosarCompraBot({ total: monto, tipoLetra });
 
+    // Solo registrar = factura solo fiscal (cuenta para Libro IVA pero NO es deuda
+    // ni mueve caja). Caso: factura personal a nombre de la empresa sin gasto a pagar.
+    const soloRegistrar = datos.soloRegistrar === true || datos.soloRegistrar === 'true'
+                       || datos.sinPago === true || datos.sinPago === 'true';
+
     const facturaPendiente = {
       id: `fp-${Date.now()}`,
       proveedorId: provFP?.id || null,
@@ -1926,14 +1935,19 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       obraNombre: obraFP?.nombre || undefined,
       concepto: (datos.concepto || `Factura ${tipoLetra}${(datos.numero || datos.numeroFactura) ? ` ${datos.numero || datos.numeroFactura}` : ''}`).trim(),
       comprobanteUrl: null,
-      estado: 'pendiente',
+      estado: soloRegistrar ? 'registrada' : 'pendiente',
       pagos: [],
-      saldoPendiente: monto,
+      saldoPendiente: soloRegistrar ? 0 : monto,
       createdAt: new Date().toISOString(),
       createdBy: user.id || user.user_name,
     };
     // Atómico: append a proveedores.facturasPendientes sin pisar el resto del blob.
     await sbAppendArray2('proveedores', 'facturasPendientes', facturaPendiente);
+    if (soloRegistrar) {
+      return `✅ Factura registrada: ${tipoLetra}${facturaPendiente.numero ? ` ${facturaPendiente.numero}` : ''} de *${proveedorNombre}* (${fmt(monto)}).\n` +
+        `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}\n` +
+        `Cuenta para tu Libro IVA Compras del mes. *No es deuda ni movió ninguna caja* (no figura en Cuentas por Pagar).`;
+    }
     return `✅ Orden de pago creada: factura ${tipoLetra}${facturaPendiente.numero ? ` ${facturaPendiente.numero}` : ''} de *${proveedorNombre}* (${fmt(monto)}, *pendiente de pago*).\n` +
       `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}\n` +
       `Ya cuenta para tu Libro IVA Compras del mes. No toqué ninguna caja.\n\n` +
@@ -1999,6 +2013,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // pago_proveedor y ahí se debita la caja. SOLO si el admin aclara que YA la
     // pagó (datos.yaPagada=true), sigue al flujo de auto-carga como gasto (abajo).
     const yaPagada = datos.yaPagada === true || datos.yaPagada === 'true';
+    // Solo registrar = factura solo fiscal (cuenta para Libro IVA pero NO es deuda
+    // ni mueve caja). Caso: factura personal a nombre de la empresa sin gasto a pagar.
+    const soloRegistrarFC = datos.soloRegistrar === true || datos.soloRegistrar === 'true'
+                         || datos.sinPago === true || datos.sinPago === 'true';
     if (user.user_rol === 'Admin' && totalGastoBot > 0 && !SIN_IVA_CREDITO_FACT.has(datos.categoriaFiscal) && !esNotaCredito && !yaPagada) {
       const tipoLetra = String(datos.tipoFactura || 'B').toUpperCase().charAt(0); // 'A' / 'B' / 'C'
       const total = totalGastoBot;
@@ -2036,9 +2054,9 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         obraNombre: obraFP?.nombre || undefined,
         concepto: datos.concepto || `Factura ${tipoLetra}${datos.numeroFactura ? ` ${datos.numeroFactura}` : ''}`.trim(),
         comprobanteUrl: mediaUrl || null,
-        estado: 'pendiente',
+        estado: soloRegistrarFC ? 'registrada' : 'pendiente',
         pagos: [],
-        saldoPendiente: total,
+        saldoPendiente: soloRegistrarFC ? 0 : total,
         createdAt: new Date().toISOString(),
         createdBy: user.id || user.user_name,
       };
@@ -2047,6 +2065,11 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       const fmt = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
       const lineaPerc = perc > 0 ? `\nPercep. IIBB: ${fmt(perc)}` : '';
       const lineaPercIVA = percIVA > 0 ? `\nPercep. IVA: ${fmt(percIVA)}` : '';
+      if (soloRegistrarFC) {
+        return `✅ Factura registrada: ${tipoLetra} ${datos.numeroFactura || ''} de *${facturaPendiente.proveedor || 'proveedor'}* (${fmt(total)}).\n` +
+          `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}${lineaPerc}${lineaPercIVA}\n` +
+          `Cuenta para tu Libro IVA Compras del mes. *No es deuda ni movió ninguna caja* (no figura en Cuentas por Pagar).`;
+      }
       return `✅ Orden de pago creada: factura ${tipoLetra} ${datos.numeroFactura || ''} de *${facturaPendiente.proveedor || 'proveedor'}* (${fmt(total)}, *pendiente de pago*).\n` +
         `Neto ${fmt(neto)} · IVA ${alicuota}% ${fmt(iva)}${lineaPerc}${lineaPercIVA}\n` +
         `Ya cuenta para tu Libro IVA Compras del mes.\n\n` +
@@ -2138,6 +2161,9 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
                         ? Math.round(Number(datos.percepcionIVA)) : null,
       // Clase del comprobante: 'nota_credito' → el modal lo aprueba como NC.
       claseComprobante: esNotaCredito ? 'nota_credito' : 'factura',
+      // Solo registrar (factura solo-fiscal): se propaga para que al aprobar NO
+      // se cargue como gasto que debita caja, sino como factura 'registrada'.
+      soloRegistrar: soloRegistrarFC || undefined,
       obraId:        datos.obraId        || null,  // si el texto mencionó obra
       mediaType:     mediaUrl?.endsWith('.pdf') ? 'pdf' : 'image',
       mediaUrl:      mediaUrl || null,
@@ -2196,6 +2222,9 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     let facturaSaldar = null;
     if (datos.facturaPendienteId) {
       facturaSaldar = (ctx.facturasPendientes || []).find(f => f.id === datos.facturaPendienteId) || null;
+      // Defensa: nunca saldar (ni mover caja contra) una factura que no está abierta
+      // — registrada (solo fiscal), pagada o anulada NO reciben pago.
+      if (facturaSaldar && !esFacturaAbiertaBot(facturaSaldar)) facturaSaldar = null;
     } else if (!datos._skipMatch && user.phone) {
       const matches = matchFacturasPorPagoBot(ctx.facturasPendientes || [], {
         proveedorId: prov.id, proveedor: prov.nombre, monto, tolerancia: 1,
@@ -3125,6 +3154,52 @@ async function ejecutarComando(comando, datos, user, ctx) {
         await appendMovimiento(movNC);
         const fmtN = n => `$${Math.round(n).toLocaleString('es-AR')}`;
         return `✅ Nota de crédito aprobada: ${fmtN(montoNC)} de *${item.proveedor || 'proveedor'}*.\nReduce el IVA crédito y las compras del mes en el Libro IVA. *No tocó ninguna caja* — si el proveedor devolvió plata, marcalo abriéndola en la app → Movimientos.`;
+      }
+      // ── Solo registrar (factura solo-fiscal) ──────────────────────────────────
+      // La factura cuenta para el Libro IVA pero NO es deuda ni mueve caja: la
+      // cargamos como facturaPendiente estado:'registrada' (saldoPendiente:0), NO
+      // como gasto. Sin esto, una factura personal mandada por un no-admin terminaba
+      // debitando una caja al aprobarla.
+      if (item.soloRegistrar) {
+        const fmtR = n => `$${Math.round(n || 0).toLocaleString('es-AR')}`;
+        const montoR = (item.monto != null && Number(item.monto) > 0)
+          ? Math.round(Number(item.monto))
+          : (item.montoTotal != null ? Math.round(Number(item.montoTotal)) : 0);
+        if (!(montoR > 0)) {
+          return `⚠️ Aprobé pero no pude registrar la factura: no me quedó el monto. Cargala desde la app → Autorizaciones, destino "Solo registrar".`;
+        }
+        const fechaR = item.fecha || new Date().toISOString().split('T')[0];
+        const letraR = String(item.tipoFactura || 'B').toUpperCase().charAt(0);
+        const obraR  = item.obraId ? ctx.obras.find(o => o.id === item.obraId) : null;
+        const provR  = item.proveedor && ctx.proveedores.find(p => p.nombre && (
+          p.nombre.toLowerCase().includes(item.proveedor.toLowerCase()) ||
+          item.proveedor.toLowerCase().includes(p.nombre.toLowerCase())));
+        const cuitR = (item.cuit || provR?.cuit || '').trim();
+        const { neto, iva, alicuota } = desglosarCompraBot({ total: montoR, tipoLetra: letraR, montoNeto: item.montoNeto });
+        const facturaReg = {
+          id: `fp-${Date.now()}`,
+          proveedorId: provR?.id || null,
+          proveedor: provR?.nombre || item.proveedor || '',
+          fecha: fechaR,
+          numero: item.numeroFactura || '',
+          tipoLetra: letraR,
+          cuit: cuitR,
+          monto: montoR,
+          comprobanteRecibido: { tipo: letraR, numero: item.numeroFactura || '', cuit: cuitR, fecha: fechaR, neto, iva, alicuota, total: montoR },
+          obraId: obraR?.id || null,
+          obraNombre: obraR?.nombre || undefined,
+          concepto: item.concepto || `Factura ${letraR}${item.numeroFactura ? ` ${item.numeroFactura}` : ''}`.trim(),
+          comprobanteUrl: item.mediaUrl || null,
+          estado: 'registrada',
+          pagos: [],
+          saldoPendiente: 0,
+          createdAt: new Date().toISOString(),
+          createdBy: user.id || user.user_name,
+        };
+        await sbAppendArray2('proveedores', 'facturasPendientes', facturaReg);
+        return `✅ Factura registrada: ${letraR}${facturaReg.numero ? ` ${facturaReg.numero}` : ''} de *${facturaReg.proveedor || 'proveedor'}* (${fmtR(montoR)}).\n` +
+          `Neto ${fmtR(neto)} · IVA ${alicuota}% ${fmtR(iva)}\n` +
+          `Cuenta para tu Libro IVA Compras del mes. *No es deuda ni movió ninguna caja* (no figura en Cuentas por Pagar).`;
       }
       const movData = await loadSharedData('movimientos');
       const movs  = movData?.movimientos || [];

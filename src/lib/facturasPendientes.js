@@ -17,11 +17,16 @@ export function saldoFacturaPendiente(f) {
   return Math.max(0, (Number(f.monto) || 0) - pagado);
 }
 
-// Estado DERIVADO de los pagos (fuente de verdad). 'anulada' es el único estado
-// que se guarda y no se deriva.
+// Estado DERIVADO de los pagos (fuente de verdad). 'anulada' y 'registrada' son
+// los únicos estados que se guardan y no se derivan.
+//  • 'anulada'    → revierte la factura (no cuenta para Libro IVA ni para deuda).
+//  • 'registrada' → factura SOLO fiscal: cuenta para el Libro IVA (mantiene su
+//    comprobanteRecibido) pero NO es deuda ni mueve caja (saldoPendiente:0). Caso:
+//    factura personal a nombre de la empresa que no conlleva un gasto a pagar.
 export function estadoFacturaPendiente(f) {
   if (!f) return 'pendiente';
   if (f.estado === 'anulada') return 'anulada';
+  if (f.estado === 'registrada') return 'registrada';
   const saldo = saldoFacturaPendiente(f);
   const pagado = (Number(f.monto) || 0) - saldo;
   if (saldo <= 1) return 'pagada';

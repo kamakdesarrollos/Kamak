@@ -355,6 +355,7 @@ export default function ProveedorCC() {
             const estCfg = {
               pendiente: { label: 'Pendiente', color: T.accent }, parcial: { label: 'Parcial', color: T.warn },
               pagada: { label: 'Pagada', color: T.ok }, anulada: { label: 'Anulada', color: T.ink3 },
+              registrada: { label: 'Registrada', color: '#4f5bd5' },
             }[estado] || { label: estado, color: T.ink2 };
             const abierta = estado === 'pendiente' || estado === 'parcial';
             return (
@@ -368,8 +369,8 @@ export default function ProveedorCC() {
                   {f.concepto || '—'}{f.obraNombre && f.obraNombre !== 'General' ? ` · ${f.obraNombre}` : ''}
                 </span>
                 <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono }}>$ {fmtN(f.monto || 0)}</span>
-                <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.accent : T.ok }}>
-                  {saldo > 0 ? `$ ${fmtN(saldo)}` : '—'}
+                <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: (abierta && saldo > 0) ? T.accent : T.ok }}>
+                  {abierta && saldo > 0 ? `$ ${fmtN(saldo)}` : '—'}
                 </span>
                 <span style={{ flex: 0.8, textAlign: 'center' }}>
                   <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, background: T.faint, color: estCfg.color, fontWeight: 700 }}>{estCfg.label}</span>

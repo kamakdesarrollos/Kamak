@@ -19,10 +19,12 @@ const fmtN = (n) => Math.round(Math.abs(n || 0)).toLocaleString('es-AR');
 const fmtFecha = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
 
 const ESTADO_CHIP = {
-  pendiente: { label: 'Pendiente', bg: '#fff3e0', color: '#d4923a' },
-  parcial:   { label: 'Parcial',   bg: '#e0f0ff', color: '#0066cc' },
-  pagada:    { label: 'Pagada',    bg: '#e8f4e8', color: '#3d7a4a' },
-  anulada:   { label: 'Anulada',   bg: T.faint2,  color: T.ink3 },
+  pendiente:  { label: 'Pendiente',  bg: '#fff3e0', color: '#d4923a' },
+  parcial:    { label: 'Parcial',    bg: '#e0f0ff', color: '#0066cc' },
+  pagada:     { label: 'Pagada',     bg: '#e8f4e8', color: '#3d7a4a' },
+  anulada:    { label: 'Anulada',    bg: T.faint2,  color: T.ink3 },
+  // Solo fiscal: cuenta para el Libro IVA pero no es deuda ni movió caja.
+  registrada: { label: 'Registrada', bg: '#eef0ff', color: '#4f5bd5' },
 };
 
 function EstadoChip({ estado, mobile }) {
@@ -158,6 +160,7 @@ export default function CuentasPorPagar() {
             <option value="pendiente">Pendiente</option>
             <option value="parcial">Parcial</option>
             <option value="pagada">Pagada</option>
+            <option value="registrada">Registrada (solo fiscal, sin deuda)</option>
             <option value="anulada">Anulada</option>
             <option value="todas">Todas</option>
           </select>
