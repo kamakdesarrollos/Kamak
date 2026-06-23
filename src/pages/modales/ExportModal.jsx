@@ -101,9 +101,8 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div><div class="cell-lbl">TIPO DE OBRA</div><div class="cell-val-sm">${esc(obra?.tipo || '—')}</div></div>
         <div class="pf-fecha"><div class="cell-lbl">FECHA · VIGENCIA</div><div class="cell-val-sm">${fecha}</div><div class="cell-sub">Vigencia: ${vigencia} días</div></div>
       </div>
-      <div class="pf-inv"><span class="cell-lbl">INVERSIÓN</span><span class="pf-inv-val">U$S ${toUSD(totalVenta)}</span><span class="cell-sub">+ IVA</span></div>
       <div class="pf-cmp">
-        <div class="pf-cmp-eyebrow">TIEMPO DE OBRA · LLAVE EN MANO</div>
+        <div class="pf-cmp-eyebrow">TIEMPO DE OBRA</div>
         <div class="pf-cmp-row">
           <span class="pf-cmp-lbl">KAMAK</span>
           <span class="pf-cmp-track"><span class="pf-cmp-fill kamak" style="width:33.3%"></span></span>
@@ -115,6 +114,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
           <span class="pf-cmp-num trad">~${tradicionalDias} días</span>
         </div>
       </div>
+      <div class="pf-inv"><span class="cell-lbl">INVERSIÓN</span><span class="pf-inv-val">U$S ${toUSD(totalVenta)}</span><span class="cell-sub">+ IVA</span></div>
       <div class="pf-conclusion"><span class="pf-conc-dmnd"></span>${diasMas} DÍAS MÁS ATENDIENDO A TUS CLIENTES</div>
     </div>`
     : `<div class="portada-ftr ftr-grid">
@@ -543,13 +543,8 @@ function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta, plazoDias }) {
               <div><div style={lbl}>TIPO DE OBRA</div><div style={valSm}>{obra?.tipo || '—'}</div></div>
               <div style={{ marginLeft: 'auto', textAlign: 'right' }}><div style={lbl}>FECHA · VIGENCIA</div><div style={valSm}>{fecha}</div><div style={subSt}>Vig. {vigencia}</div></div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 12 }}>
-              <span style={lbl}>INVERSIÓN</span>
-              <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{fmtV(totalVenta)}</span>
-              <span style={{ fontSize: 7, color: '#9a9892' }}>+ IVA</span>
-            </div>
-            <div style={{ marginTop: 11 }}>
-              <div style={{ fontSize: 7, fontWeight: 700, color: '#1a9b9c', fontFamily: T.fontMono, letterSpacing: 1.2, marginBottom: 5 }}>TIEMPO DE OBRA · LLAVE EN MANO</div>
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 7, fontWeight: 700, color: '#1a9b9c', fontFamily: T.fontMono, letterSpacing: 1.2, marginBottom: 5 }}>TIEMPO DE OBRA</div>
               {[{ lab: 'KAMAK', w: '33.3%', col: '#1a9b9c', num: `${N} días`, numCol: '#fff', numW: 700 },
                 { lab: 'TRADICIONAL', w: '100%', col: '#4a4d52', num: `~${N * 3} días`, numCol: '#9a9892', numW: 600 }].map((b, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
@@ -558,6 +553,11 @@ function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta, plazoDias }) {
                   <span style={{ width: 42, fontSize: 7, fontFamily: T.fontMono, color: b.numCol, fontWeight: b.numW, textAlign: 'right', flexShrink: 0 }}>{b.num}</span>
                 </div>
               ))}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 11 }}>
+              <span style={lbl}>INVERSIÓN</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{fmtV(totalVenta)}</span>
+              <span style={{ fontSize: 7, color: '#9a9892' }}>+ IVA</span>
             </div>
             <div style={{ marginTop: 9, display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 800, color: '#1a9b9c', letterSpacing: 0.4 }}>
               <span style={{ width: 7, height: 7, background: '#1a9b9c', transform: 'rotate(45deg)', flexShrink: 0 }} />
