@@ -103,7 +103,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
       </div>
       <div class="pf-inv"><span class="cell-lbl">INVERSIÓN</span><span class="pf-inv-val">U$S ${toUSD(totalVenta)}</span><span class="cell-sub">+ IVA</span></div>
       <div class="pf-cmp">
-        <div class="pf-cmp-eyebrow">ENTREGA · LLAVE EN MANO</div>
+        <div class="pf-cmp-eyebrow">TIEMPO DE OBRA · LLAVE EN MANO</div>
         <div class="pf-cmp-row">
           <span class="pf-cmp-lbl">KAMAK</span>
           <span class="pf-cmp-track"><span class="pf-cmp-fill kamak" style="width:33.3%"></span></span>
@@ -351,7 +351,7 @@ body{font-family:'Montserrat',sans-serif}
 .pf-inv-val{font-size:20px;font-weight:800;color:#fff}
 .pf-inv .cell-sub{margin-top:0}
 .pf-cmp{margin-top:14px}
-.pf-cmp-eyebrow{font-size:9px;color:#1a9b9c;font-family:'JetBrains Mono',monospace;letter-spacing:2px;margin-bottom:8px}
+.pf-cmp-eyebrow{font-size:10.5px;font-weight:700;color:#1a9b9c;font-family:'JetBrains Mono',monospace;letter-spacing:2.5px;margin-bottom:9px}
 .pf-cmp-row{display:flex;align-items:center;gap:12px;margin-bottom:7px}
 .pf-cmp-lbl{width:92px;font-size:9.5px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1px;flex-shrink:0}
 .pf-cmp-track{flex:1;height:13px;background:#26282b;border-radius:2px;overflow:hidden}
@@ -549,7 +549,7 @@ function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta, plazoDias }) {
               <span style={{ fontSize: 7, color: '#9a9892' }}>+ IVA</span>
             </div>
             <div style={{ marginTop: 11 }}>
-              <div style={{ fontSize: 6.5, color: '#1a9b9c', fontFamily: T.fontMono, letterSpacing: 1, marginBottom: 5 }}>ENTREGA · LLAVE EN MANO</div>
+              <div style={{ fontSize: 7, fontWeight: 700, color: '#1a9b9c', fontFamily: T.fontMono, letterSpacing: 1.2, marginBottom: 5 }}>TIEMPO DE OBRA · LLAVE EN MANO</div>
               {[{ lab: 'KAMAK', w: '33.3%', col: '#1a9b9c', num: `${N} días`, numCol: '#fff', numW: 700 },
                 { lab: 'TRADICIONAL', w: '100%', col: '#4a4d52', num: `~${N * 3} días`, numCol: '#9a9892', numW: 600 }].map((b, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
