@@ -114,8 +114,11 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
           <span class="pf-cmp-num trad">~${tradicionalDias} días</span>
         </div>
       </div>
-      <div class="pf-inv"><span class="cell-lbl">INVERSIÓN</span><span class="pf-inv-val">U$S ${toUSD(totalVenta)}</span><span class="cell-sub">+ IVA</span></div>
-      <div class="pf-conclusion"><span class="pf-conc-dmnd"></span>${diasMas} DÍAS MÁS ATENDIENDO A TUS CLIENTES</div>
+      <div class="pf-close">
+        ${CORNER_BRACKETS}
+        <div class="pf-close-payoff"><span class="pf-conc-dmnd"></span><span>${diasMas} DÍAS MÁS ATENDIENDO A TUS CLIENTES</span></div>
+        <div class="pf-close-inv"><span class="cell-lbl">INVERSIÓN</span><span class="pf-inv-val">U$S ${toUSD(totalVenta)}</span><span class="cell-sub">+ IVA</span></div>
+      </div>
     </div>`
     : `<div class="portada-ftr ftr-grid">
       <div><div class="cell-lbl">CLIENTE</div><div class="cell-val">${esc(obra?.cliente || '—')}</div></div>
@@ -346,10 +349,7 @@ body{font-family:'Montserrat',sans-serif}
 /* Pie con TIEMPO: meta arriba, contraste, héroes (inversión+entrega), remate. */
 .pf-meta{display:flex;align-items:flex-start;gap:30px}
 .pf-meta .pf-fecha{margin-left:auto;text-align:right}
-.pf-inv{margin-top:13px;display:flex;align-items:baseline;gap:10px}
-.pf-inv .cell-lbl{flex-shrink:0}
-.pf-inv-val{font-size:20px;font-weight:800;color:#fff}
-.pf-inv .cell-sub{margin-top:0}
+.pf-inv-val{font-size:19px;font-weight:800;color:#fff}
 .pf-cmp{margin-top:14px}
 .pf-cmp-eyebrow{font-size:10.5px;font-weight:700;color:#1a9b9c;font-family:'JetBrains Mono',monospace;letter-spacing:2.5px;margin-bottom:9px}
 .pf-cmp-row{display:flex;align-items:center;gap:12px;margin-bottom:7px}
@@ -361,7 +361,10 @@ body{font-family:'Montserrat',sans-serif}
 .pf-cmp-num{width:64px;font-size:11px;font-family:'JetBrains Mono',monospace;flex-shrink:0;text-align:right}
 .pf-cmp-num.trad{color:#9a9892}
 .pf-cmp-num.kamak{color:#fff;font-weight:700}
-.pf-conclusion{margin-top:14px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:800;color:#1a9b9c;letter-spacing:.6px}
+.pf-close{position:relative;margin-top:14px;padding:15px 22px;display:flex;align-items:center;justify-content:space-between;gap:22px;background:#1f2024}
+.pf-close-payoff{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:800;color:#1a9b9c;letter-spacing:.4px;line-height:1.18;max-width:62%}
+.pf-close-inv{display:flex;align-items:baseline;gap:8px;flex-shrink:0}
+.pf-close-inv .cell-sub{margin-top:0}
 .pf-conc-dmnd{display:inline-block;width:11px;height:11px;background:#1a9b9c;transform:rotate(45deg);flex-shrink:0}
 /* cómputo */
 .comp-hdr{padding:10px 30px;display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px solid #1f2024;position:relative;z-index:1}
@@ -554,14 +557,18 @@ function PortadaPreview({ obra, vigencia, totalVenta, dolarVenta, plazoDias }) {
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 11 }}>
-              <span style={lbl}>INVERSIÓN</span>
-              <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{fmtV(totalVenta)}</span>
-              <span style={{ fontSize: 7, color: '#9a9892' }}>+ IVA</span>
-            </div>
-            <div style={{ marginTop: 9, display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 800, color: '#1a9b9c', letterSpacing: 0.4 }}>
-              <span style={{ width: 7, height: 7, background: '#1a9b9c', transform: 'rotate(45deg)', flexShrink: 0 }} />
-              {N * 2} DÍAS MÁS ATENDIENDO A TUS CLIENTES
+            <div style={{ position: 'relative', marginTop: 11, padding: '11px 14px', background: '#1f2024', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              {[{ top: 0, left: 0, borderTop: '2px solid #1a9b9c', borderLeft: '2px solid #1a9b9c' }, { top: 0, right: 0, borderTop: '2px solid #1a9b9c', borderRight: '2px solid #1a9b9c' }, { bottom: 0, left: 0, borderBottom: '2px solid #1a9b9c', borderLeft: '2px solid #1a9b9c' }, { bottom: 0, right: 0, borderBottom: '2px solid #1a9b9c', borderRight: '2px solid #1a9b9c' }].map((s, i) => (
+                <div key={i} style={{ position: 'absolute', width: 15, height: 15, ...s }} />
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9, fontWeight: 800, color: '#1a9b9c', lineHeight: 1.15, maxWidth: '60%' }}>
+                <span style={{ width: 7, height: 7, background: '#1a9b9c', transform: 'rotate(45deg)', flexShrink: 0 }} />
+                {N * 2} DÍAS MÁS ATENDIENDO A TUS CLIENTES
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={lbl}>INVERSIÓN</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{fmtV(totalVenta)} <span style={{ fontSize: 7, color: '#9a9892', fontWeight: 400 }}>+ IVA</span></div>
+              </div>
             </div>
           </div>
         );
