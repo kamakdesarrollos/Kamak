@@ -306,7 +306,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div class="franja-stat">40+ TIENDAS ENTREGADAS</div>
       </div>
       <div class="franja-logos">
-        ${(brands || []).map(b => `<div class="brand-chip"><img src="${b.url}" alt="${esc(b.n)}" /></div>`).join('')}
+        ${(brands || []).map(b => `<div class="brand-chip"><img class="brand-logo" src="${b.url}" alt="${esc(b.n)}" /></div>`).join('')}
       </div>
       <div class="franja-creds-sub">EMPRESA HABILITADA · SEGUROS Y ART VIGENTES · SEGURIDAD E HIGIENE EN OBRA · COBERTURA NACIONAL</div>
     </div>
@@ -445,14 +445,19 @@ body{font-family:'Montserrat',sans-serif}
 .cond-ftr{padding:10px 44px;background:#171818;display:flex;justify-content:space-between;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.2px;position:relative;z-index:1}
 /* franja "cómo lo logramos" */
 .franja{background:#1f2024;color:#fff;page-break-inside:avoid;break-inside:avoid}
-.franja-in{padding:18px 44px 16px}
-.franja-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:14px}
+.franja-in{padding:18px 44px 16px;text-align:center}
+.franja-head{display:flex;align-items:baseline;justify-content:center;gap:14px;margin-bottom:14px}
 .franja-lead{font-size:14px;font-weight:800;color:#fff;letter-spacing:.3px}
-.franja-stat{font-size:10px;font-weight:700;color:#1a9b9c;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;flex-shrink:0}
-.franja-logos{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.brand-chip{background:#fff;border-radius:5px;padding:8px 14px;height:42px;display:flex;align-items:center;justify-content:center}
-.brand-chip img{max-height:26px;max-width:120px;object-fit:contain;display:block}
-.franja-creds-sub{margin-top:14px;padding-top:11px;border-top:1px solid #2a2c30;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.3px}
+.franja-stat{font-size:10px;font-weight:700;color:#1a9b9c;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px}
+.franja-logos{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;max-width:640px;margin:0 auto}
+.brand-chip{background:#000;border:1px solid #2a2c30;border-radius:4px;height:56px;display:flex;align-items:center;justify-content:center;padding:8px 12px}
+.brand-logo{max-height:30px;max-width:100%;width:auto;object-fit:contain;display:block}
+.brand-logo[alt="Subway"]{max-height:18px}
+.brand-logo[alt="Puma Energy"]{max-height:34px}
+.brand-logo[alt="Cencosud"]{max-height:31px}
+.brand-logo[alt="Dean & Dennys"]{max-height:48px}
+.brand-logo[alt="Fan de Pan"]{max-height:42px}
+.franja-creds-sub{margin-top:15px;padding-top:11px;border-top:1px solid #2a2c30;font-size:8px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1.3px}
 @media screen{
   html{background:#555}
   body{padding:16px 0;margin:0 auto}
