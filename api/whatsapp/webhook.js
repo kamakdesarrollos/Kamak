@@ -598,14 +598,53 @@ async function uploadToStorage(base64Data, mimeType, filepath) {
   }
 }
 
+// Saldo por cobrar de una obra en USD = total al cliente − cobrado. Réplica FIEL de
+// ccObra (src/pages/obra/helpers.js: calcObra→tareaVentaUnit + calcTotalClienteUSD +
+// cobradoObraUSD) — el bot no puede importar de src/. MANTENER SINCRONIZADO con helpers.js.
+function saldoObraBotUSD(obra, detalle, movimientos, cajas, tc) {
+  detalle = detalle || {};
+  const ventaUnit = (t, r) => {
+    const mat = r.materialesACargoComprador ? 0 : t.costoMat;   // sin `||0`, idéntico a la app
+    const sub = t.costoSub || 0;
+    if (t.margenLinea != null) return (mat + sub) * (1 + t.margenLinea / 100);
+    return mat * (1 + r.margenMat / 100) + sub * (1 + r.margenMO / 100);
+  };
+  let ventaBaseARS = 0;
+  for (const r of (detalle.rubros || []))
+    for (const t of (r.tareas || []))
+      if (t.tipo !== 'seccion' && t.cantidad != null)
+        ventaBaseARS += ventaUnit(t, r) * t.cantidad;
+  const adicionalARS = (detalle.adicionales || [])
+    .filter(a => a.estado === 'aprobado' && a.aplicaACliente !== false)
+    .reduce((s, a) => s + (a.valorVentaTotal ?? a.costoTotal ?? a.monto ?? 0), 0);
+  const interes = parseFloat((detalle.financiacion || {}).interes) || 0;
+  // total USD: precioVentaUSD fijo si >0 (no depende del tc); sino round a ARS y después
+  // /tc (idéntico a calcTotalClienteUSD→arsToUSD).
+  const pf = Number(detalle.precioVentaUSD);
+  const totalARS = Math.round((ventaBaseARS + adicionalARS) * (1 + interes / 100));
+  const totalUSD = (Number.isFinite(pf) && pf > 0) ? Math.round(pf) : Math.round(totalARS / (tc || 1));
+  // cobrado USD (réplica byte-por-byte de cobradoObraUSD, helpers.js:105-113).
+  const cobradoUSD = (movimientos || [])
+    .filter(m => m.obraId === obra.id && m.tipo === 'ingreso')
+    .reduce((s, m) => {
+      if (m.montoDolar) return s + Math.round(m.montoDolar);
+      const caja = (cajas || []).find(c => c.id === m.cajaId);
+      return s + (caja?.moneda === 'USD' ? Math.round(m.monto || 0) : Math.round((m.monto || 0) / (tc || 1)));
+    }, 0);
+  return Math.max(0, totalUSD - cobradoUSD);
+}
+
 // ── Datos del sistema ─────────────────────────────────────────────────────────
 async function getSystemContext() {
-  const [movData, provData, obrasData, cliData] = await Promise.all([
+  const [movData, provData, obrasData, cliData, dolarData] = await Promise.all([
     loadSharedData('movimientos'),
     loadSharedData('proveedores'),
     loadSharedData('obras'),
     loadSharedData('clientes'),
+    loadSharedData('dolar'),
   ]);
+  // tc para el saldo de obras finalizadas (mismo criterio que el flujo cliente y la app).
+  const tc = dolarData?.venta || dolarData?.manualVal || 1070;
   return {
     cajas:       movData?.cajas       || [],
     movimientos: movData?.movimientos || [],
@@ -613,7 +652,14 @@ async function getSystemContext() {
     // Facturas de proveedor PENDIENTES DE PAGO (Cuentas por Pagar). Las usa
     // pago_proveedor (match pago→factura) y el resumen del prompt.
     facturasPendientes: provData?.facturasPendientes || [],
-    obras:       obrasData?.obras?.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto') || [],
+    // Estados "vivos" + finalizada/archivada con saldo por cobrar (>1 USD): para poder
+    // registrar el cobro pendiente por chat. Saldo idéntico al de la app (ccObra).
+    obras: (obrasData?.obras || []).filter(o => {
+      if (o.estado === 'activa' || o.estado === 'en-presupuesto' || o.estado === 'pausada') return true;
+      if (o.estado === 'finalizada' || o.estado === 'archivada')
+        return saldoObraBotUSD(o, (obrasData?.detalles || {})[o.id], movData?.movimientos || [], movData?.cajas || [], tc) > 1;
+      return false;
+    }),
     detalles:    obrasData?.detalles  || {},
     clientes:    Array.isArray(cliData) ? cliData : [],
   };

@@ -17,7 +17,7 @@ import { useCatalog } from '../store/CatalogContext';
 import { useConfiguracion } from '../store/ConfiguracionContext';
 import { useCheques } from '../store/ChequesContext';
 import { uploadFoto } from '../lib/upload';
-import { cobradoObraUSD, repartirCobroEnCuotas, cuotaMontoUSD } from './obra/helpers';
+import { cobradoObraUSD, repartirCobroEnCuotas, cuotaMontoUSD, ccObra } from './obra/helpers';
 import { parseMoneyAR, JURISDICCIONES_IIBB } from '../lib/afip';
 import { cajasDelUsuario } from '../lib/permisosCaja';
 
@@ -1164,7 +1164,7 @@ function ComprobantesPanel({ movimientos, mes }) {
 export default function Movimientos() {
   const isMobile = useIsMobile();
   const { movimientos, cajas: allCajas, addMovimiento, removeMovimiento, traspasar } = useMovimientos();
-  const { obras }          = useObras();
+  const { obras, getDetalle } = useObras();
   const { proveedores }    = useProveedores();
   const { clientes }       = useClientes();
   const { dolarVenta }     = useDolar();
@@ -1207,9 +1207,22 @@ export default function Movimientos() {
     if (o) setFiltroObra(o);
   }, [searchParams]);
 
+  // tc para el saldo de obras finalizadas (mismo criterio que Obras/Dashboard).
+  const tc = dolarVenta || 1070;
   const obrasOpciones = useMemo(() =>
-    obras.filter(o => ['activa', 'en-presupuesto', 'pausada'].includes(o.estado)),
-    [obras]);
+    obras.filter(o => {
+      // Estados "vivos": siempre disponibles (aunque estén saldados).
+      if (['activa', 'en-presupuesto', 'pausada'].includes(o.estado)) return true;
+      // Finalizada/archivada: solo si todavía tienen saldo por cobrar (>1 USD), para
+      // poder registrar el cobro pendiente. Mismo helper canónico (ccObra) que Obras.
+      // allCajas (NO `cajas`, que está filtrado por usuario) para no romper la
+      // conversión a USD del cobrado de un no-admin.
+      if (o.estado === 'finalizada' || o.estado === 'archivada') {
+        return ccObra(o, getDetalle(o.id), movimientos, allCajas, tc).saldoUSD > 1;
+      }
+      return false;
+    }),
+    [obras, getDetalle, movimientos, allCajas, tc]);
 
   const cajaIdsMias = useMemo(() => cajas.map(c => c.id), [cajas]);
   const filtered = useMemo(() => {
