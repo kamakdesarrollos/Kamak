@@ -65,7 +65,7 @@ import ClienteAccesoModal from '../modales/ClienteAccesoModal';
 import PlantillasContratistaModal from './PlantillasContratistaModal';
 import AdjuntarPresupuestoModal from './AdjuntarPresupuestoModal';
 import RevisarPresupuestoModal from './RevisarPresupuestoModal';
-import { uploadFoto } from '../../lib/upload';
+import { subirAdjuntoPrivado, getSignedUrl } from '../../lib/upload';
 import { itemsATareas, montoContrato, avanceContrato, tareasDeObra } from '../../lib/presupuestoImport';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -664,15 +664,17 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const confirmarImport = async (itemsFinales) => {
     const contratoId = newId();
     const tareas = itemsATareas(itemsFinales, { contratoId, makeId: newId });
-    // proveedor: usar el detectado/elegido; crear si no existe y hay datos
-    let proveedorId = adjReady.proveedorId || null;
     const proveedorNombre = adjReady.proveedorNombre || adjReady.proveedorDetectado?.nombre || 'Proveedor';
+    // Subir PRIMERO (bucket privado): si falla, no creamos proveedor ni contrato
+    // (evita proveedor huérfano). El error se propaga y lo muestra el modal.
+    const { path, bucket } = await subirAdjuntoPrivado(adjReady.file, `presupuestos/${obra.id}`);
+    // Recién con el archivo subido resolvemos/creamos el proveedor.
+    let proveedorId = adjReady.proveedorId || null;
     if (!proveedorId && adjReady.proveedorDetectado?.cuit) {
       proveedorId = addProveedor({ nombre: proveedorNombre, cuit: adjReady.proveedorDetectado.cuit });
     }
-    const url = await uploadFoto(adjReady.file, `presupuestos/${obra.id}`);
     const adjuntoId = newId();
-    const adjunto = { id: adjuntoId, nombre: adjReady.file.name, url, fecha: new Date().toISOString(), proveedor: proveedorNombre, proveedorId, contratoId };
+    const adjunto = { id: adjuntoId, nombre: adjReady.file.name, path, bucket, fecha: new Date().toISOString(), proveedor: proveedorNombre, proveedorId, contratoId };
     const rubro = detalle.rubros.find(r => r.id === adjRubroId);
     const contrato = {
       id: contratoId, gremio: rubro?.nombre || '', proveedor: proveedorNombre, proveedorId,
@@ -681,6 +683,20 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
     };
     importarPresupuesto(obra.id, adjRubroId, { tareas, adjunto, contrato });
     setAdjReady(null); setAdjRubroId(null);
+  };
+
+  // Abre un adjunto de presupuesto: bucket privado → signed URL temporal. Abre la
+  // ventana sincrónicamente (antes del await) para no comer el bloqueo de pop-ups.
+  const abrirAdjunto = async (a) => {
+    if (a.url) { window.open(a.url, '_blank', 'noopener'); return; } // adjunto viejo (público)
+    const win = window.open('', '_blank');
+    try {
+      const url = await getSignedUrl(a.path, a.bucket);
+      if (win) win.location = url; else window.open(url, '_blank', 'noopener');
+    } catch (e) {
+      if (win) win.close();
+      window.alert('No se pudo abrir el adjunto: ' + e.message);
+    }
   };
   // Toggle "materiales a cargo del comprador": no se cobran/cuentan los materiales
   // del rubro (solo la mano de obra) y en el export figura la nota.
@@ -1195,7 +1211,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '6px 12px', background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
                   {(rubro.adjuntos || []).map(a => (
                     <span key={a.id} style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <a href={a.url} target="_blank" rel="noreferrer" style={{ color: T.accent }}>📎 {a.nombre}</a>
+                      <a href="#" onClick={(e) => { e.preventDefault(); abrirAdjunto(a); }} style={{ color: T.accent }}>📎 {a.nombre}</a>
                       {puedeEditar && <span title="Quitar adjunto, sus tareas y su contrato" style={{ cursor: 'pointer', color: '#a85648', fontWeight: 700 }}
                         onClick={() => { if (window.confirm('¿Quitar el adjunto, sus tareas y su contrato?')) quitarAdjunto(obra.id, rubro.id, a.id, a.contratoId); }}>✗</span>}
                     </span>
