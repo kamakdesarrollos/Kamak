@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../lib/supabase';
-import { detectarColumnas, mapearColumnas, matchProveedor } from '../../lib/presupuestoImport';
+import { detectarColumnas, indiceHeader, matchProveedor } from '../../lib/presupuestoImport';
 
 const toBase64 = file => new Promise((res, rej) => {
   const r = new FileReader();
@@ -14,7 +14,6 @@ export default function AdjuntarPresupuestoModal({ proveedores, onAddProveedor, 
   const [file, setFile] = useState(null);
   const [estado, setEstado] = useState('');
   const [provNombre, setProvNombre] = useState('');
-  const [provDetectado, setProvDetectado] = useState(null); // { nombre, cuit } del documento
 
   const leer = async () => {
     if (!file) return;
@@ -26,9 +25,15 @@ export default function AdjuntarPresupuestoModal({ proveedores, onAddProveedor, 
         const wb = XLSX.read(buf, { type: 'array' });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
-        const header = aoa[0] || [];
+        // Saltear filas de título/logo: tomar como header la primera fila que
+        // parezca encabezado (con columna de costo), no siempre la 0 (#12).
+        const hIdx = indiceHeader(aoa);
+        const header = aoa[hIdx] || [];
         const columnas = detectarColumnas(header);
-        onReady({ filas: aoa.slice(1), columnas, header, proveedorNombre: provNombre, file });
+        // Si el nombre tipeado matchea un proveedor existente, linkearlo (Excel no
+        // trae proveedor detectado). No se crea uno nuevo sin CUIT (evita duplicados).
+        const match = matchProveedor(provNombre, null, proveedores);
+        onReady({ filas: aoa.slice(hIdx + 1), columnas, header, proveedorNombre: provNombre, proveedorId: match?.id || null, file });
       } else {
         const { data: { session } } = await supabase.auth.getSession();
         const fileBase64 = await toBase64(file);
@@ -40,7 +45,6 @@ export default function AdjuntarPresupuestoModal({ proveedores, onAddProveedor, 
         if (!r.ok) throw new Error('No se pudo leer el PDF');
         const { proveedor, cuit, items } = await r.json();
         const match = matchProveedor(proveedor, cuit, proveedores);
-        setProvDetectado(proveedor ? { nombre: proveedor, cuit } : null);
         onReady({
           items, columnas: null, file,
           proveedorNombre: provNombre || match?.nombre || proveedor || '',
