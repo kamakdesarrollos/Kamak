@@ -33,7 +33,7 @@ RUBRO: Equipamiento gastronómico          ← el cliente ve 1 rubro (4 ítems c
 ## Flujo de usuario
 
 1. En un rubro ya creado, junto a **"+ agregar tarea"**, hay un botón **"📎 Adjuntar presupuesto"** (gateado a `puedeEditar`).
-2. Se abre un paso de carga: **elegir archivo** (PDF / imagen / Excel / CSV) + un campo **"Proveedor"** (lo escribe el usuario; la IA lo pre-rellena si lo encuentra en el PDF).
+2. Se abre un paso de carga: **elegir archivo** (PDF / imagen / Excel / CSV). El **proveedor** del contrato se resuelve automáticamente cuando se puede (ver sección "Resolución del proveedor").
 3. La app **lee el archivo**:
    - **Excel / CSV** → parseo en el cliente con `xlsx` (gratis, instantáneo).
    - **PDF / imagen** → se manda al endpoint `api/presupuesto/extraer.js` que usa Claude (≈2-8¢).
@@ -57,7 +57,7 @@ Todo vive dentro del `detalle` de la obra (en `ObrasContext`, escritura atómica
 {
   id, nombre, proveedor, margenMat, margenMO, orden, abierto, tareas: [...],
   adjuntos: [                          // NUEVO (opcional)
-    { id, nombre, url, fecha, proveedor, contratoId }
+    { id, nombre, url, fecha, proveedor, proveedorId, contratoId }
   ],
 }
 ```
@@ -73,7 +73,8 @@ Todo vive dentro del `detalle` de la obra (en `ObrasContext`, escritura atómica
 { id, gremio, proveedor, monto, estado, fechaInicio, fechaFin, fondoReparo,  // existentes
   origen: 'adjunto',                    // NUEVO: distingue de los contratos manuales
   adjuntoId,                            // NUEVO: link al adjunto del rubro
-  rubroId }                             // NUEVO: a qué rubro pertenece
+  rubroId,                              // NUEVO: a qué rubro pertenece
+  proveedorId }                         // NUEVO: link al proveedor del módulo Proveedores
 ```
 
 - `gremio = rubro.nombre` al crear (para que aparezca prolijo en Contratos MO).
@@ -85,6 +86,17 @@ Todo vive dentro del `detalle` de la obra (en `ObrasContext`, escritura atómica
 - **Venta al cliente:** las tareas importadas son tareas normales → entran en el cálculo de venta existente (`tareaVentaUnit`): `costoSub × (1 + margenMO/100)`. **No se toca la matemática de venta.**
 - **Monto del contrato:** `contrato.monto = Σ costoSub` de las tareas cuyo `contratoId === contrato.id`. Se calcula al importar y **se re-sincroniza** cuando se edita el costo de una tarea importada o se agrega/quita una tarea de ese contrato (un helper puro `montoContrato(contrato, rubro)` + actualización en el handler de edición de costos). Fuente de verdad = las tareas.
 - **Avance del contrato:** para contratos `origen:'adjunto'`, el `avancePct` se calcula **desde sus tareas linkeadas** (`contratoId`), **NO** por `matchGremio`. Esto evita el bug de "dos contratos en el mismo rubro se pisan" (ver fix de `avancePct`/`matchGremio` del 2026-06-24). `matchGremio` queda para los contratos manuales/legacy.
+
+## Resolución del proveedor (integración con módulo Proveedores)
+
+El contrato nace en **borrador pero con las tareas ya creadas, designadas y linkeadas**. El **proveedor** se resuelve en este orden:
+
+1. **Detección automática:** la IA (PDF) o el parseo (Excel) intentan leer el nombre del proveedor (y CUIT si aparece) del documento.
+2. **Match con un proveedor ya cargado:** se busca en el módulo Proveedores (`ProveedoresContext`) por nombre/CUIT. Si matchea → se usa ese `proveedorId` (queda todo conectado: cuenta corriente, facturas, docs PADIC con su CUIT).
+3. **Sin match pero con datos suficientes en el documento** (nombre + CUIT): se ofrece **"crear proveedor automáticamente"** → `addProveedor({ nombre, cuit, ... })` y se usa el nuevo `proveedorId`.
+4. **No se detecta / ambiguo:** el usuario **elige de la lista de proveedores ya cargados** (selector), o crea uno a mano.
+
+El contrato y el adjunto guardan `proveedorId` (para la integración) + `proveedor` (nombre, para mostrar). El proveedor es lo único que puede requerir intervención del usuario; las tareas y el monto se crean solos.
 
 ## Componentes
 
@@ -153,5 +165,5 @@ Reusar el patrón atómico por obra ya existente (las tareas/contratos/adjuntos 
 
 ## Restricciones del entorno
 
-- **Vercel Hobby: máximo 12 functions serverless.** `api/presupuesto/extraer.js` suma 1. Verificar headroom antes de implementar; si no hay, combinar con un endpoint existente (helpers con prefijo `_`). Ver [[project_vercel_deploy]].
+- **Vercel Hobby: máximo 12 functions serverless — y HOY estamos en 12/12 (al límite).** Por eso el endpoint de extracción NO se agrega como archivo nuevo (sería el 13 → rompe el deploy). Resolución elegida: **fusionar dos crons de WhatsApp** (`payment-reminders.js` + `sales-followups.js` → 1 archivo con `?job=`) para liberar un slot, y recién ahí agregar `api/presupuesto/extraer.js`. Alternativa: plan **Vercel Pro** (sin límite, pago). Ver [[project_vercel_deploy]].
 - El endpoint reusa `ANTHROPIC_API_KEY` ya configurada (mismo proyecto Vercel, misma cuenta que el bot).
