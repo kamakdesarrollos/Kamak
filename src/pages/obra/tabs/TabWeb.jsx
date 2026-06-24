@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Box, Btn, Chip } from '../../../components/ui';
 import { T } from '../../../theme';
 import { uploadFoto } from '../../../lib/upload';
+import { geocodeDireccion } from '../../../lib/geocode';
 import { FInput, FSelect, FRow, inputSt } from '../forms';
 import { useObras } from '../../../store/ObrasContext';
 import { webToForm, parseWebForm, avisosPublicar } from '../../../../lib/web/obraWebForm';
@@ -72,6 +73,29 @@ export default function TabWeb({ obra, obraId }) {
   const puedeAccionar = publicada || esFinalizada;
   const publicar = () => { if (puedeAccionar) togglePublicar(obraId, !publicada); };
 
+  // ── Ubicación automática desde la dirección de la obra ──────────────────────
+  // Geocodifica obra.direccion → coords del mapa de la web. Auto-detecta al abrir
+  // si la obra no tiene coords; también hay botón para re-ubicar. Persiste atómico.
+  const [geoStatus, setGeoStatus] = useState('');   // '' | 'buscando' | 'ok' | 'nada'
+  const ubicarDesdeDireccion = async () => {
+    if (!obra.direccion) { setGeoStatus('nada'); return; }
+    setGeoStatus('buscando');
+    const c = await geocodeDireccion(obra.direccion);
+    if (c) {
+      setF('lat', String(c.lat));
+      setF('lng', String(c.lng));
+      setWebObra(obraId, { coords: c });   // persiste → el mapa de la web lo toma
+      setGeoStatus('ok');
+    } else {
+      setGeoStatus('nada');
+    }
+  };
+  useEffect(() => {
+    // Auto-ubicar al abrir la pestaña si hay dirección cargada y todavía no hay coords.
+    if (obra.direccion && web.coords == null) ubicarDesdeDireccion();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Marcar antes/después evitando que la MISMA foto quede en ambos lados.
   const marcarAntes = (url) => setWebObra(obraId, {
     imageBefore: web.imageBefore === url ? null : url,
@@ -134,6 +158,16 @@ export default function TabWeb({ obra, obraId }) {
           <FInput label="Provincia" value={form.provincia} onChange={v => setF('provincia', v)} />
           <FInput label="m²" value={form.m2} onChange={v => setF('m2', v)} type="number" placeholder="(en blanco si no se sabe)" />
           <FInput label="Días de obra (override)" value={form.diasOverride} onChange={v => setF('diasOverride', v)} type="number" placeholder="si no, se calcula por fechas" />
+          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
+            <Btn sm onClick={ubicarDesdeDireccion} style={geoStatus === 'buscando' ? { opacity: 0.55, pointerEvents: 'none' } : undefined}>
+              📍 {geoStatus === 'buscando' ? 'Ubicando…' : 'Ubicar desde la dirección'}
+            </Btn>
+            <span style={{ fontSize: 10.5, color: T.ink3 }}>
+              {obra.direccion ? `Dirección: ${obra.direccion}` : '⚠ La obra no tiene dirección cargada (editala en la obra).'}
+              {geoStatus === 'ok' && <b style={{ color: T.ok, marginLeft: 6 }}>✓ Ubicada — guardá la ficha para fijarla.</b>}
+              {geoStatus === 'nada' && obra.direccion && <b style={{ color: T.warn, marginLeft: 6 }}>No se encontró — cargá lat/lng a mano.</b>}
+            </span>
+          </div>
           <FInput label="Mapa · Latitud" value={form.lat} onChange={v => setF('lat', v)} placeholder="-38.55" />
           <FInput label="Mapa · Longitud" value={form.lng} onChange={v => setF('lng', v)} placeholder="-58.74" />
           <FInput label="Orden (menor = primero)" value={form.orden} onChange={v => setF('orden', v)} type="number" />
