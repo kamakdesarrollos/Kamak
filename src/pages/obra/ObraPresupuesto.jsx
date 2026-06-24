@@ -63,6 +63,10 @@ import TabSeguros from './tabs/TabSeguros';
 import TabWeb from './tabs/TabWeb';
 import ClienteAccesoModal from '../modales/ClienteAccesoModal';
 import PlantillasContratistaModal from './PlantillasContratistaModal';
+import AdjuntarPresupuestoModal from './AdjuntarPresupuestoModal';
+import RevisarPresupuestoModal from './RevisarPresupuestoModal';
+import { uploadFoto } from '../../lib/upload';
+import { itemsATareas, montoContrato } from '../../lib/presupuestoImport';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -437,7 +441,8 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const { currentUser } = useUsuarios();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const { proveedores: provListPresu } = useProveedores();
+  const { proveedores: provListPresu, addProveedor } = useProveedores();
+  const { importarPresupuesto, quitarAdjunto } = useObras();
   // Fail-closed: defaults restrictivos. Admin tiene todos los permisos por su rol.
   const isAdmin    = currentUser?.rol === 'Admin';
   const verCostos   = isAdmin || currentUser?.permisos?.verCostos   === true;
@@ -457,6 +462,11 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const [inlineEdit, setInlineEdit] = useState(null);
   // (6-rubro) Edición de márgenes por gremio: { rubroId } del rubro cuyo header está en modo edición.
   const [editRubroMargen, setEditRubroMargen] = useState(null);
+  // Adjuntar presupuesto de tercero: adjRubroId = rubro donde se está adjuntando
+  // (abre el modal de subir); adjReady = payload que devolvió ese modal (file +
+  // proveedor + ítems/filas) → abre el modal de revisión/mapeo.
+  const [adjRubroId, setAdjRubroId] = useState(null);
+  const [adjReady, setAdjReady] = useState(null);
   const [editSeccionId, setEditSeccionId] = useState(null);
   const [editSeccionNombre, setEditSeccionNombre] = useState('');
   const [collapsedSections, setCollapsedSections] = useState(new Set());
@@ -647,6 +657,31 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const toggleRubro = (id) => toggleRubroAbierto(id);
   const deleteTarea = (rubroId, tareaId) => patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, tareas: r.tareas.filter(t => t.id !== tareaId) } : r) }));
   const deleteRubro = (rubroId) => { if (window.confirm('¿Eliminar rubro y todas sus tareas?')) patch(d => ({ ...d, rubros: d.rubros.filter(r => r.id !== rubroId) })); };
+
+  // Adjuntar presupuesto de tercero: con los ítems ya revisados arma un contrato
+  // MO (borrador, origen:'adjunto'), sus tareas (con contratoId) y el adjunto, y
+  // los importa atómico al rubro. Sube el archivo y resuelve/crea el proveedor.
+  const confirmarImport = async (itemsFinales) => {
+    const contratoId = newId();
+    const tareas = itemsATareas(itemsFinales, { contratoId, makeId: newId });
+    // proveedor: usar el detectado/elegido; crear si no existe y hay datos
+    let proveedorId = adjReady.proveedorId || null;
+    const proveedorNombre = adjReady.proveedorNombre || adjReady.proveedorDetectado?.nombre || 'Proveedor';
+    if (!proveedorId && adjReady.proveedorDetectado?.cuit) {
+      proveedorId = addProveedor({ nombre: proveedorNombre, cuit: adjReady.proveedorDetectado.cuit });
+    }
+    const url = await uploadFoto(adjReady.file, `presupuestos/${obra.id}`);
+    const adjuntoId = newId();
+    const adjunto = { id: adjuntoId, nombre: adjReady.file.name, url, fecha: new Date().toISOString(), proveedor: proveedorNombre, proveedorId, contratoId };
+    const rubro = detalle.rubros.find(r => r.id === adjRubroId);
+    const contrato = {
+      id: contratoId, gremio: rubro?.nombre || '', proveedor: proveedorNombre, proveedorId,
+      monto: montoContrato(contratoId, tareas), estado: 'borrador', origen: 'adjunto',
+      adjuntoId, rubroId: adjRubroId, fondoReparo: 5,
+    };
+    importarPresupuesto(obra.id, adjRubroId, { tareas, adjunto, contrato });
+    setAdjReady(null); setAdjRubroId(null);
+  };
   // Toggle "materiales a cargo del comprador": no se cobran/cuentan los materiales
   // del rubro (solo la mano de obra) y en el export figura la nota.
   const toggleMaterialesComprador = (rubroId) => patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubroId ? { ...r, materialesACargoComprador: !r.materialesACargoComprador } : r) }));
@@ -1154,6 +1189,20 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                   onClick={e => { e.stopPropagation(); deleteRubro(rubro.id); }}>🗑</span>}
               </div>
 
+              {/* Chips de presupuestos adjuntos del rubro: link al archivo + quitar
+                  (quita el adjunto, sus tareas y su contrato, atómico). */}
+              {(rubro.adjuntos || []).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '6px 12px', background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
+                  {(rubro.adjuntos || []).map(a => (
+                    <span key={a.id} style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <a href={a.url} target="_blank" rel="noreferrer" style={{ color: T.accent }}>📎 {a.nombre}</a>
+                      {puedeEditar && <span title="Quitar adjunto, sus tareas y su contrato" style={{ cursor: 'pointer', color: '#a85648', fontWeight: 700 }}
+                        onClick={() => { if (window.confirm('¿Quitar el adjunto, sus tareas y su contrato?')) quitarAdjunto(obra.id, rubro.id, a.id, a.contratoId); }}>✗</span>}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {isRubroAbierto(rubro.id) && (
                 <>
                   <div className="k-tr k-th" style={{ background: '#e0d9c6', borderBottom: `1.5px solid ${T.faint2}`, whiteSpace: 'nowrap' }}>
@@ -1501,6 +1550,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                       {puedeEditar && <>
                         <div className="k-cell" style={{ color: T.ink2, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => addSeccion(rubro.id, 1)}>§ Sección</div>
                         <div className="k-cell" style={{ color: T.ink3, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => addSeccion(rubro.id, 2)}>§§ Sub-sección</div>
+                        <div className="k-cell" style={{ color: T.accent, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => setAdjRubroId(rubro.id)}>📎 Adjuntar presupuesto</div>
                       </>}
                     </div>
                   )}
@@ -1734,6 +1784,18 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
           </div>
         );
       })()}
+
+      {/* Adjuntar presupuesto de tercero — 2 pasos:
+          1) subir archivo + resolver proveedor (entrega ítems/filas) →
+          2) revisar/mapear la tabla → confirma y crea contrato+tareas+adjunto. */}
+      {adjRubroId && !adjReady && (
+        <AdjuntarPresupuestoModal proveedores={provListPresu} onAddProveedor={addProveedor}
+          onReady={setAdjReady} onClose={() => setAdjRubroId(null)} />
+      )}
+      {adjReady && (
+        <RevisarPresupuestoModal input={adjReady} onConfirm={confirmarImport}
+          onClose={() => { setAdjReady(null); setAdjRubroId(null); }} />
+      )}
 
       {/* Panel APU eliminado: la edicion de cantidad, costo mat, costo sub,
           margen, venta y avance ya se hace inline en la tabla del cómputo.
