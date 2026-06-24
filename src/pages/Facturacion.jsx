@@ -449,9 +449,19 @@ export default function Facturacion() {
   // sobre los gastos del mes que la tengan cargada (igual que la percepción IIBB
   // en su sección). Si supera la posición técnica, el excedente engrosa el saldo
   // a favor — por eso entra en la posición.
-  const percepcionIVAMes = useMemo(() => (movimientos || [])
-    .filter(m => m.tipo === 'gasto' && Number(m.percepcionIVA) > 0 && (m.fecha || '').slice(0, 7) === mes)
-    .reduce((s, m) => s + Number(m.percepcionIVA || 0), 0), [movimientos, mes]);
+  const percepcionIVAMes = useMemo(() => {
+    // Percepción IVA de gastos directos (excluyendo el PAGO de una factura
+    // pendiente, que no lleva percepción) + la percepción de las facturas
+    // pendientes (devengado por fecha del comprobante). No se duplica.
+    const pMov = (movimientos || [])
+      .filter(m => m.tipo === 'gasto' && !m.facturaPendienteId && Number(m.percepcionIVA) > 0 && (m.fecha || '').slice(0, 7) === mes)
+      .reduce((s, m) => s + Number(m.percepcionIVA || 0), 0);
+    const pFp = (facturasPendientes || [])
+      .map(facturaPendienteACompraLibroIva)
+      .filter(c => c && (c.fecha || '').slice(0, 7) === mes)
+      .reduce((s, c) => s + Number(c.percepcionIVA || 0), 0);
+    return pMov + pFp;
+  }, [movimientos, facturasPendientes, mes]);
 
   const posicion = Math.round((debito - credito - percepcionIVAMes) * 100) / 100;
 
@@ -467,9 +477,16 @@ export default function Facturacion() {
     const deb = v.reduce((s, x) => s + (getTipoComprobante(x.tipoId)?.signo ?? 1) * (x.iva || 0), 0);
     const cre = c.reduce((s, m) => s + signoComprobanteRecibido(m.comprobanteRecibido) * (m.comprobanteRecibido?.iva || 0), 0);
     // Percepción IVA del mes: pago a cuenta que reduce la posición (ver arriba).
+    // Gastos directos (sin el pago de factura pendiente) + facturas pendientes
+    // (devengado), igual que percepcionIVAMes, para que el saldo a favor arrastrado
+    // entre meses sea consistente.
     const pIVA = (movimientos || [])
-      .filter(m => m.tipo === 'gasto' && Number(m.percepcionIVA) > 0 && (m.fecha || '').slice(0, 7) === mesKey)
-      .reduce((s, m) => s + Number(m.percepcionIVA || 0), 0);
+      .filter(m => m.tipo === 'gasto' && !m.facturaPendienteId && Number(m.percepcionIVA) > 0 && (m.fecha || '').slice(0, 7) === mesKey)
+      .reduce((s, m) => s + Number(m.percepcionIVA || 0), 0)
+      + (facturasPendientes || [])
+        .map(facturaPendienteACompraLibroIva)
+        .filter(c => c && (c.fecha || '').slice(0, 7) === mesKey)
+        .reduce((s, c) => s + Number(c.percepcionIVA || 0), 0);
     return { debito: deb, credito: cre, percepcionIVA: pIVA, posicion: Math.round((deb - cre - pIVA) * 100) / 100 };
   };
   // Mes anterior (YYYY-MM): restamos 1 mes al mes seleccionado.
@@ -985,13 +1002,18 @@ export default function Facturacion() {
           // (que se liquida contra PBA). Las de otra jurisdicción se acumulan
           // aparte para avisar — no netean acá (Convenio Multilateral).
           const percIIBBGastos = (movimientos || [])
-            .filter(m => m.tipo === 'gasto' && Number(m.percepcionIIBB) > 0 && String(m.fecha || '').slice(0, 7) === mk);
-          const percIIBB = percIIBBGastos
-            .filter(m => esJurisdiccionPBA(m.jurisdiccionIIBB))
-            .reduce((s, m) => s + Number(m.percepcionIIBB || 0), 0);
-          const percIIBBOtras = percIIBBGastos
-            .filter(m => !esJurisdiccionPBA(m.jurisdiccionIIBB))
-            .reduce((s, m) => s + Number(m.percepcionIIBB || 0), 0);
+            .filter(m => m.tipo === 'gasto' && !m.facturaPendienteId && Number(m.percepcionIIBB) > 0 && String(m.fecha || '').slice(0, 7) === mk);
+          // Percepción IIBB de facturas pendientes (devengado por fecha del
+          // comprobante, no anuladas). El pago es un movimiento sin percepción →
+          // no se duplica. Solo las de PBA netean; las de otra jurisdicción avisan.
+          const percIIBBFps = (facturasPendientes || [])
+            .filter(f => f && f.estado !== 'anulada' && Number(f.percepcionIIBB) > 0
+              && String((f.comprobanteRecibido && f.comprobanteRecibido.fecha) || f.fecha || '').slice(0, 7) === mk);
+          const sumPercIIBB = (arr, pba) => arr
+            .filter(x => pba ? esJurisdiccionPBA(x.jurisdiccionIIBB) : !esJurisdiccionPBA(x.jurisdiccionIIBB))
+            .reduce((s, x) => s + Number(x.percepcionIIBB || 0), 0);
+          const percIIBB      = sumPercIIBB(percIIBBGastos, true)  + sumPercIIBB(percIIBBFps, true);
+          const percIIBBOtras = sumPercIIBB(percIIBBGastos, false) + sumPercIIBB(percIIBBFps, false);
           const descuentoIIBB = retIIBB + percIIBB;
           const iibbDevengado = Math.round(ventasNeto * iibbAli) / 100;
           const iibbAuto    = Math.max(0, iibbDevengado - descuentoIIBB);

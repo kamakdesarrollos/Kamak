@@ -2591,7 +2591,8 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         : Math.round(tareasNoSec.reduce((s, t) => s + (t.avance || 0), 0) / Math.max(1, tareasNoSec.length));
       // Aplicar el nuevo % a contratos cuyo gremio matchea el rubro.
       const matchGr = (rNom, gr) => {
-        const r = (rNom || '').toUpperCase(), g = (gr || '').toUpperCase();
+        const r = (rNom || '').toUpperCase().trim(), g = (gr || '').toUpperCase().trim();
+        if (!r || !g) return false; // sin gremio NO matchea (antes '' pisaba TODOS los contratos)
         return r.includes(g) || g.includes(r);
       };
       updatedContratos = updatedContratos.map(c =>

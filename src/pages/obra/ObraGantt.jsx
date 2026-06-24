@@ -122,7 +122,8 @@ function mergeGantt(saved, rubros) {
 
 // Match rubro name to contrato gremio (case-insensitive partial)
 const matchGremio = (rubroNombre, gremio) => {
-  const r = (rubroNombre||'').toUpperCase(), g = (gremio||'').toUpperCase();
+  const r = (rubroNombre||'').toUpperCase().trim(), g = (gremio||'').toUpperCase().trim();
+  if (!r || !g) return false; // sin gremio NO matchea (antes '' pisaba TODOS los contratos)
   return r.includes(g) || g.includes(r);
 };
 

@@ -216,7 +216,25 @@ export default async function handler(req, res) {
     // margen*) vivían en los rubros del detalle y viajaban al navegador del cliente:
     // ahora el detalle se SANITIZA con whitelist (venta ya calculada en server, sin
     // contratos ni movimientos internos). Ver sanitizeDetalle().
-    const { gastado, margen, ...obraPublica } = obra;
+    // Whitelist ESTRICTA del encabezado de la obra: SOLO los campos que el portal
+    // del cliente realmente muestra (verificado contra PortalCliente.jsx). Todo lo
+    // demás se queda en el server y NUNCA llega al JSON del navegador del cliente:
+    // en especial `venta` (embudo Comercial: etapa, motivoPerdida, changelog),
+    // `gastado`, `margen`, `prioridad`, `destacada`, `web` y cualquier campo futuro.
+    const obraPublica = {
+      id: obra.id,
+      nombre: obra.nombre,
+      cliente: obra.cliente,
+      tipo: obra.tipo,
+      estado: obra.estado,
+      moneda: obra.moneda,
+      direccion: obra.direccion,
+      avance: obra.avance,
+      fechaInicio: obra.fechaInicio,
+      fechaFinEstim: obra.fechaFinEstim,
+      presupuesto: obra.presupuesto,   // se muestra como "Presupuesto total" (precio de venta)
+      notas: obra.notas,               // se muestran al cliente en el portal
+    };
     const detallePublico = sanitizeDetalle(detalle);
 
     return res.status(200).json({
