@@ -1,24 +1,47 @@
 // Lee un presupuesto de tercero (PDF/imagen en base64) con Claude y devuelve
 // { proveedor, cuit, items: [{ nombre, costo, cantidad, unidad }] }. Reusa la
 // ANTHROPIC_API_KEY ya configurada (misma cuenta que el bot). Excel NO pasa por
-// acá (se parsea en el cliente). Requiere auth: este endpoint cuesta plata por
-// llamada, no puede quedar abierto.
+// acá (se parsea en el cliente). Requiere auth + permiso: este endpoint cuesta
+// plata por llamada, no puede quedar abierto.
 //
-// El token de sesión del usuario se valida contra Supabase Auth (mismo patrón que
-// api/admin/update-user.js: /auth/v1/user con la service key como apikey).
+// El token de sesión del usuario se valida contra Supabase Auth y, además, se
+// confirma que tenga permiso de cargar presupuestos (rol Admin o permiso
+// editarPresu) — mismo patrón que api/admin/update-user.js.
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const SUPABASE_URL  = process.env.SUPABASE_URL;
-const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_KEY; // para validar el token del usuario
+const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_KEY; // valida el token + lee app_users
 
-async function usuarioValido(req) {
+// La llamada a Claude con un PDF (sin streaming) puede tardar más de los 10s que
+// da Vercel Hobby por defecto y cortaría la request. 60s = máximo de Hobby (#3).
+export const config = { maxDuration: 60 };
+
+// Tope de payload: un presupuesto razonable entra en pocos MB. Evita que un
+// archivo enorme dispare un costo desmedido de Claude (#7). base64 ≈ 4/3 del binario.
+const MAX_BASE64_LEN = 14_000_000; // ~10 MB de archivo
+const MEDIA_OK = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
+
+// Valida el JWT del que llama y confirma que tiene permiso para cargar
+// presupuestos: rol Admin o permiso editarPresu (mismo criterio que la UI en
+// ObraPresupuesto). Sin esto, cualquier usuario autenticado —incluido el portal
+// del cliente— podría gastar Claude (#8).
+async function usuarioAutorizado(req) {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   if (!token || !SUPABASE_URL || !SUPABASE_KEY) return false;
-  const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+  const ures = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` },
   });
-  return r.ok;
+  if (!ures.ok) return false;
+  const email = ((await ures.json())?.email || '').toLowerCase();
+  if (!email) return false;
+  const ar = await fetch(`${SUPABASE_URL}/rest/v1/app_users?select=email,rol,permisos`, {
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+  });
+  if (!ar.ok) return false;
+  const users = await ar.json();
+  const u = (Array.isArray(users) ? users : []).find(x => (x.email || '').toLowerCase() === email);
+  return !!u && (u.rol === 'Admin' || u.permisos?.editarPresu === true);
 }
 
 const PROMPT = `Sos un extractor de presupuestos de obra. Te paso un presupuesto de un proveedor/subcontratista.
@@ -32,10 +55,14 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (!ANTHROPIC_KEY) return res.status(500).json({ error: 'Servidor sin ANTHROPIC_API_KEY' });
-  if (!(await usuarioValido(req))) return res.status(401).json({ error: 'no autorizado' });
+  if (!(await usuarioAutorizado(req))) return res.status(403).json({ error: 'no autorizado' });
 
   const { fileBase64, mediaType } = req.body || {};
   if (!fileBase64 || !mediaType) return res.status(400).json({ error: 'falta fileBase64/mediaType' });
+  if (!MEDIA_OK.has(mediaType)) return res.status(415).json({ error: 'tipo de archivo no soportado (PDF o imagen)' });
+  if (typeof fileBase64 !== 'string' || fileBase64.length > MAX_BASE64_LEN) {
+    return res.status(413).json({ error: 'el archivo es demasiado grande (máx ~10MB)' });
+  }
 
   const isPdf = mediaType === 'application/pdf';
   const block = isPdf
@@ -58,15 +85,18 @@ export default async function handler(req, res) {
       return res.status(502).json({ error: 'La IA no pudo procesar el archivo' });
     }
     const text = (j.content || []).map(c => c.text || '').join('').trim();
-    const jsonStr = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
-    const data = JSON.parse(jsonStr);
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start < 0 || end < 0) return res.status(422).json({ error: 'No se reconoció un presupuesto en el archivo' });
+    const data = JSON.parse(text.slice(start, end + 1));
     return res.status(200).json({
       proveedor: data.proveedor || null,
       cuit: data.cuit || null,
       items: Array.isArray(data.items) ? data.items : [],
     });
   } catch (e) {
+    // No filtrar e.message al cliente: puede traer detalle interno. Se loguea acá.
     console.error('[presupuesto/extraer]', e.message);
-    return res.status(500).json({ error: 'No se pudo leer el presupuesto: ' + e.message });
+    return res.status(500).json({ error: 'No se pudo leer el presupuesto' });
   }
 }
