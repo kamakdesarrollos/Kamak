@@ -8,6 +8,11 @@ export default defineConfig({
     react(),
     // PWA Fase 1: instalable + app shell. NO offline de datos (app en vivo).
     VitePWA({
+      // ⚠️ SELF-DESTROYING: el service worker rompía la app en iOS Safari (pantalla
+      // en blanco post-login). Este SW se DESREGISTRA solo y limpia los caches en
+      // todos los dispositivos que lo carguen → restaura mobile. La PWA se vuelve a
+      // introducir después, probada en mobile antes de prod.
+      selfDestroying: true,
       registerType: 'autoUpdate',          // SW se actualiza solo (skipWaiting+claim)
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
