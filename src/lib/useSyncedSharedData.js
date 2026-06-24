@@ -31,6 +31,19 @@ async function saveSharedDataKeepalive(key, value) {
   }
 }
 
+// Adopta `data` SOLO si tiene la misma forma básica que `initial` (array vs
+// objeto vs primitivo). Sin esto, un blob de shared_data o un localStorage
+// corrupto (ej. la fila quedó como objeto/string por una migración/SQL/otra
+// pestaña) se metía como state y hacía crashear EN RENDER a un consumidor que
+// hace .map/.reduce — y como los providers están por ENCIMA del ErrorBoundary,
+// eso blanquea/cartelea TODA la app. Ante forma incorrecta, mantenemos el valor
+// bueno (initial o el local previo).
+function adoptable(data, initial) {
+  if (Array.isArray(initial)) return Array.isArray(data);
+  if (initial && typeof initial === 'object') return !!data && typeof data === 'object' && !Array.isArray(data);
+  return true; // initial primitivo → aceptar lo que venga
+}
+
 /**
  * Hook que encapsula el patron compartido por casi todos los providers de
  * datos: cargar de localStorage inmediato, despues fetchar de Supabase,
@@ -72,7 +85,9 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
     if (!lsKey) return initial;
     try {
       const raw = localStorage.getItem(lsKey);
-      return raw ? JSON.parse(raw) : initial;
+      if (!raw) return initial;
+      const parsed = JSON.parse(raw);
+      return adoptable(parsed, initial) ? parsed : initial; // ignora LS con forma corrupta
     } catch {
       return initial;
     }
@@ -120,9 +135,14 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
         // bootstrapeamos el key si todavía no existía (data === null).
         if (!atomic || data === null) saveSharedData(key, stateRef.current);
       } else if (data !== null) {
-        fromRemote.current = true;
-        setState(data);
-        setTimeout(() => { fromRemote.current = false; }, 0);
+        // Solo adoptamos el blob remoto si tiene la forma esperada; si vino
+        // corrupto (no-array cuando esperábamos array, etc.) lo IGNORAMOS para
+        // no crashear a un consumidor en render (mantenemos el state bueno).
+        if (adoptable(data, initial)) {
+          fromRemote.current = true;
+          setState(data);
+          setTimeout(() => { fromRemote.current = false; }, 0);
+        }
       } else {
         // data === null: query exitosa pero no hay registro. Primer save.
         saveSharedData(key, stateRef.current);
@@ -139,7 +159,7 @@ export default function useSyncedSharedData(key, initial, { lsKey, skipMarkReady
       if (pendingSaveRef.current) return;
       if (lastLocalSaveAt.current && Date.now() - lastLocalSaveAt.current < 3000) return;
       loadSharedData(key).then(d => {
-        if (cancelled || d === null || d === undefined) return;
+        if (cancelled || d === null || d === undefined || !adoptable(d, initial)) return;
         fromRemote.current = true;
         setState(d);
         setTimeout(() => { fromRemote.current = false; }, 0);

@@ -18,9 +18,13 @@ export function GastosFijosProvider({ children }) {
     lsKey: 'kamak_gastos_fijos',
   });
 
-  const totalMensual = useMemo(() => items.reduce((s, i) => s + (i.monto || 0), 0), [items]);
+  // Guard: si `items` no fuera array (migración/SQL/blob corrupto), no crasheamos
+  // el render — el provider está ARRIBA del ErrorBoundary, un throw acá blanquea
+  // toda la app. El hook ya valida la forma; esto es defensa en profundidad.
+  const arr = Array.isArray(items) ? items : [];
+  const totalMensual = useMemo(() => arr.reduce((s, i) => s + (i.monto || 0), 0), [arr]);
 
-  const value = useMemo(() => ({ items, setItems, totalMensual }), [items, setItems, totalMensual]);
+  const value = useMemo(() => ({ items: arr, setItems, totalMensual }), [arr, setItems, totalMensual]);
 
   return <CTX.Provider value={value}>{children}</CTX.Provider>;
 }

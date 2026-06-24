@@ -7,6 +7,15 @@ import { cascadeRubroRenameEnDetalle } from '../lib/catalogCascade';
 const newId = () => `plt-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
 
+// Guardar en localStorage de forma SEGURA (mismo motivo/patrón que CatalogContext):
+// las plantillas son un CACHE y en iOS Safari la cuota es ~5MB (y en modo privado
+// setItem SIEMPRE lanza). Sin try/catch, un QuotaExceededError acá crasheaba el
+// PlantillasProvider (arriba del ErrorBoundary) → pantalla blanca en iPhone.
+const lsSet = (key, value) => {
+  try { localStorage.setItem(key, value); }
+  catch (e) { console.warn('[plantillas] no se pudo cachear en localStorage:', e?.message); }
+};
+
 // SEED de plantillas SISMAT. Solo guardamos `nombre + unidad + cantidad` por
 // tarea — los costos los resuelve Plantillas.jsx buscando la APU homónima en
 // el catálogo (via calcTarea + catalogIndex), así un cambio de precio en el
@@ -516,15 +525,15 @@ export function PlantillasProvider({ children }) {
         const userPlts = (Array.isArray(data) ? data : [])
           .filter(p => p && !seedIds.has(p.id) && /^plt-\d{10,}/.test(p.id || ''));
         const merged = [...SEED, ...userPlts];
-        localStorage.setItem('kamak_plantillas_seed_v', PLANTILLAS_SEED_VERSION);
-        localStorage.setItem('kamak_plantillas_v1', JSON.stringify(merged));
+        lsSet('kamak_plantillas_seed_v', PLANTILLAS_SEED_VERSION);
+        lsSet('kamak_plantillas_v1', JSON.stringify(merged));
         fromRemote.current = true;
         setPlantillas(merged);
         saveSharedData('plantillas', merged);
         setTimeout(() => { fromRemote.current = false; }, 0);
       } else if (data) {
         fromRemote.current = true;
-        setPlantillas(data); localStorage.setItem('kamak_plantillas_v1', JSON.stringify(data));
+        setPlantillas(data); lsSet('kamak_plantillas_v1', JSON.stringify(data));
         setTimeout(() => { fromRemote.current = false; }, 0);
       } else saveSharedData('plantillas', plantillas); // eslint-disable-line react-hooks/exhaustive-deps
       sbLoaded.current = true;
@@ -541,7 +550,7 @@ export function PlantillasProvider({ children }) {
         if (cancelled || !d) return;
         fromRemote.current = true;
         setPlantillas(d);
-        localStorage.setItem('kamak_plantillas_v1', JSON.stringify(d));
+        lsSet('kamak_plantillas_v1', JSON.stringify(d));
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
@@ -555,7 +564,7 @@ export function PlantillasProvider({ children }) {
   const plantillasRef = useRef(plantillas);
   useEffect(() => {
     plantillasRef.current = plantillas;
-    localStorage.setItem('kamak_plantillas_v1', JSON.stringify(plantillas));
+    lsSet('kamak_plantillas_v1', JSON.stringify(plantillas));
   }, [plantillas]);
 
   // Mutaciones: estado local optimista + escritura atómica por ítem en Supabase.

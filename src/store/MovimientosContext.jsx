@@ -109,9 +109,9 @@ export function MovimientosProvider({ children }) {
       if (cancelled) return;
       if (data && !userEditedBeforeFirstLoad.current) {
         fromRemote.current = true;
-        const movs = data.movimientos || movsRef.current || [];
-        if (data.movimientos) { setMovimientos(movs); persist(LS_MOVS, movs); }
-        if (data.cajas)       { const cm = migrarSaldoInicial(data.cajas, movs); setCajas(cm); persist(LS_CAJAS, cm); }
+        const movs = Array.isArray(data.movimientos) ? data.movimientos : (movsRef.current || []);
+        if (Array.isArray(data.movimientos)) { setMovimientos(movs); persist(LS_MOVS, movs); }
+        if (Array.isArray(data.cajas))       { const cm = migrarSaldoInicial(data.cajas, movs); setCajas(cm); persist(LS_CAJAS, cm); }
         setTimeout(() => { fromRemote.current = false; }, 0);
       } else if (data === null) {
         // data === null: query OK pero no hay registro (primer save / bootstrap
@@ -134,9 +134,9 @@ export function MovimientosProvider({ children }) {
       loadSharedData('movimientos').then(d => {
         if (cancelled || !d) return;
         fromRemote.current = true;
-        const movs = d.movimientos || movsRef.current || [];
-        if (d.movimientos) { setMovimientos(movs); persist(LS_MOVS, movs); }
-        if (d.cajas)       { const cm = migrarSaldoInicial(d.cajas, movs); setCajas(cm); persist(LS_CAJAS, cm); }
+        const movs = Array.isArray(d.movimientos) ? d.movimientos : (movsRef.current || []);
+        if (Array.isArray(d.movimientos)) { setMovimientos(movs); persist(LS_MOVS, movs); }
+        if (Array.isArray(d.cajas))       { const cm = migrarSaldoInicial(d.cajas, movs); setCajas(cm); persist(LS_CAJAS, cm); }
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });

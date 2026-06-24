@@ -590,7 +590,8 @@ export default function Obras() {
   // contratos) y volvés, la lista queda en la MISMA pestaña — antes reseteaba a
   // Activas y "saltaba" a otras obras (el bug que sufría Administración).
   const [tabIdx, setTabIdx] = useState(() => {
-    const s = parseInt(sessionStorage.getItem('kamak_obras_tab') || '0', 10);
+    let s = 0;
+    try { s = parseInt(sessionStorage.getItem('kamak_obras_tab') || '0', 10); } catch { /* sin storage (iOS privado) */ }
     return Number.isInteger(s) && s >= 0 && s <= 3 ? s : 0;
   });
   const [showNueva, setShowNueva] = useState(false);

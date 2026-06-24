@@ -55,7 +55,7 @@ export default function Dashboard() {
   const toggleWidget = (id) => {
     setEnabledWidgets(prev => {
       const next = prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* sin storage (iOS privado / cuota) */ }
       return next;
     });
   };
