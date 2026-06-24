@@ -202,7 +202,9 @@ export function resolverItemAPU(itemApu, catalogoItems) {
 // Misma función pero para mano de obra (usa precioHora y horas).
 export function resolverMOAPU(itemMo, moCatalogo) {
   const horas = Number(itemMo?.horas) || 0;
-  if (!moCatalogo || moCatalogo.length === 0) {
+  // Detecta catálogo vacío tanto si es Array como Map (igual que resolverItemAPU).
+  const moVacio = !moCatalogo || (moCatalogo instanceof Map ? moCatalogo.size === 0 : moCatalogo.length === 0);
+  if (moVacio) {
     const subtotal = horas * (Number(itemMo?.precioHora) || 0);
     return { subtotal, precioHora: Number(itemMo?.precioHora) || 0, encontrado: false, origen: 'apu-fallback' };
   }

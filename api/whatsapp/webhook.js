@@ -374,6 +374,8 @@ function calcSaldoCajaBot(caja, movimientos) {
       if (m.cajaId === caja.id)        return s - (m.monto || 0);
       if (m.cajaDestinoId === caja.id) return s + (m.montoDestino ?? m.monto ?? 0);
     }
+    // NC de proveedor con devolución de plata: suma como crédito (espejo de efectoEnCaja en src/lib/caja.js).
+    if (m.tipo === 'nota_credito_compra' && m.afectaCaja && m.cajaId === caja.id) return s + (m.monto || 0);
     return s;
   }, 0);
   return Math.round(caja.saldoInicial + efecto);

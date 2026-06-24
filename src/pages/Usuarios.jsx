@@ -397,7 +397,7 @@ export default function Usuarios() {
             onClick: () => { setTab('usuarios'); setFiltroRol(null); },
           },
           {
-            label: 'Roles base', value: (roles || []).length,
+            label: 'Roles base', value: Object.keys(roles || {}).length,
             color: tab === 'roles' ? T.accent : T.ink,
             active: tab === 'roles',
             onClick: () => { setTab('roles'); setFiltroRol(null); },
