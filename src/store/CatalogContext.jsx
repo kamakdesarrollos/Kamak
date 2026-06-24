@@ -21,6 +21,17 @@ const CATALOG_SISMAT_MIGRATION_VERSION = '3';
 const newId = () => `cat-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
 const today = () => new Date().toISOString().split('T')[0];
 
+// Guardar en localStorage de forma SEGURA. El catálogo (con el seed SISMAT) pesa
+// varios MB; en iOS Safari la cuota de localStorage es ~5MB y en modo privado
+// setItem lanza excepción SIEMPRE. El catálogo es un CACHE (la fuente de verdad es
+// Supabase), así que si no entra NO debe romper la app: el setItem sin try/catch
+// crasheaba el CatalogProvider (arriba del ErrorBoundary) → pantalla blanca en
+// iPhone. Mismo patrón que ObrasContext.saveObras / ConfiguracionContext.
+const lsSet = (key, value) => {
+  try { localStorage.setItem(key, value); }
+  catch (e) { console.warn('[catalog] no se pudo cachear en localStorage:', e?.message); }
+};
+
 // calcTarea calcula el costo total de un APU (tarea del catálogo).
 //
 // Segundo argumento opcional: pasando el catálogo, los precios y unidades de
@@ -146,8 +157,8 @@ export function CatalogProvider({ children }) {
         // versión de seed como vista para no intentar sembrar de nuevo.
         fromRemote.current = true;
         setCatalog(data);
-        localStorage.setItem('kamak_catalog_v4', JSON.stringify(data));
-        localStorage.setItem('kamak_sismat_v', SISMAT_SEED_VERSION);
+        lsSet('kamak_catalog_v4', JSON.stringify(data));
+        lsSet('kamak_sismat_v', SISMAT_SEED_VERSION);
         setTimeout(() => { fromRemote.current = false; }, 0);
       } else {
         // Base vacía (primera vez de verdad): recién acá sembramos desde el SISMAT.
@@ -156,8 +167,8 @@ export function CatalogProvider({ children }) {
         const finalData = sismatData || catalogRef.current;
         fromRemote.current = true;
         setCatalog(finalData);
-        localStorage.setItem('kamak_catalog_v4', JSON.stringify(finalData));
-        localStorage.setItem('kamak_sismat_v', SISMAT_SEED_VERSION);
+        lsSet('kamak_catalog_v4', JSON.stringify(finalData));
+        lsSet('kamak_sismat_v', SISMAT_SEED_VERSION);
         setTimeout(() => { fromRemote.current = false; }, 0);
         saveSharedData('catalog', finalData);
       }
@@ -174,7 +185,7 @@ export function CatalogProvider({ children }) {
         if (cancelled || !d) return;
         fromRemote.current = true;
         setCatalog(d);
-        localStorage.setItem('kamak_catalog_v4', JSON.stringify(d));
+        lsSet('kamak_catalog_v4', JSON.stringify(d));
         setTimeout(() => { fromRemote.current = false; }, 0);
       });
     });
@@ -186,7 +197,7 @@ export function CatalogProvider({ children }) {
   // (que con 2 editores se pisaban — bug CAT-003). Las operaciones masivas
   // (seed, CAC, migración SISMAT) guardan el blob explícitamente aparte.
   useEffect(() => {
-    localStorage.setItem('kamak_catalog_v4', JSON.stringify(catalog));
+    lsSet('kamak_catalog_v4', JSON.stringify(catalog));
   }, [catalog]);
 
   // add/update/remove: estado local optimista + persistencia ATÓMICA por ítem
@@ -233,7 +244,7 @@ export function CatalogProvider({ children }) {
         subcontratos: [...(prev.subcontratos||[]), ...(additions.subcontratos||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
         tareas:       [...(prev.tareas||[]),       ...(additions.tareas||[]).map(i => ({ id: newId(), ...i, updatedAt: today() }))],
       };
-      localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
+      lsSet('kamak_catalog_v4', JSON.stringify(next));
       saveSharedData('catalog', next, { silent: true });
       return next;
     });
@@ -243,9 +254,9 @@ export function CatalogProvider({ children }) {
   // Antes de aplicar, guarda un backup para poder deshacer (restoreCatalog).
   const bulkUpdatePreciosCAC = useCallback(({ mesBase, mesActual, indices, incluirMOLegacy }) => {
     setCatalog(prev => {
-      try { localStorage.setItem('kamak_catalog_cac_backup', JSON.stringify({ at: new Date().toISOString(), catalog: prev })); } catch (e) { console.warn('[CAC] no pude guardar el backup del catálogo:', e?.message); }
+      try { lsSet('kamak_catalog_cac_backup', JSON.stringify({ at: new Date().toISOString(), catalog: prev })); } catch (e) { console.warn('[CAC] no pude guardar el backup del catálogo:', e?.message); }
       const next = aplicarCACalCatalogo(prev, { mesBase, mesActual, indices, incluirMOLegacy });
-      localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
+      lsSet('kamak_catalog_v4', JSON.stringify(next));
       saveSharedData('catalog', next, { silent: true });
       return next;
     });
@@ -258,7 +269,7 @@ export function CatalogProvider({ children }) {
     try { bk = JSON.parse(localStorage.getItem('kamak_catalog_cac_backup') || 'null'); } catch { bk = null; }
     if (!bk || !bk.catalog) return false;
     setCatalog(() => {
-      localStorage.setItem('kamak_catalog_v4', JSON.stringify(bk.catalog));
+      lsSet('kamak_catalog_v4', JSON.stringify(bk.catalog));
       saveSharedData('catalog', bk.catalog, { silent: true });
       return bk.catalog;
     });
@@ -297,14 +308,14 @@ export function CatalogProvider({ children }) {
     const migrated = migrarCatalogoConSismat(catalog, sismatCostMap);
     if (migrated) {
       // Backup del catálogo pre-migración (reversible si algo sale mal).
-      try { localStorage.setItem('kamak_catalog_sismat_premig_backup', JSON.stringify(catalog)); }
+      try { lsSet('kamak_catalog_sismat_premig_backup', JSON.stringify(catalog)); }
       catch (e) { console.warn('[SISMAT migr] no pude guardar backup:', e?.message); }
       setCatalog(migrated);
       // Migración one-shot: persiste el blob explícitamente (ya no hay save
       // automático del blob en el useEffect [catalog]).
       saveSharedData('catalog', migrated, { silent: true });
     }
-    localStorage.setItem('kamak_catalog_sismat_migration_v', CATALOG_SISMAT_MIGRATION_VERSION);
+    lsSet('kamak_catalog_sismat_migration_v', CATALOG_SISMAT_MIGRATION_VERSION);
   }, [sismatCostMap, catalog]);
 
   // Migración one-shot de UNIDADES: normaliza m2/M2→m², m3/M3→m³ en las unidades
@@ -332,12 +343,12 @@ export function CatalogProvider({ children }) {
           const nu = normUnidad(it.unidad);
           return (it.unidad != null && nu !== it.unidad) ? { ...it, unidad: nu } : it;
         });
-        localStorage.setItem('kamak_catalog_v4', JSON.stringify(next));
+        lsSet('kamak_catalog_v4', JSON.stringify(next));
         return next;
       });
       for (const f of fixes) patchCatalogItem(f.coll, f.id, { unidad: f.unidad });
     }
-    localStorage.setItem('kamak_catalog_unit_norm_v', '1');
+    lsSet('kamak_catalog_unit_norm_v', '1');
   }, [catalog]);
 
   const value = useMemo(
