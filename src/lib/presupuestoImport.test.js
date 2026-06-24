@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas } from './presupuestoImport';
+import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor } from './presupuestoImport';
 
 describe('detectarColumnas', () => {
   it('reconoce encabezados típicos en español', () => {
@@ -58,5 +58,44 @@ describe('itemsATareas', () => {
       costoMat: 0, costoSub: 185000, contratoId: 'ct-9', fuente: 'Presupuesto',
       receta: { materiales: [] }, avance: 0,
     }]);
+  });
+});
+
+const tareasMulti = [
+  { id: 't1', contratoId: 'A', costoSub: 100, cantidad: 2, avance: 50 }, // 200, ejecutado 100
+  { id: 't2', contratoId: 'A', costoSub: 50,  cantidad: 1, avance: 0 },  // 50,  ejecutado 0
+  { id: 't3', contratoId: 'B', costoSub: 999, cantidad: 1, avance: 100 },// otro contrato
+  { id: 't4', costoSub: 30, cantidad: 1, avance: 100 },                  // manual, sin contrato
+];
+
+describe('montoContrato', () => {
+  it('suma costoSub*cantidad solo de SU contrato (no se pisa con otros)', () => {
+    expect(montoContrato('A', tareasMulti)).toBe(250);
+    expect(montoContrato('B', tareasMulti)).toBe(999);
+  });
+});
+
+describe('avanceContrato', () => {
+  it('avance ponderado por costo de sus tareas', () => {
+    expect(avanceContrato('A', tareasMulti)).toBe(40); // 100/250
+  });
+  it('0 si el contrato no tiene tareas', () => {
+    expect(avanceContrato('Z', tareasMulti)).toBe(0);
+  });
+});
+
+describe('matchProveedor', () => {
+  const provs = [
+    { id: 'p1', nombre: 'Grupo Braf SA', cuit: '30-11111111-1' },
+    { id: 'p2', nombre: 'Turbo Blender', cuit: '30-22222222-2' },
+  ];
+  it('matchea por CUIT exacto', () => {
+    expect(matchProveedor('cualquier cosa', '30-22222222-2', provs)?.id).toBe('p2');
+  });
+  it('matchea por nombre normalizado si no hay CUIT', () => {
+    expect(matchProveedor('grupo braf sa', null, provs)?.id).toBe('p1');
+  });
+  it('null si no encuentra', () => {
+    expect(matchProveedor('Otro Proveedor', null, provs)).toBeNull();
   });
 });

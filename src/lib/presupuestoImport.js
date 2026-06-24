@@ -76,3 +76,31 @@ export function itemsATareas(items, { contratoId, makeId }) {
     avance: 0,
   }));
 }
+
+export function montoContrato(contratoId, tareas) {
+  return (tareas || [])
+    .filter(t => t.contratoId === contratoId)
+    .reduce((s, t) => s + (t.costoSub || 0) * (t.cantidad || 0), 0);
+}
+
+export function avanceContrato(contratoId, tareas) {
+  const propias = (tareas || []).filter(t => t.contratoId === contratoId);
+  let total = 0, ejec = 0;
+  for (const t of propias) {
+    const c = (t.costoSub || 0) * (t.cantidad || 0);
+    total += c;
+    ejec += c * ((t.avance || 0) / 100);
+  }
+  return total > 0 ? Math.round((ejec / total) * 100) : 0;
+}
+
+export function matchProveedor(nombre, cuit, proveedores) {
+  const list = proveedores || [];
+  const c = (cuit || '').replace(/[^\dkK]/g, '');
+  if (c) {
+    const porCuit = list.find(p => (p.cuit || '').replace(/[^\dkK]/g, '') === c);
+    if (porCuit) return porCuit;
+  }
+  const n = norm(nombre);
+  return (n && list.find(p => norm(p.nombre) === n)) || null;
+}
