@@ -338,7 +338,10 @@ export default function ObraGantt() {
           let totalCosto = 0, ejecutado = 0;
           for (const gt of rubroTasks) {
             const td = tareasDelRubro.find(t => t.id === gt.tareaId);
-            if (!td || td.tipo === 'seccion') continue;
+            // Las tareas importadas (con contratoId) pertenecen a SU contrato
+            // 'adjunto', no al contrato MO manual del gremio: no deben pesar en el
+            // avance de éste (#5).
+            if (!td || td.tipo === 'seccion' || td.contratoId) continue;
             const costoUnit = (td.costoMat || 0) + (td.costoSub || 0);
             const costoTot = costoUnit * (td.cantidad || 0);
             totalCosto += costoTot;
@@ -348,7 +351,10 @@ export default function ObraGantt() {
           const rubroAvg = totalCosto > 0
             ? Math.round(ejecutado / totalCosto * 100)
             : (rubroTasks.length > 0 ? Math.round(rubroTasks.reduce((s,t)=>s+t.avance,0)/rubroTasks.length) : avNum);
-          newContratos = newContratos.map(c => matchGremio(task.rubroNombre, c.gremio) ? { ...c, avancePct: rubroAvg } : c);
+          // No pisar el avancePct de los contratos 'adjunto': su avance se deriva
+          // de sus propias tareas (avanceContrato), no del promedio del rubro (#5).
+          newContratos = newContratos.map(c =>
+            (matchGremio(task.rubroNombre, c.gremio) && c.origen !== 'adjunto') ? { ...c, avancePct: rubroAvg } : c);
         }
 
         return { ...d, gantt: next, rubros: newRubros, contratos: newContratos };
