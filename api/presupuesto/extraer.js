@@ -16,9 +16,11 @@ const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_KEY; // valida el token + lee
 // da Vercel Hobby por defecto y cortaría la request. 60s = máximo de Hobby (#3).
 export const config = { maxDuration: 60 };
 
-// Tope de payload: un presupuesto razonable entra en pocos MB. Evita que un
-// archivo enorme dispare un costo desmedido de Claude (#7). base64 ≈ 4/3 del binario.
-const MAX_BASE64_LEN = 14_000_000; // ~10 MB de archivo
+// Tope de payload alineado al límite real de body de una Vercel Function (~4.5MB):
+// más arriba la plataforma corta con un 413 genérico antes de llegar acá. Acotamos
+// un poco por debajo para devolver un mensaje claro (#7). base64 ≈ 4/3 del binario,
+// así que esto admite archivos de ~3MB (suficiente para un presupuesto típico).
+const MAX_BASE64_LEN = 4_300_000;
 const MEDIA_OK = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
 // Valida el JWT del que llama y confirma que tiene permiso para cargar
@@ -61,7 +63,7 @@ export default async function handler(req, res) {
   if (!fileBase64 || !mediaType) return res.status(400).json({ error: 'falta fileBase64/mediaType' });
   if (!MEDIA_OK.has(mediaType)) return res.status(415).json({ error: 'tipo de archivo no soportado (PDF o imagen)' });
   if (typeof fileBase64 !== 'string' || fileBase64.length > MAX_BASE64_LEN) {
-    return res.status(413).json({ error: 'el archivo es demasiado grande (máx ~10MB)' });
+    return res.status(413).json({ error: 'el archivo es demasiado grande (máx ~3MB); comprimilo o subí menos páginas' });
   }
 
   const isPdf = mediaType === 'application/pdf';

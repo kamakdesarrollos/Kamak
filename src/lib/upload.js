@@ -38,3 +38,10 @@ export async function getSignedUrl(path, bucket = BUCKET_PRESUPUESTOS, expiresIn
   if (error) throw new Error('No se pudo generar el enlace: ' + error.message);
   return data.signedUrl;
 }
+
+// Borra el objeto de Storage de un adjunto (para no dejarlo huérfano al quitarlo).
+export async function borrarAdjuntoPrivado(path, bucket = BUCKET_PRESUPUESTOS) {
+  if (!path) return;
+  const { error } = await supabase.storage.from(bucket).remove([path]);
+  if (error) throw new Error('No se pudo borrar el archivo: ' + error.message);
+}

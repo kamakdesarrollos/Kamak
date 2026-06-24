@@ -6,6 +6,7 @@ import { T } from '../../theme';
 import { useObras } from '../../store/ObrasContext';
 import { useUsuarios, ROL_TABS_OCULTAS, ROL_TABS_OCULTAS_DEFAULT } from '../../store/UsuariosContext';
 import { useIsMobile } from '../../hooks/useMediaQuery';
+import { avanceContrato, tareasDeObra } from '../../lib/presupuestoImport';
 
 // ── Fixed constants ────────────────────────────────────────────────────────────
 const TOT_WEEKS  = 60;
@@ -335,22 +336,25 @@ export default function ObraGantt() {
           const tareasDelRubro = (d.rubros || [])
             .filter(r => r.nombre === task.rubroNombre)
             .flatMap(r => r.tareas || []);
-          let totalCosto = 0, ejecutado = 0;
-          for (const gt of rubroTasks) {
+          // Sólo tareas MANUALES del rubro: las importadas (con contratoId)
+          // pertenecen a su contrato 'adjunto', no al contrato MO del gremio, y no
+          // deben pesar ni en el ponderado ni en el fallback de promedio simple (#5).
+          const rubroTasksManual = rubroTasks.filter(gt => {
             const td = tareasDelRubro.find(t => t.id === gt.tareaId);
-            // Las tareas importadas (con contratoId) pertenecen a SU contrato
-            // 'adjunto', no al contrato MO manual del gremio: no deben pesar en el
-            // avance de éste (#5).
-            if (!td || td.tipo === 'seccion' || td.contratoId) continue;
+            return td && td.tipo !== 'seccion' && !td.contratoId;
+          });
+          let totalCosto = 0, ejecutado = 0;
+          for (const gt of rubroTasksManual) {
+            const td = tareasDelRubro.find(t => t.id === gt.tareaId);
             const costoUnit = (td.costoMat || 0) + (td.costoSub || 0);
             const costoTot = costoUnit * (td.cantidad || 0);
             totalCosto += costoTot;
             ejecutado  += costoTot * ((gt.avance || 0) / 100);
           }
-          // Si no hay costos cargados, fallback al promedio simple anterior.
+          // Si no hay costos cargados, fallback al promedio simple (sólo manuales).
           const rubroAvg = totalCosto > 0
             ? Math.round(ejecutado / totalCosto * 100)
-            : (rubroTasks.length > 0 ? Math.round(rubroTasks.reduce((s,t)=>s+t.avance,0)/rubroTasks.length) : avNum);
+            : (rubroTasksManual.length > 0 ? Math.round(rubroTasksManual.reduce((s,t)=>s+t.avance,0)/rubroTasksManual.length) : avNum);
           // No pisar el avancePct de los contratos 'adjunto': su avance se deriva
           // de sus propias tareas (avanceContrato), no del promedio del rubro (#5).
           newContratos = newContratos.map(c =>
@@ -837,7 +841,11 @@ export default function ObraGantt() {
               {(() => {
                 const contrato = (detalle.contratos||[]).find(c => matchGremio(selTask.rubroNombre, c.gremio));
                 if (!contrato) return null;
-                const avPct = contrato.avancePct ?? 0;
+                // Contratos 'adjunto': el avance se deriva de sus tareas (su
+                // avancePct no se mantiene). Manuales: avancePct guardado.
+                const avPct = contrato.origen === 'adjunto'
+                  ? avanceContrato(contrato.id, tareasDeObra(detalle))
+                  : (contrato.avancePct ?? 0);
                 return (
                   <div style={{ background:T.faint, borderRadius:6, padding:'10px 12px', borderLeft:`3px solid ${rCol(selTask.rubroNombre)}` }}>
                     <div style={{ fontSize:10, fontWeight:800, color:T.ink2, textTransform:'uppercase', letterSpacing:0.5, marginBottom:6 }}>Contrato MO — {contrato.gremio}</div>

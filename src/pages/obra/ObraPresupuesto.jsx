@@ -65,7 +65,7 @@ import ClienteAccesoModal from '../modales/ClienteAccesoModal';
 import PlantillasContratistaModal from './PlantillasContratistaModal';
 import AdjuntarPresupuestoModal from './AdjuntarPresupuestoModal';
 import RevisarPresupuestoModal from './RevisarPresupuestoModal';
-import { subirAdjuntoPrivado, getSignedUrl } from '../../lib/upload';
+import { subirAdjuntoPrivado, getSignedUrl, borrarAdjuntoPrivado } from '../../lib/upload';
 import { itemsATareas, montoContrato, avanceContrato, tareasDeObra } from '../../lib/presupuestoImport';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -690,6 +690,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const abrirAdjunto = async (a) => {
     if (a.url) { window.open(a.url, '_blank', 'noopener'); return; } // adjunto viejo (público)
     const win = window.open('', '_blank');
+    if (win) win.opener = null; // anti reverse-tabnabbing: la pestaña no accede a la nuestra
     try {
       const url = await getSignedUrl(a.path, a.bucket);
       if (win) win.location = url; else window.open(url, '_blank', 'noopener');
@@ -1213,7 +1214,13 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                     <span key={a.id} style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       <a href="#" onClick={(e) => { e.preventDefault(); abrirAdjunto(a); }} style={{ color: T.accent }}>📎 {a.nombre}</a>
                       {puedeEditar && <span title="Quitar adjunto, sus tareas y su contrato" style={{ cursor: 'pointer', color: '#a85648', fontWeight: 700 }}
-                        onClick={() => { if (window.confirm('¿Quitar el adjunto, sus tareas y su contrato?')) quitarAdjunto(obra.id, rubro.id, a.id, a.contratoId); }}>✗</span>}
+                        onClick={async () => {
+                          if (!window.confirm('¿Quitar el adjunto, sus tareas y su contrato?')) return;
+                          // Borrar el archivo del bucket privado para no dejarlo huérfano
+                          // (no bloquea el quitado si el borrado falla).
+                          if (a.path) { try { await borrarAdjuntoPrivado(a.path, a.bucket); } catch { /* huérfano tolerable */ } }
+                          quitarAdjunto(obra.id, rubro.id, a.id, a.contratoId);
+                        }}>✗</span>}
                     </span>
                   ))}
                 </div>

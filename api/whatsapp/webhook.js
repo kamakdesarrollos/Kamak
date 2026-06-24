@@ -2578,7 +2578,9 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       // Sumar costo total y costo ejecutado de todas las tareas del rubro
       // (usando los avances ya aplicados en updatedRubros).
       const rubroActualizado = updatedRubros.find(r => r.id === rubro.id);
-      const tareasNoSec = (rubroActualizado?.tareas || []).filter(t => t.tipo !== 'seccion');
+      // Excluir tareas importadas (con contratoId): pertenecen a su contrato
+      // 'adjunto', no al contrato MO manual del gremio (paridad con ObraGantt #5).
+      const tareasNoSec = (rubroActualizado?.tareas || []).filter(t => t.tipo !== 'seccion' && !t.contratoId);
       let totalCosto = 0, ejecutado = 0;
       for (const t of tareasNoSec) {
         const costoUnit = (t.costoMat || 0) + (t.costoSub || 0);
@@ -2595,8 +2597,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         if (!r || !g) return false; // sin gremio NO matchea (antes '' pisaba TODOS los contratos)
         return r.includes(g) || g.includes(r);
       };
+      // No pisar el avancePct de contratos 'adjunto': su avance se deriva de sus
+      // propias tareas (avanceContrato), no del promedio del rubro (paridad #5).
       updatedContratos = updatedContratos.map(c =>
-        matchGr(rubro.nombre, c.gremio) ? { ...c, avancePct: nuevoAvancePct } : c
+        (matchGr(rubro.nombre, c.gremio) && c.origen !== 'adjunto') ? { ...c, avancePct: nuevoAvancePct } : c
       );
     }
 
