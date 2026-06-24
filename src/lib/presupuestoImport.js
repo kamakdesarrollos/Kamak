@@ -83,6 +83,13 @@ export function itemsATareas(items, { contratoId, makeId }) {
   }));
 }
 
+// Aplana las tareas de todos los rubros de un detalle de obra. Es la "fuente de
+// verdad" sobre la que se derivan monto/avance de los contratos origen:'adjunto'
+// (sus tareas viven anidadas en el rubro, ligadas por contratoId).
+export function tareasDeObra(detalle) {
+  return ((detalle && detalle.rubros) || []).flatMap(r => (r && r.tareas) || []);
+}
+
 export function montoContrato(contratoId, tareas) {
   return (tareas || [])
     .filter(t => t.contratoId === contratoId)

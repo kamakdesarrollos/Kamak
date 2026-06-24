@@ -66,7 +66,7 @@ import PlantillasContratistaModal from './PlantillasContratistaModal';
 import AdjuntarPresupuestoModal from './AdjuntarPresupuestoModal';
 import RevisarPresupuestoModal from './RevisarPresupuestoModal';
 import { uploadFoto } from '../../lib/upload';
-import { itemsATareas, montoContrato } from '../../lib/presupuestoImport';
+import { itemsATareas, montoContrato, avanceContrato, tareasDeObra } from '../../lib/presupuestoImport';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -4050,6 +4050,10 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
 
   const rubros = detalle.rubros || [];
   const contratos = detalle.contratos || [];
+  // Para los contratos origen:'adjunto' (creados al importar un presupuesto de
+  // tercero) el monto/avance se DERIVA de sus tareas — que viven en los rubros,
+  // ligadas por contratoId — para que nunca quede viejo si se edita una tarea.
+  const tareasObra = tareasDeObra(detalle);
   // Para el cálculo de "disponible" dentro del form: si estamos EDITANDO un
   // contrato, sus propias cantidades no deben contar contra sí mismas (si no, no
   // se podría mantener ni subir lo ya contratado en este contrato). Se excluye.
@@ -4508,8 +4512,11 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
       {contratos.length === 0 ? (
         <div style={{ color: T.ink3, padding: 24, textAlign: 'center' }}>Sin contratos</div>
       ) : contratos.map((c) => {
-        const monto = c.monto || 0;
-        const avPct = c.avancePct ?? 0;
+        const desdePresupuesto = c.origen === 'adjunto';
+        // Contratos desde presupuesto: monto y avance derivados de sus tareas
+        // (fuente de verdad). El resto sigue usando los campos persistidos.
+        const monto = desdePresupuesto ? montoContrato(c.id, tareasObra) : (c.monto || 0);
+        const avPct = desdePresupuesto ? avanceContrato(c.id, tareasObra) : (c.avancePct ?? 0);
         const cert = Math.round(monto * avPct / 100);
         const reparo = Math.round(cert * (c.fondoReparo || 0) / 100);
         const aLiquidar = cert - reparo;
@@ -4560,6 +4567,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
               </div>
               <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 16 }}>{fmtM(monto, moneda)}</div>
               <Chip ok={c.estado === 'activo'} style={{ fontSize: 10 }}>{c.estado}</Chip>
+              {desdePresupuesto && <Chip accent style={{ fontSize: 10 }}>desde presupuesto · borrador</Chip>}
               <div style={{ display: 'flex', gap: 6 }}>
                 <Btn sm onClick={() => startEditContrato(c)}>✏ Editar</Btn>
                 <Btn sm onClick={() => setDocsContrato(c)}>📄 Documentos</Btn>

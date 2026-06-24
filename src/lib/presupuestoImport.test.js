@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor, subtotalFila } from './presupuestoImport';
+import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor, subtotalFila, tareasDeObra } from './presupuestoImport';
 
 describe('detectarColumnas', () => {
   it('reconoce encabezados típicos en español', () => {
@@ -98,6 +98,46 @@ describe('subtotalFila', () => {
   });
   it('acepta costo numérico ya parseado', () => {
     expect(subtotalFila({ costo: 1000, cantidad: 3 })).toBe(3000);
+  });
+});
+
+describe('tareasDeObra', () => {
+  it('aplana las tareas de todos los rubros del detalle', () => {
+    const detalle = {
+      rubros: [
+        { id: 'r1', tareas: [{ id: 'a', contratoId: 'A' }, { id: 'b', contratoId: 'A' }] },
+        { id: 'r2', tareas: [{ id: 'c', contratoId: 'B' }] },
+        { id: 'r3' }, // rubro sin tareas
+      ],
+    };
+    expect(tareasDeObra(detalle).map(t => t.id)).toEqual(['a', 'b', 'c']);
+  });
+  it('devuelve [] con detalle vacío o sin rubros', () => {
+    expect(tareasDeObra(null)).toEqual([]);
+    expect(tareasDeObra({})).toEqual([]);
+  });
+  it('2 adjuntos en el MISMO rubro → 2 contratos cuyo monto/avance NO se pisan', () => {
+    // Escenario "Equipamiento gastronómico" de la spec: 1 rubro, 2 adjuntos
+    // (2 proveedores) → 2 contratos. Las tareas viven anidadas en el rubro y se
+    // distinguen sólo por contratoId. El monto/avance de cada contrato se deriva
+    // SOLO de sus tareas.
+    const detalle = {
+      rubros: [{
+        id: 'r1',
+        tareas: [
+          { id: 't1', contratoId: 'CT-A', costoSub: 185000, cantidad: 1, avance: 100 },
+          { id: 't2', contratoId: 'CT-A', costoSub: 210000, cantidad: 1, avance: 0 },
+          { id: 't3', contratoId: 'CT-B', costoSub: 50000,  cantidad: 2, avance: 50 },
+        ],
+      }],
+    };
+    const tareasObra = tareasDeObra(detalle);
+    expect(montoContrato('CT-A', tareasObra)).toBe(395000);
+    expect(montoContrato('CT-B', tareasObra)).toBe(100000);
+    // CT-A: ejecutado 185000/395000 ≈ 47%
+    expect(avanceContrato('CT-A', tareasObra)).toBe(47);
+    // CT-B: una sola tarea al 50% → 50%
+    expect(avanceContrato('CT-B', tareasObra)).toBe(50);
   });
 });
 
