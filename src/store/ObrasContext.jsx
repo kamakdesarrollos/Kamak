@@ -517,6 +517,32 @@ export function ObrasProvider({ children }) {
     dirtyDetalles.current.add(id);
   }, []);
 
+  // Importa un presupuesto de tercero a un rubro: crea el contrato MO (borrador),
+  // agrega las tareas (ya con contratoId) y guarda el adjunto. Todo en un patch
+  // atómico del detalle (no reescribe el detalle entero).
+  const importarPresupuesto = useCallback((obraId, rubroId, { tareas, adjunto, contrato }) => {
+    patchDetalle(obraId, d => ({
+      ...d,
+      rubros: (d.rubros || []).map(r => r.id === rubroId
+        ? { ...r, tareas: [...(r.tareas || []), ...tareas], adjuntos: [...(r.adjuntos || []), adjunto] }
+        : r),
+      contratos: [...(d.contratos || []), contrato],
+    }));
+  }, [patchDetalle]);
+
+  // Quita un adjunto y, atómicamente, sus tareas (por contratoId) y su contrato.
+  const quitarAdjunto = useCallback((obraId, rubroId, adjuntoId, contratoId) => {
+    patchDetalle(obraId, d => ({
+      ...d,
+      rubros: (d.rubros || []).map(r => r.id === rubroId
+        ? { ...r,
+            adjuntos: (r.adjuntos || []).filter(a => a.id !== adjuntoId),
+            tareas: (r.tareas || []).filter(t => t.contratoId !== contratoId) }
+        : r),
+      contratos: (d.contratos || []).filter(c => c.id !== contratoId),
+    }));
+  }, [patchDetalle]);
+
   // Renombrar un RUBRO en el catálogo debe llegar al presupuesto de TODAS las
   // obras: el nombre vive copiado en detalle.rubros[].nombre y se matchea por
   // nombre (generarTareasObra, imputación de gastos). Recorremos todos los
@@ -550,8 +576,8 @@ export function ObrasProvider({ children }) {
   // las obras / detalles no hayan cambiado. Era la causa principal de lentitud
   // al editar inputs (ObraPresupuesto consume 9 contexts).
   const value = useMemo(
-    () => ({ obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, setWebObra, togglePublicar, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch, dataReady }),
-    [obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, setWebObra, togglePublicar, byEstado, detalles, getDetalle, patchDetalle, renombrarRubroEnObras, refetch, dataReady]
+    () => ({ obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, setWebObra, togglePublicar, byEstado, detalles, getDetalle, patchDetalle, importarPresupuesto, quitarAdjunto, renombrarRubroEnObras, refetch, dataReady }),
+    [obras, addObra, updateObra, setEstado, setVentaEtapa, deleteObra, setWebObra, togglePublicar, byEstado, detalles, getDetalle, patchDetalle, importarPresupuesto, quitarAdjunto, renombrarRubroEnObras, refetch, dataReady]
   );
 
   return (
