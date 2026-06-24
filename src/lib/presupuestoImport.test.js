@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor, subtotalFila, tareasDeObra } from './presupuestoImport';
+import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor, subtotalFila, tareasDeObra, indiceHeader, parseNum } from './presupuestoImport';
 
 describe('detectarColumnas', () => {
   it('reconoce encabezados típicos en español', () => {
@@ -99,6 +99,10 @@ describe('subtotalFila', () => {
   it('acepta costo numérico ya parseado', () => {
     expect(subtotalFila({ costo: 1000, cantidad: 3 })).toBe(3000);
   });
+  it('cantidad "1.500" se interpreta como 1.5 (igual que el import)', () => {
+    // El subtotal mostrado debe coincidir con lo que terminará importado.
+    expect(subtotalFila({ costo: '5000', cantidad: '1.500' })).toBe(7500);
+  });
 });
 
 describe('tareasDeObra', () => {
@@ -138,6 +142,72 @@ describe('tareasDeObra', () => {
     expect(avanceContrato('CT-A', tareasObra)).toBe(47);
     // CT-B: una sola tarea al 50% → 50%
     expect(avanceContrato('CT-B', tareasObra)).toBe(50);
+  });
+});
+
+// ── QA fixes: parseo robusto, detección de columnas, sin redondeo de costo ──
+
+describe('parseNum (formato AR + ambigüedad miles/decimal)', () => {
+  it('costo: punto seguido de 3 dígitos = miles por defecto', () => {
+    expect(parseNum('185.000')).toBe(185000);
+    expect(parseNum('1.234.567')).toBe(1234567);
+  });
+  it('cantidad (dotDecimal): el punto es decimal, no miles', () => {
+    // Una cantidad "1.500" (1,5 m²/kg) NO debe convertirse en 1500.
+    expect(parseNum('1.500', { dotDecimal: true })).toBe(1.5);
+    expect(parseNum('1.5', { dotDecimal: true })).toBe(1.5);
+  });
+  it('coma siempre decimal (AR), puntos = miles', () => {
+    expect(parseNum('185.000,50')).toBe(185000.5);
+  });
+  it('no descarta números con puntos raros: fallback en vez de NaN→0', () => {
+    // Antes "1.234.5" daba NaN→0 y la fila se perdía en silencio (#16).
+    expect(parseNum('1.234.5')).toBe(12345);
+  });
+  it('vacío o no numérico → 0', () => {
+    expect(parseNum('')).toBe(0);
+    expect(parseNum('abc')).toBe(0);
+  });
+});
+
+describe('detectarColumnas — prioriza precio unitario sobre total/importe (#10)', () => {
+  it('elige "P. Unitario" aunque "Importe" aparezca antes', () => {
+    const m = detectarColumnas(['Descripción', 'Importe', 'Cant.', 'P. Unitario']);
+    expect(m.costo).toBe(3);
+  });
+  it('cae a Total/Importe sólo si no hay columna de unitario', () => {
+    const m = detectarColumnas(['Descripción', 'Cant.', 'Total']);
+    expect(m.costo).toBe(2);
+  });
+});
+
+describe('indiceHeader — saltea filas de título antes del encabezado (#12)', () => {
+  it('detecta la fila de encabezado real cuando hay un título arriba', () => {
+    const aoa = [['Presupuesto Obra X'], ['Descripción', 'Cant.', 'P. Unitario'], ['Plancha', '1', '185000']];
+    expect(indiceHeader(aoa)).toBe(1);
+  });
+  it('0 si la primera fila ya es el encabezado', () => {
+    expect(indiceHeader([['Descripción', 'Precio'], ['x', '1']])).toBe(0);
+  });
+  it('0 si no encuentra ninguna columna de costo', () => {
+    expect(indiceHeader([['a', 'b'], ['c', 'd']])).toBe(0);
+  });
+});
+
+describe('itemsATareas — no redondea el costo unitario (#14)', () => {
+  it('preserva decimales del costo en costoSub', () => {
+    const [t] = itemsATareas(
+      [{ nombre: 'X', costo: 185000.5, cantidad: 1, unidad: 'u' }],
+      { contratoId: 'c1', makeId: () => 'id1' }
+    );
+    expect(t.costoSub).toBe(185000.5);
+  });
+});
+
+describe('normalizarItems — cantidad con punto decimal (#2)', () => {
+  it('interpreta "1.500" como 1.5 en cantidad (no 1500)', () => {
+    const out = normalizarItems([{ nombre: 'Piso', costo: '5000', cantidad: '1.500', unidad: 'm2' }]);
+    expect(out[0].cantidad).toBe(1.5);
   });
 });
 

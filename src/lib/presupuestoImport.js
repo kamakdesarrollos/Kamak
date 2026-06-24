@@ -3,7 +3,11 @@ const norm = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[
 
 const KEYS = {
   nombre:   ['descripcion', 'detalle', 'item', 'concepto', 'producto', 'nombre', 'articulo'],
-  costo:    ['precio', 'p. unitario', 'p unitario', 'unitario', 'costo', 'importe', 'valor', 'monto', 'total'],
+  // Precio UNITARIO: lo que va a costoSub. Se busca primero (preferido).
+  costoUnit: ['p. unitario', 'p unitario', 'precio unitario', 'unitario', 'precio', 'costo', 'valor', 'monto'],
+  // Total / importe de línea: sólo como fallback si no hay columna de unitario.
+  // (Elegir "Total" como costo unitario inflaría el contrato ×cantidad — #10.)
+  costoTotal: ['importe', 'subtotal', 'total'],
   cantidad: ['cant', 'cantidad', 'qty', 'unidades'],
   unidad:   ['unidad', 'um', 'u.m', 'medida'],
 };
@@ -13,12 +17,23 @@ export function detectarColumnas(headerRow) {
   const find = keys => cols.findIndex(c => c && keys.some(k => c.includes(k)));
   // nombre: si no matchea, default a la primera columna.
   const nombre = find(KEYS.nombre);
+  // costo: priorizar precio unitario; sólo caer a total/importe si no hay unitario.
+  const costoUnit = find(KEYS.costoUnit);
   return {
     nombre:   nombre >= 0 ? nombre : 0,
-    costo:    find(KEYS.costo),
+    costo:    costoUnit >= 0 ? costoUnit : find(KEYS.costoTotal),
     cantidad: find(KEYS.cantidad),
     unidad:   find(KEYS.unidad),
   };
+}
+
+// Detecta el índice de la fila de encabezado en un array-of-arrays (Excel): la
+// primera fila donde detectarColumnas encuentra una columna de costo. Saltea
+// filas de título/logo que muchos presupuestos traen arriba (#12). 0 si no hay.
+export function indiceHeader(aoa) {
+  const rows = aoa || [];
+  const idx = rows.findIndex(row => Array.isArray(row) && detectarColumnas(row).costo >= 0);
+  return idx >= 0 ? idx : 0;
 }
 
 export function mapearColumnas(rows, mapping) {
@@ -32,22 +47,40 @@ export function mapearColumnas(rows, mapping) {
 }
 
 // Parsea un número en formato AR ("185.000,50" / "185.000" / "185000") a Number.
-function parseNum(v) {
-  if (typeof v === 'number') return v;
-  const s = (v == null ? '' : String(v)).replace(/[^\d.,-]/g, '');
+//
+// El caso ambiguo es "X.YYY" sin coma (un solo punto seguido de 3 dígitos):
+//  - en un COSTO casi siempre son miles ("185.000" = 185000) → default.
+//  - en una CANTIDAD casi siempre es decimal ("1.500" = 1,5 m²) → opts.dotDecimal.
+// Con coma presente el formato es siempre AR (punto=miles, coma=decimal).
+export function parseNum(v, opts = {}) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  let s = (v == null ? '' : String(v)).replace(/[^\d.,-]/g, '');
   if (!s) return 0;
-  let n2;
+  const neg = s.startsWith('-');
+  s = s.replace(/-/g, '');
+  let n;
   if (s.includes(',')) {
-    // Tiene coma: la coma es decimal y los puntos son separadores de miles.
-    n2 = s.replace(/\./g, '').replace(',', '.');
-  } else if (/\.\d{3}$/.test(s)) {
-    // Tiene punto seguido de exactamente 3 dígitos al final: separador de miles AR.
-    n2 = s.replace(/\./g, '');
+    // AR: la coma es decimal y los puntos son separadores de miles.
+    n = Number(s.replace(/\./g, '').replace(',', '.'));
   } else {
-    n2 = s;
+    const dots = (s.match(/\./g) || []).length;
+    if (dots === 0) {
+      n = Number(s);
+    } else if (dots >= 2) {
+      // Varios puntos sin coma → todos son separadores de miles ("1.234.567").
+      n = Number(s.replace(/\./g, ''));
+    } else {
+      // Un solo punto, sin coma → ambiguo. 3 dígitos detrás = miles salvo que el
+      // contexto pida tratarlo como decimal (cantidad).
+      const dec = s.split('.')[1] || '';
+      n = (dec.length === 3 && !opts.dotDecimal) ? Number(s.replace(/\./g, '')) : Number(s);
+    }
   }
-  const n = Number(n2);
-  return Number.isFinite(n) ? n : 0;
+  // Fallback: si quedó NaN (ej. "1.234.5"), sacar todos los separadores y reintentar
+  // en vez de devolver 0 (que descartaría la fila en silencio — #16).
+  if (!Number.isFinite(n)) n = Number(s.replace(/[.,]/g, ''));
+  if (!Number.isFinite(n)) return 0;
+  return neg ? -n : n;
 }
 
 export function normalizarItems(items) {
@@ -55,16 +88,17 @@ export function normalizarItems(items) {
     .map(it => ({
       nombre: (it.nombre || '').toString().trim(),
       costo: parseNum(it.costo),
-      cantidad: parseNum(it.cantidad) || 1,
+      cantidad: parseNum(it.cantidad, { dotDecimal: true }) || 1,
       unidad: (it.unidad || '').toString().trim() || 'u',
     }))
     .filter(it => it.nombre && it.costo > 0);
 }
 
 // Subtotal de UNA fila de la tabla de revisión: costo (formato AR) × cantidad
-// (default 1 si vacía/inválida). Reusa parseNum para no romperse con "185.000".
+// (default 1 si vacía/inválida). Usa la MISMA interpretación de cantidad que el
+// import (punto = decimal) para que el subtotal mostrado coincida con lo guardado.
 export function subtotalFila(it) {
-  return parseNum(it && it.costo) * (parseNum(it && it.cantidad) || 1);
+  return parseNum(it && it.costo) * (parseNum(it && it.cantidad, { dotDecimal: true }) || 1);
 }
 
 export function itemsATareas(items, { contratoId, makeId }) {
@@ -75,7 +109,9 @@ export function itemsATareas(items, { contratoId, makeId }) {
     unidad: it.unidad || 'u',
     cantidad: it.cantidad || 1,
     costoMat: 0,
-    costoSub: Math.round(it.costo),
+    // Sin redondear: el costo unitario puede tener decimales y redondearlo acá
+    // propaga error al multiplicar por cantidad (#14). parseNum ya devolvió Number.
+    costoSub: it.costo,
     contratoId,
     fuente: 'Presupuesto',
     receta: { materiales: [] },
