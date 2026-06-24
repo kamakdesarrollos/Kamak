@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor } from './presupuestoImport';
+import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor, subtotalFila } from './presupuestoImport';
 
 describe('detectarColumnas', () => {
   it('reconoce encabezados típicos en español', () => {
@@ -81,6 +81,23 @@ describe('avanceContrato', () => {
   });
   it('0 si el contrato no tiene tareas', () => {
     expect(avanceContrato('Z', tareasMulti)).toBe(0);
+  });
+});
+
+describe('subtotalFila', () => {
+  it('multiplica costo por cantidad, parsea miles AR del costo', () => {
+    // "185.000" en formato AR es 185000, no 185 → el subtotal con cantidad 2 es 370000.
+    expect(subtotalFila({ costo: '185.000', cantidad: '2' })).toBe(370000);
+  });
+  it('cantidad vacía o inválida cuenta como 1', () => {
+    expect(subtotalFila({ costo: '50000', cantidad: '' })).toBe(50000);
+    expect(subtotalFila({ costo: '50000', cantidad: 'abc' })).toBe(50000);
+  });
+  it('0 si el costo no es numérico', () => {
+    expect(subtotalFila({ costo: '', cantidad: '3' })).toBe(0);
+  });
+  it('acepta costo numérico ya parseado', () => {
+    expect(subtotalFila({ costo: 1000, cantidad: 3 })).toBe(3000);
   });
 });
 

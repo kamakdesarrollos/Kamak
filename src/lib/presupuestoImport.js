@@ -61,6 +61,12 @@ export function normalizarItems(items) {
     .filter(it => it.nombre && it.costo > 0);
 }
 
+// Subtotal de UNA fila de la tabla de revisión: costo (formato AR) × cantidad
+// (default 1 si vacía/inválida). Reusa parseNum para no romperse con "185.000".
+export function subtotalFila(it) {
+  return parseNum(it && it.costo) * (parseNum(it && it.cantidad) || 1);
+}
+
 export function itemsATareas(items, { contratoId, makeId }) {
   return (items || []).map(it => ({
     id: makeId(),
