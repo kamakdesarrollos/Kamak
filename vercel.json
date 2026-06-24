@@ -12,7 +12,6 @@
   ],
   "crons": [
     { "path": "/api/whatsapp/jobs?job=reminders", "schedule": "0 13 * * *" },
-    { "path": "/api/whatsapp/jobs?job=followups", "schedule": "0 12 * * 1-5" },
     { "path": "/api/cron/sync-sanfrancisco", "schedule": "0 8 * * *" }
   ]
 }

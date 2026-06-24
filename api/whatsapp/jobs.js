@@ -1,6 +1,11 @@
 // Fusión de payment-reminders + sales-followups en una sola function (límite
-// Vercel Hobby = 12). Se elige el job por query: ?job=reminders | ?job=followups.
-// El cron de vercel.json llama a cada uno con su path.
+// Vercel Hobby = 12 functions). Se elige el job por query: ?job=reminders | ?job=followups.
+//
+// CRONS: el plan Hobby también limita la CANTIDAD de cron jobs, así que en
+// vercel.json sólo está agendado ?job=reminders (+ sync-sanfrancisco = 2 crons,
+// el máximo que deploya OK). ?job=followups (seguimiento comercial) se dispara
+// A MANO — `vercel crons run` / llamada directa al endpoint — hasta pasar a Pro;
+// agregarlo como 3er cron rompía el deploy en la etapa de config (ver c798a71).
 //
 // --- ENV compartido + helpers idénticos de ambos archivos originales ---
 const META_TOKEN      = process.env.META_ACCESS_TOKEN;
