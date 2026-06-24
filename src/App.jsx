@@ -294,10 +294,16 @@ function AppShell() {
 
 export default function App() {
   return (
+    // ErrorBoundary de NIVEL SUPERIOR: el ErrorBoundary interno (en AppShell) solo
+    // envuelve las rutas; los Providers de datos están por ENCIMA, así que un crash
+    // en un provider blanqueaba TODA la app. Este lo captura y muestra el cartel de
+    // error (con "Detalle técnico") en vez de pantalla en blanco.
+    <ErrorBoundary>
     <ToastProvider>
     <AuthProvider>
       <AppShell />
     </AuthProvider>
     </ToastProvider>
+    </ErrorBoundary>
   );
 }
