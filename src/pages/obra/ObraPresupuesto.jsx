@@ -4551,8 +4551,8 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
           : [...new Set(tareas.map(t => t.rubroNombre).filter(Boolean))];
         return (
           <Box key={c.id} style={{ padding: '12px 14px', marginBottom: 8, opacity: c.estado === 'cerrado' ? 0.7 : 1 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-              <div style={{ flex: 1, ...(isMobile ? { minWidth: '100%' } : {}) }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: isMobile ? '100%' : 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>
                   {(() => {
                     const prov = proveedoresDyn.find(p => p.nombre === c.proveedor || (c.cuit && p.cuit && p.cuit.replace(/[-\s]/g,'') === c.cuit.replace(/[-\s]/g,'')));
@@ -4590,7 +4590,7 @@ function TabContratosMO({ detalle, patch, moneda, obra }) {
               </div>
               <div style={{ fontFamily: T.fontMono, fontWeight: 700, fontSize: 16 }}>{fmtM(monto, moneda)}</div>
               <Chip ok={c.estado === 'activo'} style={{ fontSize: 10 }}>{c.estado}</Chip>
-              {desdePresupuesto && <Chip accent style={{ fontSize: 10 }}>desde presupuesto · borrador</Chip>}
+              {desdePresupuesto && <Chip accent style={{ fontSize: 10 }}>desde presupuesto</Chip>}
               <div style={{ display: 'flex', gap: 6 }}>
                 <Btn sm onClick={() => startEditContrato(c)}>✏ Editar</Btn>
                 <Btn sm onClick={() => setDocsContrato(c)}>📄 Documentos</Btn>
