@@ -1,9 +1,56 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // PWA Fase 1: instalable + app shell. NO offline de datos (app en vivo).
+    VitePWA({
+      registerType: 'autoUpdate',          // SW se actualiza solo (skipWaiting+claim)
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      manifest: {
+        name: 'Kamak · Software de Gestión de Obras',
+        short_name: 'Kamak',
+        description: 'Gestión de obras — presupuestos, contratos, caja y obra.',
+        lang: 'es',
+        theme_color: '#1a9b9c',
+        background_color: '#171818',
+        display: 'standalone',
+        start_url: '/',
+        scope: '/',
+        icons: [
+          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+      },
+      workbox: {
+        // Precache de assets HASHEADOS (inmutables) → carga rápida. index.html NO
+        // se precachea: las navegaciones van NetworkFirst para servir siempre el
+        // HTML fresco online (no rompe el auto-reload tras deploy) y caer al último
+        // shell cacheado solo si no hay red.
+        globPatterns: ['**/*.{js,css,svg,png,woff2}'],
+        // Desactivar el navigateFallback por defecto del plugin ('index.html'
+        // cache-first): no precacheamos index.html y queremos que las navegaciones
+        // las maneje SOLO el NetworkFirst de abajo (HTML fresco online).
+        navigateFallback: null,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request, url }) => request.mode === 'navigate' && !url.pathname.startsWith('/api'),
+            handler: 'NetworkFirst',
+            options: { cacheName: 'kamak-shell', networkTimeoutSeconds: 3, expiration: { maxEntries: 8 } },
+          },
+        ],
+        // /api/* y Supabase no tienen runtimeCaching → siempre pasan a la red.
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+      },
+      devOptions: { enabled: false },       // SW solo en build/prod, no en dev
+    }),
+  ],
   // Vitest config integrada (item 5.1).
   test: {
     globals: true,
