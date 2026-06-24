@@ -1,35 +1,8 @@
-// Recordatorios de cuota al CLIENTE por WhatsApp.
+// Fusión de payment-reminders + sales-followups en una sola function (límite
+// Vercel Hobby = 12). Se elige el job por query: ?job=reminders | ?job=followups.
+// El cron de vercel.json llama a cada uno con su path.
 //
-// Disparado por Vercel Cron (ver vercel.json) todos los días a las 10am ARG
-// (13:00 UTC). Para cada obra activa y cada cuota IMPAGA:
-//   - 48 hs antes del vencimiento (diasHasta === 2): aviso preventivo.
-//   - 72 hs después del vencimiento (diasHasta === -3): aviso de cuota vencida.
-//
-// "IMPAGA" se DERIVA de los movimientos de ingreso (libro único): repartimos lo
-// cobrado de la obra sobre las cuotas en orden; una cuota está paga si quedó
-// cubierta. NO usamos campos viejos (c.cobrado/c.pagado).
-//
-// ENVÍO Y VENTANA DE 24h:
-// El cliente casi nunca escribió al bot en las últimas 24h, así que el aviso
-// necesita un TEMPLATE aprobado en Meta. Intentamos:
-//   1) free-form (por si el cliente escribió hace poco)
-//   2) template 'recordatorio_cuota' (es_AR) con 2 parámetros:
-//        {{1}} = nombre del cliente
-//        {{2}} = detalle (qué cuota, obra, monto, vencimiento)
-// Si no hay template aprobado y la ventana está cerrada, queda logeado (no rompe).
-//
-// TEMPLATE A CREAR EN META (Business Manager → WhatsApp → Plantillas):
-//   nombre: recordatorio_cuota · idioma: Español (ARG) · categoría: UTILITY
-//   cuerpo:
-//     Hola {{1}} 👋
-//
-//     {{2}}
-//
-//     Cualquier duda, escribinos. ¡Gracias!
-//     Kamak Desarrollos
-//
-// Seguridad: si CRON_SECRET está seteado, exige ?secret= o header x-cron-secret.
-
+// --- ENV compartido + helpers idénticos de ambos archivos originales ---
 const META_TOKEN      = process.env.META_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
 const SUPABASE_URL    = process.env.SUPABASE_URL;
@@ -51,6 +24,14 @@ async function sbGet(table, query = '') {
 async function loadSharedData(key) {
   const rows = await sbGet('shared_data', `?key=eq.${key}&select=data`);
   return rows[0]?.data ?? null;
+}
+
+async function saveSharedData(key, data) {
+  await fetch(`${SUPABASE_URL}/rest/v1/shared_data?on_conflict=key`, {
+    method: 'POST',
+    headers: { ...sbH(), Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify({ key, data }),
+  });
 }
 
 async function sendWA(to, body) {
@@ -128,6 +109,7 @@ const diasHasta = (fecha) => {
   const d = new Date(fecha); d.setHours(0, 0, 0, 0);
   return Math.round((d - hoy) / 86400000);
 };
+const diasDesde = (iso) => iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null;
 
 function normalizePhone(raw) {
   if (!raw) return null;
@@ -157,7 +139,28 @@ function findClienteByObra(obra, clientes) {
   }) || null;
 }
 
-export default async function handler(req, res) {
+// ─────────────────────────────────────────────────────────────────────────────
+// JOB 1: recordatorios de cuota al CLIENTE (ex payment-reminders.js)
+//
+// Disparado por Vercel Cron (ver vercel.json) todos los días a las 10am ARG
+// (13:00 UTC). Para cada obra activa y cada cuota IMPAGA:
+//   - 48 hs antes del vencimiento (diasHasta === 2): aviso preventivo.
+//   - 72 hs después del vencimiento (diasHasta === -3): aviso de cuota vencida.
+//
+// "IMPAGA" se DERIVA de los movimientos de ingreso (libro único): repartimos lo
+// cobrado de la obra sobre las cuotas en orden; una cuota está paga si quedó
+// cubierta. NO usamos campos viejos (c.cobrado/c.pagado).
+//
+// ENVÍO Y VENTANA DE 24h:
+// El cliente casi nunca escribió al bot en las últimas 24h, así que el aviso
+// necesita un TEMPLATE aprobado en Meta. Intentamos:
+//   1) free-form (por si el cliente escribió hace poco)
+//   2) template 'recordatorio_cuota' (es_AR) con 2 parámetros:
+//        {{1}} = nombre del cliente
+//        {{2}} = detalle (qué cuota, obra, monto, vencimiento)
+// Si no hay template aprobado y la ventana está cerrada, queda logeado (no rompe).
+// ─────────────────────────────────────────────────────────────────────────────
+async function runReminders(req, res) {
   if (CRON_SECRET) {
     const got = req.query?.secret || req.headers?.['x-cron-secret'];
     if (got !== CRON_SECRET) return res.status(401).json({ error: 'unauthorized' });
@@ -240,4 +243,80 @@ export default async function handler(req, res) {
     console.error('payment-reminders error:', e);
     return res.status(500).json({ error: e.message });
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JOB 2: seguimiento comercial a los ADMINS (ex sales-followups.js)
+// (1) recordatorios de oportunidades 'cotizado'/'negociacion' estancadas,
+// (4) reactivación de clientes inactivos. Avisa a los admins por WA.
+// REGLA DE APAGADO (§8): una oportunidad se procesa solo si está abierta
+// (en-presupuesto), etapa cotizado/negociacion, SIN ingreso, y > N días.
+// ─────────────────────────────────────────────────────────────────────────────
+const DIAS_SIN_RESPUESTA = 5;
+const MESES_INACTIVO = 6;
+
+async function runFollowups(req, res) {
+  if (CRON_SECRET) { const got = req.query?.secret || req.headers?.['x-cron-secret']; if (got !== CRON_SECRET) return res.status(401).json({ error: 'unauthorized' }); }
+  try {
+    const obrasData = await loadSharedData('obras');
+    const movData = await loadSharedData('movimientos');
+    const clientes = (await loadSharedData('clientes')) || [];
+    const obras = obrasData?.obras || [];
+    const movs = movData?.movimientos || [];
+    const tieneIngreso = (obraId) => movs.some(m => m.obraId === obraId && m.tipo === 'ingreso');
+
+    // (1) Oportunidades estancadas (regla de apagado).
+    const estancadas = obras.filter(o => {
+      if (o.estado !== 'en-presupuesto') return false;
+      const etapa = o.venta?.etapa;
+      if (etapa !== 'cotizado' && etapa !== 'negociacion') return false;
+      if (tieneIngreso(o.id)) return false;
+      const d = diasDesde(o.venta?.fechaCambioEtapa);
+      return d != null && d > DIAS_SIN_RESPUESTA;
+    });
+
+    // (4) Clientes inactivos: sin obra activa NI oportunidad abierta, última señal vieja.
+    const inactivos = clientes.filter(cl => {
+      const obrasCl = obras.filter(o => o.clienteId === cl.id || o.cliente === cl.nombre);
+      const tieneActiva = obrasCl.some(o => o.estado === 'activa' || o.estado === 'finalizada' || o.estado === 'pausada');
+      const tieneAbierta = obrasCl.some(o => o.estado === 'en-presupuesto');
+      if (tieneActiva || tieneAbierta) return false;
+      const fechas = obrasCl.flatMap(o => [o.fechaFin, o.createdAt]).filter(Boolean).sort();
+      const ult = fechas.slice(-1)[0];
+      const d = diasDesde(ult);
+      return d != null && d > MESES_INACTIVO * 30;
+    });
+
+    if (estancadas.length === 0 && inactivos.length === 0) return res.status(200).json({ ok: true, nada: true });
+
+    // Dedup/throttle: si el set de oportunidades/clientes es idéntico al último
+    // aviso y pasaron < 24h, no reenviamos (evita el spam diario a los admins).
+    const idsActual = [...estancadas.map(o => o.id), ...inactivos.map(c => 'cl:' + c.id)].sort();
+    const prevState = (await loadSharedData('sales_followups_state')) || {};
+    const sinCambios = JSON.stringify(prevState.ids || []) === JSON.stringify(idsActual);
+    const horasDesdeUltimo = prevState.ts ? (Date.now() - new Date(prevState.ts).getTime()) / 3600000 : Infinity;
+    if (sinCambios && horasDesdeUltimo < 24) return res.status(200).json({ ok: true, skip: 'sin-cambios' });
+
+    // Armar mensaje y mandar a los admins.
+    const appUsers = await sbGet('app_users', '?select=id,nombre,rol');
+    const waUsers = await sbGet('whatsapp_users', '?select=user_id,phone');
+    const admins = (waUsers || []).filter(lu => (appUsers || []).find(u => u.id === lu.user_id)?.rol === 'Admin');
+
+    let cuerpo = '📊 *Seguimiento comercial*\n';
+    if (estancadas.length) cuerpo += `\n*Propuestas sin respuesta (${estancadas.length}):*\n` + estancadas.slice(0, 10).map(o => `• ${o.nombre} — ${o.venta?.etapa}, ${diasDesde(o.venta?.fechaCambioEtapa)}d`).join('\n');
+    if (inactivos.length) cuerpo += `\n\n*Clientes a reactivar (${inactivos.length}):*\n` + inactivos.slice(0, 10).map(c => `• ${c.nombre}`).join('\n');
+
+    const resultados = [];
+    for (const a of admins) { const r = await sendWA(a.phone, cuerpo); resultados.push({ phone: a.phone, ok: r.ok }); }
+    // Registrar el estado de esta corrida para deduplicar la próxima.
+    await saveSharedData('sales_followups_state', { ts: new Date().toISOString(), ids: idsActual });
+    return res.status(200).json({ ok: true, estancadas: estancadas.length, inactivos: inactivos.length, enviados: resultados });
+  } catch (e) { console.error('[sales-followups]', e.message); return res.status(500).json({ error: e.message }); }
+}
+
+export default async function handler(req, res) {
+  const job = req.query.job;
+  if (job === 'reminders') return runReminders(req, res);
+  if (job === 'followups') return runFollowups(req, res);
+  return res.status(400).json({ error: 'job inválido (reminders|followups)' });
 }
