@@ -66,7 +66,7 @@ import PlantillasContratistaModal from './PlantillasContratistaModal';
 import AdjuntarPresupuestoModal from './AdjuntarPresupuestoModal';
 import RevisarPresupuestoModal from './RevisarPresupuestoModal';
 import { subirAdjuntoPrivado, getSignedUrl, borrarAdjuntoPrivado } from '../../lib/upload';
-import { itemsATareas, montoContrato, avanceContrato, tareasDeObra } from '../../lib/presupuestoImport';
+import { itemsATareas, montoContrato, avanceContrato, tareasDeObra, matchProveedorFlexible, resolverProveedorImport } from '../../lib/presupuestoImport';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -664,20 +664,37 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const confirmarImport = async (itemsFinales) => {
     const contratoId = newId();
     const tareas = itemsATareas(itemsFinales, { contratoId, makeId: newId });
-    const proveedorNombre = adjReady.proveedorNombre || adjReady.proveedorDetectado?.nombre || 'Proveedor';
+    const proveedorData = adjReady.proveedorData || {};
+    const proveedorNombre = adjReady.proveedorNombre || proveedorData.razonSocial || 'Proveedor';
     // Subir PRIMERO (bucket privado): si falla, no creamos proveedor ni contrato
     // (evita proveedor huérfano). El error se propaga y lo muestra el modal.
     const { path, bucket } = await subirAdjuntoPrivado(adjReady.file, `presupuestos/${obra.id}`);
-    // Recién con el archivo subido resolvemos/creamos el proveedor.
+    // Resolver el id del proveedor: el del match exacto (CUIT) o, si el nombre
+    // (tipeado/sugerido) coincide con uno existente, ese; si no, null.
     let proveedorId = adjReady.proveedorId || null;
-    if (!proveedorId && adjReady.proveedorDetectado?.cuit) {
-      proveedorId = addProveedor({ nombre: proveedorNombre, cuit: adjReady.proveedorDetectado.cuit });
+    if (!proveedorId && proveedorNombre) {
+      const m = matchProveedorFlexible(proveedorNombre, proveedorData.cuit, provListPresu);
+      if (m) proveedorId = m.proveedor.id;
+    }
+    // Decidir: link a existente | crear con TODOS los datos (solo si hay CUIT) | texto libre.
+    const decision = resolverProveedorImport(proveedorData, proveedorId);
+    let proveedorFinalId = null;
+    let proveedorFinalNombre = proveedorNombre;
+    if (decision.accion === 'link') {
+      proveedorFinalId = decision.proveedorId;
+      const ex = provListPresu.find(p => p.id === proveedorFinalId);
+      if (ex) proveedorFinalNombre = ex.nombre;
+    } else if (decision.accion === 'crear') {
+      proveedorFinalId = addProveedor(decision.datos); // crea el proveedor con cuit/domicilio/tel/email/condIVA/rubro
+      proveedorFinalNombre = decision.datos.nombre;
+    } else {
+      proveedorFinalNombre = decision.nombre || proveedorNombre;
     }
     const adjuntoId = newId();
-    const adjunto = { id: adjuntoId, nombre: adjReady.file.name, path, bucket, fecha: new Date().toISOString(), proveedor: proveedorNombre, proveedorId, contratoId };
+    const adjunto = { id: adjuntoId, nombre: adjReady.file.name, path, bucket, fecha: new Date().toISOString(), proveedor: proveedorFinalNombre, proveedorId: proveedorFinalId, contratoId };
     const rubro = detalle.rubros.find(r => r.id === adjRubroId);
     const contrato = {
-      id: contratoId, gremio: rubro?.nombre || '', proveedor: proveedorNombre, proveedorId,
+      id: contratoId, gremio: rubro?.nombre || '', proveedor: proveedorFinalNombre, proveedorId: proveedorFinalId,
       monto: montoContrato(contratoId, tareas), estado: 'borrador', origen: 'adjunto',
       adjuntoId, rubroId: adjRubroId, fondoReparo: 5,
     };
