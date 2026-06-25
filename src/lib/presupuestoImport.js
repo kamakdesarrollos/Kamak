@@ -153,3 +153,33 @@ export function matchProveedor(nombre, cuit, proveedores) {
   const n = norm(nombre);
   return (n && list.find(p => norm(p.nombre) === n)) || null;
 }
+
+// Clave normalizada de un nombre de empresa: minúsculas, sin acentos/puntuación y
+// sin sufijos societarios (SA/SRL/SAS/SACI…), para comparar "Grupo Braf" ≈ "Grupo Braf SA".
+function nombreClave(s) {
+  let n = norm(s).replace(/[.\-,]/g, ' ').replace(/\s+/g, ' ').trim();
+  n = n.replace(/\b(sa|sac|saci|sacif|saic|srl|sas|sci|scs|sce)\b/g, '').replace(/\s+/g, ' ').trim();
+  return n;
+}
+
+// Match FLEXIBLE para resolver el proveedor de un presupuesto (auto-proveedor):
+// - CUIT exacto → { proveedor, exacto: true }  (apto para auto-link)
+// - nombre (igualdad de clave o contención ≥4) → { proveedor, exacto: false } (sugerencia editable)
+// - nada → null
+export function matchProveedorFlexible(nombre, cuit, proveedores) {
+  const list = proveedores || [];
+  const c = (cuit || '').replace(/[^\dkK]/g, '');
+  if (c) {
+    const porCuit = list.find(p => (p.cuit || '').replace(/[^\dkK]/g, '') === c);
+    if (porCuit) return { proveedor: porCuit, exacto: true };
+  }
+  const n = nombreClave(nombre);
+  if (!n) return null;
+  let p = list.find(x => nombreClave(x.nombre) === n);
+  if (p) return { proveedor: p, exacto: false };
+  p = list.find(x => {
+    const xn = nombreClave(x.nombre);
+    return xn && n.length >= 4 && xn.length >= 4 && (xn.includes(n) || n.includes(xn));
+  });
+  return p ? { proveedor: p, exacto: false } : null;
+}

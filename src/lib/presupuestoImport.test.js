@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor, subtotalFila, tareasDeObra, indiceHeader, parseNum } from './presupuestoImport';
+import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor, subtotalFila, tareasDeObra, indiceHeader, parseNum, matchProveedorFlexible, resolverProveedorImport } from './presupuestoImport';
 
 describe('detectarColumnas', () => {
   it('reconoce encabezados típicos en español', () => {
@@ -224,5 +224,35 @@ describe('matchProveedor', () => {
   });
   it('null si no encuentra', () => {
     expect(matchProveedor('Otro Proveedor', null, provs)).toBeNull();
+  });
+});
+
+// ── Auto-proveedor desde el PDF: match flexible + decisión link/crear/texto ──
+
+describe('matchProveedorFlexible', () => {
+  const provs = [
+    { id: 'p1', nombre: 'Grupo Braf', cuit: '30-11111111-1' },
+    { id: 'p2', nombre: 'Turbo Blender S.R.L.', cuit: '30-22222222-2' },
+  ];
+  it('CUIT exacto → match con exacto:true (apto auto-link)', () => {
+    const r = matchProveedorFlexible('Cualquier Cosa', '30-22222222-2', provs);
+    expect(r).toEqual({ proveedor: provs[1], exacto: true });
+  });
+  it('nombre con sufijo societario → match con exacto:false (sugerencia)', () => {
+    // "Grupo Braf SA" sin CUIT debe sugerir "Grupo Braf".
+    const r = matchProveedorFlexible('Grupo Braf SA', null, provs);
+    expect(r.proveedor.id).toBe('p1');
+    expect(r.exacto).toBe(false);
+  });
+  it('contención de nombre → sugiere', () => {
+    const r = matchProveedorFlexible('Turbo Blender', null, provs);
+    expect(r.proveedor.id).toBe('p2');
+    expect(r.exacto).toBe(false);
+  });
+  it('sin match → null', () => {
+    expect(matchProveedorFlexible('Otra Empresa', null, provs)).toBeNull();
+  });
+  it('nombre muy corto no genera falso positivo por contención', () => {
+    expect(matchProveedorFlexible('SA', null, provs)).toBeNull();
   });
 });
