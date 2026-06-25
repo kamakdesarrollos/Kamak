@@ -229,7 +229,10 @@ export default function CuentasPorPagar() {
                       {f.tipoLetra && <span style={{ fontWeight: 700, marginRight: 4 }}>{f.tipoLetra}</span>}
                       {f.numero || '—'}
                     </span>
-                    <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink2 }}>{fmtFecha(f.fecha)}</span>
+                    <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.ink2 }}>
+                      {fmtFecha(f.fecha)}
+                      {f.fechaVencimiento && <span style={{ display: 'block', color: T.warn, fontSize: 10 }}>vence {fmtFecha(f.fechaVencimiento)}</span>}
+                    </span>
                     <span style={{ color: T.ink2, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.concepto || ''}>
                       {f.concepto || '—'}
                     </span>

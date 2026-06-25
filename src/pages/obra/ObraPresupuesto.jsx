@@ -19,6 +19,7 @@ import { useGastosFijos } from '../../store/GastosFijosContext';
 import { useCatalog, calcTarea } from '../../store/CatalogContext';
 import { useUsuarios, ROL_TABS_OCULTAS, ROL_TABS_OCULTAS_DEFAULT } from '../../store/UsuariosContext';
 import { useTareas } from '../../store/TareasContext';
+import { useNotificaciones } from '../../store/NotificacionesContext';
 import { generarTareasObra } from '../../lib/generarTareasObra';
 import { normUnidad } from '../../lib/unidad';
 import { supabase } from '../../lib/supabase';
@@ -443,6 +444,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const isMobile = useIsMobile();
   const { proveedores: provListPresu, addProveedor } = useProveedores();
   const { importarPresupuesto, quitarAdjunto } = useObras();
+  const { crearNotificacion } = useNotificaciones() ?? {};
   // Fail-closed: defaults restrictivos. Admin tiene todos los permisos por su rol.
   const isAdmin    = currentUser?.rol === 'Admin';
   const verCostos   = isAdmin || currentUser?.permisos?.verCostos   === true;
@@ -699,6 +701,14 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
       adjuntoId, rubroId: adjRubroId, fondoReparo: 5,
     };
     importarPresupuesto(obra.id, adjRubroId, { tareas, adjunto, contrato });
+    // Aviso a Jefe de obra + Admin (feed + push): se adjuntó un presupuesto de
+    // tercero a esta obra/rubro. crearNotificacion excluye al actor (currentUser).
+    crearNotificacion?.('presupuesto_adjuntado', {
+      obra: obra.nombre,
+      rubro: rubro?.nombre || '',
+      cuerpo: `${proveedorFinalNombre} · ${tareas.length} ítem${tareas.length === 1 ? '' : 's'}`,
+      link: `/obras/${obra.id}/presupuesto`,
+    });
     setAdjReady(null); setAdjRubroId(null);
   };
 

@@ -5,6 +5,7 @@ import { T } from '../../theme';
 import { useProveedores } from '../../store/ProveedoresContext';
 import { useObras } from '../../store/ObrasContext';
 import { useUsuarios } from '../../store/UsuariosContext';
+import { useNotificaciones } from '../../store/NotificacionesContext';
 import { supabase } from '../../lib/supabase';
 import { desglosarCompra } from '../../lib/afip';
 
@@ -23,6 +24,7 @@ export default function FacturaPendienteModal({ onClose }) {
   const { proveedores, addFacturaPendiente, updateProveedor } = useProveedores();
   const { obras } = useObras();
   const { currentUser } = useUsuarios();
+  const { crearNotificacion } = useNotificaciones() ?? {};
   const isMobile = useIsMobile();
   // CBU/alias para transferir: dato sensible que solo cargan/ven Admin/Administración.
   const esAdmin = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
@@ -33,6 +35,10 @@ export default function FacturaPendienteModal({ onClose }) {
   const [proveedorId, setProveedorId] = useState('');
   const [monto, setMonto]       = useState('');
   const [fecha, setFecha]       = useState(today);
+  // Fecha de pago programada / vencimiento (opcional). Si se carga, el cron diario
+  // avisa a Administración cuando se acerca (cuenta_por_vencer). Caso típico: echeq
+  // o pagos mensuales fijos con fecha conocida.
+  const [fechaVencimiento, setFechaVencimiento] = useState('');
   const [numero, setNumero]     = useState('');
   const [tipoLetra, setTipoLetra] = useState('A');
   const [cuit, setCuit]         = useState('');
@@ -102,6 +108,7 @@ export default function FacturaPendienteModal({ onClose }) {
     };
     if (pIIBB > 0) data.percepcionIIBB = pIIBB;
     if (pIVA > 0)  data.percepcionIVA = pIVA;
+    if (fechaVencimiento) data.fechaVencimiento = fechaVencimiento;
 
     // Solo registrar → estado 'registrada': cuenta para Libro IVA (si se calculó)
     // pero no figura como deuda en Cuentas por Pagar ni mueve caja.
@@ -133,6 +140,12 @@ export default function FacturaPendienteModal({ onClose }) {
     }
 
     addFacturaPendiente(data);
+    // Aviso a Administración + Admin de la nueva orden de pago (feed + push). No
+    // avisamos si es "solo registrar" (factura fiscal sin deuda → no es una orden).
+    if (!soloRegistrar) {
+      const det = `${prov?.nombre || 'Proveedor'} · $${fmtN(montoNum)}${numero.trim() ? ` · N° ${numero.trim()}` : ''}`;
+      crearNotificacion?.('orden_pago_creada', { detalle: det });
+    }
     onClose();
   };
 
@@ -167,6 +180,12 @@ export default function FacturaPendienteModal({ onClose }) {
               <label style={labelSt}>Fecha</label>
               <input type="date" style={inputSt} value={fecha} onChange={e => setFecha(e.target.value)} />
             </div>
+          </div>
+
+          <div>
+            <label style={labelSt}>Fecha de pago / vencimiento (opcional)</label>
+            <input type="date" style={inputSt} value={fechaVencimiento} onChange={e => setFechaVencimiento(e.target.value)} />
+            <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>Si la cargás, te avisamos 3 días antes (echeq, pagos fijos mensuales…).</div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.6fr 1fr', gap: 10 }}>

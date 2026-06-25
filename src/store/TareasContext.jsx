@@ -2,6 +2,7 @@ import { createContext, useContext, useCallback, useMemo, useRef, useEffect } fr
 import useSyncedSharedData from '../lib/useSyncedSharedData';
 import { appendItemInSharedArray, patchItemInSharedArray, removeItemInSharedArray } from '../lib/dbHelpers';
 import { newId } from '../lib/id';
+import { useNotificaciones } from './NotificacionesContext';
 
 // Tareas con checklist asignables entre usuarios.
 //
@@ -42,6 +43,10 @@ export function TareasProvider({ children }) {
 
   const tareasRef = useRef(tareas);
   useEffect(() => { tareasRef.current = tareas; }, [tareas]);
+
+  // TareasProvider está DENTRO de NotificacionesProvider (ver App.jsx) → puede
+  // consumir crearNotificacion para avisarle al asignado cuando le toca una tarea.
+  const { crearNotificacion } = useNotificaciones() ?? {};
 
   // aplicarTarea: computa la tarea nueva desde el estado actual (ref), hace el
   // setState optimista y persiste SOLO esa tarea atómica (patchItemInSharedArray
@@ -89,8 +94,16 @@ export function TareasProvider({ children }) {
     };
     setTareas(prev => [nueva, ...prev]);
     appendItemInSharedArray('tareas', nueva);
+    // Aviso al asignado (push; tarea_asignada es legacy → solo push, el feed lo
+    // oculta). SOLO en alta MANUAL: las auto-generadas al aprobar presupuesto
+    // (origen 'auto-*') avisarían en lote = spam. crearNotificacion ya excluye al
+    // actor; igual filtramos al creador por las dudas.
+    if (nueva.origen === 'manual') {
+      const aAvisar = (nueva.asignadoA || []).filter(uid => uid && uid !== nueva.creadoPor);
+      if (aAvisar.length) crearNotificacion?.('tarea_asignada', { tarea: nueva.titulo, userIds: aAvisar });
+    }
     return nueva.id;
-  }, [setTareas]);
+  }, [setTareas, crearNotificacion]);
 
   const updateTarea = useCallback((id, changes) => {
     aplicarTarea(id, t => {
