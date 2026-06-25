@@ -48,8 +48,8 @@ async function usuarioAutorizado(req) {
 
 const PROMPT = `Sos un extractor de presupuestos de obra. Te paso un presupuesto de un proveedor/subcontratista.
 Devolvé SOLO un JSON con esta forma exacta, sin texto adicional:
-{"proveedor": "<razón social o nombre, o null>", "cuit": "<cuit o null>", "items": [{"nombre": "<descripción del ítem>", "costo": <número, precio UNITARIO sin símbolos>, "cantidad": <número, 1 si no figura>, "unidad": "<u/m2/ml/gl/etc o 'u'>"}]}
-El "costo" es siempre el precio unitario del ítem (si solo hay total de línea, poné cantidad 1 y el total como costo). No inventes ítems que no estén.`;
+{"proveedor": {"razonSocial": "<nombre/razón social o null>", "cuit": "<cuit o null>", "domicilio": "<dirección completa o null>", "telefono": "<o null>", "email": "<o null>", "condicionIVA": "<Responsable Inscripto/Monotributo/Exento o null>", "rubro": "<rubro o especialidad del proveedor inferida del presupuesto, o null>"}, "items": [{"nombre": "<descripción del ítem>", "costo": <número, precio UNITARIO sin símbolos>, "cantidad": <número, 1 si no figura>, "unidad": "<u/m2/ml/gl/etc o 'u'>"}]}
+El "costo" es siempre el precio unitario del ítem (si solo hay total de línea, poné cantidad 1 y el total como costo). No inventes datos que no estén: si un dato del proveedor no figura, poné null.`;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -91,9 +91,17 @@ export default async function handler(req, res) {
     const end = text.lastIndexOf('}');
     if (start < 0 || end < 0) return res.status(422).json({ error: 'No se reconoció un presupuesto en el archivo' });
     const data = JSON.parse(text.slice(start, end + 1));
+    const prov = data.proveedor || {};
     return res.status(200).json({
-      proveedor: data.proveedor || null,
-      cuit: data.cuit || null,
+      proveedor: {
+        razonSocial: prov.razonSocial || null,
+        cuit: prov.cuit || null,
+        domicilio: prov.domicilio || null,
+        telefono: prov.telefono || null,
+        email: prov.email || null,
+        condicionIVA: prov.condicionIVA || null,
+        rubro: prov.rubro || null,
+      },
       items: Array.isArray(data.items) ? data.items : [],
     });
   } catch (e) {
