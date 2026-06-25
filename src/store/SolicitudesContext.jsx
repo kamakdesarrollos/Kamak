@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback, useMemo } from 'react';
 import useSyncedSharedData from '../lib/useSyncedSharedData';
 import { newId } from '../lib/id';
+import { useNotificaciones } from './NotificacionesContext';
 
 // Item 3.3: refactor para usar useSyncedSharedData.
 // Solicitudes no llama markReady (no es loader bloqueante del splash),
@@ -13,6 +14,7 @@ export function SolicitudesProvider({ children }) {
     lsKey: 'kamak_solicitudes_v1',
     skipMarkReady: true,
   });
+  const { crearNotificacion } = useNotificaciones() ?? {};
 
   const addSolicitud = useCallback((data) => {
     const nueva = {
@@ -22,14 +24,19 @@ export function SolicitudesProvider({ children }) {
       creadoAt: new Date().toISOString(),
     };
     setSolicitudes(prev => [nueva, ...prev]);
+    crearNotificacion?.('solicitud_eliminacion', { descripcion: data?.movimiento?.descripcion || data?.motivo || '' });
     return nueva.id;
-  }, [setSolicitudes]);
+  }, [setSolicitudes, crearNotificacion]);
 
   const resolveSolicitud = useCallback((id, estado, resolvedBy) => {
-    setSolicitudes(prev => prev.map(s =>
-      s.id === id ? { ...s, estado, resolvedBy, resolvedAt: new Date().toISOString() } : s
-    ));
-  }, [setSolicitudes]);
+    let solicitante = null;
+    setSolicitudes(prev => prev.map(s => {
+      if (s.id !== id) return s;
+      solicitante = s.solicitadoPor?.id || null;
+      return { ...s, estado, resolvedBy, resolvedAt: new Date().toISOString() };
+    }));
+    if (solicitante) crearNotificacion?.('solicitud_resuelta', { estado, userIds: [solicitante] });
+  }, [setSolicitudes, crearNotificacion]);
 
   const value = useMemo(
     () => ({ solicitudes, addSolicitud, resolveSolicitud }),
