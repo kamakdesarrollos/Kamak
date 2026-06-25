@@ -124,7 +124,7 @@ function AdjuntosTarea({ tarea, currentUser, addAdjunto, removeAdjunto }) {
   );
 }
 
-function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, toggleItem, addItem, addComentario, setItemObservacion, setItemTexto, setItemAsignado, addAdjunto, removeAdjunto, isAdmin, solapaUserId }) {
+function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpand, onEdit, onDelete, toggleItem, addItem, addComentario, setItemObservacion, setItemTexto, setItemAsignado, addAdjunto, removeAdjunto, isAdmin, solapaUserId }) {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const asignados = (tarea.asignadoA || []).map(uid => usuarios.find(u => u.id === uid)?.nombre || '?').join(', ');
@@ -463,6 +463,10 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
               />
             )}
             <Btn sm onClick={onEdit}>{puedeGestionar ? 'Editar tarea' : 'Ver tarea'}</Btn>
+            {puedeGestionar && (
+              <Btn sm onClick={() => { if (window.confirm(`¿Eliminar la tarea "${tarea.titulo}"? Esta acción no se puede deshacer.`)) onDelete(); }}
+                style={{ color: '#dc2626', borderColor: '#dc2626' }}>🗑 Eliminar</Btn>
+            )}
           </div>
 
           {/* Comentarios — visibles sin entrar a editar (+ agregar inline). */}
@@ -510,7 +514,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
 export default function Tareas() {
   const { currentUser, usuarios } = useUsuarios();
   const { obras } = useObras();
-  const { tareas, marcarVista, toggleItem, addItem, addComentario, setItemObservacion, setItemTexto, setItemAsignado, addAdjunto, removeAdjunto } = useTareas();
+  const { tareas, marcarVista, toggleItem, addItem, addComentario, setItemObservacion, setItemTexto, setItemAsignado, addAdjunto, removeAdjunto, deleteTarea } = useTareas();
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -748,6 +752,7 @@ export default function Tareas() {
                       expanded={expandedId === t.id}
                       onToggleExpand={() => setExpandedId(expandedId === t.id ? null : t.id)}
                       onEdit={() => setEditingId(t.id)}
+                      onDelete={() => deleteTarea(t.id)}
                       toggleItem={toggleItem}
                       addItem={addItem}
                       addComentario={addComentario}
