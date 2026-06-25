@@ -5,6 +5,8 @@
 // sensible corre server-side. Mismo gate que data.js: CORS kamak + token válido.
 import crypto from 'node:crypto';
 import { hashDocumento } from '../../src/lib/contrato.js';
+// Notificación interna (campanita + push) cuando el cliente firma. Best-effort.
+import { crearNotifServidor } from '../whatsapp/_notif.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -185,6 +187,13 @@ export default async function handler(req, res) {
 
     // Aviso a los admins por WhatsApp (best-effort, no rompe la firma).
     await avisarAdmins(`✍️ ${firma.nombre} firmó el contrato de ${obra.nombre}`);
+
+    // Campanita + push a Admin/Administración (evento nuevo → feed + push).
+    await crearNotifServidor('cliente_firmo', {
+      cliente: firma.nombre,
+      cuerpo: `Contrato de ${obra.nombre}`,
+      link: `/obras/${obraId}/presupuesto`,
+    });
 
     return res.status(200).json({ success: true, fechaFirmado: fecha });
   } catch (e) {

@@ -9,6 +9,9 @@ import { crearProspecto, moverEtapaObra } from './_intents-comercial.js';
 // Lógica PURA compartida con la app — se reusa para el atajo NL "lista de
 // materiales de [obra] del [proveedor]". ESM hermano, importable (type:module).
 import { proveedorDeMaterial, labelProveedor, PROVEEDORES } from '../../src/lib/proveedoresMateriales.js';
+// Notificaciones server-side (campanita + push web) para los pendientes de
+// aprobación que entran por el bot. Best-effort: nunca rompe el flujo del webhook.
+import { crearNotifServidor } from './_notif.js';
 
 const META_TOKEN      = process.env.META_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
@@ -1929,6 +1932,12 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       await sendWA(admin.phone, msgAdmin);
     }
 
+    // Campanita + push a los Admin (legacy → solo push; el ítem ya se ve in-app
+    // en Autorizaciones). Best-effort, no rompe la respuesta al que cargó.
+    await crearNotifServidor('wa_movimiento_pendiente', {
+      cuerpo: `${user.user_name}: ${tipoStr} de ${montoFmt}${datos.descripcion ? ` · ${datos.descripcion}` : ''}`,
+    });
+
     return `✅ Listo. El ${tipoStr} de *${montoFmt}* fue enviado a aprobación.\nLos administradores recibirán una notificación.`;
   }
 
@@ -2237,6 +2246,12 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         `Revisala en la app Kamak → Buzón WhatsApp.`
       );
     }
+
+    // Campanita + push a los Admin (legacy → solo push; ya se ve in-app en
+    // Autorizaciones). Best-effort, no rompe la respuesta al que envió la factura.
+    await crearNotifServidor('wa_factura_pendiente', {
+      cuerpo: `${user.user_name}: ${esNotaCredito ? 'NC' : 'factura'} de ${datos.proveedor || '—'}${montoTotalAviso != null ? ` · ${montoStr}` : ''}`,
+    });
 
     return `✅ ${esNotaCredito ? 'Nota de Crédito' : 'Factura'}${datos.tipoFactura ? ` ${datos.tipoFactura}` : ''} de *${datos.proveedor || 'proveedor'}* recibida.\n${montoTotalAviso != null ? `Monto: *${montoStr}*\n` : ''}Los administradores la revisarán para aprobarla.`;
   }
