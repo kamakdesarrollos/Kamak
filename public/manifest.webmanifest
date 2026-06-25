@@ -1,0 +1,16 @@
+{
+  "name": "Kamak · Software de Gestión de Obras",
+  "short_name": "Kamak",
+  "description": "Gestión de obras — presupuestos, contratos, caja y obra.",
+  "lang": "es",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#171818",
+  "theme_color": "#1a9b9c",
+  "icons": [
+    { "src": "/pwa-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
