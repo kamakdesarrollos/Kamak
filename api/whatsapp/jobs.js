@@ -14,6 +14,13 @@ const SUPABASE_URL    = process.env.SUPABASE_URL;
 const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY;
 const CRON_SECRET     = process.env.CRON_SECRET;
 
+import webpush from 'web-push';
+
+const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:fgeespinoza@gmail.com';
+if (VAPID_PUBLIC && VAPID_PRIVATE) webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
+
 const sbH = () => ({
   apikey: SUPABASE_KEY,
   Authorization: `Bearer ${SUPABASE_KEY}`,
@@ -319,9 +326,45 @@ async function runFollowups(req, res) {
   } catch (e) { console.error('[sales-followups]', e.message); return res.status(500).json({ error: e.message }); }
 }
 
+// Valida que el que llama sea un usuario logueado (cualquier app_user). El push
+// lo dispara el cliente al crear una notif, con el token de sesión Supabase.
+async function usuarioLogueado(req) {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!token) return false;
+  const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` } });
+  return r.ok;
+}
+
+// Envía un push web a todos los dispositivos de los userIds dados. Lee las
+// subscriptions de shared_data 'push_subscriptions' y borra las muertas (404/410).
+async function runPush(req, res) {
+  if (!(await usuarioLogueado(req))) return res.status(403).json({ error: 'no autorizado' });
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return res.status(500).json({ error: 'VAPID no configurado' });
+  const { userIds, titulo, cuerpo, link } = req.body || {};
+  if (!Array.isArray(userIds) || !userIds.length || !titulo) return res.status(400).json({ error: 'falta userIds/titulo' });
+
+  const subs = (await loadSharedData('push_subscriptions')) || [];
+  const objetivo = subs.filter(s => userIds.includes(s.userId));
+  const payload = JSON.stringify({ titulo, cuerpo: cuerpo || '', link: link || '/' });
+
+  const muertas = [];
+  await Promise.all(objetivo.map(async (s) => {
+    try { await webpush.sendNotification(s.sub, payload); }
+    catch (e) { if (e.statusCode === 404 || e.statusCode === 410) muertas.push(s.id); }
+  }));
+
+  if (muertas.length) {
+    const limpio = subs.filter(s => !muertas.includes(s.id));
+    await saveSharedData('push_subscriptions', limpio);
+  }
+  return res.status(200).json({ ok: true, enviados: objetivo.length - muertas.length, limpiadas: muertas.length });
+}
+
 export default async function handler(req, res) {
   const job = req.query.job;
   if (job === 'reminders') return runReminders(req, res);
   if (job === 'followups') return runFollowups(req, res);
-  return res.status(400).json({ error: 'job inválido (reminders|followups)' });
+  if (job === 'push') return runPush(req, res);
+  return res.status(400).json({ error: 'job inválido (reminders|followups|push)' });
 }
