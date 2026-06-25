@@ -3,7 +3,7 @@ import useSyncedSharedData from '../lib/useSyncedSharedData';
 import { appendItemInSharedArray, patchItemInSharedArray } from '../lib/dbHelpers';
 import { newId } from '../lib/id';
 import { supabase } from '../lib/supabase';
-import { EVENTOS, resolverDestinatarios, noLeidaPara } from '../lib/notificaciones';
+import { EVENTOS, resolverDestinatarios, noLeidaPara, TIPOS_LEGACY } from '../lib/notificaciones';
 import { useUsuarios } from './UsuariosContext';
 
 // En este codebase `currentUser` (con .id y .rol) y la lista `usuarios` salen
@@ -42,8 +42,13 @@ export function NotificacionesProvider({ children }) {
       rolesDestino, userIds: datos.userIds || [],
       actorId: myId, creadoAt: new Date().toISOString(), leidaPor: [],
     };
-    setNotificaciones(prev => [notif, ...prev]);
-    appendItemInSharedArray('notificaciones', notif);   // persistencia atómica (no pisa el blob)
+    // Tipos legacy (TIPOS_LEGACY): YA se ven in-app como alerta derivada del
+    // Topbar → NO se escriben al feed (solo push), igual que el helper server
+    // (_notif.js). Evita bloat en shared_data y mantiene cliente/servidor en sync.
+    if (!TIPOS_LEGACY.includes(tipo)) {
+      setNotificaciones(prev => [notif, ...prev]);
+      appendItemInSharedArray('notificaciones', notif);   // persistencia atómica (no pisa el blob)
+    }
     try {
       const userIds = resolverDestinatarios(destino, usuarios, myId);
       if (userIds.length) {
@@ -53,7 +58,7 @@ export function NotificacionesProvider({ children }) {
             headers: { 'content-type': 'application/json', Authorization: `Bearer ${data?.session?.access_token || ''}` },
             body: JSON.stringify({ userIds, titulo, cuerpo, link }),
           }).catch(() => {});
-        });
+        }).catch(e => console.warn('[notif] getSession falló (no crítico)', e?.message));
       }
     } catch (e) { console.warn('[notif] push falló (no crítico)', e?.message); }
   }, [setNotificaciones, usuarios, myId]);

@@ -79,7 +79,10 @@ async function sendWATemplate(to, name, lang, bodyParams = []) {
   }
 }
 
-// ── Helpers de moneda/fecha (inline: no podemos importar src/ en serverless) ──
+// ── Helpers de moneda/fecha (inline, espejo de src/pages/obra/helpers.js) ──
+// NOTA: sí se puede importar de src/ en serverless (Vercel lo bundlea — ver los
+// imports de arriba). Estos quedan inline por ser específicos de reminders; si
+// se tocan, mantener en sync con helpers.js (cuotaMontoUSD/cobradoObraUSD/reparto).
 function cuotaMontoUSD(c, obraMoneda, dolarVenta) {
   const monto = c.monto || 0;
   const esUSD = obraMoneda === 'USD' || !!c._usd;

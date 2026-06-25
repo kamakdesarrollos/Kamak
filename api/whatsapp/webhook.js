@@ -1935,6 +1935,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // Campanita + push a los Admin (legacy → solo push; el ítem ya se ve in-app
     // en Autorizaciones). Best-effort, no rompe la respuesta al que cargó.
     await crearNotifServidor('wa_movimiento_pendiente', {
+      actorId: user.id || null, // no auto-notificar a quien lo cargó (si fuera Admin)
       cuerpo: `${user.user_name}: ${tipoStr} de ${montoFmt}${datos.descripcion ? ` · ${datos.descripcion}` : ''}`,
     });
 
@@ -2250,6 +2251,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // Campanita + push a los Admin (legacy → solo push; ya se ve in-app en
     // Autorizaciones). Best-effort, no rompe la respuesta al que envió la factura.
     await crearNotifServidor('wa_factura_pendiente', {
+      actorId: user.id || null, // no auto-notificar a quien la envió (si fuera Admin)
       cuerpo: `${user.user_name}: ${esNotaCredito ? 'NC' : 'factura'} de ${datos.proveedor || '—'}${montoTotalAviso != null ? ` · ${montoStr}` : ''}`,
     });
 

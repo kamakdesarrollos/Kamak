@@ -75,8 +75,10 @@ export async function enviarPushAUsuarios(userIds, { titulo, cuerpo, link } = {}
     }
   }));
   if (muertas.length) {
-    const limpio = subs.filter(s => !muertas.includes(s.sub?.endpoint));
-    await saveSharedData('push_subscriptions', limpio);
+    try {
+      const limpio = subs.filter(s => !muertas.includes(s.sub?.endpoint));
+      await saveSharedData('push_subscriptions', limpio);
+    } catch (e) { console.error('[notif/push] limpieza de subs muertas falló:', e?.message); }
   }
   return { enviados: objetivo.length - muertas.length - fallidos, muertas: muertas.length, fallidos };
 }
