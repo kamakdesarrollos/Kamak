@@ -129,7 +129,7 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
   const initCat = initial ? getCat(initial) : 'Mano de obra';
   const [form, setForm] = useState(initial
     ? { ...initial, categoria: initCat }
-    : { nombre: '', categoria: 'Mano de obra', tipo: '', cuit: '', telefono: '', email: '', condicion: 'Responsable Inscripto', cbu: '', alias: '', calificacion: 0, grupos: [], notas: '' });
+    : { nombre: '', categoria: 'Mano de obra', tipo: '', cuit: '', domicilio: '', telefono: '', email: '', condicion: 'Responsable Inscripto', cbu: '', alias: '', calificacion: 0, grupos: [], notas: '' });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   return (
@@ -184,6 +184,10 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
               <label style={labelSt}>Email</label>
               <input style={inputSt} type="email" value={form.email} onChange={e => set('email', e.target.value)} />
             </div>
+          </div>
+          <div>
+            <label style={labelSt}>Domicilio</label>
+            <input style={inputSt} value={form.domicilio || ''} onChange={e => set('domicilio', e.target.value)} placeholder="Calle 123, Localidad" />
           </div>
           {esAdmin && (
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.6fr 1fr', gap: 10 }}>
@@ -375,7 +379,7 @@ export default function Proveedores() {
                   </div>
                 </div>
                 {/* Contacto */}
-                {(p.telefono || p.email) && (
+                {(p.telefono || p.email || p.domicilio) && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }} onClick={e => e.stopPropagation()}>
                     {p.telefono && (
                       <a href={`https://wa.me/${phone}`} target="_blank" rel="noopener noreferrer"
@@ -388,6 +392,11 @@ export default function Proveedores() {
                         style={{ color: T.accent, textDecoration: 'none', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
                         <span>✉</span>{p.email}
                       </a>
+                    )}
+                    {p.domicilio && (
+                      <div style={{ color: T.ink3, fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span>📍</span>{p.domicilio}
+                      </div>
                     )}
                   </div>
                 )}
