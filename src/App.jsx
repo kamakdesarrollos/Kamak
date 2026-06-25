@@ -19,6 +19,7 @@ import { TareasProvider } from './store/TareasContext';
 import { ComercialProvider } from './store/ComercialContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
+import { NotificacionesProvider } from './store/NotificacionesContext';
 import { AppLoadingProvider, useAppLoading } from './store/AppLoadingContext';
 
 import { AuthProvider, useAuth } from './store/AuthContext';
@@ -193,17 +194,22 @@ function DataProviders({ children }) {
     <FinancieroProvider>
     <MovimientosProvider>
     <ChequesProvider>
+    <UsuariosProvider>
+    {/* NotificacionesProvider consume useUsuarios (currentUser + usuarios), por
+        eso va DENTRO de UsuariosProvider; y envuelve a SolicitudesProvider para
+        que Solicitudes (y demás) puedan consumir useNotificaciones. */}
+    <NotificacionesProvider>
     <WhatsappPendingProvider>
     <SolicitudesProvider>
     <TareasProvider>
     <AlertasProvider>
-    <UsuariosProvider>
       {children}
-    </UsuariosProvider>
     </AlertasProvider>
     </TareasProvider>
     </SolicitudesProvider>
     </WhatsappPendingProvider>
+    </NotificacionesProvider>
+    </UsuariosProvider>
     </ChequesProvider>
     </MovimientosProvider>
     </FinancieroProvider>
