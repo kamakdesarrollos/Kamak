@@ -14,12 +14,11 @@ const SUPABASE_URL    = process.env.SUPABASE_URL;
 const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY;
 const CRON_SECRET     = process.env.CRON_SECRET;
 
-import webpush from 'web-push';
-
-const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY;
-const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:fgeespinoza@gmail.com';
-if (VAPID_PUBLIC && VAPID_PRIVATE) webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
+// Notificaciones server-side (push + feed) y lógica pura de vencimientos. El push
+// (web-push + VAPID) vive ahora en _notif.js — runPush delega ahí (sin duplicar).
+import { crearNotifServidor, enviarPushAUsuarios } from './_notif.js';
+import { chequesPorVencer, cuentasPorVencer } from '../../src/lib/vencimientos.js';
+import { estadoFacturaPendiente } from '../../src/lib/facturasPendientes.js';
 
 const sbH = () => ({
   apikey: SUPABASE_KEY,
@@ -179,12 +178,15 @@ async function runReminders(req, res) {
   }
 
   try {
-    const [obrasData, clientesData, dolarData, movData, convs] = await Promise.all([
+    const [obrasData, clientesData, dolarData, movData, convs, chequesData, proveedoresData, sentData] = await Promise.all([
       loadSharedData('obras'),
       loadSharedData('clientes'),
       loadSharedData('dolar'),
       loadSharedData('movimientos'),
       sbGet('whatsapp_conversations', '?select=phone,updated_at'),
+      loadSharedData('cheques'),
+      loadSharedData('proveedores'),
+      loadSharedData('notif_cron_sent'),
     ]);
 
     const obras    = obrasData?.obras || [];
@@ -193,6 +195,26 @@ async function runReminders(req, res) {
     const movs     = movData?.movimientos || [];
     const cajas    = movData?.cajas || [];
     const dolarVenta = dolarData?.manual ? (dolarData.manualVal || 1070) : (dolarData?.venta || 1070);
+
+    // Idempotencia de los avisos por tiempo (cheques/cuotas/cobros): marca por
+    // ítem+vencimiento en shared_data 'notif_cron_sent' → cada vencimiento avisa
+    // UNA sola vez, no todos los días que el cron corre. El cron es el único
+    // escritor de esta key (corrida diaria), así que el read-modify-write es seguro.
+    const sent = (sentData && typeof sentData === 'object' && !Array.isArray(sentData)) ? { ...sentData } : {};
+    let sentDirty = false;
+    const nowISO = new Date().toISOString();
+    const yaEnviado = (clave) => !!sent[clave];
+    const marcar = (clave) => { sent[clave] = nowISO; sentDirty = true; };
+    const guardarSent = async () => {
+      if (!sentDirty) return;
+      const corte = Date.now() - 60 * 86400000; // prune claves > 60 días
+      const limpio = {};
+      for (const [k, v] of Object.entries(sent)) {
+        const t = new Date(v).getTime();
+        if (!isNaN(t) && t >= corte) limpio[k] = v;
+      }
+      await saveSharedData('notif_cron_sent', limpio);
+    };
 
     const resultados = [];
 
@@ -225,6 +247,20 @@ async function runReminders(req, res) {
         }
         if (!detalle) continue;
 
+        // Aviso INTERNO (Admin/Administración) del cobro próximo/vencido — solo
+        // push (tipo legacy: ya se ve in-app como cuota urgente del Topbar). Es
+        // independiente de que el cliente tenga WhatsApp. Idempotente por
+        // (obra, cuota, fecha, fase) → no se repite si el cron corre dos veces.
+        {
+          const fase = d === 2 ? 'prev' : 'venc';
+          const clave = `cobro_cliente_proximo:${obra.id}:${c.id}:${c.fecha}:${fase}`;
+          if (!yaEnviado(clave)) {
+            const detInt = `${obra.nombre} · cuota ${c.n ?? ''}${c.descripcion ? ` (${c.descripcion})` : ''} · ${fmtUSD(montoUSD)} · ${d === 2 ? `vence ${fmtFecha(c.fecha)}` : `venció ${fmtFecha(c.fecha)}`}`;
+            await crearNotifServidor('cobro_cliente_proximo', { detalle: detInt, link: `/obras/${obra.id}/presupuesto?tab=1` });
+            marcar(clave);
+          }
+        }
+
         const cliente = findClienteByObra(obra, clientes);
         const tel = normalizePhone(cliente?.whatsapp || cliente?.telefono);
         if (!tel) {
@@ -250,7 +286,36 @@ async function runReminders(req, res) {
       }
     }
 
-    return res.status(200).json({ ok: true, fecha: new Date().toISOString(), enviados: resultados.filter(r => r.enviado).length, resultados });
+    // ── Vencimientos internos: cheques (en cartera) + órdenes de pago con fecha ──
+    // Mismo cron diario (NO agregamos un 3ro). Push a backoffice; idempotente por
+    // ítem+vencimiento. cheque_por_vencer es legacy (solo push); cuenta_por_vencer
+    // es nuevo (feed + push). crearNotifServidor resuelve los destinatarios por rol.
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    let notifsVenc = 0;
+    try {
+      const cheques = Array.isArray(chequesData) ? chequesData : [];
+      for (const ch of chequesPorVencer(cheques, hoyStr, { dias: 7 })) {
+        const clave = `cheque_por_vencer:${ch.id}:${ch.fechaVto}`;
+        if (yaEnviado(clave)) continue;
+        await crearNotifServidor('cheque_por_vencer', { detalle: ch.detalle });
+        marcar(clave); notifsVenc++;
+      }
+      const facturas = proveedoresData?.facturasPendientes || [];
+      const cuentas = cuentasPorVencer(facturas, hoyStr, {
+        dias: 3,
+        abierta: (f) => { const e = estadoFacturaPendiente(f); return e === 'pendiente' || e === 'parcial'; },
+      });
+      for (const cu of cuentas) {
+        const clave = `cuenta_por_vencer:${cu.id}:${cu.fechaVto}`;
+        if (yaEnviado(clave)) continue;
+        await crearNotifServidor('cuenta_por_vencer', { detalle: cu.detalle });
+        marcar(clave); notifsVenc++;
+      }
+    } catch (e) { console.error('[reminders] vencimientos internos:', e.message); }
+
+    await guardarSent();
+
+    return res.status(200).json({ ok: true, fecha: nowISO, enviados: resultados.filter(r => r.enviado).length, notifsVenc, resultados });
   } catch (e) {
     console.error('payment-reminders error:', e);
     return res.status(500).json({ error: e.message });
@@ -336,39 +401,16 @@ async function usuarioLogueado(req) {
   return r.ok;
 }
 
-// Envía un push web a todos los dispositivos de los userIds dados. Lee las
-// subscriptions de shared_data 'push_subscriptions' y borra las muertas (404/410).
+// Envío de push disparado por el CLIENTE al crear una notif (?job=push): valida
+// sesión y delega en el helper compartido (enviarPushAUsuarios, en _notif.js) —
+// la misma lógica que usan los eventos server-side. Limpia subs muertas y loguea
+// fallos no-404/410 dentro del helper.
 async function runPush(req, res) {
   if (!(await usuarioLogueado(req))) return res.status(403).json({ error: 'no autorizado' });
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return res.status(500).json({ error: 'VAPID no configurado' });
   const { userIds, titulo, cuerpo, link } = req.body || {};
   if (!Array.isArray(userIds) || !userIds.length || !titulo) return res.status(400).json({ error: 'falta userIds/titulo' });
-
-  const subs = (await loadSharedData('push_subscriptions')) || [];
-  const objetivo = subs.filter(s => userIds.includes(s.userId));
-  const payload = JSON.stringify({ titulo, cuerpo: cuerpo || '', link: link || '/' });
-
-  // Las subs caídas se identifican por ENDPOINT (único y siempre presente), no
-  // por id (que podría colisionar entre dos suscripciones del mismo ms o faltar
-  // en datos legacy → borraría subs vivas). Los fallos que NO son 404/410 (403
-  // por VAPID desalineada, 429, 5xx…) se loguean: antes quedaban en silencio y
-  // el push "no llegaba" sin pista.
-  const muertas = []; // endpoints de subs caídas
-  let fallidos = 0;
-  await Promise.all(objetivo.map(async (s) => {
-    try { await webpush.sendNotification(s.sub, payload); }
-    catch (e) {
-      const code = e.statusCode;
-      if ((code === 404 || code === 410) && s.sub?.endpoint) muertas.push(s.sub.endpoint);
-      else { fallidos++; console.error('[notif/push] envío falló', code, String(e.body || e.message || '').slice(0, 200)); }
-    }
-  }));
-
-  if (muertas.length) {
-    const limpio = subs.filter(s => !muertas.includes(s.sub?.endpoint));
-    await saveSharedData('push_subscriptions', limpio);
-  }
-  return res.status(200).json({ ok: true, enviados: objetivo.length - muertas.length - fallidos, muertas: muertas.length, fallidos });
+  const r = await enviarPushAUsuarios(userIds, { titulo, cuerpo, link });
+  return res.status(200).json({ ok: true, ...r });
 }
 
 export default async function handler(req, res) {
