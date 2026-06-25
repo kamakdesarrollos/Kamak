@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../lib/supabase';
-import { detectarColumnas, indiceHeader, matchProveedor } from '../../lib/presupuestoImport';
+import { detectarColumnas, indiceHeader, matchProveedor, matchProveedorFlexible } from '../../lib/presupuestoImport';
 
 const toBase64 = file => new Promise((res, rej) => {
   const r = new FileReader();
@@ -43,13 +43,16 @@ export default function AdjuntarPresupuestoModal({ proveedores, onAddProveedor, 
           body: JSON.stringify({ fileBase64, mediaType: file.type || 'application/pdf' }),
         });
         if (!r.ok) throw new Error('No se pudo leer el PDF');
-        const { proveedor, cuit, items } = await r.json();
-        const match = matchProveedor(proveedor, cuit, proveedores);
+        const { proveedor: pd, items } = await r.json();
+        const detectado = pd || {};
+        // Match flexible: CUIT exacto = auto-link; nombre = sugerencia editable.
+        const m = matchProveedorFlexible(detectado.razonSocial, detectado.cuit, proveedores);
+        const nombreSugerido = provNombre || m?.proveedor?.nombre || detectado.razonSocial || '';
         onReady({
           items, columnas: null, file,
-          proveedorNombre: provNombre || match?.nombre || proveedor || '',
-          proveedorId: match?.id || null,
-          proveedorDetectado: proveedor ? { nombre: proveedor, cuit } : null,
+          proveedorNombre: nombreSugerido,
+          proveedorId: m?.exacto ? m.proveedor.id : null, // solo auto-link por CUIT
+          proveedorData: detectado, // razonSocial, cuit, domicilio, tel, email, condIVA, rubro
         });
       }
     } catch (e) {
