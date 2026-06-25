@@ -256,3 +256,27 @@ describe('matchProveedorFlexible', () => {
     expect(matchProveedorFlexible('SA', null, provs)).toBeNull();
   });
 });
+
+describe('resolverProveedorImport', () => {
+  const pd = { razonSocial: 'ACME SA', cuit: '30-99999999-9', domicilio: 'Calle 1', telefono: '11-1234', email: 'a@acme.com', condicionIVA: 'Responsable Inscripto', rubro: 'Equipamiento gastronómico' };
+  it('si hay proveedorId elegido → link', () => {
+    expect(resolverProveedorImport(pd, 'p7')).toEqual({ accion: 'link', proveedorId: 'p7' });
+  });
+  it('sin id pero con CUIT → crear con todos los datos', () => {
+    expect(resolverProveedorImport(pd, null)).toEqual({
+      accion: 'crear',
+      datos: {
+        nombre: 'ACME SA', cuit: '30-99999999-9', domicilio: 'Calle 1',
+        telefono: '11-1234', email: 'a@acme.com', condicion: 'Responsable Inscripto',
+        tipo: 'Equipamiento gastronómico', categoria: 'Mano de obra',
+      },
+    });
+  });
+  it('sin id y sin CUIT → texto libre (no crea)', () => {
+    expect(resolverProveedorImport({ razonSocial: 'Sin Cuit' }, null)).toEqual({ accion: 'texto', nombre: 'Sin Cuit' });
+  });
+  it('condicionIVA ausente → default Responsable Inscripto', () => {
+    const r = resolverProveedorImport({ razonSocial: 'X', cuit: '20-1-2' }, null);
+    expect(r.datos.condicion).toBe('Responsable Inscripto');
+  });
+});

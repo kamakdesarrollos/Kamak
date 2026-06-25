@@ -183,3 +183,26 @@ export function matchProveedorFlexible(nombre, cuit, proveedores) {
   });
   return p ? { proveedor: p, exacto: false } : null;
 }
+
+// Decide qué hacer con el proveedor de un presupuesto importado.
+// proveedorData = { razonSocial, cuit, domicilio, telefono, email, condicionIVA, rubro }
+// proveedorId   = id ya resuelto (match exacto o elegido) o null.
+// → { accion:'link', proveedorId } | { accion:'crear', datos } | { accion:'texto', nombre }
+export function resolverProveedorImport(proveedorData, proveedorId) {
+  const d = proveedorData || {};
+  if (proveedorId) return { accion: 'link', proveedorId };
+  const cuit = (d.cuit || '').toString().trim();
+  if (cuit) {
+    return { accion: 'crear', datos: {
+      nombre: d.razonSocial || 'Proveedor',
+      cuit,
+      domicilio: d.domicilio || '',
+      telefono: d.telefono || '',
+      email: d.email || '',
+      condicion: d.condicionIVA || 'Responsable Inscripto',
+      tipo: d.rubro || '',
+      categoria: 'Mano de obra',
+    } };
+  }
+  return { accion: 'texto', nombre: d.razonSocial || '' };
+}
