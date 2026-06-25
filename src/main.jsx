@@ -46,7 +46,7 @@ async function purgarServiceWorkersYCaches() {
       const regs = await navigator.serviceWorker.getRegistrations();
       for (const r of regs) {
         const url = r.active?.scriptURL || r.installing?.scriptURL || r.waiting?.scriptURL || '';
-        if (url.includes('sw-push')) continue; // NO desregistrar nuestro SW de push
+        if (url.endsWith('/sw-push.js')) continue; // NO desregistrar nuestro SW de push (match exacto del filename)
         try { await r.unregister(); limpio = true; } catch { /* noop */ }
       }
     }

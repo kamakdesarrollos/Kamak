@@ -179,7 +179,7 @@ function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, 
       <div style={{ overflowY: 'auto', flex: 1 }}>
         {/* Notificaciones del sistema (feed por rol) */}
         <div style={{ padding: '8px 14px', borderBottom: '1px solid #3a3a3e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontWeight: 700, fontSize: 12, color: '#fff' }}>Notificaciones{noLeidasCount ? ` (${noLeidasCount})` : ''}</span>
+          <span style={{ fontWeight: 700, fontSize: 12, color: '#fff' }}>Avisos del sistema{noLeidasCount ? ` (${noLeidasCount})` : ''}</span>
           <div style={{ display: 'flex', gap: 8 }}>
             {noLeidasCount > 0 && <button onClick={marcarTodasNotifLeidas} style={{ fontSize: 10, cursor: 'pointer', background: 'none', border: 'none', color: '#9a9892', padding: 0 }}>marcar leídas</button>}
             {pushSoportado() && <button onClick={togglePush} style={{ fontSize: 10, cursor: 'pointer', background: 'none', border: 'none', color: pushOn ? '#9a9892' : T.accent, padding: 0 }}>{pushOn ? '🔔 push on' : '🔔 activar push'}</button>}
@@ -276,7 +276,7 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
   const { obras, detalles } = useObras();
   const { movimientos, cajas } = useMovimientos();
   const navigate = useNavigate();
-  const { notificaciones: misNotifs, noLeidasCount, marcarLeida: marcarNotifLeida, marcarTodasLeidas: marcarTodasNotifLeidas } = useNotificaciones() ?? { notificaciones: [], noLeidasCount: 0 };
+  const { notificaciones: misNotifs, noLeidasCount, marcarLeida: marcarNotifLeida, marcarTodasLeidas: marcarTodasNotifLeidas } = useNotificaciones() ?? { notificaciones: [], noLeidasCount: 0, marcarLeida: () => {}, marcarTodasLeidas: () => {} };
   const [showNotif, setShowNotif] = useState(false);
   const [pushOn, setPushOn] = useState(false);
   const bellRef = useRef(null);
@@ -366,7 +366,14 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
     ? noLeidas
     : (alertas || []).filter(a => !a.leida && a.tipo !== 'seguros_faltantes').length;
 
-  const totalNotif = noLeidasVisible + pendientesWA + solicitudesPendientes.length + chequesUrgentes.length + tareasNuevas.length + cuotasUrgentes.length + noLeidasCount;
+  // El feed nuevo coexiste con las alertas derivadas legacy (solicitudes, cheques,
+  // cuotas, WA, tareas). Para NO contar/mostrar dos veces el mismo evento, el feed
+  // solo surface los tipos que todavía NO tienen equivalente legacy.
+  const TIPOS_LEGACY = ['solicitud_eliminacion', 'wa_factura_pendiente', 'wa_movimiento_pendiente', 'cheque_por_vencer', 'cobro_cliente_proximo', 'tarea_asignada'];
+  const feedVisible = (misNotifs || []).filter(n => !TIPOS_LEGACY.includes(n.tipo));
+  const feedNoLeidas = feedVisible.filter(n => !(n.leidaPor || []).includes(currentUser?.id)).length;
+
+  const totalNotif = noLeidasVisible + pendientesWA + solicitudesPendientes.length + chequesUrgentes.length + tareasNuevas.length + cuotasUrgentes.length + feedNoLeidas;
 
   // Cerrar panel al hacer click fuera
   useEffect(() => {
@@ -476,8 +483,8 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
                 navigate={navigate}
                 isMobile={isMobile}
                 esBackoffice={esBackoffice}
-                misNotifs={misNotifs}
-                noLeidasCount={noLeidasCount}
+                misNotifs={feedVisible}
+                noLeidasCount={feedNoLeidas}
                 currentUserId={currentUser?.id}
                 marcarNotifLeida={marcarNotifLeida}
                 marcarTodasNotifLeidas={marcarTodasNotifLeidas}

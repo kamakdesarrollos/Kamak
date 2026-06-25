@@ -2,6 +2,7 @@
 // SÓLO cuando el usuario lo pide (no en cada carga). Guarda la subscription en
 // shared_data 'push_subscriptions' vía el client de Supabase (sin endpoint).
 import { supabase } from './supabase';
+import { newId } from './id';
 
 const VAPID_PUBLIC = import.meta.env.VITE_VAPID_PUBLIC_KEY;
 
@@ -44,7 +45,7 @@ export async function activarPush(userId) {
   const subs = await leerSubs();
   const endpoint = sub.endpoint;
   const sinEsta = subs.filter(s => s.sub?.endpoint !== endpoint);
-  sinEsta.push({ id: `sub-${Date.now()}`, userId, sub: sub.toJSON(), device: navigator.userAgent.slice(0, 80), creadoAt: new Date().toISOString() });
+  sinEsta.push({ id: newId('sub'), userId, sub: sub.toJSON(), device: navigator.userAgent.slice(0, 80), creadoAt: new Date().toISOString() });
   await guardarSubs(sinEsta);
   return true;
 }

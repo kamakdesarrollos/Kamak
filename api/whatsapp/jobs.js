@@ -348,17 +348,27 @@ async function runPush(req, res) {
   const objetivo = subs.filter(s => userIds.includes(s.userId));
   const payload = JSON.stringify({ titulo, cuerpo: cuerpo || '', link: link || '/' });
 
-  const muertas = [];
+  // Las subs caídas se identifican por ENDPOINT (único y siempre presente), no
+  // por id (que podría colisionar entre dos suscripciones del mismo ms o faltar
+  // en datos legacy → borraría subs vivas). Los fallos que NO son 404/410 (403
+  // por VAPID desalineada, 429, 5xx…) se loguean: antes quedaban en silencio y
+  // el push "no llegaba" sin pista.
+  const muertas = []; // endpoints de subs caídas
+  let fallidos = 0;
   await Promise.all(objetivo.map(async (s) => {
     try { await webpush.sendNotification(s.sub, payload); }
-    catch (e) { if (e.statusCode === 404 || e.statusCode === 410) muertas.push(s.id); }
+    catch (e) {
+      const code = e.statusCode;
+      if ((code === 404 || code === 410) && s.sub?.endpoint) muertas.push(s.sub.endpoint);
+      else { fallidos++; console.error('[notif/push] envío falló', code, String(e.body || e.message || '').slice(0, 200)); }
+    }
   }));
 
   if (muertas.length) {
-    const limpio = subs.filter(s => !muertas.includes(s.id));
+    const limpio = subs.filter(s => !muertas.includes(s.sub?.endpoint));
     await saveSharedData('push_subscriptions', limpio);
   }
-  return res.status(200).json({ ok: true, enviados: objetivo.length - muertas.length, limpiadas: muertas.length });
+  return res.status(200).json({ ok: true, enviados: objetivo.length - muertas.length - fallidos, muertas: muertas.length, fallidos });
 }
 
 export default async function handler(req, res) {
