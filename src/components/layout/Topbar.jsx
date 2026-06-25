@@ -14,6 +14,7 @@ import { useObras } from '../../store/ObrasContext';
 import { cuotaMontoUSD, cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado } from '../../pages/obra/helpers';
 import { useMovimientos } from '../../store/MovimientosContext';
 import { useNotificaciones } from '../../store/NotificacionesContext';
+import { TIPOS_LEGACY } from '../../lib/notificaciones';
 import { activarPush, desactivarPush, pushActivo, pushSoportado } from '../../lib/push';
 import GlobalSearch from '../GlobalSearch';
 
@@ -368,8 +369,8 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
 
   // El feed nuevo coexiste con las alertas derivadas legacy (solicitudes, cheques,
   // cuotas, WA, tareas). Para NO contar/mostrar dos veces el mismo evento, el feed
-  // solo surface los tipos que todavía NO tienen equivalente legacy.
-  const TIPOS_LEGACY = ['solicitud_eliminacion', 'wa_factura_pendiente', 'wa_movimiento_pendiente', 'cheque_por_vencer', 'cobro_cliente_proximo', 'tarea_asignada'];
+  // solo surface los tipos que todavía NO tienen equivalente legacy (TIPOS_LEGACY
+  // vive en lib/notificaciones.js — fuente única compartida con el server).
   const feedVisible = (misNotifs || []).filter(n => !TIPOS_LEGACY.includes(n.tipo));
   const feedNoLeidas = feedVisible.filter(n => !(n.leidaPor || []).includes(currentUser?.id)).length;
 

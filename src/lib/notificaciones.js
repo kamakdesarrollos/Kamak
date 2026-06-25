@@ -14,12 +14,25 @@ export const EVENTOS = {
   cuenta_por_vencer:       { roles: ['Administración'], titulo: (d) => `Cuenta por pagar próxima: ${d?.detalle || ''}`, link: '/ordenes-de-pago' },
   cobro_cliente_proximo:   { roles: ['Admin', 'Administración'], titulo: (d) => `Cobro próximo: ${d?.detalle || ''}`, link: '/clientes' },
   tarea_asignada:          { roles: [], titulo: (d) => `Te asignaron: ${d?.tarea || 'una tarea'}`, link: '/tareas' },
-  presupuesto_adjuntado:   { roles: ['Jefe de obra', 'Admin'], titulo: (d) => `Presupuesto adjuntado en ${d?.obra || 'una obra'}`, link: '/obras' },
-  movimiento_cargado:      { roles: ['Administración'], titulo: (d) => `Movimiento cargado: ${d?.descripcion || ''}`, link: '/movimientos' },
-  orden_pago_creada:       { roles: ['Administración'], titulo: (d) => `Orden de pago creada: ${d?.detalle || ''}`, link: '/ordenes-de-pago' },
+  presupuesto_adjuntado:   { roles: ['Jefe de obra', 'Admin'], titulo: (d) => `Presupuesto adjuntado en ${d?.obra || 'una obra'}${d?.rubro ? ` · ${d.rubro}` : ''}`, link: '/obras' },
+  orden_pago_creada:       { roles: ['Admin', 'Administración'], titulo: (d) => `Orden de pago creada: ${d?.detalle || ''}`, link: '/ordenes-de-pago' },
   cliente_firmo:           { roles: ['Admin', 'Administración'], titulo: (d) => `${d?.cliente || 'Un cliente'} firmó un documento`, link: '/clientes' },
   proveedor_firmo:         { roles: ['Admin', 'Administración'], titulo: (d) => `${d?.proveedor || 'Un proveedor'} firmó/subió algo`, link: '/proveedores' },
 };
+
+// Tipos que YA se muestran in-app como alerta derivada en vivo del Topbar
+// (solicitudes, WhatsApp pendiente, cheques/cuotas por vencer, tareas nuevas). El
+// feed los OCULTA para no duplicar el conteo del badge — pero igual se les manda
+// push (ese es el valor que agrega Fase 2 para estos). Fuente única acá: el Topbar
+// y el helper server-side (api/_lib/notif.js) lo importan de este módulo.
+export const TIPOS_LEGACY = [
+  'solicitud_eliminacion',
+  'wa_factura_pendiente',
+  'wa_movimiento_pendiente',
+  'cheque_por_vencer',
+  'cobro_cliente_proximo',
+  'tarea_asignada',
+];
 
 // destino = { roles:[...], userIds?:[...] }. Devuelve la lista de userIds a
 // notificar: todos los usuarios con esos roles + los userIds explícitos,
