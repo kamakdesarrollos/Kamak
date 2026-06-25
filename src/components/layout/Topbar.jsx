@@ -13,6 +13,8 @@ import { useTareas } from '../../store/TareasContext';
 import { useObras } from '../../store/ObrasContext';
 import { cuotaMontoUSD, cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado } from '../../pages/obra/helpers';
 import { useMovimientos } from '../../store/MovimientosContext';
+import { useNotificaciones } from '../../store/NotificacionesContext';
+import { activarPush, desactivarPush, pushActivo, pushSoportado } from '../../lib/push';
 import GlobalSearch from '../GlobalSearch';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -22,7 +24,7 @@ const fmtFecha = (iso) => {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
-function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, cuotasUrgentes, tareasNuevas, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate, isMobile = false, esBackoffice = false }) {
+function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, cuotasUrgentes, tareasNuevas, noLeidas, marcarLeida, marcarTodasLeidas, onClose, navigate, isMobile = false, esBackoffice = false, misNotifs = [], noLeidasCount = 0, currentUserId = null, marcarNotifLeida = () => {}, marcarTodasNotifLeidas = () => {}, pushOn = false, togglePush = () => {} }) {
   const items = [];
 
   // Cuotas vencidas o próximas a vencer (≤3 días). Vencidas primero.
@@ -175,7 +177,28 @@ function NotifPanel({ alertas, pending, solicitudesPendientes, chequesUrgentes, 
 
       {/* Lista */}
       <div style={{ overflowY: 'auto', flex: 1 }}>
-        {items.length === 0 ? (
+        {/* Notificaciones del sistema (feed por rol) */}
+        <div style={{ padding: '8px 14px', borderBottom: '1px solid #3a3a3e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontWeight: 700, fontSize: 12, color: '#fff' }}>Notificaciones{noLeidasCount ? ` (${noLeidasCount})` : ''}</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {noLeidasCount > 0 && <button onClick={marcarTodasNotifLeidas} style={{ fontSize: 10, cursor: 'pointer', background: 'none', border: 'none', color: '#9a9892', padding: 0 }}>marcar leídas</button>}
+            {pushSoportado() && <button onClick={togglePush} style={{ fontSize: 10, cursor: 'pointer', background: 'none', border: 'none', color: pushOn ? '#9a9892' : T.accent, padding: 0 }}>{pushOn ? '🔔 push on' : '🔔 activar push'}</button>}
+          </div>
+        </div>
+        {misNotifs.slice(0, 15).map(n => {
+          const leida = (n.leidaPor || []).includes(currentUserId);
+          return (
+            <div key={n.id} onClick={() => { marcarNotifLeida(n.id); onClose(); navigate(n.link); }}
+              style={{ padding: '8px 14px', borderBottom: '1px solid #2a2a2e', cursor: 'pointer', background: leida ? 'transparent' : 'rgba(26,155,156,0.12)' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#2a2a2e'}
+              onMouseLeave={e => e.currentTarget.style.background = leida ? 'transparent' : 'rgba(26,155,156,0.12)'}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{n.titulo}</div>
+              {n.cuerpo && <div style={{ fontSize: 11, color: '#9a9892', marginTop: 2 }}>{n.cuerpo}</div>}
+              <div style={{ fontSize: 10, color: '#5a5a58', fontFamily: T.fontMono, marginTop: 2 }}>{new Date(n.creadoAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+            </div>
+          );
+        })}
+        {items.length === 0 && misNotifs.length === 0 ? (
           <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: '#9a9892' }}>
             ✓ Sin notificaciones pendientes
           </div>
@@ -253,8 +276,18 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
   const { obras, detalles } = useObras();
   const { movimientos, cajas } = useMovimientos();
   const navigate = useNavigate();
+  const { notificaciones: misNotifs, noLeidasCount, marcarLeida: marcarNotifLeida, marcarTodasLeidas: marcarTodasNotifLeidas } = useNotificaciones() ?? { notificaciones: [], noLeidasCount: 0 };
   const [showNotif, setShowNotif] = useState(false);
+  const [pushOn, setPushOn] = useState(false);
   const bellRef = useRef(null);
+
+  useEffect(() => { pushActivo().then(setPushOn).catch(() => {}); }, []);
+  const togglePush = async () => {
+    try {
+      if (pushOn) { await desactivarPush(); setPushOn(false); }
+      else { await activarPush(currentUser?.id); setPushOn(true); }
+    } catch (e) { window.alert(e.message); }
+  };
 
   const logout = signOut;
   const displayName = currentUser?.nombre || authUser?.email?.split('@')[0] || 'Usuario';
@@ -333,7 +366,7 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
     ? noLeidas
     : (alertas || []).filter(a => !a.leida && a.tipo !== 'seguros_faltantes').length;
 
-  const totalNotif = noLeidasVisible + pendientesWA + solicitudesPendientes.length + chequesUrgentes.length + tareasNuevas.length + cuotasUrgentes.length;
+  const totalNotif = noLeidasVisible + pendientesWA + solicitudesPendientes.length + chequesUrgentes.length + tareasNuevas.length + cuotasUrgentes.length + noLeidasCount;
 
   // Cerrar panel al hacer click fuera
   useEffect(() => {
@@ -443,6 +476,13 @@ export default function Topbar({ breadcrumb = [], right, search = true, isMobile
                 navigate={navigate}
                 isMobile={isMobile}
                 esBackoffice={esBackoffice}
+                misNotifs={misNotifs}
+                noLeidasCount={noLeidasCount}
+                currentUserId={currentUser?.id}
+                marcarNotifLeida={marcarNotifLeida}
+                marcarTodasNotifLeidas={marcarTodasNotifLeidas}
+                pushOn={pushOn}
+                togglePush={togglePush}
               />
             )}
           </div>
