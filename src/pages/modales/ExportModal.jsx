@@ -4,7 +4,7 @@ import { T } from '../../theme';
 import { useDolar } from '../../store/DolarContext';
 import { esc, imprimirHTML } from '../../lib/html';
 import { buildWaMeLink, generateQrDataUrl } from '../../lib/clienteAcceso';
-import { rubrosExportables } from '../../lib/presupuestoExport';
+import { rubrosExportables, resumenRubros } from '../../lib/presupuestoExport';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -59,7 +59,8 @@ const CORNER_BRACKETS = `
   <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:2px solid #1a9b9c;border-right:2px solid #1a9b9c;"></div>`;
 
 // ── HTML generator ────────────────────────────────────────────────────────────
-function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands }) {
+function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel = 'detallado', notaSena = '' }) {
+  const esResumen = nivel === 'resumen';
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
   // Solo los rubros "publicables": sin tareas en $0, sin secciones huérfanas y
@@ -236,6 +237,50 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
     </div>
   </div>`;
 
+  // ─ Cómputo RESUMEN (cliente): por rubro nombre + total + "Incluye" (alcance),
+  //   sin cantidades/unitarios; totales solo TOTAL; + leyenda post-seña. ─
+  const resumenSecs = resumenRubros(detalle?.rubros || []).map((r, ri) => `
+    <div class="rubro-sec">
+      <div class="rubro-resumen">
+        <div class="rubro-ttl" style="margin:0"><span class="dmnd-sm"></span>RUBRO ${String(ri + 1).padStart(2, '0')} · ${esc(r.nombre)}</div>
+        <div class="rubro-resumen-tot">U$S ${toUSD(r.venta)}</div>
+      </div>
+      ${r.incluye.length ? `<div class="rubro-incluye"><b>Incluye:</b> ${esc(r.incluye.join(' · '))}</div>` : ''}
+    </div>`).join('');
+
+  const computoResumen = `
+  <div class="comp-flow light">
+    <div class="comp-hdr">
+      ${imgDark}
+      <div class="comp-meta">PRESUPUESTO · ${esc((obra?.nombre || '').toUpperCase())} · ${esc(numPresu)}</div>
+    </div>
+    <div class="comp-claim">Una sola empresa, una sola responsable.</div>
+    <div class="comp-body">${resumenSecs}</div>
+    ${notaSena ? `<div class="sena-box"><span class="sena-dmnd"></span><span>${esc(notaSena)}</span></div>` : ''}
+    <div class="totales-strip">
+      <div class="rubros-list">
+        <div class="rubros-ttl">RUBROS INCLUIDOS</div>
+        ${rubrosList}
+      </div>
+      <div class="totales-box">
+        <div class="dmnd-corner"></div>
+        <div class="totales-lbl">INVERSIÓN TOTAL</div>
+        <div class="total-final" style="margin-top:7px">
+          <span>TOTAL USD</span>
+          <span class="total-val">U$S ${toUSD(totalVenta)} <span class="iva">+ IVA</span></span>
+        </div>
+        <div style="margin-top:4px;font-size:9px;color:#9a9892;font-family:'JetBrains Mono',monospace;letter-spacing:1px;text-align:right">TC BNA $${Math.round(tc).toLocaleString('es-AR')}</div>
+        ${tieneTiempo ? `<div class="totales-tiempo">◆ ${diasMas} días más atendiendo a tus clientes</div>` : ''}
+        ${nota ? `<div class="nota-pie">${esc(nota)}</div>` : ''}
+      </div>
+    </div>
+    <div class="comp-ftr">
+      <span>KAMAK DESARROLLOS · KAMAKDESARROLLOS@GMAIL.COM</span>
+      <span>NO INCLUYE IVA · VIGENCIA ${vigencia} DÍAS</span>
+      <span>2 / ${totalPags}</span>
+    </div>
+  </div>`;
+
   // ─ Condiciones (dark, fixed A4 portrait page, starts on new page) ─
   const condicionesPage = !condiciones ? '' : `
   <div class="cond-page dark">
@@ -262,10 +307,10 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
           <div class="cond-sec-lbl">RESUMEN ECONÓMICO</div>
           <div class="cond-totales">
             <div class="dmnd-corner"></div>
-            <div class="totales-grid-sm">
+            ${esResumen ? '' : `<div class="totales-grid-sm">
               <span>Subtotal mat.</span><span class="mono">U$S ${usdAR(totalMatUSD)}</span>
               <span>Subtotal M.O</span><span class="mono">U$S ${usdAR(totalSubUSD)}</span>
-            </div>
+            </div>`}
             <div class="totales-rule"></div>
             <div class="total-final">
               <span>TOTAL</span>
@@ -427,6 +472,13 @@ body{font-family:'Montserrat',sans-serif}
 .nota-pie{margin-top:7px;font-size:8px;color:#9a9892;border-top:1px solid #333;padding-top:5px}
 .comp-claim{padding:7px 30px 2px;font-size:10px;font-style:italic;color:#5a5a58;line-height:1.5}
 .rubro-claim{font-size:9.5px;font-style:italic;color:#0d7475;margin:2px 0 5px;padding-left:14px}
+/* modo resumen */
+.rubro-resumen{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #e4e0d2;padding:7px 4px}
+.rubro-resumen-tot{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:12px;color:#1f2024;white-space:nowrap}
+.rubro-incluye{font-size:9.5px;color:#6a6a66;padding:3px 4px 7px 22px;line-height:1.5}
+.rubro-incluye b{color:#0d7475;font-weight:700}
+.sena-box{margin:12px 30px 4px;background:#fcf6e3;border:1px solid #e6d9a8;border-left:4px solid #1a9b9c;border-radius:4px;padding:9px 14px;font-size:11px;color:#5a5326;display:flex;align-items:center;gap:9px;font-weight:600}
+.sena-dmnd{display:inline-block;width:9px;height:9px;background:#1a9b9c;transform:rotate(45deg);flex-shrink:0}
 .totales-tiempo{margin-top:6px;font-size:9.5px;font-weight:700;color:#1a9b9c}
 .comp-ftr{padding:6px 30px;border-top:1.5px solid #1f2024;display:flex;justify-content:space-between;font-size:7.5px;color:#5a5a58;font-family:'JetBrains Mono',monospace}
 /* condiciones */
@@ -491,7 +543,7 @@ body{font-family:'Montserrat',sans-serif}
 </div>
 ${portada}
 ${franja}
-${computo}
+${esResumen ? computoResumen : computo}
 ${condicionesPage}
 <script>
   // Auto-print: cuando la pestaña termina de cargar (fuentes, imagenes,
@@ -633,6 +685,8 @@ const FORMA_PAGO_DEFAULT = `El presente presupuesto NO INCLUYE IVA.
 Para reservar fecha de obra, se abona un 40% del total en concepto de anticipo.
 El saldo restante se abona por certificación mensual de avance de obra, con un 5% de fondo de reparo retenido hasta la entrega final.`;
 
+const NOTA_SENA_DEFAULT = '✓ El cómputo y listado detallado de materiales ya está realizado. Se entrega al confirmar la obra (posterior a la seña).';
+
 export default function ExportModal({ onClose, obra, detalle }) {
   const { dolarVenta } = useDolar();
   const [vigencia, setVigencia] = useState(30);
@@ -664,6 +718,10 @@ export default function ExportModal({ onClose, obra, detalle }) {
     return d > 0 ? String(d) : '';
   })();
   const [plazoDias, setPlazoDias] = useState(plazoDiasAuto);
+  // Nivel de detalle del PDF: 'resumen' (cliente, sin cantidades/unitarios) o
+  // 'detallado' (uso interno, completo). Default resumen para presentar.
+  const [nivel, setNivel] = useState('resumen');
+  const [notaSena, setNotaSena] = useState(NOTA_SENA_DEFAULT);
 
   const rr = rubrosExportables(detalle?.rubros || []).map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
@@ -698,7 +756,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
         qrDataUrl = null;
       }
 
-      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands });
+      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel, notaSena });
 
       // Abrir pestaña nueva con el HTML. NO disparamos w.print() automatico:
       // cuando print se dispara programaticamente, Chrome aplica preferencias
@@ -731,6 +789,32 @@ export default function ExportModal({ onClose, obra, detalle }) {
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Options panel */}
           <div style={{ width: 230, padding: 16, borderRight: `1.5px solid ${T.faint2}`, overflow: 'auto', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <Label>Detalle del PDF</Label>
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                {[['resumen', 'Resumen'], ['detallado', 'Detallado']].map(([v, l]) => (
+                  <button key={v} onClick={() => setNivel(v)}
+                    style={{ flex: 1, padding: '7px 4px', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                      border: `1.5px solid ${nivel === v ? T.accent : T.faint2}`,
+                      background: nivel === v ? T.accent : T.paper, color: nivel === v ? '#fff' : T.ink2 }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 10, color: T.ink3, marginTop: 4, lineHeight: 1.4 }}>
+                {nivel === 'resumen'
+                  ? 'Por rubro, sin cantidades ni precios unitarios (para presentar).'
+                  : 'Completo: cada tarea con unitario y subtotal (uso interno).'}
+              </div>
+              {nivel === 'resumen' && (
+                <textarea value={notaSena} onChange={e => setNotaSena(e.target.value)}
+                  placeholder="Leyenda (listado de materiales / seña)"
+                  style={{ marginTop: 8, width: '100%', height: 70, resize: 'vertical', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper, lineHeight: 1.4 }} />
+              )}
+            </div>
+
+            <Divider />
+
             <div>
               <Label>Vigencia del presupuesto</Label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
@@ -825,7 +909,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 340 }}>
               {[
                 { pag: 'Pág 1 · Portada', desc: `Nombre de obra, cliente, monto total, fecha` },
-                { pag: `Pág 2${rr.length > 6 ? '–X' : ''} · Cómputo`, desc: `${rr.length} rubros, ${totalTareas} tareas con precios unitarios y subtotales` },
+                { pag: `Pág 2${rr.length > 6 ? '–X' : ''} · ${nivel === 'resumen' ? 'Presupuesto resumido' : 'Cómputo'}`, desc: nivel === 'resumen' ? `${rr.length} rubros con total + "Incluye" (sin cantidades ni unitarios)` : `${rr.length} rubros, ${totalTareas} tareas con precios unitarios y subtotales` },
                 ...(condiciones ? [{ pag: `Pág ${condiciones ? rr.length > 6 ? 'X' : 3 : 3} · Condiciones`, desc: 'Formas de pago, cláusulas, firmas' }] : []),
               ].map((p, i) => (
                 <div key={i} style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 4, padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', gap: 10, alignItems: 'center' }}>

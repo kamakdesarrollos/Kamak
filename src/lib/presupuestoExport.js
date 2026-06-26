@@ -51,3 +51,15 @@ export function rubrosExportables(rubros) {
   }
   return out;
 }
+
+// Vista RESUMEN para presentar al cliente: por cada rubro publicable devuelve su
+// nombre, el total de venta, y la lista de NOMBRES de tareas (el "Incluye:" /
+// alcance) — SIN cantidades ni precios unitarios (que es justo lo que no
+// queremos exponer). Las secciones no son tareas → no entran en `incluye`.
+export function resumenRubros(rubros) {
+  return rubrosExportables(rubros).map(r => {
+    const reales = (r.tareas || []).filter(t => t.tipo !== 'seccion');
+    const venta = reales.reduce((s, t) => s + tareaVentaUnit(t, r) * (t.cantidad || 0), 0);
+    return { nombre: r.nombre, venta, incluye: reales.map(t => t.nombre) };
+  });
+}

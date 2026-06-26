@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rubrosExportables, tareaVentaUnit } from './presupuestoExport';
+import { rubrosExportables, tareaVentaUnit, resumenRubros } from './presupuestoExport';
 
 const rubro = (over = {}) => ({ id: 'r', nombre: 'Rubro', margenMat: 20, margenMO: 35, ...over });
 
@@ -65,5 +65,31 @@ describe('rubrosExportables', () => {
     const snapshot = JSON.parse(JSON.stringify(r));
     rubrosExportables([r]);
     expect(r).toEqual(snapshot);
+  });
+});
+
+describe('resumenRubros', () => {
+  it('devuelve nombre, total de venta y la lista de nombres (sin cantidades ni precios)', () => {
+    const r = rubro({ nombre: 'Demoliciones', tareas: [
+      { id: 'a', nombre: 'Demolición de pisos', costoMat: 0, costoSub: 1000, cantidad: 2 },
+      { id: 'b', nombre: 'Picado de revestimiento', costoMat: 0, costoSub: 500, cantidad: 1 },
+    ] });
+    const [out] = resumenRubros([r]);
+    expect(out.nombre).toBe('Demoliciones');
+    // venta = 1000*1.35*2 + 500*1.35*1 = 2700 + 675 = 3375
+    expect(out.venta).toBe(3375);
+    expect(out.incluye).toEqual(['Demolición de pisos', 'Picado de revestimiento']);
+  });
+
+  it('excluye rubros y tareas en $0, y no incluye secciones en "incluye"', () => {
+    const r1 = rubro({ nombre: 'Con valor', tareas: [
+      { id: 's', tipo: 'seccion', nombre: 'Sección X' },
+      { id: 'a', nombre: 'Tarea real', costoMat: 1000, costoSub: 0, cantidad: 1 },
+      { id: 'b', nombre: 'Sin precio', costoMat: 0, costoSub: 0, cantidad: 1 },
+    ] });
+    const r0 = rubro({ nombre: 'Todo en cero', tareas: [{ id: 'c', costoMat: 0, costoSub: 0, cantidad: 1 }] });
+    const out = resumenRubros([r1, r0]);
+    expect(out.map(r => r.nombre)).toEqual(['Con valor']);
+    expect(out[0].incluye).toEqual(['Tarea real']); // sin la sección ni la de $0
   });
 });
