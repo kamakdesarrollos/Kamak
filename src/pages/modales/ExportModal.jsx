@@ -4,6 +4,7 @@ import { T } from '../../theme';
 import { useDolar } from '../../store/DolarContext';
 import { esc, imprimirHTML } from '../../lib/html';
 import { buildWaMeLink, generateQrDataUrl } from '../../lib/clienteAcceso';
+import { rubrosExportables } from '../../lib/presupuestoExport';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
@@ -61,7 +62,9 @@ const CORNER_BRACKETS = `
 function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands }) {
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
-  const rubros = detalle?.rubros || [];
+  // Solo los rubros "publicables": sin tareas en $0, sin secciones huérfanas y
+  // sin rubros que quedaron en $0 (no toca el presupuesto guardado).
+  const rubros = rubrosExportables(detalle?.rubros || []);
   const rr = rubros.map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
   // Desglose a VENTA (con margen) para que sume al total. vMat+vSub === venta.
@@ -662,7 +665,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
   })();
   const [plazoDias, setPlazoDias] = useState(plazoDiasAuto);
 
-  const rr = (detalle?.rubros || []).map(r => ({ ...r, ...calcRubroExport(r) }));
+  const rr = rubrosExportables(detalle?.rubros || []).map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
   const totalTareas = rr.reduce((s, r) => s + (r.tareas?.length || 0), 0);
   const moneda = obra?.moneda || 'ARS';

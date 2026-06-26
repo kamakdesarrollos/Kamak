@@ -1,6 +1,28 @@
 // Helpers PUROS para importar un presupuesto de tercero (Excel/PDF) a tareas.
 const norm = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
+// Detecta la moneda de un presupuesto externo a partir de su texto (string) o de
+// un array-of-arrays de Excel. Mira símbolos (U$S/US$/USD) y palabras
+// ("dólar"/"dolares"/"pesos"/"ARS"), NO solo el "$" suelto (ambiguo en AR).
+// Devuelve 'USD' | 'ARS' | null (desconocida → el UI cae a ARS por defecto).
+export function detectarMoneda(input) {
+  const text = Array.isArray(input)
+    ? input.flat().map(c => (c == null ? '' : String(c))).join(' ')
+    : String(input == null ? '' : input);
+  const t = text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/u\$s|us\$|\busd\b|dolar/.test(t)) return 'USD';
+  if (/\bars\b|peso/.test(t)) return 'ARS';
+  return null;
+}
+
+// Clasifica un ítem como mano de obra ('mo') o material ('material') según su
+// nombre. Heurística para el default del review (el usuario puede corregir): los
+// trabajos (instalación/colocación/montaje/flete/M.O) → 'mo'; el resto → 'material'.
+const RE_MANO_OBRA = /(instalaci[oó]n|colocaci[oó]n|colocad|montaje|armad[oa]|mano\s+de\s+obra|\bm\.?\s?o\.?\b|flete|acarreo|man[ou]\s+de\s+obra)/i;
+export function clasificarTipoItem(nombre) {
+  return RE_MANO_OBRA.test((nombre == null ? '' : String(nombre))) ? 'mo' : 'material';
+}
+
 const KEYS = {
   nombre:   ['descripcion', 'detalle', 'item', 'concepto', 'producto', 'nombre', 'articulo'],
   // Precio UNITARIO: lo que va a costoSub. Se busca primero (preferido).
@@ -90,6 +112,9 @@ export function normalizarItems(items) {
       costo: parseNum(it.costo),
       cantidad: parseNum(it.cantidad, { dotDecimal: true }) || 1,
       unidad: (it.unidad || '').toString().trim() || 'u',
+      // Tipo material/MO: respeta lo elegido en el review; si no vino, lo infiere
+      // del nombre (default inteligente).
+      tipo: (it.tipo === 'material' || it.tipo === 'mo') ? it.tipo : clasificarTipoItem(it.nombre),
     }))
     .filter(it => it.nombre && it.costo > 0);
 }
@@ -102,21 +127,26 @@ export function subtotalFila(it) {
 }
 
 export function itemsATareas(items, { contratoId, makeId }) {
-  return (items || []).map(it => ({
-    id: makeId(),
-    codigo: '',
-    nombre: it.nombre,
-    unidad: it.unidad || 'u',
-    cantidad: it.cantidad || 1,
-    costoMat: 0,
-    // Sin redondear: el costo unitario puede tener decimales y redondearlo acá
-    // propaga error al multiplicar por cantidad (#14). parseNum ya devolvió Number.
-    costoSub: it.costo,
-    contratoId,
-    fuente: 'Presupuesto',
-    receta: { materiales: [] },
-    avance: 0,
-  }));
+  return (items || []).map(it => {
+    // El ítem va a materiales (costoMat) o a mano de obra (costoSub) según su
+    // tipo. Sin tipo → 'mo' (back-compat: un presupuesto de tercero es M.O).
+    const esMat = it.tipo === 'material';
+    return {
+      id: makeId(),
+      codigo: '',
+      nombre: it.nombre,
+      unidad: it.unidad || 'u',
+      cantidad: it.cantidad || 1,
+      // Sin redondear: el costo unitario puede tener decimales y redondearlo acá
+      // propaga error al multiplicar por cantidad (#14). parseNum ya devolvió Number.
+      costoMat: esMat ? it.costo : 0,
+      costoSub: esMat ? 0 : it.costo,
+      contratoId,
+      fuente: 'Presupuesto',
+      receta: { materiales: [] },
+      avance: 0,
+    };
+  });
 }
 
 // Aplana las tareas de todos los rubros de un detalle de obra. Es la "fuente de

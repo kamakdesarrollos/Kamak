@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor, subtotalFila, tareasDeObra, indiceHeader, parseNum, matchProveedorFlexible, resolverProveedorImport } from './presupuestoImport';
+import { detectarColumnas, mapearColumnas, normalizarItems, itemsATareas, montoContrato, avanceContrato, matchProveedor, subtotalFila, tareasDeObra, indiceHeader, parseNum, matchProveedorFlexible, resolverProveedorImport, detectarMoneda, clasificarTipoItem } from './presupuestoImport';
 
 describe('detectarColumnas', () => {
   it('reconoce encabezados típicos en español', () => {
@@ -34,7 +34,7 @@ describe('mapearColumnas', () => {
 describe('normalizarItems', () => {
   it('coerce números, cantidad default 1, parsea miles AR', () => {
     const out = normalizarItems([{ nombre: 'Plancha', costo: '185.000', cantidad: '', unidad: 'u' }]);
-    expect(out).toEqual([{ nombre: 'Plancha', costo: 185000, cantidad: 1, unidad: 'u' }]);
+    expect(out).toEqual([{ nombre: 'Plancha', costo: 185000, cantidad: 1, unidad: 'u', tipo: 'material' }]);
   });
   it('descarta filas sin nombre o sin costo > 0', () => {
     const out = normalizarItems([
@@ -42,7 +42,7 @@ describe('normalizarItems', () => {
       { nombre: 'Subtotal', costo: '0', cantidad: '1', unidad: '' },
       { nombre: 'Horno', costo: '50000', cantidad: '2', unidad: 'u' },
     ]);
-    expect(out).toEqual([{ nombre: 'Horno', costo: 50000, cantidad: 2, unidad: 'u' }]);
+    expect(out).toEqual([{ nombre: 'Horno', costo: 50000, cantidad: 2, unidad: 'u', tipo: 'material' }]);
   });
 });
 
@@ -278,5 +278,86 @@ describe('resolverProveedorImport', () => {
   it('condicionIVA ausente → default Responsable Inscripto', () => {
     const r = resolverProveedorImport({ razonSocial: 'X', cuit: '20-1-2' }, null);
     expect(r.datos.condicion).toBe('Responsable Inscripto');
+  });
+});
+
+// ── Detección de moneda (USD/ARS) del presupuesto externo ──
+
+describe('detectarMoneda', () => {
+  it('detecta USD por símbolo U$S / US$ / USD', () => {
+    expect(detectarMoneda('Total: U$S 1.500')).toBe('USD');
+    expect(detectarMoneda('US$ 1500')).toBe('USD');
+    expect(detectarMoneda('Precio en USD')).toBe('USD');
+  });
+  it('detecta USD por la palabra dólar/dolares (con o sin acento)', () => {
+    expect(detectarMoneda('El presupuesto está expresado en dólares')).toBe('USD');
+    expect(detectarMoneda('valores en dolares')).toBe('USD');
+  });
+  it('detecta ARS por peso / ARS', () => {
+    expect(detectarMoneda('Importes en pesos argentinos')).toBe('ARS');
+    expect(detectarMoneda('Moneda: ARS')).toBe('ARS');
+  });
+  it('el "$" suelto es ambiguo → no fuerza ARS (null)', () => {
+    expect(detectarMoneda('Plancha $ 185.000')).toBeNull();
+  });
+  it('acepta un array-of-arrays de Excel (aplana y busca)', () => {
+    const aoa = [['Presupuesto'], ['Nota: valores expresados en dólares'], ['Plancha', '1500']];
+    expect(detectarMoneda(aoa)).toBe('USD');
+  });
+  it('null si no hay señales', () => {
+    expect(detectarMoneda('Plancha 185000')).toBeNull();
+    expect(detectarMoneda(null)).toBeNull();
+  });
+});
+
+describe('clasificarTipoItem', () => {
+  it('trabajos (instalación/colocación/montaje/flete/M.O) → mo', () => {
+    expect(clasificarTipoItem('Instalación de mueble mostrador')).toBe('mo');
+    expect(clasificarTipoItem('Colocación de cerámicos')).toBe('mo');
+    expect(clasificarTipoItem('Montaje de estructura')).toBe('mo');
+    expect(clasificarTipoItem('Mano de obra electricista')).toBe('mo');
+    expect(clasificarTipoItem('Flete y acarreo')).toBe('mo');
+    expect(clasificarTipoItem('M.O. plomería')).toBe('mo');
+  });
+  it('productos → material', () => {
+    expect(clasificarTipoItem('Mueble mostrador')).toBe('material');
+    expect(clasificarTipoItem('Plancha Braf')).toBe('material');
+    expect(clasificarTipoItem('Inodoro corto')).toBe('material');
+  });
+  it('no confunde "MONTAJE" con un material por la sub-cadena "mo"', () => {
+    // "Como" / "Mostrador" no deben dar mo por contener "mo".
+    expect(clasificarTipoItem('Mostrador de madera')).toBe('material');
+  });
+});
+
+describe('normalizarItems — tipo material/MO', () => {
+  it('respeta el tipo elegido en el review', () => {
+    const out = normalizarItems([{ nombre: 'Mueble mostrador', costo: '100000', tipo: 'mo' }]);
+    expect(out[0].tipo).toBe('mo');
+  });
+  it('si no vino tipo, lo infiere del nombre', () => {
+    const out = normalizarItems([
+      { nombre: 'Mueble mostrador', costo: '100000' },
+      { nombre: 'Instalación de mueble', costo: '40000' },
+    ]);
+    expect(out.map(i => i.tipo)).toEqual(['material', 'mo']);
+  });
+});
+
+describe('itemsATareas — tipo material va a costoMat', () => {
+  it('material → costoMat (no costoSub); fuera del monto de contrato M.O', () => {
+    const [t] = itemsATareas(
+      [{ nombre: 'Mueble mostrador', costo: 100000, cantidad: 1, unidad: 'u', tipo: 'material' }],
+      { contratoId: 'c1', makeId: () => 'id1' }
+    );
+    expect(t.costoMat).toBe(100000);
+    expect(t.costoSub).toBe(0);
+  });
+  it('mo (o sin tipo) → costoSub', () => {
+    const [mo] = itemsATareas([{ nombre: 'Instalación', costo: 50000, tipo: 'mo' }], { contratoId: 'c1', makeId: () => 'a' });
+    const [legacy] = itemsATareas([{ nombre: 'X', costo: 50000 }], { contratoId: 'c1', makeId: () => 'b' });
+    expect(mo.costoSub).toBe(50000);
+    expect(mo.costoMat).toBe(0);
+    expect(legacy.costoSub).toBe(50000); // back-compat: sin tipo = M.O
   });
 });

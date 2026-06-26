@@ -48,8 +48,9 @@ async function usuarioAutorizado(req) {
 
 const PROMPT = `Sos un extractor de presupuestos de obra. Te paso un presupuesto de un proveedor/subcontratista.
 Devolvé SOLO un JSON con esta forma exacta, sin texto adicional:
-{"proveedor": {"razonSocial": "<nombre/razón social o null>", "cuit": "<cuit o null>", "domicilio": "<dirección completa o null>", "telefono": "<o null>", "email": "<o null>", "condicionIVA": "<Responsable Inscripto/Monotributo/Exento o null>", "rubro": "<rubro o especialidad del proveedor inferida del presupuesto, o null>"}, "items": [{"nombre": "<descripción del ítem>", "costo": <número, precio UNITARIO sin símbolos>, "cantidad": <número, 1 si no figura>, "unidad": "<u/m2/ml/gl/etc o 'u'>"}]}
-El "costo" es siempre el precio unitario del ítem (si solo hay total de línea, poné cantidad 1 y el total como costo). No inventes datos que no estén: si un dato del proveedor no figura, poné null.`;
+{"proveedor": {"razonSocial": "<nombre/razón social o null>", "cuit": "<cuit o null>", "domicilio": "<dirección completa o null>", "telefono": "<o null>", "email": "<o null>", "condicionIVA": "<Responsable Inscripto/Monotributo/Exento o null>", "rubro": "<rubro o especialidad del proveedor inferida del presupuesto, o null>"}, "moneda": "<'USD' si los importes están en dólares, 'ARS' si están en pesos, o null si no está claro>", "items": [{"nombre": "<descripción del ítem>", "costo": <número, precio UNITARIO sin símbolos>, "cantidad": <número, 1 si no figura>, "unidad": "<u/m2/ml/gl/etc o 'u'>"}]}
+El "costo" es siempre el precio unitario del ítem (si solo hay total de línea, poné cantidad 1 y el total como costo). No inventes datos que no estén: si un dato del proveedor no figura, poné null.
+Para "moneda": fijate tanto en los SÍMBOLOS (U$S / US$ / USD / "dólares" = USD; "$" / "pesos" / ARS = ARS) como en NOTAS o aclaraciones del texto (ej. "los valores están expresados en dólares", "presupuesto en pesos"). El "$" solo, sin más contexto, en Argentina suele ser pesos. Si no podés determinarlo con razonable seguridad, poné null.`;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -102,6 +103,7 @@ export default async function handler(req, res) {
         condicionIVA: prov.condicionIVA || null,
         rubro: prov.rubro || null,
       },
+      moneda: data.moneda === 'USD' || data.moneda === 'ARS' ? data.moneda : null,
       items: Array.isArray(data.items) ? data.items : [],
     });
   } catch (e) {
