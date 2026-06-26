@@ -2299,7 +2299,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         const f = matches[0];
         await saveConversation(user.phone, {
           state: 'awaiting_factura_pago_confirm',
-          data: { pagoDatos: { ...datos, proveedorId: prov.id, cajaId: caja.id }, facturaId: f.id },
+          data: { pagoDatos: { ...datos, proveedorId: prov.id, cajaId: caja.id }, facturaId: f.id, mediaUrl },
         });
         return `🧾 Tenés una factura PENDIENTE que coincide:\n*${f.proveedor || prov.nombre}*${f.numero ? ` · N° ${f.numero}` : ''} · saldo ${fmt(saldoFacturaPendienteBot(f))}\n\n¿Este pago de ${fmt(monto)} es de esa factura? (sí/no)\nSi decís *no*, lo registro como pago suelto.`;
       }
@@ -2314,7 +2314,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
         }));
         await saveConversation(user.phone, {
           state: 'awaiting_factura_pago_pick',
-          data: { pagoDatos: { ...datos, proveedorId: prov.id, cajaId: caja.id }, opcionesFacturas: matches.slice(0, 9).map(f => f.id) },
+          data: { pagoDatos: { ...datos, proveedorId: prov.id, cajaId: caja.id }, opcionesFacturas: matches.slice(0, 9).map(f => f.id), mediaUrl },
         });
         const lineas = matches.slice(0, 9).map((f, i) => `${i + 1}. ${f.proveedor || prov.nombre}${f.numero ? ` · N° ${f.numero}` : ''} · saldo ${fmt(saldoFacturaPendienteBot(f))}`).join('\n');
         await sendWAList(user.phone, `🧾 Hay varias facturas pendientes que coinciden con ${fmt(monto)}. ¿Cuál estás pagando?\n\n${lineas}\n\nO escribí *ninguna* para registrarlo como pago suelto.`, 'Elegir factura', opciones);
@@ -2343,6 +2343,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       medioPago: datos.medioPago || 'Transferencia',
       facturaPendienteId: facturaSaldar?.id || undefined,
       referencia: facturaSaldar?.numero || datos.numeroFactura || '',
+      comprobanteUrl: mediaUrl || null, // foto/PDF del pago (transferencia/echeq) si se mandó
       creadoPorWA: true,
       creadoPor: user.user_name,
     };
@@ -2351,7 +2352,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     // Si el pago salda una factura pendiente → registrar el pago en la factura
     // (agregarlo a pagos[] y recalcular estado/saldo) de forma atómica.
     if (facturaSaldar) {
-      const pago = { movimientoId: mov.id, monto, fecha: mov.fecha, cajaId: caja.id };
+      const pago = { movimientoId: mov.id, monto, fecha: mov.fecha, cajaId: caja.id, comprobanteUrl: mediaUrl || null };
       const pagos = [...(facturaSaldar.pagos || []), pago];
       const facturaActualizada = { ...facturaSaldar, pagos };
       const nuevoSaldo = saldoFacturaPendienteBot(facturaActualizada);
@@ -4365,13 +4366,13 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     const datosPago = conv.data.pagoDatos;
     if (confirma) {
       await clearConversation(phone);
-      const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, facturaPendienteId: conv.data.facturaId }, { ...user, phone }, ctx);
+      const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, facturaPendienteId: conv.data.facturaId }, { ...user, phone }, ctx, conv.data.mediaUrl || null);
       if (resultado) await sendWA(phone, resultado);
       return;
     }
     if (cancela) {
       await clearConversation(phone);
-      const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, _skipMatch: true }, { ...user, phone }, ctx);
+      const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, _skipMatch: true }, { ...user, phone }, ctx, conv.data.mediaUrl || null);
       if (resultado) await sendWA(phone, resultado);
       return;
     }
@@ -4388,7 +4389,7 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     const datosPago = conv.data.pagoDatos;
     if (['ninguna', 'ningun', 'no', 'suelto', 'pago suelto'].some(p => respLower === p || respLower.startsWith(p))) {
       await clearConversation(phone);
-      const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, _skipMatch: true }, { ...user, phone }, ctx);
+      const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, _skipMatch: true }, { ...user, phone }, ctx, conv.data.mediaUrl || null);
       if (resultado) await sendWA(phone, resultado);
       return;
     }
@@ -4404,7 +4405,7 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
       return;
     }
     await clearConversation(phone);
-    const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, facturaPendienteId: facturaId }, { ...user, phone }, ctx);
+    const resultado = await ejecutarAccion('pago_proveedor', { ...datosPago, facturaPendienteId: facturaId }, { ...user, phone }, ctx, conv.data.mediaUrl || null);
     if (resultado) await sendWA(phone, resultado);
     return;
   }

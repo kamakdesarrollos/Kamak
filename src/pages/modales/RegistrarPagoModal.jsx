@@ -7,6 +7,7 @@ import { useConfiguracion } from '../../store/ConfiguracionContext';
 import { useProveedores } from '../../store/ProveedoresContext';
 import { facturasPendientesDeProveedor, saldoFacturaPendiente } from '../../lib/facturasPendientes';
 import { useIsMobile } from '../../hooks/useMediaQuery';
+import { uploadFoto } from '../../lib/upload';
 
 const inputSt = { padding: '6px 10px', border: `1.2px solid ${T.faint2}`, borderRadius: 4, fontFamily: T.font, fontSize: 12, background: T.paper, boxSizing: 'border-box', outline: 'none', width: '100%' };
 const labelSt = { fontSize: 10, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 3, display: 'block' };
@@ -63,6 +64,12 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
   const [referencia, setReferencia] = useState(facturaPendiente?.numero || '');
   const [fondoReparo] = useState(false); // retención fondo de reparo: aún no implementada (ver checkbox deshabilitado)
   const [concepto, setConcepto] = useState('');
+  // Comprobante del PAGO (transferencia / echeq / recibo). Se sube a Storage y
+  // queda en el movimiento (comprobanteUrl, visible en Movimientos) y en el pago
+  // de la factura (para verlo desde Órdenes de pago). Distinto del comprobante
+  // fiscal de la factura (comprobanteRecibido) → no afecta el Libro IVA.
+  const [file, setFile] = useState(null);
+  const [subiendo, setSubiendo] = useState(false);
 
   const obraNombre = obras.find(o => o.id === obraId)?.nombre || '';
   const cajaNombre = cajas.find(c => c.id === cajaId)?.nombre || '';
@@ -82,8 +89,18 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
     }
   };
 
-  const confirmar = () => {
-    if (!montoNum || montoNum <= 0) return;
+  const confirmar = async () => {
+    if (!montoNum || montoNum <= 0 || subiendo) return;
+
+    // Subir el comprobante del pago (si lo adjuntaron). Best-effort: si la subida
+    // falla, el pago se registra igual (sin doc) y se loguea.
+    let comprobanteUrl = null;
+    if (file) {
+      setSubiendo(true);
+      try { comprobanteUrl = await uploadFoto(file, 'pagos'); }
+      catch (err) { console.error('[RegistrarPago] subir comprobante:', err); }
+      setSubiendo(false);
+    }
 
     const concFinal = concepto.trim()
       || (facturaVinc ? `Pago factura ${facturaVinc.numero || ''} · ${provNombre}`.trim().replace(/ · $/, '')
@@ -112,11 +129,13 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
       medioPago: medio,
       referencia,
       fondoReparo,
+      comprobanteUrl,
     });
 
-    // Registra el pago contra la factura pendiente (recalcula estado/saldo).
+    // Registra el pago contra la factura pendiente (recalcula estado/saldo). El
+    // comprobante del pago se guarda también en el pago para verlo desde la orden.
     if (facturaVinc) {
-      registrarPagoFactura(facturaVinc.id, { movimientoId: movId, monto: montoNum, fecha, cajaId });
+      registrarPagoFactura(facturaVinc.id, { movimientoId: movId, monto: montoNum, fecha, cajaId, comprobanteUrl });
     }
 
     onClose();
@@ -238,6 +257,14 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
             <input style={inputSt} value={referencia} onChange={e => setReferencia(e.target.value)} placeholder="Ej: TRF-20260502-00412" />
           </div>
 
+          <div>
+            <label style={labelSt}>Comprobante del pago (PDF / foto)</label>
+            <input type="file" accept="image/*,application/pdf" capture={isMobile ? 'environment' : undefined}
+              style={{ ...inputSt, padding: '5px 8px' }}
+              onChange={e => setFile(e.target.files?.[0] || null)} />
+            {file && <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>{file.name}</div>}
+          </div>
+
           {/* La retención del fondo de reparo todavía NO está implementada: el pago
               se registra completo. Se deshabilita para no hacer creer que retiene el
               5% (antes guardaba fondoReparo:true pero descontaba el 100%). */}
@@ -263,7 +290,7 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
             <Btn sm onClick={onClose}>Cancelar</Btn>
-            <Btn sm fill onClick={confirmar} style={{ opacity: montoNum > 0 ? 1 : 0.5 }}>Registrar pago</Btn>
+            <Btn sm fill onClick={confirmar} style={{ opacity: montoNum > 0 && !subiendo ? 1 : 0.5 }}>{subiendo ? 'Subiendo…' : 'Registrar pago'}</Btn>
           </div>
         </div>
       </div>

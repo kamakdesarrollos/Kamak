@@ -222,9 +222,11 @@ export default function CuentasPorPagar() {
                 const est = estadoFacturaPendiente(f);
                 const saldo = saldoFacturaPendiente(f);
                 const abierta = est === 'pendiente' || est === 'parcial';
+                const pagosConComp = (f.pagos || []).filter(p => p.comprobanteUrl);
                 return (
-                  <div key={f.id}
-                    style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.9fr 2fr 1.3fr 1fr 1fr 0.9fr 1.4fr', padding: '9px 14px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12 }}>
+                  <div key={f.id}>
+                  <div
+                    style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.9fr 2fr 1.3fr 1fr 1fr 0.9fr 1.4fr', padding: '9px 14px', borderBottom: pagosConComp.length ? 'none' : `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12 }}>
                     <span style={{ fontFamily: T.fontMono, fontSize: 11 }}>
                       {f.tipoLetra && <span style={{ fontWeight: 700, marginRight: 4 }}>{f.tipoLetra}</span>}
                       {f.numero || '—'}
@@ -261,6 +263,17 @@ export default function CuentasPorPagar() {
                           onClick={() => anular(f)}>×</span>
                       )}
                     </span>
+                  </div>
+                  {pagosConComp.length > 0 && (
+                    <div style={{ padding: '3px 14px 8px 28px', borderBottom: `1px solid ${T.faint2}`, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                      {pagosConComp.map((p, i) => (
+                        <a key={i} href={p.comprobanteUrl} target="_blank" rel="noreferrer"
+                          style={{ fontSize: 10, color: T.accent, textDecoration: 'none' }}>
+                          📎 Comprobante de pago · {fmtFecha(p.fecha)} · $ {fmtN(p.monto)}
+                        </a>
+                      ))}
+                    </div>
+                  )}
                   </div>
                 );
               })}
