@@ -59,8 +59,14 @@ const CORNER_BRACKETS = `
   <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:2px solid #1a9b9c;border-right:2px solid #1a9b9c;"></div>`;
 
 // ── HTML generator ────────────────────────────────────────────────────────────
-function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel = 'detallado', notaSena = '' }) {
+function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel = 'detallado', notaSena = '', frases = {} }) {
   const esResumen = nivel === 'resumen';
+  // Frase automática por rubro (modo Resumen): según si incluye materiales,
+  // solo mano de obra, o materiales a cargo del cliente.
+  const fConMat = frases.conMat || FRASE_CON_MAT_DEFAULT;
+  const fSoloMO = frases.soloMO || FRASE_SOLO_MO_DEFAULT;
+  const fAcargo = frases.aCargoCliente || FRASE_ACARGO_CLIENTE;
+  const fraseRubro = (r) => r.aCargoCliente ? fAcargo : (r.tieneMateriales ? fConMat : fSoloMO);
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
   // Solo los rubros "publicables": sin tareas en $0, sin secciones huérfanas y
@@ -237,15 +243,16 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
     </div>
   </div>`;
 
-  // ─ Cómputo RESUMEN (cliente): por rubro nombre + total + "Incluye" (alcance),
-  //   sin cantidades/unitarios; totales solo TOTAL; + leyenda post-seña. ─
+  // ─ Cómputo RESUMEN (cliente): por rubro nombre + total + frase automática
+  //   (materiales/M.O, editable); sin tareas/cantidades/unitarios; totales solo
+  //   TOTAL; + leyenda post-seña. ─
   const resumenSecs = resumenRubros(detalle?.rubros || []).map((r, ri) => `
     <div class="rubro-sec">
       <div class="rubro-resumen">
         <div class="rubro-ttl" style="margin:0"><span class="dmnd-sm"></span>RUBRO ${String(ri + 1).padStart(2, '0')} · ${esc(r.nombre)}</div>
         <div class="rubro-resumen-tot">U$S ${toUSD(r.venta)}</div>
       </div>
-      ${r.incluye.length ? `<div class="rubro-incluye"><b>Incluye:</b> ${esc(r.incluye.join(' · '))}</div>` : ''}
+      <div class="rubro-incluye">${esc(fraseRubro(r))}</div>
     </div>`).join('');
 
   const computoResumen = `
@@ -687,6 +694,13 @@ El saldo restante se abona por certificación mensual de avance de obra, con un 
 
 const NOTA_SENA_DEFAULT = '✓ El cómputo y listado detallado de materiales ya está realizado. Se entrega al confirmar la obra (posterior a la seña).';
 
+// Frases automáticas por rubro en modo Resumen (editables en el modal). Se elige
+// según la composición del rubro: con materiales / solo M.O / materiales a cargo
+// del cliente (esta última fija; las otras dos editables).
+const FRASE_CON_MAT_DEFAULT = 'Incluye provisión de materiales y mano de obra, según plano.';
+const FRASE_SOLO_MO_DEFAULT = 'Incluye mano de obra, según plano.';
+const FRASE_ACARGO_CLIENTE = 'Incluye mano de obra. Materiales a cargo del cliente, según plano.';
+
 export default function ExportModal({ onClose, obra, detalle }) {
   const { dolarVenta } = useDolar();
   const [vigencia, setVigencia] = useState(30);
@@ -722,6 +736,8 @@ export default function ExportModal({ onClose, obra, detalle }) {
   // 'detallado' (uso interno, completo). Default resumen para presentar.
   const [nivel, setNivel] = useState('resumen');
   const [notaSena, setNotaSena] = useState(NOTA_SENA_DEFAULT);
+  const [fraseConMat, setFraseConMat] = useState(FRASE_CON_MAT_DEFAULT);
+  const [fraseSoloMO, setFraseSoloMO] = useState(FRASE_SOLO_MO_DEFAULT);
 
   const rr = rubrosExportables(detalle?.rubros || []).map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
@@ -756,7 +772,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
         qrDataUrl = null;
       }
 
-      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel, notaSena });
+      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel, notaSena, frases: { conMat: fraseConMat, soloMO: fraseSoloMO } });
 
       // Abrir pestaña nueva con el HTML. NO disparamos w.print() automatico:
       // cuando print se dispara programaticamente, Chrome aplica preferencias
@@ -806,11 +822,18 @@ export default function ExportModal({ onClose, obra, detalle }) {
                   ? 'Por rubro, sin cantidades ni precios unitarios (para presentar).'
                   : 'Completo: cada tarea con unitario y subtotal (uso interno).'}
               </div>
-              {nivel === 'resumen' && (
+              {nivel === 'resumen' && (<>
                 <textarea value={notaSena} onChange={e => setNotaSena(e.target.value)}
                   placeholder="Leyenda (listado de materiales / seña)"
                   style={{ marginTop: 8, width: '100%', height: 70, resize: 'vertical', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper, lineHeight: 1.4 }} />
-              )}
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.ink2, marginTop: 10 }}>Frase por rubro (editable)</div>
+                <input value={fraseConMat} onChange={e => setFraseConMat(e.target.value)}
+                  style={{ marginTop: 4, width: '100%', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper }} />
+                <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>↑ rubros que incluyen materiales</div>
+                <input value={fraseSoloMO} onChange={e => setFraseSoloMO(e.target.value)}
+                  style={{ marginTop: 6, width: '100%', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper }} />
+                <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>↑ rubros solo de mano de obra</div>
+              </>)}
             </div>
 
             <Divider />

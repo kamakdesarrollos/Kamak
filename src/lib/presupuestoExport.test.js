@@ -69,27 +69,40 @@ describe('rubrosExportables', () => {
 });
 
 describe('resumenRubros', () => {
-  it('devuelve nombre, total de venta y la lista de nombres (sin cantidades ni precios)', () => {
+  it('rubro solo mano de obra → tieneMateriales false, no expone nombres', () => {
     const r = rubro({ nombre: 'Demoliciones', tareas: [
       { id: 'a', nombre: 'Demolición de pisos', costoMat: 0, costoSub: 1000, cantidad: 2 },
       { id: 'b', nombre: 'Picado de revestimiento', costoMat: 0, costoSub: 500, cantidad: 1 },
     ] });
     const [out] = resumenRubros([r]);
     expect(out.nombre).toBe('Demoliciones');
-    // venta = 1000*1.35*2 + 500*1.35*1 = 2700 + 675 = 3375
-    expect(out.venta).toBe(3375);
-    expect(out.incluye).toEqual(['Demolición de pisos', 'Picado de revestimiento']);
+    expect(out.venta).toBe(3375); // 1000*1.35*2 + 500*1.35
+    expect(out.tieneMateriales).toBe(false);
+    expect(out.aCargoCliente).toBe(false);
+    expect(out.incluye).toBeUndefined(); // no se exponen las tareas
   });
 
-  it('excluye rubros y tareas en $0, y no incluye secciones en "incluye"', () => {
-    const r1 = rubro({ nombre: 'Con valor', tareas: [
-      { id: 's', tipo: 'seccion', nombre: 'Sección X' },
-      { id: 'a', nombre: 'Tarea real', costoMat: 1000, costoSub: 0, cantidad: 1 },
-      { id: 'b', nombre: 'Sin precio', costoMat: 0, costoSub: 0, cantidad: 1 },
+  it('rubro con materiales (algún costoMat>0) → tieneMateriales true', () => {
+    const r = rubro({ nombre: 'Pisos', tareas: [
+      { id: 'a', nombre: 'Porcelanato', costoMat: 5000, costoSub: 2000, cantidad: 1 },
     ] });
+    const [out] = resumenRubros([r]);
+    expect(out.tieneMateriales).toBe(true);
+    expect(out.aCargoCliente).toBe(false);
+  });
+
+  it('materiales a cargo del comprador → aCargoCliente true, tieneMateriales false', () => {
+    const r = rubro({ nombre: 'Revestimientos', materialesACargoComprador: true, tareas: [
+      { id: 'a', nombre: 'Cerámico', costoMat: 5000, costoSub: 2000, cantidad: 1 },
+    ] });
+    const [out] = resumenRubros([r]);
+    expect(out.aCargoCliente).toBe(true);
+    expect(out.tieneMateriales).toBe(false);
+  });
+
+  it('excluye rubros en $0', () => {
     const r0 = rubro({ nombre: 'Todo en cero', tareas: [{ id: 'c', costoMat: 0, costoSub: 0, cantidad: 1 }] });
-    const out = resumenRubros([r1, r0]);
-    expect(out.map(r => r.nombre)).toEqual(['Con valor']);
-    expect(out[0].incluye).toEqual(['Tarea real']); // sin la sección ni la de $0
+    const r1 = rubro({ nombre: 'Con valor', tareas: [{ id: 'a', costoMat: 1000, costoSub: 0, cantidad: 1 }] });
+    expect(resumenRubros([r1, r0]).map(r => r.nombre)).toEqual(['Con valor']);
   });
 });

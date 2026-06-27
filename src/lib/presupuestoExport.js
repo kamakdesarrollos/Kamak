@@ -53,13 +53,19 @@ export function rubrosExportables(rubros) {
 }
 
 // Vista RESUMEN para presentar al cliente: por cada rubro publicable devuelve su
-// nombre, el total de venta, y la lista de NOMBRES de tareas (el "Incluye:" /
-// alcance) — SIN cantidades ni precios unitarios (que es justo lo que no
-// queremos exponer). Las secciones no son tareas → no entran en `incluye`.
+// nombre, el total de venta, y banderas de composición (si incluye materiales o
+// solo mano de obra) — SIN nombres de tareas, cantidades ni precios unitarios
+// (que es justo lo que no queremos exponer). El texto de la frase ("Incluye…")
+// lo arma el consumidor según estas banderas.
+//  - aCargoCliente: el rubro tiene los materiales a cargo del comprador.
+//  - tieneMateriales: el rubro factura materiales (alguna tarea con costoMat > 0)
+//    y NO son a cargo del cliente.
 export function resumenRubros(rubros) {
   return rubrosExportables(rubros).map(r => {
     const reales = (r.tareas || []).filter(t => t.tipo !== 'seccion');
     const venta = reales.reduce((s, t) => s + tareaVentaUnit(t, r) * (t.cantidad || 0), 0);
-    return { nombre: r.nombre, venta, incluye: reales.map(t => t.nombre) };
+    const aCargoCliente = !!r.materialesACargoComprador;
+    const tieneMateriales = !aCargoCliente && reales.some(t => (t.costoMat || 0) > 0);
+    return { nombre: r.nombre, venta, tieneMateriales, aCargoCliente };
   });
 }
