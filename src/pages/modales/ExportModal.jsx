@@ -61,12 +61,13 @@ const CORNER_BRACKETS = `
 // ── HTML generator ────────────────────────────────────────────────────────────
 function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel = 'detallado', notaSena = '', frases = {} }) {
   const esResumen = nivel === 'resumen';
-  // Frase automática por rubro (modo Resumen): según si incluye materiales,
-  // solo mano de obra, o materiales a cargo del cliente.
+  // Frase automática por rubro (modo Resumen): si el rubro tiene materiales
+  // facturados → "provisión de materiales y M.O"; si no → materiales a cargo del
+  // comprador. (Un rubro con materiales a cargo del comprador entra en el 2º caso
+  // porque tieneMateriales = false.)
   const fConMat = frases.conMat || FRASE_CON_MAT_DEFAULT;
-  const fSoloMO = frases.soloMO || FRASE_SOLO_MO_DEFAULT;
-  const fAcargo = frases.aCargoCliente || FRASE_ACARGO_CLIENTE;
-  const fraseRubro = (r) => r.aCargoCliente ? fAcargo : (r.tieneMateriales ? fConMat : fSoloMO);
+  const fSinMat = frases.sinMat || FRASE_SIN_MAT_DEFAULT;
+  const fraseRubro = (r) => r.tieneMateriales ? fConMat : fSinMat;
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
   // Solo los rubros "publicables": sin tareas en $0, sin secciones huérfanas y
@@ -694,12 +695,11 @@ El saldo restante se abona por certificación mensual de avance de obra, con un 
 
 const NOTA_SENA_DEFAULT = '✓ El cómputo y listado detallado de materiales ya está realizado. Se entrega al confirmar la obra (posterior a la seña).';
 
-// Frases automáticas por rubro en modo Resumen (editables en el modal). Se elige
-// según la composición del rubro: con materiales / solo M.O / materiales a cargo
-// del cliente (esta última fija; las otras dos editables).
+// Frases automáticas por rubro en modo Resumen (editables en el modal). 2 casos:
+// el rubro tiene materiales facturados, o no los tiene → los materiales corren a
+// cargo del comprador.
 const FRASE_CON_MAT_DEFAULT = 'Incluye provisión de materiales y mano de obra, según plano.';
-const FRASE_SOLO_MO_DEFAULT = 'Incluye mano de obra, según plano.';
-const FRASE_ACARGO_CLIENTE = 'Incluye mano de obra. Materiales a cargo del cliente, según plano.';
+const FRASE_SIN_MAT_DEFAULT = 'Incluye mano de obra. Materiales a cargo del comprador, según plano.';
 
 export default function ExportModal({ onClose, obra, detalle }) {
   const { dolarVenta } = useDolar();
@@ -737,7 +737,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
   const [nivel, setNivel] = useState('resumen');
   const [notaSena, setNotaSena] = useState(NOTA_SENA_DEFAULT);
   const [fraseConMat, setFraseConMat] = useState(FRASE_CON_MAT_DEFAULT);
-  const [fraseSoloMO, setFraseSoloMO] = useState(FRASE_SOLO_MO_DEFAULT);
+  const [fraseSinMat, setFraseSinMat] = useState(FRASE_SIN_MAT_DEFAULT);
 
   const rr = rubrosExportables(detalle?.rubros || []).map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
@@ -772,7 +772,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
         qrDataUrl = null;
       }
 
-      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel, notaSena, frases: { conMat: fraseConMat, soloMO: fraseSoloMO } });
+      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel, notaSena, frases: { conMat: fraseConMat, sinMat: fraseSinMat } });
 
       // Abrir pestaña nueva con el HTML. NO disparamos w.print() automatico:
       // cuando print se dispara programaticamente, Chrome aplica preferencias
@@ -830,9 +830,9 @@ export default function ExportModal({ onClose, obra, detalle }) {
                 <input value={fraseConMat} onChange={e => setFraseConMat(e.target.value)}
                   style={{ marginTop: 4, width: '100%', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper }} />
                 <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>↑ rubros que incluyen materiales</div>
-                <input value={fraseSoloMO} onChange={e => setFraseSoloMO(e.target.value)}
+                <input value={fraseSinMat} onChange={e => setFraseSinMat(e.target.value)}
                   style={{ marginTop: 6, width: '100%', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper }} />
-                <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>↑ rubros solo de mano de obra</div>
+                <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>↑ rubros sin materiales (a cargo del comprador)</div>
               </>)}
             </div>
 
