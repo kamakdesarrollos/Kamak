@@ -59,18 +59,16 @@ const CORNER_BRACKETS = `
   <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:2px solid #1a9b9c;border-right:2px solid #1a9b9c;"></div>`;
 
 // ── HTML generator ────────────────────────────────────────────────────────────
-function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel = 'detallado', notaSena = '', frases = {} }) {
+function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel = 'detallado', notaSena = '' }) {
   const esResumen = nivel === 'resumen';
-  // Frase automática por rubro (modo Resumen): si el rubro tiene materiales
-  // facturados → "provisión de materiales y M.O"; si no → materiales a cargo del
-  // comprador. (Un rubro con materiales a cargo del comprador entra en el 2º caso
+  // Frase automática por rubro (modo Resumen), usada SOLO cuando el rubro no tiene
+  // nota manual: si tiene materiales facturados → "provisión de materiales y M.O";
+  // si no → materiales a cargo del comprador; logística sin viáticos → frase de
+  // viáticos. (Un rubro con materiales a cargo del comprador entra en el 2º caso
   // porque tieneMateriales = false.)
-  const fConMat = frases.conMat || FRASE_CON_MAT_DEFAULT;
-  const fSinMat = frases.sinMat || FRASE_SIN_MAT_DEFAULT;
-  const fViaticos = frases.viaticos || FRASE_VIATICOS_DEFAULT;
   const fraseRubro = (r) => {
-    if (r.esLogistica && !r.tieneViaticos) return fViaticos;
-    return r.tieneMateriales ? fConMat : fSinMat;
+    if (r.esLogistica && !r.tieneViaticos) return FRASE_VIATICOS_DEFAULT;
+    return r.tieneMateriales ? FRASE_CON_MAT_DEFAULT : FRASE_SIN_MAT_DEFAULT;
   };
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
@@ -257,7 +255,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div class="rubro-ttl" style="margin:0"><span class="dmnd-sm"></span>RUBRO ${String(ri + 1).padStart(2, '0')} · ${esc(r.nombre)}</div>
         <div class="rubro-resumen-tot">U$S ${toUSD(r.venta)}</div>
       </div>
-      <div class="rubro-incluye">${esc(fraseRubro(r))}</div>
+      <div class="rubro-incluye">${esc(r.nota || fraseRubro(r))}</div>
     </div>`).join('');
 
   const computoResumen = `
@@ -699,7 +697,8 @@ El saldo restante se abona por certificación mensual de avance de obra, con un 
 
 const NOTA_SENA_DEFAULT = '✓ El cómputo y listado detallado de materiales ya está realizado. Se entrega al confirmar la obra (posterior a la seña).';
 
-// Frases automáticas por rubro en modo Resumen (editables en el modal). 2 casos:
+// Frase automática por rubro en modo Resumen — FALLBACK cuando el rubro no tiene
+// nota manual (las notas se editan rubro por rubro en el presupuesto). 2 casos:
 // el rubro tiene materiales facturados, o no los tiene → los materiales corren a
 // cargo del comprador.
 const FRASE_CON_MAT_DEFAULT = 'Incluye provisión de materiales y mano de obra, según plano.';
@@ -742,9 +741,6 @@ export default function ExportModal({ onClose, obra, detalle }) {
   // 'detallado' (uso interno, completo). Default resumen para presentar.
   const [nivel, setNivel] = useState('resumen');
   const [notaSena, setNotaSena] = useState(NOTA_SENA_DEFAULT);
-  const [fraseConMat, setFraseConMat] = useState(FRASE_CON_MAT_DEFAULT);
-  const [fraseSinMat, setFraseSinMat] = useState(FRASE_SIN_MAT_DEFAULT);
-  const [fraseViaticos, setFraseViaticos] = useState(FRASE_VIATICOS_DEFAULT);
 
   const rr = rubrosExportables(detalle?.rubros || []).map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
@@ -779,7 +775,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
         qrDataUrl = null;
       }
 
-      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel, notaSena, frases: { conMat: fraseConMat, sinMat: fraseSinMat, viaticos: fraseViaticos } });
+      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel, notaSena });
 
       // Abrir pestaña nueva con el HTML. NO disparamos w.print() automatico:
       // cuando print se dispara programaticamente, Chrome aplica preferencias
@@ -833,16 +829,9 @@ export default function ExportModal({ onClose, obra, detalle }) {
                 <textarea value={notaSena} onChange={e => setNotaSena(e.target.value)}
                   placeholder="Leyenda (listado de materiales / seña)"
                   style={{ marginTop: 8, width: '100%', height: 70, resize: 'vertical', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper, lineHeight: 1.4 }} />
-                <div style={{ fontSize: 10, fontWeight: 700, color: T.ink2, marginTop: 10 }}>Frase por rubro (editable)</div>
-                <input value={fraseConMat} onChange={e => setFraseConMat(e.target.value)}
-                  style={{ marginTop: 4, width: '100%', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper }} />
-                <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>↑ rubros que incluyen materiales</div>
-                <input value={fraseSinMat} onChange={e => setFraseSinMat(e.target.value)}
-                  style={{ marginTop: 6, width: '100%', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper }} />
-                <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>↑ rubros sin materiales (a cargo del comprador)</div>
-                <input value={fraseViaticos} onChange={e => setFraseViaticos(e.target.value)}
-                  style={{ marginTop: 6, width: '100%', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper }} />
-                <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>↑ logística sin viáticos/comida/hospedaje cargados</div>
+                <div style={{ fontSize: 9.5, color: T.ink3, marginTop: 10, lineHeight: 1.45 }}>
+                  Cada rubro muestra su <b>nota</b> — editala en el presupuesto, debajo de cada rubro. Si un rubro no tiene nota, usa una frase automática (con materiales / a cargo del comprador / logística sin viáticos).
+                </div>
               </>)}
             </div>
 

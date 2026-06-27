@@ -106,6 +106,14 @@ describe('resumenRubros', () => {
     expect(resumenRubros([r1, r0]).map(r => r.nombre)).toEqual(['Con valor']);
   });
 
+  it('pasa la nota manual del rubro (o undefined si no tiene)', () => {
+    const conNota = rubro({ nombre: 'Pisos', nota: 'No incluye nivelación de contrapiso.', tareas: [{ id: 'a', costoMat: 1000, costoSub: 0, cantidad: 1 }] });
+    const sinNota = rubro({ nombre: 'Pintura', tareas: [{ id: 'b', costoMat: 0, costoSub: 1000, cantidad: 1 }] });
+    const [a, b] = resumenRubros([conNota, sinNota]);
+    expect(a.nota).toBe('No incluye nivelación de contrapiso.');
+    expect(b.nota).toBeUndefined();
+  });
+
   it('logística: detecta esLogistica y si las tareas mencionan viáticos/comida/hospedaje', () => {
     const sinViat = rubro({ nombre: '47 - LOGISTICA', tareas: [{ id: 'a', nombre: 'Flete y acarreo', costoMat: 0, costoSub: 1000, cantidad: 1 }] });
     const conViat = rubro({ nombre: '47 - LOGISTICA', tareas: [{ id: 'b', nombre: 'Viáticos del equipo', costoMat: 0, costoSub: 1000, cantidad: 1 }] });

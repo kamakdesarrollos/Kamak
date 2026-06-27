@@ -464,6 +464,7 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
   const [inlineEdit, setInlineEdit] = useState(null);
   // (6-rubro) Edición de márgenes por gremio: { rubroId } del rubro cuyo header está en modo edición.
   const [editRubroMargen, setEditRubroMargen] = useState(null);
+  const [editRubroNota, setEditRubroNota] = useState(null);
   // Adjuntar presupuesto de tercero: adjRubroId = rubro donde se está adjuntando
   // (abre el modal de subir); adjReady = payload que devolvió ese modal (file +
   // proveedor + ítems/filas) → abre el modal de revisión/mapeo.
@@ -1232,6 +1233,42 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
                 {puedeEditar && <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, cursor: 'pointer' }}
                   onClick={e => { e.stopPropagation(); deleteRubro(rubro.id); }}>🗑</span>}
               </div>
+
+              {/* Nota del rubro: se muestra en el presupuesto RESUMIDO del cliente.
+                  Click para editar (mismo patrón que la nota de APU). Si no se carga,
+                  el resumen usa la frase automática (materiales/M.O/logística). */}
+              {(puedeEditar || rubro.nota) && (
+                <div style={{ padding: '5px 12px', background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
+                  {editRubroNota === rubro.id ? (
+                    <input
+                      autoFocus
+                      defaultValue={rubro.nota || ''}
+                      placeholder="Nota del rubro (se muestra en el presupuesto resumido)…"
+                      onBlur={e => {
+                        const val = e.target.value.trim();
+                        patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubro.id ? { ...r, nota: val || undefined } : r) }));
+                        setEditRubroNota(null);
+                      }}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setEditRubroNota(null); e.target.blur(); } }}
+                      style={{ width: '100%', padding: '3px 6px', border: `1px solid ${T.faint2}`, borderRadius: 3, fontFamily: T.font, fontSize: 11, fontStyle: 'italic', background: T.paper, outline: 'none', color: T.ink2 }}
+                    />
+                  ) : rubro.nota ? (
+                    <span
+                      onClick={() => { if (puedeEditar) setEditRubroNota(rubro.id); }}
+                      title={puedeEditar ? 'Click para editar la nota del rubro' : ''}
+                      style={{ fontSize: 11, color: T.ink2, fontStyle: 'italic', cursor: puedeEditar ? 'text' : 'default' }}>
+                      📝 {rubro.nota}
+                    </span>
+                  ) : (puedeEditar && (
+                    <span
+                      onClick={() => setEditRubroNota(rubro.id)}
+                      title="Agregar una nota a este rubro (se ve en el resumen)"
+                      style={{ fontSize: 10, color: T.ink3, opacity: 0.6, cursor: 'pointer', userSelect: 'none' }}>
+                      + nota del rubro
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* Chips de presupuestos adjuntos del rubro: link al archivo + quitar
                   (quita el adjunto, sus tareas y su contrato, atómico). */}

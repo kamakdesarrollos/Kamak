@@ -73,6 +73,8 @@ export function resumenRubros(rubros) {
     // esos gastos van a cargo del comprador (frase especial).
     const esLogistica = _norm(r.nombre).includes('logistica');
     const tieneViaticos = reales.some(t => RE_VIATICOS.test(_norm(t.nombre)));
-    return { nombre: r.nombre, venta, tieneMateriales, aCargoCliente, esLogistica, tieneViaticos };
+    // Nota manual del rubro (si la cargaron): tiene prioridad sobre la frase
+    // automática en el resumen. La arma/usa el consumidor.
+    return { nombre: r.nombre, venta, tieneMateriales, aCargoCliente, esLogistica, tieneViaticos, nota: r.nota };
   });
 }
