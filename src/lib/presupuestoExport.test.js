@@ -105,4 +105,18 @@ describe('resumenRubros', () => {
     const r1 = rubro({ nombre: 'Con valor', tareas: [{ id: 'a', costoMat: 1000, costoSub: 0, cantidad: 1 }] });
     expect(resumenRubros([r1, r0]).map(r => r.nombre)).toEqual(['Con valor']);
   });
+
+  it('logística: detecta esLogistica y si las tareas mencionan viáticos/comida/hospedaje', () => {
+    const sinViat = rubro({ nombre: '47 - LOGISTICA', tareas: [{ id: 'a', nombre: 'Flete y acarreo', costoMat: 0, costoSub: 1000, cantidad: 1 }] });
+    const conViat = rubro({ nombre: '47 - LOGISTICA', tareas: [{ id: 'b', nombre: 'Viáticos del equipo', costoMat: 0, costoSub: 1000, cantidad: 1 }] });
+    const noLog = rubro({ nombre: 'Pisos', tareas: [{ id: 'c', nombre: 'Porcelanato', costoMat: 1000, costoSub: 0, cantidad: 1 }] });
+    const [a] = resumenRubros([sinViat]);
+    expect(a.esLogistica).toBe(true);
+    expect(a.tieneViaticos).toBe(false); // → frase "a cargo del comprador"
+    const [b] = resumenRubros([conViat]);
+    expect(b.esLogistica).toBe(true);
+    expect(b.tieneViaticos).toBe(true); // "Viáticos" (con acento) detectado
+    const [c] = resumenRubros([noLog]);
+    expect(c.esLogistica).toBe(false);
+  });
 });

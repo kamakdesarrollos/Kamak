@@ -67,7 +67,11 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
   // porque tieneMateriales = false.)
   const fConMat = frases.conMat || FRASE_CON_MAT_DEFAULT;
   const fSinMat = frases.sinMat || FRASE_SIN_MAT_DEFAULT;
-  const fraseRubro = (r) => r.tieneMateriales ? fConMat : fSinMat;
+  const fViaticos = frases.viaticos || FRASE_VIATICOS_DEFAULT;
+  const fraseRubro = (r) => {
+    if (r.esLogistica && !r.tieneViaticos) return fViaticos;
+    return r.tieneMateriales ? fConMat : fSinMat;
+  };
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
   // Solo los rubros "publicables": sin tareas en $0, sin secciones huérfanas y
@@ -700,6 +704,8 @@ const NOTA_SENA_DEFAULT = '✓ El cómputo y listado detallado de materiales ya 
 // cargo del comprador.
 const FRASE_CON_MAT_DEFAULT = 'Incluye provisión de materiales y mano de obra, según plano.';
 const FRASE_SIN_MAT_DEFAULT = 'Incluye mano de obra. Materiales a cargo del comprador, según plano.';
+// Logística sin viáticos cargados → esos gastos van a cargo del comprador.
+const FRASE_VIATICOS_DEFAULT = 'Gastos de viáticos: comida y hospedaje a cargo del comprador.';
 
 export default function ExportModal({ onClose, obra, detalle }) {
   const { dolarVenta } = useDolar();
@@ -738,6 +744,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
   const [notaSena, setNotaSena] = useState(NOTA_SENA_DEFAULT);
   const [fraseConMat, setFraseConMat] = useState(FRASE_CON_MAT_DEFAULT);
   const [fraseSinMat, setFraseSinMat] = useState(FRASE_SIN_MAT_DEFAULT);
+  const [fraseViaticos, setFraseViaticos] = useState(FRASE_VIATICOS_DEFAULT);
 
   const rr = rubrosExportables(detalle?.rubros || []).map(r => ({ ...r, ...calcRubroExport(r) }));
   const totalVenta = rr.reduce((s, r) => s + r.venta, 0);
@@ -772,7 +779,7 @@ export default function ExportModal({ onClose, obra, detalle }) {
         qrDataUrl = null;
       }
 
-      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel, notaSena, frases: { conMat: fraseConMat, sinMat: fraseSinMat } });
+      const html = generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel, notaSena, frases: { conMat: fraseConMat, sinMat: fraseSinMat, viaticos: fraseViaticos } });
 
       // Abrir pestaña nueva con el HTML. NO disparamos w.print() automatico:
       // cuando print se dispara programaticamente, Chrome aplica preferencias
@@ -833,6 +840,9 @@ export default function ExportModal({ onClose, obra, detalle }) {
                 <input value={fraseSinMat} onChange={e => setFraseSinMat(e.target.value)}
                   style={{ marginTop: 6, width: '100%', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper }} />
                 <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>↑ rubros sin materiales (a cargo del comprador)</div>
+                <input value={fraseViaticos} onChange={e => setFraseViaticos(e.target.value)}
+                  style={{ marginTop: 6, width: '100%', padding: '6px 8px', borderRadius: 4, border: `1.5px solid ${T.faint2}`, fontFamily: T.font, fontSize: 11, outline: 'none', background: T.paper }} />
+                <div style={{ fontSize: 9, color: T.ink3, marginTop: 2 }}>↑ logística sin viáticos/comida/hospedaje cargados</div>
               </>)}
             </div>
 

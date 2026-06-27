@@ -60,12 +60,19 @@ export function rubrosExportables(rubros) {
 //  - aCargoCliente: el rubro tiene los materiales a cargo del comprador.
 //  - tieneMateriales: el rubro factura materiales (alguna tarea con costoMat > 0)
 //    y NO son a cargo del cliente.
+const _norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const RE_VIATICOS = /viatico|hospedaje|comida/;
+
 export function resumenRubros(rubros) {
   return rubrosExportables(rubros).map(r => {
     const reales = (r.tareas || []).filter(t => t.tipo !== 'seccion');
     const venta = reales.reduce((s, t) => s + tareaVentaUnit(t, r) * (t.cantidad || 0), 0);
     const aCargoCliente = !!r.materialesACargoComprador;
     const tieneMateriales = !aCargoCliente && reales.some(t => (t.costoMat || 0) > 0);
-    return { nombre: r.nombre, venta, tieneMateriales, aCargoCliente };
+    // Logística: si ninguna tarea del rubro menciona viáticos/hospedaje/comida,
+    // esos gastos van a cargo del comprador (frase especial).
+    const esLogistica = _norm(r.nombre).includes('logistica');
+    const tieneViaticos = reales.some(t => RE_VIATICOS.test(_norm(t.nombre)));
+    return { nombre: r.nombre, venta, tieneMateriales, aCargoCliente, esLogistica, tieneViaticos };
   });
 }
