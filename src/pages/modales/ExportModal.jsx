@@ -61,15 +61,6 @@ const CORNER_BRACKETS = `
 // ── HTML generator ────────────────────────────────────────────────────────────
 function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, logoLight, logoDark, dolarVenta, qrDataUrl, plazoDias, mecanismo, brands, nivel = 'detallado', notaSena = '' }) {
   const esResumen = nivel === 'resumen';
-  // Frase automática por rubro (modo Resumen), usada SOLO cuando el rubro no tiene
-  // nota manual: si tiene materiales facturados → "provisión de materiales y M.O";
-  // si no → materiales a cargo del comprador; logística sin viáticos → frase de
-  // viáticos. (Un rubro con materiales a cargo del comprador entra en el 2º caso
-  // porque tieneMateriales = false.)
-  const fraseRubro = (r) => {
-    if (r.esLogistica && !r.tieneViaticos) return FRASE_VIATICOS_DEFAULT;
-    return r.tieneMateriales ? FRASE_CON_MAT_DEFAULT : FRASE_SIN_MAT_DEFAULT;
-  };
   const tc = dolarVenta || 1;
   const toUSD = n => Math.round(n / tc).toLocaleString('es-AR');
   // Solo los rubros "publicables": sin tareas en $0, sin secciones huérfanas y
@@ -255,7 +246,7 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         <div class="rubro-ttl" style="margin:0"><span class="dmnd-sm"></span>RUBRO ${String(ri + 1).padStart(2, '0')} · ${esc(r.nombre)}</div>
         <div class="rubro-resumen-tot">U$S ${toUSD(r.venta)}</div>
       </div>
-      <div class="rubro-incluye">${esc(r.nota || fraseRubro(r))}</div>
+      <div class="rubro-incluye">${esc(r.nota || r.notaAuto)}</div>
     </div>`).join('');
 
   const computoResumen = `
@@ -696,15 +687,6 @@ Para reservar fecha de obra, se abona un 40% del total en concepto de anticipo.
 El saldo restante se abona por certificación mensual de avance de obra, con un 5% de fondo de reparo retenido hasta la entrega final.`;
 
 const NOTA_SENA_DEFAULT = '✓ El cómputo y listado detallado de materiales ya está realizado. Se entrega al confirmar la obra (posterior a la seña).';
-
-// Frase automática por rubro en modo Resumen — FALLBACK cuando el rubro no tiene
-// nota manual (las notas se editan rubro por rubro en el presupuesto). 2 casos:
-// el rubro tiene materiales facturados, o no los tiene → los materiales corren a
-// cargo del comprador.
-const FRASE_CON_MAT_DEFAULT = 'Incluye provisión de materiales y mano de obra, según plano.';
-const FRASE_SIN_MAT_DEFAULT = 'Incluye mano de obra. Materiales a cargo del comprador, según plano.';
-// Logística sin viáticos cargados → esos gastos van a cargo del comprador.
-const FRASE_VIATICOS_DEFAULT = 'Gastos de viáticos: comida y hospedaje a cargo del comprador.';
 
 export default function ExportModal({ onClose, obra, detalle }) {
   const { dolarVenta } = useDolar();

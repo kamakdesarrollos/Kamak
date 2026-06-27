@@ -68,6 +68,7 @@ import AdjuntarPresupuestoModal from './AdjuntarPresupuestoModal';
 import RevisarPresupuestoModal from './RevisarPresupuestoModal';
 import { subirAdjuntoPrivado, getSignedUrl, borrarAdjuntoPrivado } from '../../lib/upload';
 import { itemsATareas, montoContrato, avanceContrato, tareasDeObra, matchProveedorFlexible, resolverProveedorImport } from '../../lib/presupuestoImport';
+import { notaRubroAuto } from '../../lib/presupuestoExport';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const newId = () => `id-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -1235,40 +1236,33 @@ function TabPresupuesto({ obra, detalle, patch, moneda, frozen, onApprove, onReo
               </div>
 
               {/* Nota del rubro: se muestra en el presupuesto RESUMIDO del cliente.
-                  Click para editar (mismo patrón que la nota de APU). Si no se carga,
-                  el resumen usa la frase automática (materiales/M.O/logística). */}
-              {(puedeEditar || rubro.nota) && (
-                <div style={{ padding: '5px 12px', background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
-                  {editRubroNota === rubro.id ? (
-                    <input
-                      autoFocus
-                      defaultValue={rubro.nota || ''}
-                      placeholder="Nota del rubro (se muestra en el presupuesto resumido)…"
-                      onBlur={e => {
-                        const val = e.target.value.trim();
-                        patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubro.id ? { ...r, nota: val || undefined } : r) }));
-                        setEditRubroNota(null);
-                      }}
-                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setEditRubroNota(null); e.target.blur(); } }}
-                      style={{ width: '100%', padding: '3px 6px', border: `1px solid ${T.faint2}`, borderRadius: 3, fontFamily: T.font, fontSize: 11, fontStyle: 'italic', background: T.paper, outline: 'none', color: T.ink2 }}
-                    />
-                  ) : rubro.nota ? (
-                    <span
-                      onClick={() => { if (puedeEditar) setEditRubroNota(rubro.id); }}
-                      title={puedeEditar ? 'Click para editar la nota del rubro' : ''}
-                      style={{ fontSize: 11, color: T.ink2, fontStyle: 'italic', cursor: puedeEditar ? 'text' : 'default' }}>
-                      📝 {rubro.nota}
-                    </span>
-                  ) : (puedeEditar && (
-                    <span
-                      onClick={() => setEditRubroNota(rubro.id)}
-                      title="Agregar una nota a este rubro (se ve en el resumen)"
-                      style={{ fontSize: 10, color: T.ink3, opacity: 0.6, cursor: 'pointer', userSelect: 'none' }}>
-                      + nota del rubro
-                    </span>
-                  ))}
-                </div>
-              )}
+                  Por defecto trae la frase automática (según materiales / a cargo del
+                  comprador / logística); click para editarla (patrón nota de APU).
+                  La auto se ve atenuada; al guardar una nota propia, queda fija. */}
+              <div style={{ padding: '5px 12px', background: T.faint, borderBottom: `1px solid ${T.faint2}` }}>
+                {editRubroNota === rubro.id ? (
+                  <input
+                    autoFocus
+                    defaultValue={rubro.nota || notaRubroAuto(rubro)}
+                    placeholder="Nota del rubro (se muestra en el presupuesto resumido)…"
+                    onBlur={e => {
+                      const val = e.target.value.trim();
+                      patch(d => ({ ...d, rubros: d.rubros.map(r => r.id === rubro.id ? { ...r, nota: val || undefined } : r) }));
+                      setEditRubroNota(null);
+                    }}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setEditRubroNota(null); e.target.blur(); } }}
+                    style={{ width: '100%', padding: '3px 6px', border: `1px solid ${T.faint2}`, borderRadius: 3, fontFamily: T.font, fontSize: 11, fontStyle: 'italic', background: T.paper, outline: 'none', color: T.ink2 }}
+                  />
+                ) : (
+                  <span
+                    onClick={() => { if (puedeEditar) setEditRubroNota(rubro.id); }}
+                    title={puedeEditar ? 'Click para editar la nota del rubro' : ''}
+                    style={{ fontSize: 11, color: rubro.nota ? T.ink2 : T.ink3, fontStyle: 'italic', cursor: puedeEditar ? 'text' : 'default' }}>
+                    📝 {rubro.nota || notaRubroAuto(rubro)}
+                    {!rubro.nota && puedeEditar && <span style={{ fontStyle: 'normal', opacity: 0.6, marginLeft: 6, fontSize: 9.5 }}>(auto · click para editar)</span>}
+                  </span>
+                )}
+              </div>
 
               {/* Chips de presupuestos adjuntos del rubro: link al archivo + quitar
                   (quita el adjunto, sus tareas y su contrato, atómico). */}

@@ -52,29 +52,37 @@ export function rubrosExportables(rubros) {
   return out;
 }
 
-// Vista RESUMEN para presentar al cliente: por cada rubro publicable devuelve su
-// nombre, el total de venta, y banderas de composición (si incluye materiales o
-// solo mano de obra) — SIN nombres de tareas, cantidades ni precios unitarios
-// (que es justo lo que no queremos exponer). El texto de la frase ("Incluye…")
-// lo arma el consumidor según estas banderas.
-//  - aCargoCliente: el rubro tiene los materiales a cargo del comprador.
-//  - tieneMateriales: el rubro factura materiales (alguna tarea con costoMat > 0)
-//    y NO son a cargo del cliente.
 const _norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const RE_VIATICOS = /viatico|hospedaje|comida/;
 
+// Frases "prediseñadas" por rubro (modo Resumen). Son el default editable de la
+// nota del rubro (se muestran y se pueden modificar en el presupuesto) y el
+// fallback en el PDF si no hay nota manual.
+export const FRASE_CON_MAT = 'Incluye provisión de materiales y mano de obra, según plano.';
+export const FRASE_SIN_MAT = 'Incluye mano de obra. Materiales a cargo del comprador, según plano.';
+export const FRASE_VIATICOS = 'Gastos de viáticos: comida y hospedaje a cargo del comprador.';
+
+// Nota automática de un rubro según su composición:
+//  - logística sin tareas de viáticos/hospedaje/comida → frase de viáticos
+//  - factura materiales (alguna tarea con costoMat > 0, no a cargo del comprador) → con materiales
+//  - si no → solo mano de obra (materiales a cargo del comprador)
+export function notaRubroAuto(rubro) {
+  const reales = (rubro?.tareas || []).filter(t => t.tipo !== 'seccion');
+  const aCargoComprador = !!rubro?.materialesACargoComprador;
+  const tieneMateriales = !aCargoComprador && reales.some(t => (t.costoMat || 0) > 0);
+  const esLogistica = _norm(rubro?.nombre).includes('logistica');
+  const tieneViaticos = reales.some(t => RE_VIATICOS.test(_norm(t.nombre)));
+  if (esLogistica && !tieneViaticos) return FRASE_VIATICOS;
+  return tieneMateriales ? FRASE_CON_MAT : FRASE_SIN_MAT;
+}
+
+// Vista RESUMEN para presentar al cliente: por cada rubro publicable devuelve su
+// nombre, el total de venta, la nota manual (si la cargaron) y la nota automática
+// (default). El consumidor muestra `nota || notaAuto`. NO expone tareas/cantidades.
 export function resumenRubros(rubros) {
   return rubrosExportables(rubros).map(r => {
     const reales = (r.tareas || []).filter(t => t.tipo !== 'seccion');
     const venta = reales.reduce((s, t) => s + tareaVentaUnit(t, r) * (t.cantidad || 0), 0);
-    const aCargoCliente = !!r.materialesACargoComprador;
-    const tieneMateriales = !aCargoCliente && reales.some(t => (t.costoMat || 0) > 0);
-    // Logística: si ninguna tarea del rubro menciona viáticos/hospedaje/comida,
-    // esos gastos van a cargo del comprador (frase especial).
-    const esLogistica = _norm(r.nombre).includes('logistica');
-    const tieneViaticos = reales.some(t => RE_VIATICOS.test(_norm(t.nombre)));
-    // Nota manual del rubro (si la cargaron): tiene prioridad sobre la frase
-    // automática en el resumen. La arma/usa el consumidor.
-    return { nombre: r.nombre, venta, tieneMateriales, aCargoCliente, esLogistica, tieneViaticos, nota: r.nota };
+    return { nombre: r.nombre, venta, nota: r.nota, notaAuto: notaRubroAuto(r) };
   });
 }

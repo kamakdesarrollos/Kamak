@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rubrosExportables, tareaVentaUnit, resumenRubros } from './presupuestoExport';
+import { rubrosExportables, tareaVentaUnit, resumenRubros, notaRubroAuto, FRASE_CON_MAT, FRASE_SIN_MAT, FRASE_VIATICOS } from './presupuestoExport';
 
 const rubro = (over = {}) => ({ id: 'r', nombre: 'Rubro', margenMat: 20, margenMO: 35, ...over });
 
@@ -68,8 +68,31 @@ describe('rubrosExportables', () => {
   });
 });
 
+describe('notaRubroAuto', () => {
+  it('rubro con materiales → frase con materiales', () => {
+    const r = rubro({ nombre: 'Pisos', tareas: [{ id: 'a', nombre: 'Porcelanato', costoMat: 5000, costoSub: 2000 }] });
+    expect(notaRubroAuto(r)).toBe(FRASE_CON_MAT);
+  });
+  it('rubro solo mano de obra → frase a cargo del comprador', () => {
+    const r = rubro({ nombre: 'Demoliciones', tareas: [{ id: 'a', nombre: 'Demolición', costoMat: 0, costoSub: 1000 }] });
+    expect(notaRubroAuto(r)).toBe(FRASE_SIN_MAT);
+  });
+  it('materiales a cargo del comprador → frase a cargo del comprador (no con materiales)', () => {
+    const r = rubro({ nombre: 'Revestimientos', materialesACargoComprador: true, tareas: [{ id: 'a', nombre: 'Cerámico', costoMat: 5000, costoSub: 2000 }] });
+    expect(notaRubroAuto(r)).toBe(FRASE_SIN_MAT);
+  });
+  it('logística sin viáticos → frase de viáticos a cargo del comprador', () => {
+    const r = rubro({ nombre: '47 - LOGISTICA', tareas: [{ id: 'a', nombre: 'Flete y acarreo', costoMat: 0, costoSub: 1000 }] });
+    expect(notaRubroAuto(r)).toBe(FRASE_VIATICOS);
+  });
+  it('logística CON viáticos (acento) → no usa la frase de viáticos', () => {
+    const r = rubro({ nombre: '47 - LOGISTICA', tareas: [{ id: 'a', nombre: 'Viáticos del equipo', costoMat: 0, costoSub: 1000 }] });
+    expect(notaRubroAuto(r)).not.toBe(FRASE_VIATICOS);
+  });
+});
+
 describe('resumenRubros', () => {
-  it('rubro solo mano de obra → tieneMateriales false, no expone nombres', () => {
+  it('devuelve nombre, total, nota manual y notaAuto; no expone tareas', () => {
     const r = rubro({ nombre: 'Demoliciones', tareas: [
       { id: 'a', nombre: 'Demolición de pisos', costoMat: 0, costoSub: 1000, cantidad: 2 },
       { id: 'b', nombre: 'Picado de revestimiento', costoMat: 0, costoSub: 500, cantidad: 1 },
@@ -77,27 +100,14 @@ describe('resumenRubros', () => {
     const [out] = resumenRubros([r]);
     expect(out.nombre).toBe('Demoliciones');
     expect(out.venta).toBe(3375); // 1000*1.35*2 + 500*1.35
-    expect(out.tieneMateriales).toBe(false);
-    expect(out.aCargoCliente).toBe(false);
+    expect(out.notaAuto).toBe(FRASE_SIN_MAT);
+    expect(out.nota).toBeUndefined();
     expect(out.incluye).toBeUndefined(); // no se exponen las tareas
   });
 
-  it('rubro con materiales (algún costoMat>0) → tieneMateriales true', () => {
-    const r = rubro({ nombre: 'Pisos', tareas: [
-      { id: 'a', nombre: 'Porcelanato', costoMat: 5000, costoSub: 2000, cantidad: 1 },
-    ] });
-    const [out] = resumenRubros([r]);
-    expect(out.tieneMateriales).toBe(true);
-    expect(out.aCargoCliente).toBe(false);
-  });
-
-  it('materiales a cargo del comprador → aCargoCliente true, tieneMateriales false', () => {
-    const r = rubro({ nombre: 'Revestimientos', materialesACargoComprador: true, tareas: [
-      { id: 'a', nombre: 'Cerámico', costoMat: 5000, costoSub: 2000, cantidad: 1 },
-    ] });
-    const [out] = resumenRubros([r]);
-    expect(out.aCargoCliente).toBe(true);
-    expect(out.tieneMateriales).toBe(false);
+  it('rubro con materiales → notaAuto con materiales', () => {
+    const r = rubro({ nombre: 'Pisos', tareas: [{ id: 'a', nombre: 'Porcelanato', costoMat: 5000, costoSub: 2000, cantidad: 1 }] });
+    expect(resumenRubros([r])[0].notaAuto).toBe(FRASE_CON_MAT);
   });
 
   it('excluye rubros en $0', () => {
@@ -112,19 +122,5 @@ describe('resumenRubros', () => {
     const [a, b] = resumenRubros([conNota, sinNota]);
     expect(a.nota).toBe('No incluye nivelación de contrapiso.');
     expect(b.nota).toBeUndefined();
-  });
-
-  it('logística: detecta esLogistica y si las tareas mencionan viáticos/comida/hospedaje', () => {
-    const sinViat = rubro({ nombre: '47 - LOGISTICA', tareas: [{ id: 'a', nombre: 'Flete y acarreo', costoMat: 0, costoSub: 1000, cantidad: 1 }] });
-    const conViat = rubro({ nombre: '47 - LOGISTICA', tareas: [{ id: 'b', nombre: 'Viáticos del equipo', costoMat: 0, costoSub: 1000, cantidad: 1 }] });
-    const noLog = rubro({ nombre: 'Pisos', tareas: [{ id: 'c', nombre: 'Porcelanato', costoMat: 1000, costoSub: 0, cantidad: 1 }] });
-    const [a] = resumenRubros([sinViat]);
-    expect(a.esLogistica).toBe(true);
-    expect(a.tieneViaticos).toBe(false); // → frase "a cargo del comprador"
-    const [b] = resumenRubros([conViat]);
-    expect(b.esLogistica).toBe(true);
-    expect(b.tieneViaticos).toBe(true); // "Viáticos" (con acento) detectado
-    const [c] = resumenRubros([noLog]);
-    expect(c.esLogistica).toBe(false);
   });
 });

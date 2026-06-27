@@ -7,14 +7,15 @@ En el modo Resumen del export se quiere una **nota por rubro editable una por un
 
 ## Solución
 - **Dato:** campo `nota` (string opcional) por rubro en `detalle.rubros[]` (persistido).
-- **Edición:** inline en `ObraPresupuesto`, igual que las notas de APU (`tarea.nota`): fila fina debajo del header del rubro, con `editRubroNota` (estado por rubroId) → input → `patch` guarda `rubro.nota`. Visible aunque el rubro esté colapsado. "+ nota del rubro" si está vacía.
-- **Export (modo Resumen):** cada rubro muestra `rubro.nota` si está cargada; si **no** está, cae a la **frase automática** ya existente (con materiales / sin materiales = a cargo del comprador / logística sin viáticos). Nunca queda un rubro sin texto.
-- **Limpieza:** se quitan del modal de exportar los 3 campos de "frases globales" (ya no hacen falta: la frase automática es el default y se edita por rubro). El toggle Resumen/Detallado y la leyenda post-seña quedan.
+- **Frase prediseñada:** cada rubro trae por defecto una **nota automática** según su composición (con materiales / sin materiales = a cargo del comprador / logística sin viáticos), calculada por `notaRubroAuto(rubro)` (helper puro compartido).
+- **Edición:** inline en `ObraPresupuesto`, igual que las notas de APU (`tarea.nota`): fila fina debajo del header del rubro, con `editRubroNota` (estado por rubroId) → input → `patch` guarda `rubro.nota`. El campo se muestra **siempre con la frase prediseñada** (atenuada, "auto · click para editar"); al editar, el input viene **pre-cargado** con `rubro.nota || notaRubroAuto(rubro)`; al guardar, la nota propia queda fija. Visible aunque el rubro esté colapsado.
+- **Export (modo Resumen):** cada rubro muestra `rubro.nota || rubro.notaAuto`. Nunca queda un rubro sin texto.
+- **Limpieza:** se quitan del modal de exportar los 3 campos de "frases globales" (la frase automática es el default y se edita por rubro). El toggle Resumen/Detallado y la leyenda post-seña quedan.
 
 ## Componentes
-- `src/pages/obra/ObraPresupuesto.jsx`: estado `editRubroNota` + fila de nota por rubro (patrón de `tarea.nota` / `editRubroMargen`).
-- `src/lib/presupuestoExport.js`: `resumenRubros()` agrega `nota: r.nota` al objeto devuelto. (+ test)
-- `src/pages/modales/ExportModal.jsx`: en `resumenSecs`, texto = `r.nota || fraseRubro(r)`; se quitan los 3 estados/inputs de frases globales y el `frases` pasado a `generarHTML` (las constantes FRASE_* quedan como default de `fraseRubro`).
+- `src/lib/presupuestoExport.js`: helper puro exportado `notaRubroAuto(rubro)` + constantes `FRASE_CON_MAT` / `FRASE_SIN_MAT` / `FRASE_VIATICOS` (fuente única de la frase). `resumenRubros()` devuelve `{nombre, venta, nota, notaAuto}`. (+ tests)
+- `src/pages/obra/ObraPresupuesto.jsx`: import `notaRubroAuto`; estado `editRubroNota` + fila de nota por rubro (patrón de `tarea.nota` / `editRubroMargen`), pre-cargando la frase automática.
+- `src/pages/modales/ExportModal.jsx`: en `resumenSecs`, texto = `r.nota || r.notaAuto`; se quitan los 3 estados/inputs de frases globales, el `frases` de `generarHTML`, el `fraseRubro` local y las constantes FRASE_* (ahora viven en `presupuestoExport.js`).
 
 ## Fuera de alcance
 - Nota por rubro en el modo Detallado (sigue mostrando las tareas con su nota propia).
