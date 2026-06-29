@@ -12,6 +12,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const META_TOKEN = process.env.META_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN; // bot interno: admins en Telegram (phone "tg:<chatId>")
 const sbH = () => ({ apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' });
 
 // GET genérico a una tabla REST (para app_users / whatsapp_users).
@@ -24,7 +25,17 @@ async function sbGet(table, query = '') {
 }
 
 // Mensaje de WhatsApp (texto libre) — molde de payment-reminders/sales-followups.
+// Si el destinatario es "tg:<chatId>" (admin en Telegram) ruta a la Bot API.
 async function sendWA(to, body) {
+  if (typeof to === 'string' && to.startsWith('tg:')) {
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: to.slice(3), text: String(body).slice(0, 4096), disable_web_page_preview: true }),
+      });
+      return { ok: r.ok };
+    } catch (e) { return { ok: false, error: e.message }; }
+  }
   try {
     const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
       method: 'POST',

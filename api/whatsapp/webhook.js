@@ -22,6 +22,22 @@ const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY;
 // que se configure en Vercel.
 const META_APP_SECRET = process.env.META_APP_SECRET;
 
+// ── Telegram (bot INTERNO del equipo) ───────────────────────────────────────
+// El equipo interno migra a Telegram; los clientes siguen en WhatsApp (el QR del
+// presupuesto NO se toca). Telegram comparte ESTE mismo webhook (Vercel está en
+// 12/12 funciones, no se puede agregar una ruta) y reusa TODO el motor: cambia
+// SOLO la capa de canal (envío/descarga). Identidad: tabla whatsapp_users con
+// phone = "tg:<chatId>" → getLinkedUser / getAllAdmins / estado / locks /
+// notificaciones se enrutan solos. Ver docs/telegram-migration/00-inventory.md.
+const TELEGRAM_BOT_TOKEN      = process.env.TELEGRAM_BOT_TOKEN;
+// Token secreto que Telegram reenvía en el header X-Telegram-Bot-Api-Secret-Token
+// (se setea al llamar setWebhook). Si está, validamos cada update con él.
+const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
+
+// Helper único de rol: SOLO Admin puede ver costos/márgenes/ganancia. Centraliza
+// la regla (antes estaba dispersa) para cerrar las fugas de costos a no-admin.
+function isAdmin(user) { return user?.user_rol === 'Admin'; }
+
 // Desactivamos el body parser de Vercel para poder leer el cuerpo RAW y validar
 // la firma HMAC de Meta sobre los bytes exactos (un re-stringify no coincidiría).
 export const config = { api: { bodyParser: false } };
@@ -408,11 +424,90 @@ const BOTONES_CONFIRMAR = [
   { id: 'cancelar',  title: 'Cancelar ❌' },
 ];
 
+// ── Telegram Bot API — capa de canal del bot interno ────────────────────────
+// Las funciones sendWA*/downloadMedia branchean según el destinatario: si `to`
+// empieza con "tg:" es un chat de Telegram → Bot API; si no, WhatsApp (intacto).
+const esTelegram = (to) => typeof to === 'string' && to.startsWith('tg:');
+const tgChatId   = (to) => String(to).slice(3);
+
+// Llamada genérica a la Bot API. Devuelve { ok, data }. Nunca tira.
+async function tgApi(method, payload) {
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) {
+      console.error(`tgApi ${method} error:`, r.status, JSON.stringify(data).slice(0, 300));
+      return { ok: false, data };
+    }
+    return { ok: true, data };
+  } catch (e) {
+    console.error(`tgApi ${method} exception:`, e.message);
+    return { ok: false, data: null };
+  }
+}
+
+// Telegram corta los mensajes a 4096 chars. Partimos por saltos de línea.
+function splitForTelegram(text, max = 4096) {
+  const s = String(text == null ? '' : text);
+  if (s.length <= max) return [s];
+  const out = [];
+  let buf = '';
+  for (const line of s.split('\n')) {
+    if (buf.length + line.length + 1 > max) {
+      if (buf) out.push(buf);
+      if (line.length > max) { for (let i = 0; i < line.length; i += max) out.push(line.slice(i, i + max)); buf = ''; }
+      else { buf = line; }
+    } else {
+      buf = buf ? `${buf}\n${line}` : line;
+    }
+  }
+  if (buf) out.push(buf);
+  return out;
+}
+
+// Envía texto a un chat de Telegram. Reusa el markup del bot (*negrita*, _itálica_)
+// vía parse_mode 'Markdown' (legacy, mismo *asterisco* que WhatsApp). Si el parseo
+// falla (entidades desbalanceadas en datos del usuario) reintenta en texto plano:
+// NUNCA se pierde el mensaje. El teclado inline va solo en el último chunk.
+async function tgSendMessage(chatId, body, replyMarkup = null) {
+  const chunks = splitForTelegram(body);
+  let last = { ok: true };
+  for (let i = 0; i < chunks.length; i++) {
+    const base = { chat_id: chatId, text: chunks[i], disable_web_page_preview: true };
+    if (i === chunks.length - 1 && replyMarkup) base.reply_markup = replyMarkup;
+    last = await tgApi('sendMessage', { ...base, parse_mode: 'Markdown' });
+    if (!last.ok) last = await tgApi('sendMessage', base); // fallback sin formato
+  }
+  return { ok: last.ok };
+}
+
+// Descarga un archivo de Telegram (file_id) → base64. Mismo contrato que
+// downloadMedia de Meta (el token va en el PATH de la URL, no como Bearer).
+async function tgDownloadFile(fileId) {
+  try {
+    const info = await tgApi('getFile', { file_id: fileId });
+    const filePath = info?.data?.result?.file_path;
+    if (!filePath) return null;
+    const r = await fetch(`https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`);
+    if (!r.ok) { console.error('tgDownloadFile fetch error:', r.status); return null; }
+    const buf = await r.arrayBuffer();
+    return Buffer.from(buf).toString('base64');
+  } catch (e) {
+    console.error('tgDownloadFile error:', e.message);
+    return null;
+  }
+}
+
 // Devuelve { ok, status?, error? }. Los callers que responden al admin pueden
 // ignorar el retorno (no rompe nada). Pero para AVISOS al cliente (texto libre)
 // importa: Meta rechaza el texto libre fuera de la ventana de 24hs, y antes eso
 // se tragaba en silencio → el bot decía "listo" sin haber enviado nada.
 async function sendWA(to, body) {
+  if (esTelegram(to)) return tgSendMessage(tgChatId(to), body);
   try {
     const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
       method: 'POST',
@@ -438,6 +533,12 @@ async function sendWA(to, body) {
 // Fallback: si la API rechaza (algunos números no soportan interactive),
 // reintenta como texto plano con instrucción numérica.
 async function sendWAButtons(to, body, botones) {
+  if (esTelegram(to)) {
+    // Telegram: teclado inline, un botón por fila. callback_data = id del botón
+    // (confirmar/editar/cancelar) ≤64 bytes. Sin límite de 3 como WhatsApp.
+    const inline_keyboard = botones.map(b => [{ text: b.title, callback_data: b.id }]);
+    return tgSendMessage(tgChatId(to), body, { inline_keyboard });
+  }
   const buttons = botones.slice(0, 3).map(b => ({
     type: 'reply',
     reply: { id: b.id, title: b.title.slice(0, 20) }, // título máx 20 chars
@@ -468,6 +569,17 @@ async function sendWAButtons(to, body, botones) {
 // elegir obra/caja/proveedor cuando hay varias coincidencias.
 // items: [{ id, title, description? }]
 async function sendWAList(to, body, buttonLabel, items) {
+  if (esTelegram(to)) {
+    // Telegram no tiene listas nativas → se emula con teclado inline, una opción
+    // por fila, callback_data 'pick:<id>' (misma convención que el handler).
+    const inline_keyboard = items.slice(0, 50).map(it => {
+      const label = (it.description ? `${it.title} — ${it.description}` : (it.title || '')).slice(0, 90) || '—';
+      let cd = `pick:${it.id}`;
+      if (Buffer.byteLength(cd, 'utf8') > 64) { console.warn('tg callback_data >64b:', cd); cd = cd.slice(0, 64); }
+      return [{ text: label, callback_data: cd }];
+    });
+    return tgSendMessage(tgChatId(to), body, { inline_keyboard });
+  }
   const rows = items.slice(0, 10).map(it => ({
     id: it.id,
     title: (it.title || '').slice(0, 24),
@@ -503,6 +615,9 @@ async function sendWAList(to, body, buttonLabel, items) {
 // — la API rechaza texto libre fuera de esa ventana.
 // La plantilla debe estar registrada y APROBADA en Meta Business Manager.
 async function sendWATemplate(to, templateName, languageCode, bodyParams = []) {
+  // Telegram no tiene plantillas ni ventana de 24h → se manda el texto directo.
+  // (Defensivo: los templates son para clientes en WhatsApp, nunca destino tg:.)
+  if (esTelegram(to)) return tgSendMessage(tgChatId(to), bodyParams.join(' '));
   try {
     const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
       method: 'POST',
@@ -542,6 +657,8 @@ async function sendWATemplate(to, templateName, languageCode, bodyParams = []) {
 }
 
 async function downloadMedia(mediaId) {
+  // Media de Telegram: el mediaId viene como "tg:<file_id>".
+  if (typeof mediaId === 'string' && mediaId.startsWith('tg:')) return tgDownloadFile(mediaId.slice(3));
   try {
     const r1 = await fetch(`https://graph.facebook.com/v18.0/${mediaId}`, {
       headers: { 'Authorization': `Bearer ${META_TOKEN}` },
@@ -1439,7 +1556,7 @@ async function callClaude(user, messageText, base64Media, mimeType, conv, ctx, m
     const rubStr = rubros.map(r => {
       const ts = (r.tareas || []).filter(t => t.tipo !== 'seccion').slice(0, 12);
       const tsStr = ts.length > 0
-        ? '\n' + ts.map(t => `      TAREA:${t.id}|${t.nombre}|total:${t.cantidad}${t.unidad}|av:${t.avance||0}%${isCtx ? `|costoSubUnit:${Math.round(t.costoSub||0)}` : ''}`).join('\n')
+        ? '\n' + ts.map(t => `      TAREA:${t.id}|${t.nombre}|total:${t.cantidad}${t.unidad}|av:${t.avance||0}%${(isCtx && isAdmin(user)) ? `|costoSubUnit:${Math.round(t.costoSub||0)}` : ''}`).join('\n')
         : '';
       return `    RUBRO:${r.id}|${r.nombre}|prov:${r.proveedor||'—'}${tsStr}`;
     }).join('\n');
@@ -2756,8 +2873,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
     const avanceMsg = esCorreccion
       ? ` · ${avancePrevio}% → ${avanceFinal}%`
       : avanceAgregado > 0 ? ` · +${Math.min(avanceAgregado, 100 - avancePrevio)}%` : '';
-    // Al que reportó: solo confirmación limpia (sin precios ni alertas)
-    const ccOkMsg = ccMsg && ccMsg.startsWith('\n💰') ? ccMsg : '';
+    // Al que reportó: confirmación limpia (sin precios ni alertas). El detalle de
+    // la cert ($ = costo del subcontrato) es un COSTO → SOLO al Admin. El resto
+    // (capataz, jefe de obra) ve solo la confirmación del avance, sin plata.
+    const ccOkMsg = (ccMsg && ccMsg.startsWith('\n💰') && isAdmin(user)) ? ccMsg : '';
     const accionMsg = esCorreccion ? '🔧 Corrección guardada' : '✅ Avance guardado';
     return `${accionMsg} en *${obra.nombre}*${tareaMsg}${avanceMsg}${mediaUrl ? ' · con foto' : ''}${ccOkMsg}`;
   }
@@ -3123,7 +3242,11 @@ async function ejecutarComando(comando, datos, user, ctx) {
   if (comando === 'pendientes') {
     const pendingRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
     const pending = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
-    const activos = pending.filter(p => p.status !== 'confirmed' && p.status !== 'rejected');
+    let activos = pending.filter(p => p.status !== 'confirmed' && p.status !== 'rejected');
+    // No-admin: ve SOLO sus propios pendientes (no los montos cargados por otros).
+    if (!isAdmin(user)) {
+      activos = activos.filter(p => p.creadoPor === user.user_name || p.creadoPor === user.id || p.creadoPor === user.email);
+    }
     if (!activos.length) return '✅ No hay pendientes de aprobación.';
 
     // Guardar IDs para que el admin pueda decir "aprobar 1" / "rechazar 2".
@@ -3441,17 +3564,24 @@ async function ejecutarComando(comando, datos, user, ctx) {
     const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
     const dateF = iso => iso ? iso.split('-').reverse().join('/') : '—';
 
+    // Costos/cobros/montos: SOLO Admin. El resto de los roles (jefe de obra,
+    // capataz, logística, administración) ve avance + tareas, sin plata.
+    const verCostos = isAdmin(user);
     let r = `📊 *${obra.nombre}*`;
     if (obra.cliente) r += ` · ${obra.cliente}`;
     r += `\n\n`;
     r += `🏗 Avance: *${avancePct}%*\n`;
-    r += `💸 Gastado: *${fmt(gastado)}*`;
-    if (presupuesto > 0) r += ` / ${fmt(presupuesto)} (${Math.round(gastado/presupuesto*100)}%)`;
-    r += `\n`;
-    r += `💰 Cobrado: *${fmt(cobrado)}*\n`;
+    if (verCostos) {
+      r += `💸 Gastado: *${fmt(gastado)}*`;
+      if (presupuesto > 0) r += ` / ${fmt(presupuesto)} (${Math.round(gastado/presupuesto*100)}%)`;
+      r += `\n`;
+      r += `💰 Cobrado: *${fmt(cobrado)}*\n`;
+    }
     if (cuotas.length) r += `🧾 Cuotas: ${cuotasPagadas}/${cuotas.length} pagadas\n`;
-    if (proximaCuota) r += `📅 Próx. cuota: ${dateF(proximaCuota.fecha)} · ${fmt(proximaCuota.monto || proximaCuota.montoARS || 0)}\n`;
-    if (gastosMes.length) {
+    if (proximaCuota) r += verCostos
+      ? `📅 Próx. cuota: ${dateF(proximaCuota.fecha)} · ${fmt(proximaCuota.monto || proximaCuota.montoARS || 0)}\n`
+      : `📅 Próx. cuota: ${dateF(proximaCuota.fecha)}\n`;
+    if (verCostos && gastosMes.length) {
       r += `\n*Top gastos del mes:*\n`;
       gastosMes.forEach(m => { r += `• ${m.descripcion || m.proveedor || '—'}: ${fmt(m.monto)}\n`; });
     }
@@ -3461,6 +3591,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
 
   // "Cuánto le debo a [proveedor]" → saldo + últimas certs/pagos.
   if (comando === 'cc_proveedor') {
+    // Saldos/cuentas corrientes de proveedores = costos → SOLO Admin.
+    if (!isAdmin(user)) return '🔒 Los saldos de cuenta corriente de proveedores están reservados a Dirección (Admin).';
     const query = (datos.proveedor || '').toLowerCase().trim();
     if (!query) return '🤔 ¿De qué proveedor? Ej: *cuánto le debo a Pérez*';
     const prov = ctx.proveedores.find(p =>
@@ -3528,6 +3660,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
 
   // ── Búsqueda cross-obra: "últimos N gastos de [obra]" / "gastos de cemento" ──
   if (comando === 'buscar_gastos') {
+    // Búsqueda de gastos (montos cross-obra) = costos → SOLO Admin.
+    if (!isAdmin(user)) return '🔒 La búsqueda de gastos por monto está reservada a Dirección (Admin).';
     const obraQuery = (datos.obra || '').toLowerCase().trim();
     const concepto  = (datos.concepto || '').toLowerCase().trim();
     const limite    = datos.limite || 5;
@@ -3575,6 +3709,9 @@ async function ejecutarComando(comando, datos, user, ctx) {
 
   // ── Estado de cheque: "deposité el cheque 4421" / "se cobró el 4421" ────────
   if (comando === 'estado_cheque') {
+    // El monto del cheque (plata que el usuario quizá no cargó) y la mutación de
+    // cajas son datos/operación financiera → SOLO Admin (igual que el comando 'cheques').
+    if (!isAdmin(user)) return '🔒 El estado de los cheques lo maneja Dirección (Admin).';
     const numero = (datos.numero || '').toString().trim();
     const nuevoEstado = datos.estado; // 'depositado' | 'cobrado' | 'rechazado' | 'anulado'
     if (!numero) return '🤔 Decime el número de cheque. Ej: *deposité el cheque 4421*';
@@ -4535,6 +4672,126 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
 }
 
 // ── Handler principal ─────────────────────────────────────────────────────────
+// ── Bot interno por Telegram: parseo del update + ruteo ─────────────────────
+// Traduce un update de Telegram al MISMO (phone, text, mediaId, mimeType) que usa
+// el path de WhatsApp y reusa TODO el motor (getLinkedUser → handleMainFlow /
+// handleLinkingFlow), la dedup, el lock por media y el RBAC. El "phone" es el
+// sentinel "tg:<chatId>" → estado, locks y envíos se enrutan solos a Telegram.
+async function handleTelegramUpdate(update) {
+  if (!update || typeof update !== 'object') return;
+
+  let chatId = null, text = '', mediaId = null, mimeType = null;
+  let contactoCompartido = null, isCallback = false, dedupId = update.update_id;
+
+  if (update.callback_query) {
+    // Tap en un botón inline → llega como update aparte (no como mensaje).
+    isCallback = true;
+    const cq = update.callback_query;
+    chatId = cq.message?.chat?.id;
+    const data = cq.data || '';
+    await tgApi('answerCallbackQuery', { callback_query_id: cq.id }); // corta el spinner
+    // Quitamos el teclado del mensaje para evitar doble-tap (re-ejecución de la acción).
+    if (cq.message?.message_id != null && cq.message?.chat?.id != null) {
+      await tgApi('editMessageReplyMarkup', { chat_id: cq.message.chat.id, message_id: cq.message.message_id, reply_markup: { inline_keyboard: [] } });
+    }
+    // Normalización idéntica al handler interactivo de WhatsApp (4678-4691).
+    if (data === 'confirmar') text = 'sí';
+    else if (data === 'cancelar') text = 'no';
+    else if (data === 'editar') text = 'editar';
+    else if (data.startsWith('pick:')) text = data.slice(5);
+    else text = data;
+    dedupId = `cb:${cq.id}`;
+  } else if (update.message) {
+    const m = update.message;
+    chatId = m.chat?.id;
+    dedupId = `msg:${m.message_id}`;
+    if (m.text) {
+      text = m.text;
+    } else if (Array.isArray(m.photo) && m.photo.length) {
+      // photo = array de tamaños; el último es el de mayor resolución.
+      mediaId = `tg:${m.photo[m.photo.length - 1].file_id}`;
+      mimeType = 'image/jpeg';
+      text = m.caption || '';
+    } else if (m.document) {
+      mediaId  = `tg:${m.document.file_id}`;
+      // callClaude solo adjunta bloques pdf o image/*. Si el mime falta, lo inferimos
+      // del nombre y por defecto asumimos PDF (mismo default que WhatsApp) para NO
+      // perder la OCR del comprobante.
+      const fn = (m.document.file_name || '').toLowerCase();
+      mimeType = m.document.mime_type
+        || (/\.jpe?g$/.test(fn) ? 'image/jpeg'
+          : /\.png$/.test(fn) ? 'image/png'
+          : /\.webp$/.test(fn) ? 'image/webp'
+          : 'application/pdf');
+      // Preferimos el caption sobre el nombre del archivo (suele ser inútil).
+      text = m.caption || m.document.file_name || '';
+    } else if (m.contact) {
+      // Contacto compartido → mismo flujo "primer contacto" que la vCard de WA.
+      const c = m.contact;
+      const nombre = [c.first_name, c.last_name].filter(Boolean).join(' ').trim() || null;
+      let tel = c.phone_number || null;
+      if (tel) { tel = String(tel).trim(); if (!tel.startsWith('+')) tel = '+' + tel.replace(/[^\d]/g, ''); }
+      contactoCompartido = { nombre, telefono: tel || null };
+      const idC = nombre || tel || '';
+      text = idC ? `primer contacto ${idC}` : 'primer contacto';
+      if (m.caption) text += `. ${m.caption}`;
+    } else {
+      return; // tipo no soportado (sticker, ubicación, audio, etc.)
+    }
+  } else {
+    return; // edited_message, channel_post, my_chat_member, etc. — no aplican
+  }
+
+  if (chatId == null) return;
+  const phone = `tg:${chatId}`;
+
+  // ── /start y comandos con barra ────────────────────────────────────────────
+  if (!isCallback && typeof text === 'string') {
+    const t = text.trim().toLowerCase();
+    if (!mediaId && (t === '/start' || t.startsWith('/start '))) {
+      const yaVinc = await getLinkedUser(phone);
+      if (yaVinc) {
+        await sendWA(phone, `👋 ¡Hola de nuevo, *${yaVinc.user_name || ''}*!\n\nEscribí *ayuda* para ver qué podés hacer desde acá.`);
+      } else {
+        await clearConversation(phone); // arranca limpio
+        await handleLinkingFlow(phone, '', { state: 'idle', data: {}, history: [], slots: {}, defaults: {} });
+      }
+      return;
+    }
+    // Telegram manda comandos como "/ayuda", "/saldo": sacamos la barra para que
+    // el motor los matchee igual que el texto natural.
+    if (text.startsWith('/')) text = text.slice(1);
+  }
+
+  // ── Dedup (Telegram reintenta updates no respondidos con 200) ──────────────
+  const conv = await loadConversation(phone);
+  const procesados = conv.defaults?.lastMsgIds || [];
+  const msgId = `tg:${dedupId}`;
+  if (dedupId != null && procesados.includes(msgId)) { console.log(`DEDUP tg ${msgId}`); return; }
+  if (dedupId != null) {
+    const nd = { ...(conv.defaults || {}), lastMsgIds: [...procesados, msgId].slice(-25) };
+    await saveConversation(phone, { defaults: nd });
+    conv.defaults = nd;
+  }
+
+  console.log(`TG chat=${chatId} cb=${isCallback} media=${!!mediaId} state=${conv.state} text=${(text || '').slice(0, 30)}`);
+
+  // ── Lock por media (comprobantes simultáneos) + ruteo INTERNO ──────────────
+  const lockAdq = mediaId ? await acquireLock(phone) : false;
+  try {
+    const user = await getLinkedUser(phone);
+    if (user) {
+      if (contactoCompartido) user.contactoCompartido = contactoCompartido;
+      await handleMainFlow(phone, user, text, mediaId, mimeType, conv);
+    } else {
+      // Canal interno: SIN flujo de cliente ni onboarding QR → directo a vincular.
+      await handleLinkingFlow(phone, text, conv);
+    }
+  } finally {
+    if (lockAdq) await releaseLock(phone);
+  }
+}
+
 export default async function handler(req, res) {
   // Verificación del webhook (GET de Meta) — solo si vienen los query params
   // tipicos del verify de Meta. Sin esos params, devolvemos el endpoint
@@ -4572,8 +4829,37 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Leer el cuerpo crudo y validar la firma de Meta antes de procesar nada.
+    // Leer el cuerpo crudo. Lo parseamos ANTES de validar la firma para poder
+    // detectar el canal (WhatsApp/Meta vs Telegram). La firma de Meta se valida
+    // igual sobre los bytes crudos, pero SOLO para el path de WhatsApp.
     const { raw, parsed } = await leerBodyCrudo(req);
+    let body = parsed;
+    if (raw) {
+      try { body = JSON.parse(raw.toString('utf8') || '{}'); }
+      catch { return res.status(400).json({ error: 'bad json' }); }
+    }
+    body = body || {};
+
+    // ── Bot INTERNO por Telegram ──────────────────────────────────────────────
+    // Los updates de Telegram traen `update_id` y (si seteamos secret en
+    // setWebhook) el header X-Telegram-Bot-Api-Secret-Token. Se detecta y procesa
+    // ACÁ, antes de la firma de Meta (que no aplica a Telegram). El path de
+    // WhatsApp queda intacto: sus requests NO traen update_id ni ese header.
+    const tgSecretHeader = req.headers['x-telegram-bot-api-secret-token'];
+    if (TELEGRAM_BOT_TOKEN && (body.update_id !== undefined || tgSecretHeader)) {
+      // Fail-closed: el bot interno se autentica SOLO por este secret (la identidad
+      // es chat.id, no un secreto). Si el secret falta o no coincide, se rechaza —
+      // nunca se procesa un update spoofeable. setWebhook DEBE pasar secret_token.
+      if (!TELEGRAM_WEBHOOK_SECRET || tgSecretHeader !== TELEGRAM_WEBHOOK_SECRET) {
+        console.warn('[telegram] secret token ausente o inválido — request rechazado');
+        return res.status(403).json({ error: 'forbidden' });
+      }
+      try { await handleTelegramUpdate(body); }
+      catch (e) { console.error('handleTelegramUpdate error:', e.message); }
+      return res.status(200).json({ ok: true });
+    }
+
+    // ── WhatsApp (Meta): firma sobre los bytes crudos + tipo de evento ────────
     if (META_APP_SECRET && raw) {
       if (!firmaMetaValida(req.headers['x-hub-signature-256'], raw, META_APP_SECRET)) {
         console.warn('[webhook] X-Hub-Signature-256 inválida — request rechazado');
@@ -4582,12 +4868,6 @@ export default async function handler(req, res) {
     } else if (META_APP_SECRET && !raw) {
       console.warn('[webhook] no pude leer el body crudo — firma NO validada (revisar bodyParser)');
     }
-    let body = parsed;
-    if (raw) {
-      try { body = JSON.parse(raw.toString('utf8') || '{}'); }
-      catch { return res.status(400).json({ error: 'bad json' }); }
-    }
-    body = body || {};
     if (body?.object !== 'whatsapp_business_account') return res.status(200).json({ ok: true });
 
     const entry   = body.entry?.[0];

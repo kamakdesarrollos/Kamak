@@ -10,6 +10,7 @@
 // --- ENV compartido + helpers idénticos de ambos archivos originales ---
 const META_TOKEN      = process.env.META_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN; // bot interno: admins vinculados con phone "tg:<chatId>"
 const SUPABASE_URL    = process.env.SUPABASE_URL;
 const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY;
 const CRON_SECRET     = process.env.CRON_SECRET;
@@ -45,7 +46,24 @@ async function saveSharedData(key, data) {
   });
 }
 
+// Telegram: notificaciones internas a admins vinculados con phone "tg:<chatId>".
+// Markdown con fallback a texto plano. (Bot interno del equipo.)
+async function tgSend(chatId, body) {
+  const base = { chat_id: chatId, text: String(body).slice(0, 4096), disable_web_page_preview: true };
+  try {
+    let r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...base, parse_mode: 'Markdown' }),
+    });
+    if (!r.ok) r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(base),
+    });
+    return { ok: r.ok };
+  } catch (e) { console.error('tgSend error:', e.message); return { ok: false, error: e.message }; }
+}
+
 async function sendWA(to, body) {
+  if (typeof to === 'string' && to.startsWith('tg:')) return tgSend(to.slice(3), body);
   try {
     const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
       method: 'POST',

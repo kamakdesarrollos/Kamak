@@ -1,0 +1,1086 @@
+{
+  "commands": {
+    "routing_summary": "Inbound dispatch is a layered pipeline, NOT a single keyword table. (1) handler() [webhook.js:4538] validates Meta HMAC signature, dedups by message.id (conv.defaults.lastMsgIds), and normalizes message types: text/image(caption)/document(caption|filename)/contacts(vCard→synthesizes \"primer contacto <nombre>\")/interactive. Interactive button/list replies are remapped to text: id 'confirmar'→\"sí\", 'cancelar'→\"no\", 'editar'→\"editar\", 'pick:<v>'→\"<v>\". (2) Identity resolution: getLinkedUser(phone) [supabase whatsapp_users] → INTERNAL USER → handleMainFlow; else getLinkedCliente(phone) → PORTAL CLIENT → handleClienteFlow (read-only); else UNKNOWN → parseClientePrimerMensaje (\"hola soy X obra Y\" QR onboarding) → onboardCliente, OR a cliente-command regex guard, OR handleLinkingFlow (employee account linking). (3) handleMainFlow [webhook.js:4002] is a PER-USER CONVERSATIONAL STATE MACHINE; conv.state persisted in supabase via loadConversation/saveConversation. States: idle, conversando, confirmando, dictado_confirmando, awaiting_ingreso_caja, awaiting_client_notice, awaiting_client_phone, awaiting_factura_pago_confirm, awaiting_factura_pago_pick (+ linking_* in the linking flow). When state==idle it runs a CASCADE OF REGEX SHORTCUT DETECTORS (pideTareas, pideEstadoObra, pideCotizarProveedor, pideCCProveedor, pideContactoProveedor, pideAprobacion, pideNotaObra, pideBuscarGastos, pideEstadoCheque, deshacer regex, parseDictado, esSaludo) that answer WITHOUT calling the LLM. Then a regex slot pre-extractor (_extractors.js extractSlots/extractIntent over INTENT_KEYWORDS) plus direct bypasses for avance/corrección. If nothing matches, it calls callClaude() [webhook.js:1406] — an LLM NLU (Anthropic claude-sonnet-4-6) with a large system prompt enumerating ACCIONES; Claude returns JSON {mensaje, estado:'conversando'|'confirmando'|'ejecutar'|'cancelar'|'comando', accion:{tipo,datos}}. estado 'ejecutar'/'confirmando'→ejecutarAccion() [webhook.js:1761] (a long if/tipo=== dispatcher); estado 'comando'→ejecutarComando() [webhook.js:2938] (if/comando=== dispatcher). Non-idle states are handled by dedicated branches at the top of handleMainFlow (confirmations, corrections, caja picks, factura-match picks). So: keyword/regex fast-path FIRST, LLM intent classification as fallback, all wrapped in a stateful confirm/edit/cancel loop. Role gating is partly in NLU prompt and partly enforced in code (see roles_allowed/notes per command).",
+    "commands": [
+      {
+        "name": "gasto",
+        "description": "Register an expense (caja outflow): amount, description, obra, caja/medio de pago, comprobante blanco/negro, optional fiscal data (tipoFactura, CUIT, neto, percepción IIBB/IVA, categoríaFiscal sueldo/cargas/alquiler/servicios). Reads amount+medio de pago from a photo of a ticket/factura. Admin auto-applies; non-admin goes to an approval buffer (whatsapp_pending) that admins must confirm.",
+        "category": "gastos",
+        "triggers": [
+          "gasto",
+          "gaste/gasté",
+          "compre/compré",
+          "pague/pagué",
+          "pagar",
+          "factura",
+          "comprobante",
+          "photo of ticket/factura with obra or concept",
+          "natural language e.g. 'pagué $50.000 de materiales en Baradero'"
+        ],
+        "input": "Free text and/or photo/PDF of a receipt; multi-step via Claude if data missing; confirmed with Confirmar/Cancelar/Editar buttons (state 'confirmando').",
+        "handler_location": "webhook.js ejecutarAccion (~line 1762, `if (tipo==='gasto'||tipo==='ingreso')`); NLU in callClaude ACCIONES #1 (~1615). INTENT_KEYWORDS.gasto in _extractors.js:30",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Admin (user_rol==='Admin') path auto-applies the movimiento and may auto-create the factura/Libro IVA entry; non-Admin path posts to whatsapp_pending and notifies admins (campanita+push). Category/fiscal inference done by the LLM prompt. monto is ALWAYS the total incl. IVA/percepciones."
+      },
+      {
+        "name": "ingreso",
+        "description": "Register income/cobro: amount, description, obra, caja. Marks matching cuota as paid; after an admin ingreso it can offer to notify the client of the cobro. If caja/medio not given it asks which caja (never infers caja from obra name).",
+        "category": "caja",
+        "triggers": [
+          "ingreso",
+          "cobro",
+          "cobré/cobre",
+          "cobrar",
+          "recibi/recibí",
+          "me transfirieron",
+          "me pagaron",
+          "me depositó",
+          "e.g. 'cobré U$S 5.000 de cuota 2 en Baradero'"
+        ],
+        "input": "Free text (optionally photo). Multi-step: may enter state awaiting_ingreso_caja (pick caja), then awaiting_client_notice / awaiting_client_phone (notify client of cobro).",
+        "handler_location": "webhook.js ejecutarAccion (~1762, shared gasto/ingreso block); caja/notice sub-states in handleMainFlow (~4256, ~4290, ~4321). NLU ACCIONES #2 (~1623)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Special rule: cajaId only set if user names a caja or clear medio de pago, else bot asks. Client-notice flow (notifyClienteCobro) and save-client-phone flow chained afterward."
+      },
+      {
+        "name": "factura_compra",
+        "description": "Load a supplier invoice from a PHOTO/PDF: extracts tipoFactura A/B/C, numero, proveedor, CUIT, fecha, total, neto, percepción IIBB/IVA, claseComprobante factura/nota_credito. Default = PENDIENTE DE PAGO (devengado, counts for Libro IVA without moving caja). yaPagada=true debits caja; soloRegistrar=true = fiscal-only (no debt, no caja).",
+        "category": "gastos",
+        "triggers": [
+          "photo/PDF of a formal supplier invoice",
+          "text says 'factura'/'facturá esto'/'cargá la factura'",
+          "image is clearly a proveedor invoice with no expense-context"
+        ],
+        "input": "Photo/PDF (+ optional caption). LLM extraction; confirm via buttons. Non-admin → approval buffer.",
+        "handler_location": "webhook.js ejecutarAccion (~2015, `if (tipo==='factura_compra')`); NLU ACCIONES #3 (~1624)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Admin auto-loads as facturaPendiente (or gasto if yaPagada); non-admin posts to whatsapp_pending. Nota de crédito → claseComprobante='nota_credito' (negative in Libro IVA). Distinct from cargar_factura (manual text alta)."
+      },
+      {
+        "name": "cargar_factura",
+        "description": "MANUAL text alta of a pending supplier invoice / orden de pago (cuenta por pagar) WITHOUT a photo and WITHOUT debiting caja. Fields: proveedor, monto (required), fecha, numero, tipoLetra, CUIT, concepto, obra, soloRegistrar.",
+        "category": "gastos",
+        "triggers": [
+          "cargar factura",
+          "factura pendiente",
+          "nueva factura",
+          "orden de pago",
+          "le debo a",
+          "debo pagar a",
+          "e.g. 'cargá una factura pendiente de Pérez por $300k'"
+        ],
+        "input": "Free text; LLM extracts; confirm via buttons.",
+        "handler_location": "webhook.js ejecutarAccion (~1951, `if (tipo==='cargar_factura')`); NLU ACCIONES #14 (~1643). INTENT_KEYWORDS.cargar_factura _extractors.js:27 (checked BEFORE gasto)",
+        "roles_allowed": [
+          "Admin"
+        ],
+        "notes": "Hard-gated in code: `if (user.user_rol!=='Admin') return '...solo para un Admin.'`. Distinct from factura_compra (photo), gasto (caja), pago_proveedor (cash out)."
+      },
+      {
+        "name": "avance_obra",
+        "description": "Report construction progress on a task: obra, rubro, tarea, cantidadAvance+unidad (m²/ml/m³/u/kg/%) or porcentaje. Distinguishes 'hoy/se hizo' (adds, esCorreccion=false) vs 'total acumulado' (replaces, esCorreccion=true). Attaches photo to the client portal and may register a certificación.",
+        "category": "avance",
+        "triggers": [
+          "avance",
+          "avancé/avanc",
+          "agenda/agendar/registrar/cargar avance",
+          "hice",
+          "terminé/termine",
+          "completé",
+          "colocamos/instalados/pegamos/revocamos",
+          "cantidad+unidad+tarea e.g. '150 m² de revoque grueso en Baradero'",
+          "'30% de pintura en Belgrano'"
+        ],
+        "input": "Free text and/or photo of the work. Direct-bypass to confirmation when obra+tarea+cantidad all parsed (extractAvanceCompleto/extractCorreccion); else LLM. Confirm via buttons.",
+        "handler_location": "webhook.js ejecutarAccion (~2480, `if (tipo==='avance_obra')`); bypasses in handleMainFlow (~4437 correccion, ~4458 avance); extractAvanceCompleto ~1322, extractCorreccion ~1258. NLU ACCIONES #4 (~1628)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Default biased intent for Capataz/Jefe de obra in ambiguous cases (per NLU prompt). 'corrección' bypass replaces previous avance."
+      },
+      {
+        "name": "cheque_recibido",
+        "description": "Register a received cheque/e-cheque into cartera: numero, banco, titular, monto, fechaVencimiento, esEcheq, clienteNombre, obra, cajaDestino. Reads from a photo of the cheque.",
+        "category": "caja",
+        "triggers": [
+          "cheque",
+          "echeq",
+          "e-cheq",
+          "'me dieron un cheque'",
+          "'cobré con un cheque de X'",
+          "'recibí un echeq de Y'",
+          "photo of a cheque"
+        ],
+        "input": "Photo and/or text; LLM extracts; asks 'a qué caja entra' if not stated explicitly; confirm via buttons.",
+        "handler_location": "webhook.js ejecutarAccion (~2423, `if (tipo==='cheque_recibido')`); NLU ACCIONES #5 & #11 (~1629, ~1637)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Caja is never inferred from obra/cheque; if not explicit the bot stays conversando asking the caja."
+      },
+      {
+        "name": "pago_proveedor",
+        "description": "Pay a supplier/subcontractor against their cuenta corriente: monto, proveedorNombre, obra, caja de egreso (else user efectivo), medioPago, concepto. If an open factura's saldo ≈ the payment, it offers to settle that specific factura.",
+        "category": "caja",
+        "triggers": [
+          "'le pagué $X a [proveedor]'",
+          "'pagué $300k a Pérez por la cert de revoque'",
+          "'abonar/cancelar a [persona conocida]'"
+        ],
+        "input": "Free text; confirm via buttons. May enter awaiting_factura_pago_confirm (one match) or awaiting_factura_pago_pick (several open facturas → choose by number/list).",
+        "handler_location": "webhook.js ejecutarAccion (~2264, `if (tipo==='pago_proveedor')`); pick/confirm sub-states handleMainFlow ~4362, ~4386. NLU ACCIONES #10 (~1635)",
+        "roles_allowed": [
+          "Admin"
+        ],
+        "notes": "NLU prompt says 'solo Admin', but the ejecutarAccion branch has NO explicit role check — gating is NLU-only, so a non-admin could in principle trigger it. Distinct from gasto (records against proveedor CC)."
+      },
+      {
+        "name": "traspaso",
+        "description": "Move money between two cajas: monto, cajaId origen, cajaDestinoId, optional montoDestino for cross-currency TC, descripcion. Matches cajas by partial name.",
+        "category": "caja",
+        "triggers": [
+          "traspaso",
+          "'pasá $200k de Caja X a Caja Y'",
+          "pasar de",
+          "mover de",
+          "transferir de",
+          "pasame"
+        ],
+        "input": "Free text; confirm via buttons; asks TC if cross-currency.",
+        "handler_location": "webhook.js ejecutarAccion (~2379, `if (tipo==='traspaso')`); NLU ACCIONES #9 (~1634). INTENT_KEYWORDS.traspaso _extractors.js:38",
+        "roles_allowed": [
+          "Admin"
+        ],
+        "notes": "NLU prompt says 'solo Admin' but the code branch has NO explicit role check (NLU-gated only). NLU ordered before ingreso/gasto so 'pasá de' isn't read as something else."
+      },
+      {
+        "name": "nueva_tarea",
+        "description": "Create/assign a task: titulo, descripcion, asignadoNombre, prioridad, fechaLimite, checklist[]. Admin can assign to anyone; non-admin can only self-assign.",
+        "category": "tareas",
+        "triggers": [
+          "nueva tarea",
+          "crear tarea",
+          "creale (una) tarea",
+          "asigname (una) tarea",
+          "agendá/agendar tarea",
+          "'crear tarea para Juan: comprar cemento'"
+        ],
+        "input": "Free text; LLM extracts; asks 'a quién' if assignee missing.",
+        "handler_location": "webhook.js ejecutarAccion (~2834, `if (tipo==='nueva_tarea')`); NLU ACCIONES #8 (~1633). INTENT_KEYWORDS.tarea _extractors.js:32",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Assignment-to-others is Admin-only (esAdmin check); non-admin assignee forced to self. No WhatsApp notify to assignee (24h window) — in-app badge instead. pideTareas explicitly excludes create-verbs so it doesn't collide with the 'tareas' list command."
+      },
+      {
+        "name": "crear_prospecto",
+        "description": "Create a first-contact / sales opportunity: creates or links a CLIENTE (as prospecto), creates a new OBRA in 'en-presupuesto' with funnel etapa 'prospecto', logs a crm_actividad. Fields: obraNombre?, clienteNombre?. Also triggered by sharing a WhatsApp contact (vCard).",
+        "category": "vinculacion",
+        "triggers": [
+          "nuevo prospecto",
+          "prospecto nuevo",
+          "nueva oportunidad",
+          "cargar/crear prospecto",
+          "nuevo lead",
+          "primer contacto",
+          "nuevo contacto",
+          "me contactó",
+          "me escribió",
+          "consulta de",
+          "sharing a contact card"
+        ],
+        "input": "Free text OR a shared contact (message.type==='contacts' → handler synthesizes 'primer contacto <nombre>' and passes user.contactoCompartido). Confirm via buttons.",
+        "handler_location": "webhook.js ejecutarAccion (~2775, `if (tipo==='crear_prospecto')`) → _intents-comercial.js crearProspecto (line 74). NLU ACCIONES #12 (~1639). extractProspectoSlots _extractors.js:196",
+        "roles_allowed": [
+          "Admin"
+        ],
+        "notes": "Hard-gated in code: non-Admin returns 'Crear oportunidades por chat es solo para un Admin.' Shared-contact name/phone override LLM-inferred values."
+      },
+      {
+        "name": "mover_etapa",
+        "description": "Move an opportunity through the sales funnel: obraNombre, etapaNueva (prospecto|cotizado|negociacion|ganado|perdido). 'ganado'→obra becomes activa; 'perdido'→archivada. Logs to timeline.",
+        "category": "vinculacion",
+        "triggers": [
+          "a ganado",
+          "a perdido",
+          "a negociación",
+          "a cotizado",
+          "pasá/pasar/pasalo a",
+          "mover/moverla a",
+          "cambiar (de) etapa",
+          "'pasá Shell Ruta 3 a ganado'"
+        ],
+        "input": "Free text; confirm via buttons; disambiguates if multiple obra matches.",
+        "handler_location": "webhook.js ejecutarAccion (~2810, `if (tipo==='mover_etapa')`) → _intents-comercial.js moverEtapaObra (line 125). NLU ACCIONES #13 (~1641). INTENT_KEYWORDS.mover_etapa _extractors.js:35; extractEtapaDestino _extractors.js:173",
+        "roles_allowed": [
+          "Admin"
+        ],
+        "notes": "Hard-gated: non-Admin returns 'Mover oportunidades por chat es solo para un Admin.' NLU ordered before traspaso so 'pasá a ganado' isn't read as a caja traspaso."
+      },
+      {
+        "name": "dictado (multi-gasto)",
+        "description": "Dictation mode: load several expenses at once from one message, e.g. 'cargá: 50k cemento baradero, 12k flete, 3k comida'. Splits on commas/newlines/'y', extracts monto+obra+descripción per item, uses user efectivo caja and default obra.",
+        "category": "gastos",
+        "triggers": [
+          "prefix regex /^(cargá|anotá|gastos?)\\s*:?/ then comma/line-separated items each with a monto"
+        ],
+        "input": "Free text list; previews items and confirms via Confirmar/Cancelar buttons (state 'dictado_confirmando'). Each confirmed item runs ejecutarAccion('gasto').",
+        "handler_location": "handleMainFlow ~4109 (parseDictado) + ~4145 (dictado_confirmando). parseDictado _extractors.js:407 (RE_DICTADO_PREFIJO:405)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Bypasses Claude entirely. Items default to comprobante='negro' and last/ default obra."
+      },
+      {
+        "name": "confirmar / cancelar / editar (confirmation loop)",
+        "description": "Meta-intent governing the confirm flow for any pending action. 'sí/dale/ok/confirmo/correcto/s' executes; 'no/cancelar/error/mal/n' cancels; 'editar/corregir/cambiar' prompts for a field; any other data is parsed as a slot correction (monto/obra/caja/cantidad/tarea/proveedor) and merged, re-showing the updated summary.",
+        "category": "consultas",
+        "triggers": [
+          "sí/si/dale/ok/confirmo/correcto/s",
+          "no/cancelar/error/mal/n",
+          "editar/corregir/cambiar",
+          "interactive buttons confirmar/cancelar/editar"
+        ],
+        "input": "Interactive buttons (BOTONES_CONFIRMAR) or free text while state=='confirmando'.",
+        "handler_location": "handleMainFlow ~4184 (`conv.state==='confirmando'`); button id mapping in handler ~4687; BOTONES_CONFIRMAR ~405",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Same yes/no parsing reused across dictado_confirmando, awaiting_client_notice, awaiting_factura_pago_confirm/pick states."
+      },
+      {
+        "name": "deshacer",
+        "description": "Undo/revert the user's last WhatsApp-loaded movimiento (removes the mov; app recalculates saldo).",
+        "category": "caja",
+        "triggers": [
+          "deshacer",
+          "deshace/deshacé",
+          "borra lo ultimo / borrá lo último",
+          "undo",
+          "me equivoque/me equivoqué"
+        ],
+        "input": "Free text exact-ish match (regex in handleMainFlow ~4101).",
+        "handler_location": "ejecutarComando ~3510 (`comando==='deshacer'`); trigger regex handleMainFlow ~4100",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Only finds movs where creadoPorWA && creadoPor===user.user_name."
+      },
+      {
+        "name": "ayuda",
+        "description": "Help menu listing how to talk to the bot (avance, gasto, ingreso, cheque, tareas, consultas rápidas). Admin sees extra lines (cheques, resumen, crear tarea, aprobar/rechazar, traspaso, pagos).",
+        "category": "consultas",
+        "triggers": [
+          "ayuda",
+          "help",
+          "menu (via NLU 'comando' ayuda)"
+        ],
+        "input": "Free text; routed via Claude estado='comando' or direct.",
+        "handler_location": "ejecutarComando ~2939 (`comando==='ayuda'`)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Content is role-aware (esAdmin gates several lines)."
+      },
+      {
+        "name": "tareas",
+        "description": "List the user's pending assigned tasks, numbered, with priority/due/checklist progress. Stores number→id mapping for follow-ups.",
+        "category": "tareas",
+        "triggers": [
+          "tareas",
+          "tareas pendientes",
+          "mis tareas",
+          "que tareas tengo",
+          "que tengo pendiente",
+          "que hago/tengo hoy"
+        ],
+        "input": "Free text; fast-path pideTareas (handleMainFlow ~4038) bypasses Claude.",
+        "handler_location": "ejecutarComando ~2994 (`comando==='tareas'`); detector pideTareas ~3870",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Excludes create-verbs and 'tarea N'/'item' so it doesn't loop or collide with nueva_tarea/tarea_detalle."
+      },
+      {
+        "name": "tarea_detalle",
+        "description": "Show detail of task N from the last list (description, priority, due, full checklist). Stores lastTareaId for item completion.",
+        "category": "tareas",
+        "triggers": [
+          "tarea N",
+          "'tarea 2'",
+          "detalle de la tarea N"
+        ],
+        "input": "Free text with a number; via Claude comando datos.numero.",
+        "handler_location": "ejecutarComando ~3035 (`comando==='tarea_detalle'`)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Requires having run 'tareas' first (uses conv.data.lastTareasList)."
+      },
+      {
+        "name": "completar_item",
+        "description": "Mark checklist item N of the last-viewed task as done; recomputes task estado (pendiente/en_progreso/completada).",
+        "category": "tareas",
+        "triggers": [
+          "hice el item N",
+          "completé el item N",
+          "'hice el item 2'"
+        ],
+        "input": "Free text with number; via Claude comando datos.numero.",
+        "handler_location": "ejecutarComando ~3071 (`comando==='completar_item'`)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Atomic sbPatchItem on tareas; needs conv.data.lastTareaId (run 'tarea N' first)."
+      },
+      {
+        "name": "saldo",
+        "description": "Show balances of the user's visible cajas (calcSaldoCajaBot).",
+        "category": "consultas",
+        "triggers": [
+          "saldo"
+        ],
+        "input": "Free text; via Claude comando.",
+        "handler_location": "ejecutarComando ~3114 (`comando==='saldo'`)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Visibility per cajaEsVisible(user, caja)."
+      },
+      {
+        "name": "pendientes",
+        "description": "List items in the approval buffer (whatsapp_pending) awaiting confirmation — movimientos and facturas. Stores ids for aprobar/rechazar N. NOTE: this is the APPROVAL inbox, not unpaid invoices.",
+        "category": "consultas",
+        "triggers": [
+          "pendientes"
+        ],
+        "input": "Free text; via Claude comando.",
+        "handler_location": "ejecutarComando ~3123 (`comando==='pendientes'`)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Admins see the 'aprobar N / rechazar N' hint. For unpaid supplier invoices the LLM answers from the ÓRDENES DE PAGO context block instead (not this command)."
+      },
+      {
+        "name": "aprobar_pendiente / rechazar_pendiente",
+        "description": "Admin approves or rejects pending item N from the last 'pendientes' list. Approving a movimiento applies it; approving a factura creates the gasto / nota_credito / solo-registrar entry with full IVA breakdown.",
+        "category": "admin",
+        "triggers": [
+          "aprobar N",
+          "aprobá N",
+          "approve N",
+          "ok N",
+          "rechazar N",
+          "rechazá N",
+          "reject N",
+          "no N"
+        ],
+        "input": "Free text 'aprobar/rechazar <n>'; fast-path pideAprobacion (handleMainFlow ~4075) bypasses Claude.",
+        "handler_location": "ejecutarComando ~3155 (`comando==='aprobar_pendiente'||'rechazar_pendiente'`); detector pideAprobacion ~3826",
+        "roles_allowed": [
+          "Admin"
+        ],
+        "notes": "Hard-gated: 'Solo un admin puede aprobar/rechazar pendientes.' Uses conv.data.lastPendientesList."
+      },
+      {
+        "name": "cheques",
+        "description": "List cheques in cartera due within the next 7 days.",
+        "category": "consultas",
+        "triggers": [
+          "cheques"
+        ],
+        "input": "Free text; via Claude comando.",
+        "handler_location": "ejecutarComando ~3347 (`comando==='cheques'`)",
+        "roles_allowed": [
+          "Admin"
+        ],
+        "notes": "Hard-gated: 'Este comando es solo para administradores.'"
+      },
+      {
+        "name": "resumen",
+        "description": "Daily summary for an obra on a date: gastos/ingresos counts and totals plus top 5 expenses. Args obra + optional fecha YYYY-MM-DD (default today).",
+        "category": "consultas",
+        "triggers": [
+          "resumen [obra] [fecha]",
+          "'resumen del día'"
+        ],
+        "input": "Free text; via Claude comando with datos.obraId/fecha.",
+        "handler_location": "ejecutarComando ~3365 (`comando==='resumen'`)",
+        "roles_allowed": [
+          "Admin"
+        ],
+        "notes": "Hard-gated: admin only."
+      },
+      {
+        "name": "como_va_obra",
+        "description": "Obra KPIs: cost-weighted avance %, gastado vs presupuesto, cobrado, cuotas paid/next, top 3 monthly expenses, pending tasks.",
+        "category": "obras",
+        "triggers": [
+          "como va [obra]",
+          "cómo va",
+          "como/cómo está [obra]",
+          "estado/status de [obra]"
+        ],
+        "input": "Free text; fast-path pideEstadoObra (handleMainFlow ~4048) bypasses Claude; also reachable via Claude comando.",
+        "handler_location": "ejecutarComando ~3392 (`comando==='como_va_obra'`); detector pideEstadoObra ~3681",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Matches obra by partial name."
+      },
+      {
+        "name": "cc_proveedor",
+        "description": "Supplier account-current: saldo (debe from ccEntries vs paid from movimientos), with last 3 movements.",
+        "category": "consultas",
+        "triggers": [
+          "cuanto/cuánto (le) debo (a) X",
+          "saldo de X",
+          "que le debo a X",
+          "cc X"
+        ],
+        "input": "Free text; fast-path pideCCProveedor (handleMainFlow ~4063) bypasses Claude.",
+        "handler_location": "ejecutarComando ~3463 (`comando==='cc_proveedor'`); detector pideCCProveedor ~3700",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Help text shows this line only to admins, but the command/detector are not role-gated in code."
+      },
+      {
+        "name": "contacto_proveedor",
+        "description": "Show a supplier's contact info: tipo, CUIT, phone (with wa.me link), email, address.",
+        "category": "consultas",
+        "triggers": [
+          "telefono/teléfono/tel de X",
+          "wa/whatsapp de X",
+          "contacto (de/del) X"
+        ],
+        "input": "Free text; fast-path pideContactoProveedor (handleMainFlow ~4069) bypasses Claude.",
+        "handler_location": "ejecutarComando ~3658 (`comando==='contacto_proveedor'`); detector pideContactoProveedor ~3839",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": ""
+      },
+      {
+        "name": "buscar_gastos",
+        "description": "Cross-obra expense search: 'últimos N gastos de [obra]' or 'gastos de [concepto]'. Filters by obra and/or concept, returns most recent.",
+        "category": "consultas",
+        "triggers": [
+          "últimos N gastos de X",
+          "gastos de X",
+          "gastos en X"
+        ],
+        "input": "Free text; fast-path pideBuscarGastos (handleMainFlow ~4087) bypasses Claude.",
+        "handler_location": "ejecutarComando ~3530 (`comando==='buscar_gastos'`); detector pideBuscarGastos ~3794",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": ""
+      },
+      {
+        "name": "nota_obra",
+        "description": "Save a quick note/reminder on an obra (notasRapidas in the obra detalle).",
+        "category": "obras",
+        "triggers": [
+          "dejá/anotá nota en|a|para [obra]: texto",
+          "nota [obra]: texto"
+        ],
+        "input": "Free text 'dejá nota en X: ...'; fast-path pideNotaObra (handleMainFlow ~4081) bypasses Claude.",
+        "handler_location": "ejecutarComando ~3556 (`comando==='nota_obra'`); detector pideNotaObra ~3785",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Atomic sbPatchDetalleObra."
+      },
+      {
+        "name": "estado_cheque",
+        "description": "Change a cheque's status by number: depositado/cobrado/rechazado/anulado. Adjusts caja accordingly (tercero deposit = traspaso to bank; rechazo/anulación reverts; propio acreditado = status only).",
+        "category": "caja",
+        "triggers": [
+          "deposité el cheque NNNN",
+          "se cobró el NNNN",
+          "cheque/echeq + number + deposité/cobré/rechaz/anul"
+        ],
+        "input": "Free text with cheque number; fast-path pideEstadoCheque (handleMainFlow ~4093) bypasses Claude.",
+        "handler_location": "ejecutarComando ~3577 (`comando==='estado_cheque'`); detector pideEstadoCheque ~3810",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Idempotent; chooses a banco caja for tercero deposits."
+      },
+      {
+        "name": "cotizar_proveedor_obra (materiales/cotización)",
+        "description": "READ-ONLY: list materials of an obra filtered by supplier group, e.g. 'materiales del corralón de Km711'. Aggregates from rubros/tareas recetas + catalog APUs, resolves proveedor per material.",
+        "category": "obras",
+        "triggers": [
+          "must contain 'materiales'|'cotiz*'|'lista de' + a supplier-group synonym (corralón, electricidad, sanitarios, revestimientos, pinturería, aberturas, etc.) and/or an obra"
+        ],
+        "input": "Free text; fast-path pideCotizarProveedor (handleMainFlow ~4057) bypasses Claude.",
+        "handler_location": "cotizarProveedorObra webhook.js ~3902; detector pideCotizarProveedor ~3723 (SINONIMOS table maps to PROVEEDORES labels)",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Runs BEFORE cc/saldo detectors so 'materiales del corralón en X' isn't read as a CC query."
+      },
+      {
+        "name": "saludo (greeting)",
+        "description": "Polite short greeting reply pointing to 'ayuda' and 'tareas'; does not dump unrequested info.",
+        "category": "consultas",
+        "triggers": [
+          "hola/holaa/ola",
+          "buenas/buen día/buenos días/buenas tardes/noches",
+          "hey/ey/che/saludos",
+          "que tal/qué onda",
+          "hi/hello (short)"
+        ],
+        "input": "Free text greeting only; esSaludo guard (handleMainFlow ~4178).",
+        "handler_location": "esSaludo ~3856; reply in handleMainFlow ~4178",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Only fires when the message is a bare greeting (<12 chars / exact list)."
+      },
+      {
+        "name": "vinculacion_empleado (account linking)",
+        "description": "Link an unknown employee phone to an app_user: asks for full name or email, finds the app_user, issues a 6-digit code (15 min), user confirms in the Kamak app; then welcomes them.",
+        "category": "vinculacion",
+        "triggers": [
+          "any message from an UNKNOWN number that is not a QR onboarding and not a typical client command — falls through to handleLinkingFlow"
+        ],
+        "input": "Multi-step conversational flow: states idle→linking_awaiting_user→linking_awaiting_confirmation. Free-text name/email.",
+        "handler_location": "handleLinkingFlow webhook.js:1190; dispatched from handler ~4754",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "Writes whatsapp_verifications; verified when whatsapp_users row appears (confirmed in app)."
+      },
+      {
+        "name": "onboarding_cliente_QR",
+        "description": "Client onboarding from the QR in the budget: first message 'hola soy <cliente> obra <obra>' links the client's phone to their obra and replies with the portal link.",
+        "category": "vinculacion",
+        "triggers": [
+          "regex /hola\\s+soy\\s+(.+?)\\s+obra\\s+(.+)/i from an unknown number"
+        ],
+        "input": "Single free-text message in the expected shape.",
+        "handler_location": "parseClientePrimerMensaje webhook.js:757 → onboardCliente ~795; dispatched from handler ~4737",
+        "roles_allowed": [
+          "all"
+        ],
+        "notes": "If unknown number sends a typical client word (saldo/avance/hola/etc.) without QR, bot tells them to scan the QR instead of entering the employee linking flow (handler ~4744)."
+      },
+      {
+        "name": "cliente_portal_consultas (client read-only menu)",
+        "description": "Portal-client conversational menu (no writes). Sub-intents: portal/link, ayuda/menu, saldo/deuda, próximo pago, cuánto pagué/cobrado, cuotas/plan de pagos, avance/cómo va. All replies include a freshly generated portal link.",
+        "category": "consultas",
+        "triggers": [
+          "hola/buenas/portal/link/acceso",
+          "ayuda/help/menu/opciones/?",
+          "saldo/cuanto debo/deuda",
+          "proximo pago/proxima cuota/cuando pago",
+          "cuanto pague/pagado/cobrado",
+          "cuotas/plan de pagos",
+          "avance/como va/estado obra/progreso"
+        ],
+        "input": "Free text from a linked portal client; regex keyword routing (no LLM).",
+        "handler_location": "handleClienteFlow webhook.js:865; dispatched from handler ~4734",
+        "roles_allowed": [
+          "cliente"
+        ],
+        "notes": "Read-only; computes saldo/avance in USD to match portal; default reply offers 'ayuda' + portal link. Separate user class from internal users."
+      }
+    ]
+  },
+  "rbac": {
+    "roles": [
+      {
+        "role": "Admin",
+        "description": "Full-privilege internal role. The ONLY role hard-enforced across the bot. Can write directly to the ledger (gasto/ingreso auto-applied, no approval), approve/reject pendientes, load supplier invoices (cargar_factura/factura_compra auto-load), register pago_proveedor, do caja traspasos, create prospectos and move funnel etapas, assign tasks to other users, and run the financial report commands (cheques, resumen). Receives ALL financial alerts (exceso/CC/cost warnings) and admin push/feed notifications. Checked everywhere via user.user_rol === 'Admin'."
+      },
+      {
+        "role": "Administración",
+        "description": "Semi-privileged finance/back-office role. NOT granted the Admin-only WRITE capabilities (cannot approve pendientes, cargar_factura, pago_proveedor, traspaso, prospecto, mover_etapa, cheques, resumen — all those check strictly === 'Admin'). BUT treated like Admin for VISIBILITY of órdenes de pago / open invoices in the LLM context (_esAdminBot, webhook.js:1469) and is a recipient of finance notifications (cheque_por_vencer, cobro_cliente_proximo, cuenta_por_vencer, orden_pago_creada, cliente_firmo, proveedor_firmo). LLM default-intent bias: gasto/factura."
+      },
+      {
+        "role": "Compras",
+        "description": "Purchasing role. No special code privileges. Submitted gasto/ingreso/factura go through the approval buzón (only Admin auto-applies). LLM default-intent bias toward gasto/factura (webhook.js:1569)."
+      },
+      {
+        "role": "Jefe de obra",
+        "description": "Site manager. No write privileges beyond a generic user; movements go to approval. LLM default-intent bias toward avance_obra (webhook.js:1568). Recipient of the presupuesto_adjuntado notification (notificaciones.js:17)."
+      },
+      {
+        "role": "Capataz",
+        "description": "Foreman. Same profile as Jefe de obra: avance_obra bias, movements go to approval, no admin capabilities."
+      },
+      {
+        "role": "(other internal roles)",
+        "description": "Roles are FREE-FORM strings taken from app_users.rol. Any role other than 'Admin' (and 'Administración' in one visibility spot) is treated as a generic internal user: can report avance, submit gastos/ingresos (→ approval buzón), and use read-only query commands. The system prompt states 'cualquier rol puede hacer cualquier cosa' (webhook.js:1567) — role only BIASES the LLM, it does not hard-gate except where code explicitly checks the string."
+      },
+      {
+        "role": "Cliente",
+        "description": "External, NOT an app_users role. Bound to the portal via QR (getLinkedCliente). Routed to handleClienteFlow (read-only); sees ONLY their own obra's sale-side data (total acordado, cobrado, saldo por cobrar, próxima cuota) — never costs/margins. webhook.js:4732-4734."
+      },
+      {
+        "role": "Unregistered phone",
+        "description": "Unknown number. Routed to QR onboarding (parseClientePrimerMensaje) or to the internal-user linking flow (handleLinkingFlow). No data access until linked. webhook.js:4735-4757."
+      }
+    ],
+    "linking": "Phone is bound to an ERP user + role in three steps. (1) REQUEST — an unlinked number messages the bot; webhook.js handleLinkingFlow (webhook.js:1190-1255) asks for nombre completo or email, matches it against app_users (email exact OR nombre substring, webhook.js:1202-1207), generates a 6-digit code and writes a row to whatsapp_verifications {code (PK), phone, user_email, expires_at = now+15min} (webhook.js:1216-1230). (2) CONFIRM in the ERP app — the app POSTs to /api/whatsapp/link with {action:'confirm', email, user_id, user_name, user_rol} (link.js:61-85). The server re-reads the still-valid verification by email (verificacionVigente, link.js:41-48) and takes the phone FROM THAT SERVER RECORD — it does NOT trust the phone from the client (link.js:72-73). It then upserts whatsapp_users {phone, user_id, user_name, user_rol, linked_at} and deletes all verifications for that phone (link.js:75-84). action:'reject' just deletes the pending verifications (link.js:65-68). The browser cannot read/write whatsapp_verifications directly (RLS) — all of this runs server-side with SUPABASE_SERVICE_KEY (link.js:3-14). (3) RESOLVE on every inbound message — getLinkedUser(phone) (webhook.js:1154-1163) looks up whatsapp_users by phone, then app_users by user_id, and returns a merged user where id = app_users.id (aligns ownership/createdBy with the app), user_rol = appUser.rol (LIVE from app_users; the user_rol snapshot stored in whatsapp_users is only a fallback), plus permisos and cajasVisibles = app_users.cajas_visibles. KEY for migration: the role used for every gate is re-read LIVE from app_users, so ERP role changes take effect immediately. getAllAdmins() (webhook.js:1053-1060) joins whatsapp_users × app_users where rol === 'Admin' to fan out admin notifications. NOTE: the app_users.permisos array is loaded onto the user object but is NEVER consulted for gating in the bot — all authorization is the coarse user_rol === 'Admin' check (plus 'Administración' for one visibility branch); the app's granular permisos are NOT honored by the bot.",
+    "access_rules": [
+      {
+        "capability": "gasto / ingreso — write a movement to the ledger",
+        "allowed_roles": [
+          "all linked internal roles may SUBMIT"
+        ],
+        "denied_or_redacted": "Only Admin's movement is auto-applied to the ledger immediately. Every NON-Admin gasto/ingreso is routed to the approval buzón ('enviado a aprobación'); admins are messaged + get a wa_movimiento_pendiente notification. Non-admins cannot write to the ledger directly.",
+        "enforcement_location": "webhook.js:1860 (Admin auto-apply branch) vs 1906-1942 (non-Admin approval branch + getAllAdmins notify + crearNotifServidor wa_movimiento_pendiente)"
+      },
+      {
+        "capability": "factura_compra — load a supplier invoice from photo/PDF",
+        "allowed_roles": [
+          "all (submit)"
+        ],
+        "denied_or_redacted": "Admin auto-loads it as a gasto (with IVA) directly; NON-Admin submissions go to the buzón for admin review (admins notified, wa_factura_pendiente). Not denied, but non-admins cannot finalize.",
+        "enforcement_location": "webhook.js:2015 (handler), 2078 & 2139 (Admin auto-load with IVA), 2234-2258 (notify admins / wa_factura_pendiente)"
+      },
+      {
+        "capability": "cargar_factura — manually create a pending order-of-pay (cuenta por pagar) by text",
+        "allowed_roles": [
+          "Admin"
+        ],
+        "denied_or_redacted": "Non-Admin denied: '⚠️ Cargar facturas por chat es solo para un Admin.'",
+        "enforcement_location": "webhook.js:1951-1952"
+      },
+      {
+        "capability": "pago_proveedor — register a payment against a supplier's current account",
+        "allowed_roles": [
+          "Admin"
+        ],
+        "denied_or_redacted": "Non-Admin denied: '⚠️ Los pagos a proveedor los registra un Admin.'",
+        "enforcement_location": "webhook.js:2278-2279"
+      },
+      {
+        "capability": "traspaso — move funds between cajas",
+        "allowed_roles": [
+          "Admin"
+        ],
+        "denied_or_redacted": "Non-Admin denied: '⚠️ Los traspasos entre cajas los puede hacer solo un Admin.'",
+        "enforcement_location": "webhook.js:2390 (Admin branch) / 2419 (denial)"
+      },
+      {
+        "capability": "crear_prospecto — create a sales opportunity / first contact",
+        "allowed_roles": [
+          "Admin"
+        ],
+        "denied_or_redacted": "Non-Admin denied: '⚠️ Crear oportunidades por chat es solo para un Admin.'",
+        "enforcement_location": "webhook.js:2776"
+      },
+      {
+        "capability": "mover_etapa — move an opportunity in the sales funnel",
+        "allowed_roles": [
+          "Admin"
+        ],
+        "denied_or_redacted": "Non-Admin denied: '⚠️ Mover oportunidades por chat es solo para un Admin.'",
+        "enforcement_location": "webhook.js:2811"
+      },
+      {
+        "capability": "nueva_tarea — create/assign a task",
+        "allowed_roles": [
+          "Admin (assign to anyone)",
+          "any user (self-assign only)"
+        ],
+        "denied_or_redacted": "Non-Admin can ONLY auto-assign to themselves; assigning to another user is denied: '❌ Solo el Admin puede crear tareas para otros usuarios.'",
+        "enforcement_location": "webhook.js:2835 (esAdmin), 2842-2856 (admin resolves by name; non-admin forced to self / denial)"
+      },
+      {
+        "capability": "aprobar_pendiente / rechazar_pendiente — approve or reject items in the buzón",
+        "allowed_roles": [
+          "Admin"
+        ],
+        "denied_or_redacted": "Non-Admin denied: '❌ Solo un admin puede aprobar/rechazar pendientes.'",
+        "enforcement_location": "webhook.js:3156"
+      },
+      {
+        "capability": "cheques command — cheques about to expire (amounts, banks)",
+        "allowed_roles": [
+          "Admin"
+        ],
+        "denied_or_redacted": "Non-Admin denied: '❌ Este comando es solo para administradores.'",
+        "enforcement_location": "webhook.js:3348"
+      },
+      {
+        "capability": "resumen [obra] [fecha] command — daily gastos/ingresos totals for an obra",
+        "allowed_roles": [
+          "Admin"
+        ],
+        "denied_or_redacted": "Non-Admin denied: '❌ Este comando es solo para administradores.' (this report exposes gasto/ingreso totals — admin-gated correctly)",
+        "enforcement_location": "webhook.js:3366"
+      },
+      {
+        "capability": "saldo command — balances of cajas",
+        "allowed_roles": [
+          "all (scoped)"
+        ],
+        "denied_or_redacted": "Output is SCOPED by cajaEsVisible: Admin (cajasVisibles === '*') sees ALL cajas; a non-admin sees ONLY cajas they are the responsable of (caja.usuarioId === user.email) plus any explicitly assigned in cajas_visibles. Other users' cash balances are hidden.",
+        "enforcement_location": "webhook.js:3114-3120 (filter) + cajaEsVisible at 1173-1187"
+      },
+      {
+        "capability": "pendientes command — list items awaiting approval",
+        "allowed_roles": [
+          "all (list)"
+        ],
+        "denied_or_redacted": "Any linked user can LIST pendientes, which shows OTHER users' pending amounts and descriptions. Only the 'aprobar N / rechazar N' instruction line is hidden from non-admins. Partial leak: amounts of others' pending movements are visible to all roles.",
+        "enforcement_location": "webhook.js:3123-3151 (esAdmin gate only on the help line 3147-3150)"
+      },
+      {
+        "capability": "como_va_obra — obra KPIs: avance %, gastado vs presupuesto, cobrado, cuotas, top gastos del mes",
+        "allowed_roles": [
+          "all (NO role gate)"
+        ],
+        "denied_or_redacted": "REDACTION GAP vs the costos-only-admin rule: there is NO admin check. Every linked internal role sees the obra's spend (gastado), budget/cost base (totalCosto from costoMat+costoSub), cobrado, and top gastos. Costs are exposed to non-admins.",
+        "enforcement_location": "webhook.js:3392-3460 (no role check)"
+      },
+      {
+        "capability": "cc_proveedor — 'cuánto le debo a [proveedor]': debe / pagado / saldo of a supplier",
+        "allowed_roles": [
+          "all (NO role gate)"
+        ],
+        "denied_or_redacted": "REDACTION GAP: the help menu only offers this command to admins (webhook.js:2978) but the HANDLER has no role check, so any role that triggers cc_proveedor gets supplier debt/paid/saldo cost figures and recent movement amounts.",
+        "enforcement_location": "webhook.js:3463-3506 (no role check)"
+      },
+      {
+        "capability": "buscar_gastos — 'últimos N gastos de [obra]' / by concept",
+        "allowed_roles": [
+          "all (NO role gate)"
+        ],
+        "denied_or_redacted": "REDACTION GAP: no role check; lists gasto amounts, descriptions and obra across the company to any role.",
+        "enforcement_location": "webhook.js:3530-3553"
+      },
+      {
+        "capability": "contacto_proveedor — supplier contact info (tel/wa/email/CUIT/address)",
+        "allowed_roles": [
+          "all (read-only by design)"
+        ],
+        "denied_or_redacted": "No cost data; intentionally open to all.",
+        "enforcement_location": "webhook.js:3658-3672"
+      },
+      {
+        "capability": "materiales de [obra] del [proveedor] (cotizarProveedorObra)",
+        "allowed_roles": [
+          "all (read-only by design)"
+        ],
+        "denied_or_redacted": "Deliberately REDACTED: shows only material name + quantity + unit. NO precio, NO costoUnit, NO total. Prices are intentionally stripped (comment 'READ-ONLY: cualquier usuario del bot puede pedirlo').",
+        "enforcement_location": "webhook.js:3894-3999 (output at 3996-3999 emits only nombre + cantidad + unidad)"
+      },
+      {
+        "capability": "avance_obra — report progress; auto-certifies value into supplier current account (CC)",
+        "allowed_roles": [
+          "all (Jefe de obra/Capataz biased toward it)"
+        ],
+        "denied_or_redacted": "PARTIAL REDACTION. Financial ALERTS (budget overrun 'Exceso', missing/unmatched provider, '$0 cost in budget' warnings) are sent ONLY to admins via getAllAdmins; the reporter gets a clean confirmation. HOWEVER the successful certification amount is still shown to the reporter ('💰 Cert. $X agregada a CC de [proveedor]' / 'CC actualizada → $X'), which is the subcontractor cost (costoMat+costoSub)×cantidad — a cost figure that leaks to the reporting non-admin despite the 'sin precios' comment.",
+        "enforcement_location": "webhook.js:2725-2735 (alerts admin-only via getAllAdmins) and 2759-2762 (reporter message; ccOkMsg still surfaces the 💰 cert value)"
+      },
+      {
+        "capability": "Open invoices / órdenes de pago shown in the LLM context block",
+        "allowed_roles": [
+          "Admin",
+          "Administración (see ALL)",
+          "other roles (see only their own)"
+        ],
+        "denied_or_redacted": "Admin and Administración see ALL open supplier invoices with saldos; every other role sees ONLY invoices they created (createdBy === user.id or user.user_name). Other users' supplier debts are hidden from non-admin/non-Administración.",
+        "enforcement_location": "webhook.js:1469-1471 (_esAdminBot = rol === 'Admin' || rol === 'Administración')"
+      },
+      {
+        "capability": "costoSubUnit injected into the Claude system prompt (per-unit subcontractor cost)",
+        "allowed_roles": [
+          "all (NO gating)"
+        ],
+        "denied_or_redacted": "LEAK RISK: for the CURRENT-context obra, every task line fed to the LLM includes 'costoSubUnit:$X' regardless of the user's role. The model could surface this subcontractor cost to a non-admin. Not role-gated.",
+        "enforcement_location": "webhook.js:1442 (isCtx ? `|costoSubUnit:${...}` : '')"
+      },
+      {
+        "capability": "Role-targeted notifications (push + in-app feed)",
+        "allowed_roles": [
+          "per-event role lists"
+        ],
+        "denied_or_redacted": "Recipients resolved by role: solicitud_eliminacion / wa_factura_pendiente / wa_movimiento_pendiente → Admin; cheque_por_vencer & cobro_cliente_proximo → Admin+Administración; cuenta_por_vencer / orden_pago_creada / cliente_firmo / proveedor_firmo → Administración (+Admin); presupuesto_adjuntado → Jefe de obra + Admin; tarea_asignada → explicit userIds. The actor is removed (no self-notify).",
+        "enforcement_location": "src/lib/notificaciones.js:8-21 (EVENTOS.roles) + resolverDestinatarios 40-49; _notif.js:99-112 (crearNotifServidor maps app_users by rol)"
+      },
+      {
+        "capability": "Internal-user vs client vs unregistered routing",
+        "allowed_roles": [
+          "internal users → handleMainFlow",
+          "clients → handleClienteFlow (read-only)",
+          "unknown → onboarding/linking"
+        ],
+        "denied_or_redacted": "Linked internal user → full bot. Linked cliente → read-only flow exposing only their own obra's SALE-side figures (never costs/margins). Unknown number → QR onboarding or internal linking flow; no data.",
+        "enforcement_location": "webhook.js:4721-4757"
+      }
+    ],
+    "redaction_notes": "Costs and margins are handled inconsistently, which the Telegram migration must reconcile. MARGINS (margenLinea, margenMat, margenMO) are NEVER printed in any WhatsApp reply to internal users — they are used only inside saldoObraBotUSD (webhook.js:609-640) to compute the client SALE total, and that number only ever reaches the CLIENT flow (their own obra's saldo por cobrar), not internal roles. So 'márgenes solo admin' is effectively satisfied (no role sees raw margins via the bot). COSTS are partially gated: admin-only reports (resumen webhook.js:3366, cheques 3348) correctly restrict gasto/ingreso totals and cheque amounts; saldo is scoped per caja by cajaEsVisible (1173-1187); open-invoice visibility in the LLM context is Admin/Administración-only (1469). BUT several cost-bearing read paths have NO role check and currently leak costs to every linked role: como_va_obra (gastado vs presupuesto, top gastos — 3392), cc_proveedor (supplier debe/pagado/saldo — 3463), buscar_gastos (gasto amounts cross-obra — 3530), the pendientes list (others' pending amounts — 3123), the avance certification '💰 Cert $X' confirmation returned to the reporter (subcontractor cost — 2760), and the costoSubUnit value fed into the LLM prompt for all roles (1442). The materiales report (cotizarProveedorObra 3894) is the one place that deliberately strips price, returning only quantities. Migration recommendation: centralize a single isAdmin(user) (today scattered as user.user_rol === 'Admin' plus one user_rol === 'Administración' check), decide explicitly whether Administración counts as cost-privileged, and add the missing role gates (or cost-redaction) to como_va_obra, cc_proveedor, buscar_gastos, pendientes, the avance cert confirmation, and the costoSubUnit prompt injection so they match the 'costos/márgenes solo admin' contract. Also note app_users.permisos (granular permissions) is loaded but never enforced — the bot only uses the coarse Admin role."
+  },
+  "notifications": {
+    "notifications": [
+      {
+        "event": "solicitud_eliminacion — user requests deletion of a movimiento",
+        "recipients": "Admin",
+        "channels": [
+          "campanita",
+          "web-push"
+        ],
+        "trigger": "ERP action (web app): SolicitudesContext.crearSolicitud",
+        "location": "src/store/SolicitudesContext.jsx:27 -> NotificacionesContext.crearNotificacion -> POST /api/whatsapp/jobs?job=push. LEGACY type: shown in-app as derived Topbar alert, NOT written to feed; push only."
+      },
+      {
+        "event": "solicitud_resuelta — admin approves/rejects a deletion request",
+        "recipients": "the requester (userIds:[solicitante]); roles:[] none by role",
+        "channels": [
+          "campanita",
+          "web-push"
+        ],
+        "trigger": "ERP action (web app): SolicitudesContext.resolver",
+        "location": "src/store/SolicitudesContext.jsx:38. Non-legacy: written to feed (campanita) + push."
+      },
+      {
+        "event": "wa_movimiento_pendiente — non-admin loaded an ingreso/gasto via the WhatsApp bot, queued for approval",
+        "recipients": "Admin",
+        "channels": [
+          "campanita",
+          "web-push",
+          "whatsapp"
+        ],
+        "trigger": "WhatsApp bot action (CARGAR_MOVIMIENTO, non-admin branch)",
+        "location": "api/whatsapp/webhook.js:1937 (crearNotifServidor push, LEGACY=push only) + webhook.js:1931-1933 (separate sendWA to all admins). Campanita derived from Autorizaciones/Topbar."
+      },
+      {
+        "event": "wa_factura_pendiente — user sent a factura/nota de credito via the WhatsApp bot, queued for approval",
+        "recipients": "Admin",
+        "channels": [
+          "campanita",
+          "web-push",
+          "whatsapp"
+        ],
+        "trigger": "WhatsApp bot action (CARGAR_FACTURA)",
+        "location": "api/whatsapp/webhook.js:2253 (crearNotifServidor push, LEGACY=push only) + webhook.js:2240-2249 (sendWA to all admins)."
+      },
+      {
+        "event": "cheque_por_vencer — cheque in cartera within 7 days of due date",
+        "recipients": "Admin, Administracion",
+        "channels": [
+          "campanita",
+          "web-push"
+        ],
+        "trigger": "CRON: /api/whatsapp/jobs?job=reminders (daily 13:00 UTC)",
+        "location": "api/whatsapp/jobs.js:303 (chequesPorVencer). LEGACY=push only; idempotent via shared_data 'notif_cron_sent'."
+      },
+      {
+        "event": "cuenta_por_vencer — factura pendiente / orden de pago within 3 days of due date",
+        "recipients": "Administracion",
+        "channels": [
+          "campanita",
+          "web-push"
+        ],
+        "trigger": "CRON: /api/whatsapp/jobs?job=reminders (daily)",
+        "location": "api/whatsapp/jobs.js:314 (cuentasPorVencer). Non-legacy: feed + push; idempotent via 'notif_cron_sent'."
+      },
+      {
+        "event": "cobro_cliente_proximo — client installment 48h before / 72h after due date (internal heads-up)",
+        "recipients": "Admin, Administracion",
+        "channels": [
+          "campanita",
+          "web-push"
+        ],
+        "trigger": "CRON: /api/whatsapp/jobs?job=reminders (daily)",
+        "location": "api/whatsapp/jobs.js:262. LEGACY=push only (shows as urgent installment in Topbar). Fires regardless of whether the client has WhatsApp; idempotent per (obra,cuota,fecha,fase)."
+      },
+      {
+        "event": "tarea_asignada — task assigned to a user (created in the web ERP)",
+        "recipients": "the assignees (userIds), no role broadcast",
+        "channels": [
+          "campanita",
+          "web-push"
+        ],
+        "trigger": "ERP action (web app): TareasContext.agregarTarea (excludes auto-* origin and the actor)",
+        "location": "src/store/TareasContext.jsx:103. LEGACY=push only (Topbar badge). NOTE: tasks created via the WhatsApp bot do NOT fire this — they only notify by WhatsApp (see next)."
+      },
+      {
+        "event": "presupuesto_adjuntado — third-party budget attached to an obra/rubro",
+        "recipients": "Jefe de obra, Admin",
+        "channels": [
+          "campanita",
+          "web-push"
+        ],
+        "trigger": "ERP action (web app): attach third-party presupuesto",
+        "location": "src/pages/obra/ObraPresupuesto.jsx:708. Non-legacy: feed + push."
+      },
+      {
+        "event": "orden_pago_creada — orden de pago / factura pendiente created",
+        "recipients": "Admin, Administracion",
+        "channels": [
+          "campanita",
+          "web-push"
+        ],
+        "trigger": "ERP action (web app): FacturaPendienteModal save",
+        "location": "src/pages/modales/FacturaPendienteModal.jsx:147. Non-legacy: feed + push."
+      },
+      {
+        "event": "cliente_firmo — client signed a contract from the public portal",
+        "recipients": "Admin, Administracion",
+        "channels": [
+          "campanita",
+          "web-push",
+          "whatsapp"
+        ],
+        "trigger": "Portal action: client e-signs contract (api/portal/firmar.js)",
+        "location": "api/portal/firmar.js:192 (crearNotifServidor, non-legacy feed+push) + firmar.js:189 avisarAdmins (sendWA to admins)."
+      },
+      {
+        "event": "proveedor_firmo — DEFINED in catalog but NOT WIRED (no call site)",
+        "recipients": "Admin, Administracion (intended)",
+        "channels": [
+          "campanita",
+          "web-push"
+        ],
+        "trigger": "none — catalog entry only, no code fires it today",
+        "location": "src/lib/notificaciones.js:20 (definition). No crearNotif* call site anywhere."
+      },
+      {
+        "event": "Nueva tarea asignada por WhatsApp -> assignee (bot-created task)",
+        "recipients": "the assignee (an internal user)",
+        "channels": [
+          "whatsapp"
+        ],
+        "trigger": "WhatsApp bot action (nueva_tarea); ONLY if the assignee messaged the bot within the last 24h (Meta window). Otherwise no notification — they see it in-app via badge.",
+        "location": "api/whatsapp/webhook.js:2914-2926 (sendWA). Bot writes the task directly via sbAppendArray('tareas'), so the web-app tarea_asignada push is NOT triggered for bot-created tasks."
+      },
+      {
+        "event": "Confirmacion de cobro -> CLIENTE (external, not internal team)",
+        "recipients": "the client (external customer), not staff",
+        "channels": [
+          "whatsapp"
+        ],
+        "trigger": "WhatsApp bot action: admin registers an ingreso and confirms the aviso (awaiting_client_notice / awaiting_client_phone flows)",
+        "location": "api/whatsapp/webhook.js:714 notifyClienteCobro, called at webhook.js:4298 and :4349 (sendWA to client)."
+      },
+      {
+        "event": "Recordatorio de cuota -> CLIENTE (external): 48h before / 72h after due date",
+        "recipients": "the client (external customer)",
+        "channels": [
+          "whatsapp"
+        ],
+        "trigger": "CRON: /api/whatsapp/jobs?job=reminders (daily)",
+        "location": "api/whatsapp/jobs.js:280-287 (runReminders). Free-form if client wrote in last 24h, else approved template 'recordatorio_cuota' es_AR with {{1}}=nombre {{2}}=detalle; falls back to free-form."
+      },
+      {
+        "event": "Seguimiento comercial -> Admins: stalled opportunities + clients to reactivate",
+        "recipients": "Admin",
+        "channels": [
+          "whatsapp"
+        ],
+        "trigger": "?job=followups — MANUAL only (vercel crons run / direct endpoint call); NOT scheduled as a cron (Hobby 2-cron limit)",
+        "location": "api/whatsapp/jobs.js:338-394 (runFollowups). Dedup/throttle via shared_data 'sales_followups_state' (<24h same set = skip). Targets app_users with rol=Admin joined to whatsapp_users.phone."
+      }
+    ],
+    "push_setup": "WEB-PUSH (VAPID) — server lib `web-push` in api/whatsapp/_notif.js.\n- ENV (server): VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (default mailto:fgeespinoza@gmail.com). webpush.setVapidDetails set at module load only if both keys present.\n- ENV (client): VITE_VAPID_PUBLIC_KEY (src/lib/push.js).\n- Subscriptions live in Supabase shared_data key 'push_subscriptions' as [{ id, userId, sub(JSON), device, creadoAt }].\n- Send: _notif.js `enviarPushAUsuarios(userIds, {titulo,cuerpo,link})` (lines 62-84) loads 'push_subscriptions', filters by userId, sends payload JSON {titulo,cuerpo,link}; prunes dead subs (HTTP 404/410) by endpoint and rewrites the array; logs non-404/410 failures (e.g. 403 VAPID mismatch). Returns {enviados,muertas,fallidos}.\n- Server feed+push entry point: _notif.js `crearNotifServidor(tipo, datos)` (lines 91-117): resolves recipients (roles->app_users + explicit userIds - actor), appends to feed via RPC append_item_in_shared_array on key 'notificaciones' (fallback read-modify-write) ONLY if tipo NOT in TIPOS_LEGACY, then ALWAYS calls enviarPushAUsuarios.\n- Client opt-in: src/lib/push.js `activarPush(userId)` registers the SW /sw-push.js ON DEMAND (only when user enables, not on load), Notification.requestPermission, pushManager.subscribe({userVisibleOnly,applicationServerKey=VITE_VAPID_PUBLIC_KEY}), stores sub in 'push_subscriptions'. `desactivarPush()` unsubscribes + removes. `pushActivo()`/`pushSoportado()` helpers.\n- Client push trigger: src/store/NotificacionesContext.jsx:32-64 crearNotificacion writes feed (non-legacy) then POSTs /api/whatsapp/jobs?job=push with Bearer Supabase session token; runPush (jobs.js:411) validates the logged-in app_user and delegates to enviarPushAUsuarios.\n- SERVICE WORKERS: public/sw-push.js = MINIMAL push-only SW (NO fetch handler, NO precache — deliberately, to avoid the reverted-PWA breakage). 'push' -> showNotification(titulo,{body,icon:/pwa-192.png,badge:/pwa-192.png,data.link}); 'notificationclick' -> focus/navigate existing window to link or clients.openWindow. public/sw.js = KILL-SWITCH cleanup SW: on activate unregisters itself and deletes all caches (cleans up devices left with the reverted PWA SW). src/main.jsx:43-52 unregisters every SW EXCEPT an exact /sw-push.js match. dist/sw.js + dist/sw-push.js are build copies.",
+    "cron_jobs": [
+      "VERCEL CRON #1 — /api/whatsapp/jobs?job=reminders, schedule '0 13 * * *' (daily 13:00 UTC = 10:00 ART). runReminders: client installment reminders by WhatsApp (48h before via diasHasta===2, 72h after via diasHasta===-3) using free-form or template 'recordatorio_cuota'; PLUS internal notifs cobro_cliente_proximo (Admin/Administracion), cheque_por_vencer (7d, Admin/Administracion), cuenta_por_vencer (3d, Administracion). Idempotent via shared_data 'notif_cron_sent' (pruned >60d). Protected by CRON_SECRET (?secret= or x-cron-secret header). Defined in vercel.json:14.",
+      "VERCEL CRON #2 — /api/cron/sync-sanfrancisco, schedule '0 8 * * *' (daily 08:00 UTC). Separate data-sync job (NOT a notification). vercel.json:15. NOTE: Hobby plan caps cron count — only these 2 deploy OK.",
+      "?job=reminders — (the cron above) api/whatsapp/jobs.js runReminders (handler dispatch at jobs.js:421).",
+      "?job=followups — api/whatsapp/jobs.js runFollowups (jobs.js:422): commercial follow-up summary to Admins by WhatsApp (stalled cotizado/negociacion opps >5d with no income; clients inactive >6mo). NOT scheduled as a cron (would be a 3rd cron and break the Hobby deploy, see c798a71) — fired MANUALLY via `vercel crons run` or direct endpoint hit. CRON_SECRET protected. Throttled via shared_data 'sales_followups_state'.",
+      "?job=push — api/whatsapp/jobs.js runPush (jobs.js:423): sends web-push to {userIds,titulo,cuerpo,link} from the request body. Auth = any logged-in app_user (Bearer Supabase token, usuarioLogueado at jobs.js:399). Called by the web client on EVERY notif create (NotificacionesContext). Delegates to enviarPushAUsuarios in _notif.js.",
+      "Handler dispatch: api/whatsapp/jobs.js:419-425 — default export switches on req.query.job over {reminders|followups|push}; anything else => 400. All three jobs merged into ONE Vercel function because Hobby plan caps at 12 functions."
+    ],
+    "notes": "ARCHITECTURE — what moves to Telegram vs stays:\n\nWHATSAPP-to-INTERNAL-TEAM today (THESE are the ones that move to Telegram for staff):\n1. wa_movimiento_pendiente -> admins (webhook.js:1931-1933)\n2. wa_factura_pendiente -> admins (webhook.js:2240-2249)\n3. Nueva tarea asignada -> assignee, only if 24h Meta window open (webhook.js:2914-2926)\n4. Seguimiento comercial -> admins (jobs.js runFollowups, ?job=followups)\n5. Cliente firmo -> admins (firmar.js:189 avisarAdmins)\nAll of these suffer Meta's 24h-window limitation (free-form blocked outside window; need approved templates) — the exact pain that motivates Telegram for the internal team.\n\nWHATSAPP-to-CLIENTS (external customers — STAY on WhatsApp, NOT part of the internal Telegram move):\n- Confirmacion de cobro -> cliente (webhook.js:714 notifyClienteCobro)\n- Recordatorio de cuota -> cliente (jobs.js runReminders, template recordatorio_cuota)\n\nIN-APP CAMPANITA + WEB-PUSH (STAY as-is — this is the internal notification feed, independent of WhatsApp/Telegram): all 11 wired EVENTOS catalog events. The campanita feed (shared_data 'notificaciones') + VAPID web-push is the PRIMARY internal channel; the WhatsApp-to-internal sends above are an additional belt-and-suspenders layer that runs ALONGSIDE the campanita/push for the same events (movimiento/factura pendiente, cliente_firmo) — so moving those to Telegram replaces the WA leg without touching campanita/push.\n\nKEY CATALOG FACTS:\n- EVENTOS catalog + role routing: src/lib/notificaciones.js:8-21. TIPOS_LEGACY (push-only, shown in Topbar, NOT written to feed): solicitud_eliminacion, wa_factura_pendiente, wa_movimiento_pendiente, cheque_por_vencer, cobro_cliente_proximo, tarea_asignada (notificaciones.js:28-35). Non-legacy => feed + push.\n- Two parallel creators sharing ONE catalog: client src/store/NotificacionesContext.jsx (crearNotificacion -> ?job=push) and server api/whatsapp/_notif.js (crearNotifServidor, used by webhook.js, jobs.js, portal/firmar.js).\n- proveedor_firmo is defined in the catalog (notificaciones.js:20) but has NO call site — dead/unwired entry.\n- Bot-created tasks (webhook nueva_tarea) bypass TareasContext, so they do NOT generate the tarea_asignada campanita/push — only the optional WhatsApp aviso.\n- Recipients are resolved by role from Supabase app_users.rol, minus the actor (resolverDestinatarios). Roles in use: Admin, Administracion, Jefe de obra."
+  },
+  "extractors": {
+    "extractors": [
+      {
+        "name": "callClaude (webhook.js:1406; Anthropic call 1683-1686)",
+        "purpose": "THE actual OCR/vision extractor. Reads a factura/ticket/comprobante de pago from a photo OR a PDF and turns it into a structured ERP action. Extracts monto TOTAL, tipo factura A/B/C, numero, CUIT, proveedor, medio de pago (reads MERCADO PAGO/DEBITO/VISA/EFECTIVO at the ticket footer), IVA, percepciones IIBB and IVA, fecha, clase factura/nota_credito. Also classifies gasto vs factura_compra vs avance_obra vs pago_proveedor.",
+        "inputs": "base64Media + mimeType ('image/*' or 'application/pdf') + messageText/caption + system context. Image/PDF attached as Anthropic content block: PDF -> {type:'document'}, image -> {type:'image'}.",
+        "outputs": "JSON {estado, accion:{tipo, datos:{monto, tipoFactura, numeroFactura, cuit, proveedor, medioPago, percepcionIIBB, percepcionIVA, ...}}}.",
+        "dependencies": "Anthropic Messages API (POST api.anthropic.com/v1/messages, model claude-sonnet-4-6, anthropic-version 2023-06-01, max_tokens 2048). Env ANTHROPIC_API_KEY. No tesseract/pdf/xlsx lib; model does OCR and PDF parse natively.",
+        "channel_coupling": "CHANNEL-AGNOSTIC. Needs only base64Media+mimeType+text; zero WhatsApp knowledge. Both image/* and application/pdf supported. Drop-in reusable for Telegram given the same base64+mime."
+      },
+      {
+        "name": "downloadMedia (webhook.js:544)",
+        "purpose": "Fetches the binary of a WhatsApp-uploaded media (photo/PDF of the comprobante) and returns it base64, ready for callClaude.",
+        "inputs": "mediaId (Meta media id from message.image.id / message.document.id).",
+        "outputs": "base64 string (or null).",
+        "dependencies": "Meta WhatsApp Graph API: GET graph.facebook.com/v18.0/{mediaId} to resolve a temp URL, then a second authenticated GET. Env META_TOKEN.",
+        "channel_coupling": "TIGHTLY COUPLED to WhatsApp. THE function to replace for Telegram: swap the two Graph-API calls for Telegram getFile (returns file_path) + GET api.telegram.org/file/bot<TOKEN>/<file_path>, then Buffer->base64. Downstream (uploadToStorage, callClaude) stays unchanged. Webhook parsing at 4636-4647 (message.image/message.document) must also be re-mapped to Telegram's payload."
+      },
+      {
+        "name": "uploadToStorage (webhook.js:578)",
+        "purpose": "Persists the comprobante file (base64 -> buffer) to Supabase Storage so the gasto/factura keeps a permanent comprobanteUrl; also re-downloaded later (4022) when the photo came in a prior turn (pendingMediaUrl).",
+        "inputs": "base64Data, mimeType, filepath ('<phone>-<ts>.pdf|jpg').",
+        "outputs": "public URL in bucket kamak-fotos (or null).",
+        "dependencies": "Supabase Storage REST. Env SUPABASE_URL, SUPABASE_KEY (sent as apikey and Authorization).",
+        "channel_coupling": "CHANNEL-AGNOSTIC. Pure base64->Storage. Only the filepath uses the phone as name prefix; swap for a Telegram chat id."
+      },
+      {
+        "name": "desglosarCompraBot (webhook.js:90)",
+        "purpose": "AFIP fiscal post-processor: from TOTAL + tipoLetra (+ optional percepciones IIBB/IVA, montoNeto) back-computes neto and IVA credito for Libro IVA Compras. Mirror of src/lib/afip.js desglosarCompra. Runs on the numbers callClaude read off the factura.",
+        "inputs": "{ total, tipoLetra (A/B/C), percepcionIIBB, percepcionIVA, montoNeto }.",
+        "outputs": "neto/iva breakdown (rounded).",
+        "dependencies": "None external. Pure arithmetic with known IVA alicuotas. No AFIP web service call.",
+        "channel_coupling": "CHANNEL-AGNOSTIC (pure function)."
+      },
+      {
+        "name": "extractSlots + extractIntent/extractMonto/extractCantidadUnidad/extractMedioPago/extractEtapaDestino/extractProspectoSlots (_extractors.js:287,43,61,109,221,173,196)",
+        "purpose": "Cheap regex/normalize PRE-extractors run on the user's TYPED TEXT before calling Claude, to pre-fill slots (intent, monto, cantidad+unidad, medio de pago, etapa del embudo, obra/cliente de prospecto). NOT OCR: parse the message string, not the image.",
+        "inputs": "text string (+ ctx for the name matchers). Pure text in, no media.",
+        "outputs": "slots object (intent, monto, cantidad, unidad, medioPago, etc.).",
+        "dependencies": "None. Pure JS regex + NFD normalization. No libs/API/env.",
+        "channel_coupling": "FULLY CHANNEL-AGNOSTIC. Operate on a string only; identical on Telegram text/captions."
+      },
+      {
+        "name": "Fuzzy matchers: extractObra/extractCaja/extractProveedor/extractRubro/extractTarea + matchPorNombre (_extractors.js:134-282)",
+        "purpose": "Resolve free text to an existing ERP entity (obra, caja, proveedor, rubro, tarea) by exact/word-overlap scoring; attaches a parsed gasto/avance to the right entity.",
+        "inputs": "text + candidate list from ctx (obras/cajas/proveedores/detalles).",
+        "outputs": "best-matching entity object (or null on ambiguity).",
+        "dependencies": "None (pure). Lists come from Supabase via getSystemContext, but the matcher is pure.",
+        "channel_coupling": "CHANNEL-AGNOSTIC. Pure text-vs-list scoring."
+      },
+      {
+        "name": "parseDictado (_extractors.js:407)",
+        "purpose": "Multi-gasto dictation parser: 'carga: 50k cemento baradero, 12k flete' -> array of {monto, descripcion, obraId}. Text-only batch expense parse.",
+        "inputs": "text + ctx (for obra matching).",
+        "outputs": "{ items:[{monto, descripcion, obraId, obraNombre}] } or null.",
+        "dependencies": "None (pure; reuses extractMonto + extractObra).",
+        "channel_coupling": "CHANNEL-AGNOSTIC (pure text)."
+      },
+      {
+        "name": "extractAvanceCompleto / extractCorreccion (webhook.js:1322 / 1258)",
+        "purpose": "Text-only bypass-Claude extractor for obra-avance messages and corrections: pulls cantidad+unidad and fuzzy-matches obra/rubro/tarea so a complete avance is confirmed without an LLM call; extractCorreccion handles 'en realidad eran 60'.",
+        "inputs": "text + obras + detalles (rubros/tareas).",
+        "outputs": "{completo, obraId, rubroId, tareaId, cantidadAvance, unidad, descripcion, _obra, _tarea}; esCorreccion flag for the corrector.",
+        "dependencies": "None (pure regex + in-memory matching).",
+        "channel_coupling": "CHANNEL-AGNOSTIC. Pure text, not media-related. Lives in webhook.js but has no WhatsApp dependency."
+      }
+    ],
+    "reuse_notes": "Porting the OCR/file-parsing pipeline to Telegram is clean because it has exactly ONE WhatsApp-coupled seam: downloadMedia (webhook.js:544), which hits the Meta Graph API (graph.facebook.com/v18.0 + META_TOKEN). Replace it with Telegram getFile + the api.telegram.org/file/bot<TOKEN>/<file_path> download, returning the same base64 string. Also re-map the inbound webhook media parsing (webhook.js:4636-4647), since Telegram's photo/document payload differs from message.image/message.document, and adjust the pendingMediaUrl filepath (currently keyed by phone number). Everything else is channel-agnostic: callClaude (the real vision/OCR extractor, Anthropic claude-sonnet-4-6, handles BOTH image/* and application/pdf as native content blocks; NO tesseract/pdf/xlsx libs exist in this codebase), uploadToStorage (Supabase Storage), desglosarCompraBot (pure AFIP IVA desglose), and the whole _extractors.js suite plus extractAvanceCompleto/extractCorreccion. Two caveats for factura-by-photo: (1) the _extractors.js functions parse the user's TYPED text, not the image; image OCR is 100% callClaude. (2) There is NO Excel parser anywhere in this bot and PDFs are not parsed locally; they are shipped straight to Claude as a base64 document block, so any spreadsheet/local-PDF parse is new work, not reuse. Pipeline env: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_KEY (channel-agnostic) and META_TOKEN (replace with TELEGRAM_BOT_TOKEN)."
+  },
+  "plumbing": {
+    "outbound_primitives": [
+      "sendWA(to, body) — PLAIN TEXT. webhook.js L415-432. POST graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages with {messaging_product:'whatsapp', to, type:'text', text:{body}}. Returns {ok,status,error} so callers can detect 24h-window rejection (this matters: free text outside the window is rejected by Meta and was previously swallowed).",
+      "sendWAButtons(to, body, botones) — INTERACTIVE REPLY BUTTONS (max 3, title sliced to 20 chars). webhook.js L440-465. type:'interactive', interactive:{type:'button', body:{text<=1024}, action:{buttons:[{type:'reply', reply:{id,title}}]}}. On API failure falls back to plain numbered text via sendWA. Standard set = BOTONES_CONFIRMAR (L405) ids confirmar/editar/cancelar. Callers: L4139, L4171, L4245, L4451, L4473, L4516.",
+      "sendWAList(to, body, buttonLabel, items) — INTERACTIVE LIST MESSAGE (max 10 rows; title<=24, description<=72). webhook.js L470-499. type:'interactive', interactive:{type:'list', body:{text}, action:{button<=20, sections:[{rows:[{id,title,description}]}]}}. Row ids use 'pick:<value>' convention. Text fallback on failure. Caller: L2320 (choose which pending supplier invoice a payment matches).",
+      "sendWATemplate(to, templateName, languageCode, bodyParams[]) — TEMPLATE MESSAGE (re-opens the 24h window / proactive sends). type:'template', template:{name, language:{code}, components:[{type:'body', parameters:[{type:'text',text}]}]}. DEFINED in webhook.js L505-542 (currently NOT called there) and DUPLICATED + ACTIVELY USED in api/whatsapp/jobs.js L62-80, called L282 as sendWATemplate(tel,'recordatorio_cuota','es_AR',[nombre,detalle]) for cron cuota reminders. Maps Meta error codes 132001 (template not approved), 131026 (out of window), 100 (param mismatch).",
+      "NOT IMPLEMENTED: no reactions (type:'reaction'), no typing indicators, no mark-as-read, no outbound media (no sendPhoto/sendDocument / no media upload to Meta). The bot RECEIVES media but never SENDS media — instead it sends Supabase-hosted portal links (generarPortalLink) as plain text. The image/document objects at webhook.js L1677-1679 are Anthropic Claude API content, not WhatsApp outbound."
+    ],
+    "inbound": "GET verify (webhook.js L4542-4551): reads req.query['hub.mode'], ['hub.verify_token'], ['hub.challenge']; if mode==='subscribe' && token===VERIFY_TOKEN echoes challenge as 200 text, else 403. GET without those params returns a public diagnostic JSON listing which env vars are present (L4554). POST (L4574+): bodyParser is DISABLED (export const config = {api:{bodyParser:false}}, L27); leerBodyCrudo reads the raw stream; X-Hub-Signature-256 is validated with HMAC-SHA256(raw, META_APP_SECRET) timing-safe (firmaMetaValida L43-49) — if signature invalid → 403; if secret unset, validation is skipped. Then JSON.parse. Payload shape: body.object must be 'whatsapp_business_account'; entry[0].changes[0]; change.field must be 'messages'; value=change.value. value.statuses[0] = delivery receipts {id(wamid),status in sent/delivered/read/failed, errors} → persisted to portal_tokens[*].waStatus (L4600-4620). value.messages[0] = inbound message. SENDER PHONE = message.from (E.164, no '+'). message.type dispatched L4636-4694: 'text'→message.text.body; 'image'→message.image.id + mime_type + caption; 'document'→message.document.id + mime_type + caption/filename; 'contacts'→message.contacts[0] vCard ({name.formatted_name/first/last, phones[0].phone|wa_id}) used to seed a prospect; 'interactive'→message.interactive.button_reply.id / list_reply.id. MEDIA IDS = message.image.id / message.document.id. message.id (wamid) used for dedupe.",
+    "interactive_features": "BUILD: BOTONES_CONFIRMAR = [{id:'confirmar',title:'Confirmar ✅'},{id:'editar',...},{id:'cancelar',...}] (L405). sendWAButtons turns each into {type:'reply', reply:{id,title}} (≤3, title truncated 20). sendWAList turns items into rows {id,title,description} (≤10) inside one section, with a button label. Selection lists prefix ids with 'pick:<id>' (e.g. invoice picker L2310-2314). RECEIVE/HANDLE (L4678-4691): an inbound type:'interactive' message carries interactive.button_reply.id or interactive.list_reply.id (the exact id we sent comes back). It is normalized to plain text so the rest of the pipeline is channel-agnostic: 'confirmar'→'sí', 'cancelar'→'no', 'editar'→'editar', 'pick:X'→'X', otherwise the button/list title. That synthesized text then drives the same conversational state machine (handleMainFlow / awaiting_* states like awaiting_factura_pago_pick). So buttons/lists are pure transport sugar over a text-based intent/state engine.",
+    "media_handling": "INBOUND download (downloadMedia, webhook.js L544-558): two-step Meta media API — (1) GET graph.facebook.com/v18.0/{mediaId} with Authorization: Bearer META_TOKEN → JSON {url,...}; (2) GET that info.url again with the same Bearer token → arrayBuffer → returned as base64 string. The base64 is then (a) handed to Claude as content (type:'document' for application/pdf, type:'image' for image/*, L1676-1680) for expense/invoice extraction, and (b) persisted via uploadToStorage (L578-604) which POSTs the bytes to Supabase Storage bucket kamak-fotos (apikey + Bearer + x-upsert headers) and returns a public URL used as the receipt attachment. A per-phone lock (acquireLock/releaseLock) serializes simultaneous media so concurrent webhooks don't duplicate the expense. OUTBOUND media: NONE — the bot never uploads media to Meta nor sends sendPhoto/sendDocument; it replies with Supabase portal/file links as text.",
+    "session_window": "24h customer-service window IS handled, mostly proactively in api/whatsapp/jobs.js (cron cuota reminders) L274-287: it looks up the conversation row and checks updated_at < 24h → if active, sends free text via sendWA; if stale, sends an approved TEMPLATE via sendWATemplate('recordatorio_cuota','es_AR',[nombre,detalle]) with a fallback to free text if the template send fails. In webhook.js the window is handled reactively: sendWA returns {ok:false} when Meta rejects out-of-window free text (error 131026), and notifyClienteCobro (L714-726) converts that into a human-readable admin warning. THROTTLING/LOCK: acquireLock (L1134) on defaults.lockUntil, TTL 30s, max wait 9s, poll 700ms — only engaged when mediaId present. DEDUPE/IDEMPOTENCY: incoming message.id stored in conv.defaults.lastMsgIds (last 25); repeats are dropped with 200 {dedup:true} (L4704-4714) because Meta retries un-200'd webhooks. jobs.js adds per-item idempotency via yaEnviado/marcar(clave).",
+    "meta_api_surface": "Graph API version v18.0 throughout. Endpoints: POST https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages (all four send primitives); GET https://graph.facebook.com/v18.0/{mediaId} (media metadata → url); GET {info.url} (binary download). Auth header on every Meta call: Authorization: Bearer META_TOKEN. ENV VARS (webhook.js L16-23): META_ACCESS_TOKEN (→META_TOKEN), META_PHONE_NUMBER_ID (→PHONE_NUMBER_ID, the sender phone-number-id in the URL), META_VERIFY_TOKEN (GET handshake), META_APP_SECRET (X-Hub-Signature-256 HMAC). Non-Meta but referenced: META_PHONE_NUMBER (human display number, diagnostic only), PORTAL_BASE_URL, SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY (https://api.anthropic.com/v1/messages, model claude-sonnet-4-6, L1683-1686). jobs.js reads the same META_* vars.",
+    "channel_specific_vs_core": "WHATSAPP-ONLY (rewrite for Telegram): the four send functions sendWA/sendWAButtons/sendWAList/sendWATemplate; downloadMedia (Meta 2-step media API); leerBodyCrudo + bodyParser:false + firmaMetaValida (X-Hub-Signature-256); the GET verify handshake + diagnostic; the entry/changes/value/statuses/messages payload parser and message.type dispatch (text/image/document/contacts/interactive); the interactive button_reply/list_reply→text normalization incl. 'pick:'/'confirmar' mapping; BOTONES_CONFIRMAR shape (≤3, 20-char titles); normalizePhone (E.164-for-Meta) and phone-as-conversation-key; delivery-status→waStatus persistence; the 24h-window/template branching in jobs.js; META_* env vars. REUSABLE CORE (keep as-is behind a channel adapter): the whole intent/slot engine (_extractors.js extractSlots/mergeSlots/parseDictado, _intents-comercial.js crearProspecto/moverEtapaObra), the Claude call (callClaude, prompt, JSON action contract), the conversation state machine (loadConversation/saveConversation/clearConversation, awaiting_* states), all business logic in handleMainFlow + handleClienteFlow (saldo/avance/cuota commands, gasto/ingreso/factura/pago_proveedor/traspaso/avance_obra), saldoObraBotUSD and cuota math, getSystemContext + the Supabase data layer (loadSharedData/saveSharedData/sbGet/sbPatchItem/appendMovimiento), uploadToStorage to Supabase, portal-token generation, _notif notifications, getLinkedUser/getLinkedCliente/onboardCliente linking (the concept is core; only the phone-matching key is channel-flavored), dedupe/lock concepts (mechanism generic, only the id source is WA). The clean seam: everything funnels through a synthesized `text` string + (mediaId,mimeType) into handleMainFlow/handleClienteFlow, and out through sendWA*-style calls — so a Telegram adapter only needs to re-implement inbound parsing and the send/download functions.",
+    "telegram_mapping": "Per-primitive Telegram Bot API (base https://api.telegram.org/bot<TOKEN>/<method>): (1) sendWA text → sendMessage {chat_id, text, parse_mode}. Note WA uses *single-asterisk bold*; for Telegram use parse_mode:'Markdown' (legacy, single-asterisk bold) or 'HTML' — MarkdownV2 would require escaping. No 4096-vs-1024 issue but split >4096. (2) sendWAButtons (reply buttons, ≤3, id+title≤20) → sendMessage with reply_markup.inline_keyboard=[[{text, callback_data}]]; callback_data≤64 bytes carries the button id (confirmar/editar/cancelar/pick:<id>). Telegram has NO 3-button limit and supports multi-row, so the text-fallback path becomes unnecessary. Button taps arrive as a separate callback_query UPDATE (not a message): read update.callback_query.data, and you MUST call answerCallbackQuery to stop the spinner. (3) sendWAList (list ≤10 rows w/ description) → no native list widget; emulate with a multi-row inline_keyboard (one row per option, callback_data='pick:<id>'), folding each row's description into the message text — same 'pick:' convention already used. (4) sendWATemplate / 24h window → DOES NOT EXIST on Telegram: no 24h customer-service window and no template pre-approval, so just sendMessage anytime; the only analogous constraint is that the user must have pressed /start (a bot cannot DM a user who never initiated) — drop the activo24h branching in jobs.js entirely and always sendMessage (keeping only the cron idempotency). (5) downloadMedia (getMedia-url-then-download) → getFile?file_id=<id> returns {file_path}; then GET https://api.telegram.org/file/bot<TOKEN>/<file_path> for the bytes (token in the URL path, not a Bearer header). Inbound photos arrive as message.photo[] (array of sizes — pick the last/largest .file_id); PDFs/files as message.document.file_id+mime_type. Then reuse uploadToStorage + Claude unchanged. (6) Outbound media (currently unused) → sendPhoto / sendDocument (multipart, or pass a URL/file_id). (7) GET verify hub.challenge → no handshake; instead call setWebhook once (optionally with secret_token) OR use getUpdates long-polling; replace X-Hub-Signature-256 validation with the X-Telegram-Bot-Api-Secret-Token header check. (8) Inbound parser: the update has update_id + either message{message_id, from{id,username}, chat{id}, text|photo|document|contact{phone_number,first_name,user_id}} or callback_query{from,message,data}. Use chat.id (numeric) as the conversation key instead of message.from phone; note Telegram gives NO phone number unless the user shares contact via a KeyboardButton{request_contact:true} — so client-by-phone linking (getLinkedCliente/normalizePhone) needs that request_contact flow or a different linking token. (9) statuses (sent/delivered/read) → Telegram has NO delivery receipts; sendMessage returns the Message object synchronously, so replace waStatus tracking with the inline API response (ok/description). (10) Dedupe: use update_id (monotonic) or message_id instead of wamid; with getUpdates the offset param dedupes for you. (11) contacts vCard share → message.contact{phone_number,first_name,last_name,user_id}."
+  }
+}
