@@ -3056,7 +3056,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
 
 async function ejecutarComando(comando, datos, user, ctx) {
   if (comando === 'ayuda') {
-    const esAdmin = user.user_rol === 'Admin';
+    const esAdmin = isAdmin(user);
     return (
       `👋 *Hola ${user.user_name?.split(' ')[0] || ''}, así me podés hablar:*\n\n` +
       `*◆ AVANCE DE OBRA* (foto + texto)\n` +
@@ -3092,13 +3092,16 @@ async function ejecutarComando(comando, datos, user, ctx) {
       `• *pendientes* — aprobaciones pendientes\n` +
       (esAdmin ? `• *cheques* — cheques por vencer\n` : '') +
       (esAdmin ? `• *resumen [obra] [fecha]* — resumen del día\n` : '') +
-      `• _"como va [obra]"_ — KPIs: avance, gastado, próx. cuota, top gastos\n` +
-      `• _"últimos 5 gastos de [obra]"_ — buscar gastos\n` +
+      (esAdmin
+        ? `• _"como va [obra]"_ — KPIs: avance, gastado, próx. cuota, top gastos\n`
+        : `• _"como va [obra]"_ — avance y tareas de la obra\n`) +
+      (esAdmin ? `• _"últimos 5 gastos de [obra]"_ — buscar gastos\n` : '') +
       (esAdmin ? `• _"cuánto le debo a [proveedor]"_ — CC + últimas certs/pagos\n` : '') +
       `• _"contacto [proveedor]"_ — tel/wa/email\n` +
       (esAdmin ? `• _"pagué $300k a [proveedor] de [obra]"_ — pago contra CC\n` : '') +
       `• _"dejá nota en [obra]: ..."_ — guardar recordatorio en la obra\n` +
-      `• _"deposité el cheque 4421"_ / _"se cobró el 4421"_ — estado de cheque\n` +
+      `• *resumen de hoy* — tu resumen del día (tareas y, si sos admin, pendientes/vencimientos)\n` +
+      (esAdmin ? `• _"deposité el cheque 4421"_ / _"se cobró el 4421"_ — estado de cheque\n` : '') +
       (esAdmin ? `• _"aprobar N"_ / _"rechazar N"_ — sobre pendientes (escribí *pendientes* para verlos)\n` : '') +
       (esAdmin ? `• _"pasá $200k de Caja X a Caja Y"_ — traspaso entre cajas\n` : '') +
       `• *deshacer* — revierte tu último movimiento cargado\n` +
@@ -3504,6 +3507,37 @@ async function ejecutarComando(comando, datos, user, ctx) {
       `Ingresos (${ingresos.length}): *$${Math.round(totalI).toLocaleString('es-AR')}*\n\n` +
       gastos.slice(0, 5).map(m => `• ${m.descripcion}: $${Math.round(m.monto).toLocaleString('es-AR')}`).join('\n')
     );
+  }
+
+  // "resumen de hoy" / "/digest" → un mensaje con el estado del día, por rol.
+  // No-admin: SOLO sus tareas (cero montos). Admin: además pendientes (count+$),
+  // cheques por vencer y movimientos del día. Reusa el comando 'tareas' ya probado.
+  if (comando === 'digest') {
+    const admin = isAdmin(user);
+    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
+    const hoy = new Date().toISOString().split('T')[0];
+    const partes = [`🗓 *Tu resumen de hoy* — ${hoy.split('-').reverse().join('/')}`];
+    if (admin) {
+      const pendRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
+      const pend = Array.isArray(pendRows[0]?.data) ? pendRows[0].data : [];
+      const activos = pend.filter(p => p.status !== 'confirmed' && p.status !== 'rejected');
+      if (activos.length) {
+        const tot = activos.reduce((s, p) => s + (p.monto || p.montoTotal || p.movimiento?.monto || 0), 0);
+        partes.push(`⏳ *Para aprobar:* ${activos.length}${tot ? ` · ${fmt(tot)}` : ''}  _(escribí *pendientes*)_`);
+      }
+      const chData = await loadSharedData('cheques');
+      const cheques = Array.isArray(chData) ? chData : (chData?.cheques || []);
+      const ahora = new Date(); const en7 = new Date(ahora.getTime() + 7 * 24 * 3600 * 1000);
+      const chP = cheques.filter(c => c.estado === 'cartera' && c.fechaVencimiento && new Date(c.fechaVencimiento) <= en7 && new Date(c.fechaVencimiento) >= ahora);
+      if (chP.length) partes.push(`🧾 *Cheques por vencer (≤7d):* ${chP.length} · ${fmt(chP.reduce((s, c) => s + (c.monto || 0), 0))}`);
+      const movsHoy = (ctx.movimientos || []).filter(m => m.fecha === hoy);
+      const g = movsHoy.filter(m => m.tipo === 'gasto'); const ing = movsHoy.filter(m => m.tipo === 'ingreso');
+      if (g.length || ing.length) partes.push(`💸 *Hoy:* ${g.length} gasto(s) ${fmt(g.reduce((s, m) => s + (m.monto || 0), 0))} · ${ing.length} ingreso(s) ${fmt(ing.reduce((s, m) => s + (m.monto || 0), 0))}`);
+    }
+    const tareasMsg = await ejecutarComando('tareas', {}, user, ctx);
+    partes.push('━━━━━━━━━━');
+    partes.push(tareasMsg);
+    return partes.join('\n\n');
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -4168,6 +4202,21 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
     }
   }
 
+  // ── Digest "resumen de hoy" por rol + comandos directos (menú nativo de TG) ─
+  // Evita gastar una llamada a Claude para los comandos de una palabra (el menú
+  // /saldo /pendientes /ayuda llega como "/saldo" → strip → "saldo").
+  if (!mediaId && conv.state === 'idle') {
+    const td = (messageText || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[¡!¿?.,]/g, '').trim();
+    if (/^(digest|resumen de hoy|resumen del dia|resumen diario|resumen hoy|mi dia|mi jornada|que hay hoy|que tengo para hoy)$/.test(td)) {
+      await sendWA(phone, await ejecutarComando('digest', {}, { ...user, phone }, ctx));
+      return;
+    }
+    if (['saldo', 'pendientes', 'ayuda', 'cheques'].includes(td)) {
+      await sendWA(phone, await ejecutarComando(td, {}, { ...user, phone }, ctx));
+      return;
+    }
+  }
+
   // ── El usuario pide ver sus tareas (en lenguaje natural) ───────────────────
   // Detecta "tareas", "tareas pendientes", "que tareas tengo", "hola tareas
   // pendientes", etc., y responde con la lista. Esto evita que el usuario
@@ -4751,7 +4800,7 @@ async function handleTelegramUpdate(update) {
     if (!mediaId && (t === '/start' || t.startsWith('/start '))) {
       const yaVinc = await getLinkedUser(phone);
       if (yaVinc) {
-        await sendWA(phone, `👋 ¡Hola de nuevo, *${yaVinc.user_name || ''}*!\n\nEscribí *ayuda* para ver qué podés hacer desde acá.`);
+        await sendWA(phone, `👋 ¡Hola de nuevo, *${yaVinc.user_name || ''}*!\n\nProbá: *resumen de hoy* · *tareas* · *saldo*\nO cargá algo: _"150 m² de revoque en Baradero"_ + foto, o _"pagué $50k de materiales en Baradero"_.\nEscribí *ayuda* para ver todo.`);
       } else {
         await clearConversation(phone); // arranca limpio
         await handleLinkingFlow(phone, '', { state: 'idle', data: {}, history: [], slots: {}, defaults: {} });

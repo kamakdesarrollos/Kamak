@@ -66,7 +66,7 @@ index a947a30..7089422 100644
      const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
        method: 'POST',
 diff --git a/api/whatsapp/webhook.js b/api/whatsapp/webhook.js
-index 5086c5a..4114ea1 100644
+index 5086c5a..2221d47 100644
 --- a/api/whatsapp/webhook.js
 +++ b/api/whatsapp/webhook.js
 @@ -22,6 +22,22 @@ const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY;
@@ -255,7 +255,36 @@ index 5086c5a..4114ea1 100644
      const accionMsg = esCorreccion ? '🔧 Corrección guardada' : '✅ Avance guardado';
      return `${accionMsg} en *${obra.nombre}*${tareaMsg}${avanceMsg}${mediaUrl ? ' · con foto' : ''}${ccOkMsg}`;
    }
-@@ -3123,7 +3242,11 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -2937,7 +3056,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
+ 
+ async function ejecutarComando(comando, datos, user, ctx) {
+   if (comando === 'ayuda') {
+-    const esAdmin = user.user_rol === 'Admin';
++    const esAdmin = isAdmin(user);
+     return (
+       `👋 *Hola ${user.user_name?.split(' ')[0] || ''}, así me podés hablar:*\n\n` +
+       `*◆ AVANCE DE OBRA* (foto + texto)\n` +
+@@ -2973,13 +3092,16 @@ async function ejecutarComando(comando, datos, user, ctx) {
+       `• *pendientes* — aprobaciones pendientes\n` +
+       (esAdmin ? `• *cheques* — cheques por vencer\n` : '') +
+       (esAdmin ? `• *resumen [obra] [fecha]* — resumen del día\n` : '') +
+-      `• _"como va [obra]"_ — KPIs: avance, gastado, próx. cuota, top gastos\n` +
+-      `• _"últimos 5 gastos de [obra]"_ — buscar gastos\n` +
++      (esAdmin
++        ? `• _"como va [obra]"_ — KPIs: avance, gastado, próx. cuota, top gastos\n`
++        : `• _"como va [obra]"_ — avance y tareas de la obra\n`) +
++      (esAdmin ? `• _"últimos 5 gastos de [obra]"_ — buscar gastos\n` : '') +
+       (esAdmin ? `• _"cuánto le debo a [proveedor]"_ — CC + últimas certs/pagos\n` : '') +
+       `• _"contacto [proveedor]"_ — tel/wa/email\n` +
+       (esAdmin ? `• _"pagué $300k a [proveedor] de [obra]"_ — pago contra CC\n` : '') +
+       `• _"dejá nota en [obra]: ..."_ — guardar recordatorio en la obra\n` +
+-      `• _"deposité el cheque 4421"_ / _"se cobró el 4421"_ — estado de cheque\n` +
++      `• *resumen de hoy* — tu resumen del día (tareas y, si sos admin, pendientes/vencimientos)\n` +
++      (esAdmin ? `• _"deposité el cheque 4421"_ / _"se cobró el 4421"_ — estado de cheque\n` : '') +
+       (esAdmin ? `• _"aprobar N"_ / _"rechazar N"_ — sobre pendientes (escribí *pendientes* para verlos)\n` : '') +
+       (esAdmin ? `• _"pasá $200k de Caja X a Caja Y"_ — traspaso entre cajas\n` : '') +
+       `• *deshacer* — revierte tu último movimiento cargado\n` +
+@@ -3123,7 +3245,11 @@ async function ejecutarComando(comando, datos, user, ctx) {
    if (comando === 'pendientes') {
      const pendingRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
      const pending = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
@@ -268,7 +297,45 @@ index 5086c5a..4114ea1 100644
      if (!activos.length) return '✅ No hay pendientes de aprobación.';
  
      // Guardar IDs para que el admin pueda decir "aprobar 1" / "rechazar 2".
-@@ -3441,17 +3564,24 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -3383,6 +3509,37 @@ async function ejecutarComando(comando, datos, user, ctx) {
+     );
+   }
+ 
++  // "resumen de hoy" / "/digest" → un mensaje con el estado del día, por rol.
++  // No-admin: SOLO sus tareas (cero montos). Admin: además pendientes (count+$),
++  // cheques por vencer y movimientos del día. Reusa el comando 'tareas' ya probado.
++  if (comando === 'digest') {
++    const admin = isAdmin(user);
++    const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
++    const hoy = new Date().toISOString().split('T')[0];
++    const partes = [`🗓 *Tu resumen de hoy* — ${hoy.split('-').reverse().join('/')}`];
++    if (admin) {
++      const pendRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
++      const pend = Array.isArray(pendRows[0]?.data) ? pendRows[0].data : [];
++      const activos = pend.filter(p => p.status !== 'confirmed' && p.status !== 'rejected');
++      if (activos.length) {
++        const tot = activos.reduce((s, p) => s + (p.monto || p.montoTotal || p.movimiento?.monto || 0), 0);
++        partes.push(`⏳ *Para aprobar:* ${activos.length}${tot ? ` · ${fmt(tot)}` : ''}  _(escribí *pendientes*)_`);
++      }
++      const chData = await loadSharedData('cheques');
++      const cheques = Array.isArray(chData) ? chData : (chData?.cheques || []);
++      const ahora = new Date(); const en7 = new Date(ahora.getTime() + 7 * 24 * 3600 * 1000);
++      const chP = cheques.filter(c => c.estado === 'cartera' && c.fechaVencimiento && new Date(c.fechaVencimiento) <= en7 && new Date(c.fechaVencimiento) >= ahora);
++      if (chP.length) partes.push(`🧾 *Cheques por vencer (≤7d):* ${chP.length} · ${fmt(chP.reduce((s, c) => s + (c.monto || 0), 0))}`);
++      const movsHoy = (ctx.movimientos || []).filter(m => m.fecha === hoy);
++      const g = movsHoy.filter(m => m.tipo === 'gasto'); const ing = movsHoy.filter(m => m.tipo === 'ingreso');
++      if (g.length || ing.length) partes.push(`💸 *Hoy:* ${g.length} gasto(s) ${fmt(g.reduce((s, m) => s + (m.monto || 0), 0))} · ${ing.length} ingreso(s) ${fmt(ing.reduce((s, m) => s + (m.monto || 0), 0))}`);
++    }
++    const tareasMsg = await ejecutarComando('tareas', {}, user, ctx);
++    partes.push('━━━━━━━━━━');
++    partes.push(tareasMsg);
++    return partes.join('\n\n');
++  }
++
+   // ─────────────────────────────────────────────────────────────────────────
+   // FASE 2 — Comandos de consulta y operación
+   // ─────────────────────────────────────────────────────────────────────────
+@@ -3441,17 +3598,24 @@ async function ejecutarComando(comando, datos, user, ctx) {
      const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
      const dateF = iso => iso ? iso.split('-').reverse().join('/') : '—';
  
@@ -299,7 +366,7 @@ index 5086c5a..4114ea1 100644
        r += `\n*Top gastos del mes:*\n`;
        gastosMes.forEach(m => { r += `• ${m.descripcion || m.proveedor || '—'}: ${fmt(m.monto)}\n`; });
      }
-@@ -3461,6 +3591,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -3461,6 +3625,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
  
    // "Cuánto le debo a [proveedor]" → saldo + últimas certs/pagos.
    if (comando === 'cc_proveedor') {
@@ -308,7 +375,7 @@ index 5086c5a..4114ea1 100644
      const query = (datos.proveedor || '').toLowerCase().trim();
      if (!query) return '🤔 ¿De qué proveedor? Ej: *cuánto le debo a Pérez*';
      const prov = ctx.proveedores.find(p =>
-@@ -3528,6 +3660,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -3528,6 +3694,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
  
    // ── Búsqueda cross-obra: "últimos N gastos de [obra]" / "gastos de cemento" ──
    if (comando === 'buscar_gastos') {
@@ -317,7 +384,7 @@ index 5086c5a..4114ea1 100644
      const obraQuery = (datos.obra || '').toLowerCase().trim();
      const concepto  = (datos.concepto || '').toLowerCase().trim();
      const limite    = datos.limite || 5;
-@@ -3575,6 +3709,9 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -3575,6 +3743,9 @@ async function ejecutarComando(comando, datos, user, ctx) {
  
    // ── Estado de cheque: "deposité el cheque 4421" / "se cobró el 4421" ────────
    if (comando === 'estado_cheque') {
@@ -327,7 +394,29 @@ index 5086c5a..4114ea1 100644
      const numero = (datos.numero || '').toString().trim();
      const nuevoEstado = datos.estado; // 'depositado' | 'cobrado' | 'rechazado' | 'anulado'
      if (!numero) return '🤔 Decime el número de cheque. Ej: *deposité el cheque 4421*';
-@@ -4535,6 +4672,126 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
+@@ -4031,6 +4202,21 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
+     }
+   }
+ 
++  // ── Digest "resumen de hoy" por rol + comandos directos (menú nativo de TG) ─
++  // Evita gastar una llamada a Claude para los comandos de una palabra (el menú
++  // /saldo /pendientes /ayuda llega como "/saldo" → strip → "saldo").
++  if (!mediaId && conv.state === 'idle') {
++    const td = (messageText || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[¡!¿?.,]/g, '').trim();
++    if (/^(digest|resumen de hoy|resumen del dia|resumen diario|resumen hoy|mi dia|mi jornada|que hay hoy|que tengo para hoy)$/.test(td)) {
++      await sendWA(phone, await ejecutarComando('digest', {}, { ...user, phone }, ctx));
++      return;
++    }
++    if (['saldo', 'pendientes', 'ayuda', 'cheques'].includes(td)) {
++      await sendWA(phone, await ejecutarComando(td, {}, { ...user, phone }, ctx));
++      return;
++    }
++  }
++
+   // ── El usuario pide ver sus tareas (en lenguaje natural) ───────────────────
+   // Detecta "tareas", "tareas pendientes", "que tareas tengo", "hola tareas
+   // pendientes", etc., y responde con la lista. Esto evita que el usuario
+@@ -4535,6 +4721,126 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
  }
  
  // ── Handler principal ─────────────────────────────────────────────────────────
@@ -410,7 +499,7 @@ index 5086c5a..4114ea1 100644
 +    if (!mediaId && (t === '/start' || t.startsWith('/start '))) {
 +      const yaVinc = await getLinkedUser(phone);
 +      if (yaVinc) {
-+        await sendWA(phone, `👋 ¡Hola de nuevo, *${yaVinc.user_name || ''}*!\n\nEscribí *ayuda* para ver qué podés hacer desde acá.`);
++        await sendWA(phone, `👋 ¡Hola de nuevo, *${yaVinc.user_name || ''}*!\n\nProbá: *resumen de hoy* · *tareas* · *saldo*\nO cargá algo: _"150 m² de revoque en Baradero"_ + foto, o _"pagué $50k de materiales en Baradero"_.\nEscribí *ayuda* para ver todo.`);
 +      } else {
 +        await clearConversation(phone); // arranca limpio
 +        await handleLinkingFlow(phone, '', { state: 'idle', data: {}, history: [], slots: {}, defaults: {} });
@@ -454,7 +543,7 @@ index 5086c5a..4114ea1 100644
  export default async function handler(req, res) {
    // Verificación del webhook (GET de Meta) — solo si vienen los query params
    // tipicos del verify de Meta. Sin esos params, devolvemos el endpoint
-@@ -4572,8 +4829,37 @@ export default async function handler(req, res) {
+@@ -4572,8 +4878,37 @@ export default async function handler(req, res) {
    }
  
    try {
@@ -493,7 +582,7 @@ index 5086c5a..4114ea1 100644
      if (META_APP_SECRET && raw) {
        if (!firmaMetaValida(req.headers['x-hub-signature-256'], raw, META_APP_SECRET)) {
          console.warn('[webhook] X-Hub-Signature-256 inválida — request rechazado');
-@@ -4582,12 +4868,6 @@ export default async function handler(req, res) {
+@@ -4582,12 +4917,6 @@ export default async function handler(req, res) {
      } else if (META_APP_SECRET && !raw) {
        console.warn('[webhook] no pude leer el body crudo — firma NO validada (revisar bodyParser)');
      }
