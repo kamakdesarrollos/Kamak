@@ -66,7 +66,7 @@ index a947a30..7089422 100644
      const r = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
        method: 'POST',
 diff --git a/api/whatsapp/webhook.js b/api/whatsapp/webhook.js
-index 5086c5a..2221d47 100644
+index 5086c5a..0ab0952 100644
 --- a/api/whatsapp/webhook.js
 +++ b/api/whatsapp/webhook.js
 @@ -22,6 +22,22 @@ const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY;
@@ -242,7 +242,55 @@ index 5086c5a..2221d47 100644
          : '';
        return `    RUBRO:${r.id}|${r.nombre}|prov:${r.proveedor||'—'}${tsStr}`;
      }).join('\n');
-@@ -2756,8 +2873,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
+@@ -1754,8 +1871,45 @@ function resumenAccion(accion, ctx) {
+       (cd ? `↳ A: ${cd.nombre}\n` : '')
+     );
+   }
+-  // Genérico
+-  return `📋 *Confirmar ${accion.tipo}:*\n\n${JSON.stringify(d, null, 1)}`;
++  if (accion.tipo === 'factura_compra' || accion.tipo === 'cargar_factura') {
++    const obraF = ctx.obras.find(o => o.id === d.obraId);
++    return (
++      `📋 *Confirmar factura de proveedor:*\n\n` +
++      `🏢 Proveedor: *${d.proveedorNombre || d.proveedor || '—'}*\n` +
++      `💵 Total: *${fmt(d.monto ?? d.montoTotal)}*\n` +
++      ((d.tipoFactura || d.numeroFactura) ? `🧾 ${d.tipoFactura ? `Tipo ${d.tipoFactura}` : ''}${d.numeroFactura ? ` N° ${d.numeroFactura}` : ''}\n` : '') +
++      (d.cuit ? `🆔 CUIT: ${d.cuit}\n` : '') +
++      (d.fecha ? `📅 Fecha: ${d.fecha}\n` : '') +
++      (obraF ? `🏗 Obra: *${obraF.nombre}*\n` : '')
++    );
++  }
++  if (accion.tipo === 'pago_proveedor') {
++    return (
++      `📋 *Confirmar pago a proveedor:*\n\n` +
++      `🏢 Proveedor: *${d.proveedorNombre || d.proveedor || '—'}*\n` +
++      `💵 Monto: *${fmt(d.monto)}*\n` +
++      (caja ? `🏦 Caja: ${caja.nombre}\n` : '')
++    );
++  }
++  if (accion.tipo === 'cheque_recibido') {
++    return (
++      `📋 *Confirmar cheque:*\n\n` +
++      `💵 Monto: *${fmt(d.monto)}*\n` +
++      (d.banco ? `🏦 Banco: ${d.banco}\n` : '') +
++      (d.numero ? `🔢 N°: ${d.numero}\n` : '') +
++      ((d.fechaVencimiento || d.vencimiento) ? `📅 Vence: ${d.fechaVencimiento || d.vencimiento}\n` : '')
++    );
++  }
++  // Genérico HUMANO — NUNCA volcar JSON crudo al usuario (factura/cheque/pago ya
++  // tienen su plantilla arriba; esto cubre nueva_tarea/prospecto/etc.).
++  const lineas = [];
++  if (d.monto != null || d.montoTotal != null) lineas.push(`💵 Monto: *${fmt(d.monto ?? d.montoTotal)}*`);
++  if (d.proveedorNombre || d.proveedor) lineas.push(`🏢 Proveedor: ${d.proveedorNombre || d.proveedor}`);
++  if (obra) lineas.push(`🏗 Obra: *${obra.nombre}*`);
++  if (d.descripcion || d.concepto) lineas.push(`📝 ${d.descripcion || d.concepto}`);
++  if (d.fecha) lineas.push(`📅 ${d.fecha}`);
++  const tituloT = accion.tipo ? String(accion.tipo).replace(/_/g, ' ') : 'acción';
++  return `📋 *Confirmar ${tituloT}:*${lineas.length ? `\n\n${lineas.join('\n')}` : ''}`;
+ }
+ 
+ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
+@@ -2756,8 +2910,10 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
      const avanceMsg = esCorreccion
        ? ` · ${avancePrevio}% → ${avanceFinal}%`
        : avanceAgregado > 0 ? ` · +${Math.min(avanceAgregado, 100 - avancePrevio)}%` : '';
@@ -255,7 +303,7 @@ index 5086c5a..2221d47 100644
      const accionMsg = esCorreccion ? '🔧 Corrección guardada' : '✅ Avance guardado';
      return `${accionMsg} en *${obra.nombre}*${tareaMsg}${avanceMsg}${mediaUrl ? ' · con foto' : ''}${ccOkMsg}`;
    }
-@@ -2937,7 +3056,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
+@@ -2937,7 +3093,7 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
  
  async function ejecutarComando(comando, datos, user, ctx) {
    if (comando === 'ayuda') {
@@ -264,7 +312,7 @@ index 5086c5a..2221d47 100644
      return (
        `👋 *Hola ${user.user_name?.split(' ')[0] || ''}, así me podés hablar:*\n\n` +
        `*◆ AVANCE DE OBRA* (foto + texto)\n` +
-@@ -2973,13 +3092,16 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -2973,13 +3129,16 @@ async function ejecutarComando(comando, datos, user, ctx) {
        `• *pendientes* — aprobaciones pendientes\n` +
        (esAdmin ? `• *cheques* — cheques por vencer\n` : '') +
        (esAdmin ? `• *resumen [obra] [fecha]* — resumen del día\n` : '') +
@@ -284,7 +332,7 @@ index 5086c5a..2221d47 100644
        (esAdmin ? `• _"aprobar N"_ / _"rechazar N"_ — sobre pendientes (escribí *pendientes* para verlos)\n` : '') +
        (esAdmin ? `• _"pasá $200k de Caja X a Caja Y"_ — traspaso entre cajas\n` : '') +
        `• *deshacer* — revierte tu último movimiento cargado\n` +
-@@ -3123,7 +3245,11 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -3123,7 +3282,11 @@ async function ejecutarComando(comando, datos, user, ctx) {
    if (comando === 'pendientes') {
      const pendingRows = await sbGet('shared_data', '?key=eq.whatsapp_pending&select=data');
      const pending = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
@@ -297,7 +345,7 @@ index 5086c5a..2221d47 100644
      if (!activos.length) return '✅ No hay pendientes de aprobación.';
  
      // Guardar IDs para que el admin pueda decir "aprobar 1" / "rechazar 2".
-@@ -3383,6 +3509,37 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -3383,6 +3546,37 @@ async function ejecutarComando(comando, datos, user, ctx) {
      );
    }
  
@@ -335,7 +383,7 @@ index 5086c5a..2221d47 100644
    // ─────────────────────────────────────────────────────────────────────────
    // FASE 2 — Comandos de consulta y operación
    // ─────────────────────────────────────────────────────────────────────────
-@@ -3441,17 +3598,24 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -3441,17 +3635,24 @@ async function ejecutarComando(comando, datos, user, ctx) {
      const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
      const dateF = iso => iso ? iso.split('-').reverse().join('/') : '—';
  
@@ -366,7 +414,7 @@ index 5086c5a..2221d47 100644
        r += `\n*Top gastos del mes:*\n`;
        gastosMes.forEach(m => { r += `• ${m.descripcion || m.proveedor || '—'}: ${fmt(m.monto)}\n`; });
      }
-@@ -3461,6 +3625,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -3461,6 +3662,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
  
    // "Cuánto le debo a [proveedor]" → saldo + últimas certs/pagos.
    if (comando === 'cc_proveedor') {
@@ -375,7 +423,7 @@ index 5086c5a..2221d47 100644
      const query = (datos.proveedor || '').toLowerCase().trim();
      if (!query) return '🤔 ¿De qué proveedor? Ej: *cuánto le debo a Pérez*';
      const prov = ctx.proveedores.find(p =>
-@@ -3528,6 +3694,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -3528,6 +3731,8 @@ async function ejecutarComando(comando, datos, user, ctx) {
  
    // ── Búsqueda cross-obra: "últimos N gastos de [obra]" / "gastos de cemento" ──
    if (comando === 'buscar_gastos') {
@@ -384,7 +432,7 @@ index 5086c5a..2221d47 100644
      const obraQuery = (datos.obra || '').toLowerCase().trim();
      const concepto  = (datos.concepto || '').toLowerCase().trim();
      const limite    = datos.limite || 5;
-@@ -3575,6 +3743,9 @@ async function ejecutarComando(comando, datos, user, ctx) {
+@@ -3575,6 +3780,9 @@ async function ejecutarComando(comando, datos, user, ctx) {
  
    // ── Estado de cheque: "deposité el cheque 4421" / "se cobró el 4421" ────────
    if (comando === 'estado_cheque') {
@@ -394,7 +442,7 @@ index 5086c5a..2221d47 100644
      const numero = (datos.numero || '').toString().trim();
      const nuevoEstado = datos.estado; // 'depositado' | 'cobrado' | 'rechazado' | 'anulado'
      if (!numero) return '🤔 Decime el número de cheque. Ej: *deposité el cheque 4421*';
-@@ -4031,6 +4202,21 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
+@@ -4031,6 +4239,21 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
      }
    }
  
@@ -416,7 +464,22 @@ index 5086c5a..2221d47 100644
    // ── El usuario pide ver sus tareas (en lenguaje natural) ───────────────────
    // Detecta "tareas", "tareas pendientes", "que tareas tengo", "hola tareas
    // pendientes", etc., y responde con la lista. Esto evita que el usuario
-@@ -4535,6 +4721,126 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
+@@ -4513,7 +4736,13 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
+ 
+   if (claudeRes.estado === 'confirmando') {
+     await saveConversation(phone, { state: 'confirmando', data: { accion: claudeRes.accion, pendingMediaUrl: mediaUrl }, history: newHistory, slots: conv.slots || {} });
+-    await sendWAButtons(phone, claudeRes.mensaje, BOTONES_CONFIRMAR);
++    // Guarda anti-JSON: si el LLM no mandó un mensaje legible (vacío o con pinta
++    // de objeto), armamos la confirmación humana desde la acción (nunca JSON crudo).
++    const m = claudeRes.mensaje;
++    const msgConf = (m && typeof m === 'string' && m.trim() && !m.trim().startsWith('{'))
++      ? m
++      : resumenAccion(claudeRes.accion || {}, ctx);
++    await sendWAButtons(phone, msgConf, BOTONES_CONFIRMAR);
+     return;
+   }
+ 
+@@ -4535,6 +4764,126 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
  }
  
  // ── Handler principal ─────────────────────────────────────────────────────────
@@ -543,7 +606,7 @@ index 5086c5a..2221d47 100644
  export default async function handler(req, res) {
    // Verificación del webhook (GET de Meta) — solo si vienen los query params
    // tipicos del verify de Meta. Sin esos params, devolvemos el endpoint
-@@ -4572,8 +4878,37 @@ export default async function handler(req, res) {
+@@ -4572,8 +4921,37 @@ export default async function handler(req, res) {
    }
  
    try {
@@ -582,7 +645,7 @@ index 5086c5a..2221d47 100644
      if (META_APP_SECRET && raw) {
        if (!firmaMetaValida(req.headers['x-hub-signature-256'], raw, META_APP_SECRET)) {
          console.warn('[webhook] X-Hub-Signature-256 inválida — request rechazado');
-@@ -4582,12 +4917,6 @@ export default async function handler(req, res) {
+@@ -4582,12 +4960,6 @@ export default async function handler(req, res) {
      } else if (META_APP_SECRET && !raw) {
        console.warn('[webhook] no pude leer el body crudo — firma NO validada (revisar bodyParser)');
      }

@@ -1871,8 +1871,45 @@ function resumenAccion(accion, ctx) {
       (cd ? `↳ A: ${cd.nombre}\n` : '')
     );
   }
-  // Genérico
-  return `📋 *Confirmar ${accion.tipo}:*\n\n${JSON.stringify(d, null, 1)}`;
+  if (accion.tipo === 'factura_compra' || accion.tipo === 'cargar_factura') {
+    const obraF = ctx.obras.find(o => o.id === d.obraId);
+    return (
+      `📋 *Confirmar factura de proveedor:*\n\n` +
+      `🏢 Proveedor: *${d.proveedorNombre || d.proveedor || '—'}*\n` +
+      `💵 Total: *${fmt(d.monto ?? d.montoTotal)}*\n` +
+      ((d.tipoFactura || d.numeroFactura) ? `🧾 ${d.tipoFactura ? `Tipo ${d.tipoFactura}` : ''}${d.numeroFactura ? ` N° ${d.numeroFactura}` : ''}\n` : '') +
+      (d.cuit ? `🆔 CUIT: ${d.cuit}\n` : '') +
+      (d.fecha ? `📅 Fecha: ${d.fecha}\n` : '') +
+      (obraF ? `🏗 Obra: *${obraF.nombre}*\n` : '')
+    );
+  }
+  if (accion.tipo === 'pago_proveedor') {
+    return (
+      `📋 *Confirmar pago a proveedor:*\n\n` +
+      `🏢 Proveedor: *${d.proveedorNombre || d.proveedor || '—'}*\n` +
+      `💵 Monto: *${fmt(d.monto)}*\n` +
+      (caja ? `🏦 Caja: ${caja.nombre}\n` : '')
+    );
+  }
+  if (accion.tipo === 'cheque_recibido') {
+    return (
+      `📋 *Confirmar cheque:*\n\n` +
+      `💵 Monto: *${fmt(d.monto)}*\n` +
+      (d.banco ? `🏦 Banco: ${d.banco}\n` : '') +
+      (d.numero ? `🔢 N°: ${d.numero}\n` : '') +
+      ((d.fechaVencimiento || d.vencimiento) ? `📅 Vence: ${d.fechaVencimiento || d.vencimiento}\n` : '')
+    );
+  }
+  // Genérico HUMANO — NUNCA volcar JSON crudo al usuario (factura/cheque/pago ya
+  // tienen su plantilla arriba; esto cubre nueva_tarea/prospecto/etc.).
+  const lineas = [];
+  if (d.monto != null || d.montoTotal != null) lineas.push(`💵 Monto: *${fmt(d.monto ?? d.montoTotal)}*`);
+  if (d.proveedorNombre || d.proveedor) lineas.push(`🏢 Proveedor: ${d.proveedorNombre || d.proveedor}`);
+  if (obra) lineas.push(`🏗 Obra: *${obra.nombre}*`);
+  if (d.descripcion || d.concepto) lineas.push(`📝 ${d.descripcion || d.concepto}`);
+  if (d.fecha) lineas.push(`📅 ${d.fecha}`);
+  const tituloT = accion.tipo ? String(accion.tipo).replace(/_/g, ' ') : 'acción';
+  return `📋 *Confirmar ${tituloT}:*${lineas.length ? `\n\n${lineas.join('\n')}` : ''}`;
 }
 
 async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
@@ -4699,7 +4736,13 @@ async function handleMainFlow(phone, user, messageText, mediaId, mimeType, conv)
 
   if (claudeRes.estado === 'confirmando') {
     await saveConversation(phone, { state: 'confirmando', data: { accion: claudeRes.accion, pendingMediaUrl: mediaUrl }, history: newHistory, slots: conv.slots || {} });
-    await sendWAButtons(phone, claudeRes.mensaje, BOTONES_CONFIRMAR);
+    // Guarda anti-JSON: si el LLM no mandó un mensaje legible (vacío o con pinta
+    // de objeto), armamos la confirmación humana desde la acción (nunca JSON crudo).
+    const m = claudeRes.mensaje;
+    const msgConf = (m && typeof m === 'string' && m.trim() && !m.trim().startsWith('{'))
+      ? m
+      : resumenAccion(claudeRes.accion || {}, ctx);
+    await sendWAButtons(phone, msgConf, BOTONES_CONFIRMAR);
     return;
   }
 
