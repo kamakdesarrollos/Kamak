@@ -142,6 +142,10 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
   // admin o quien CREÓ la tarea (el que delega). Los demás (los que reciben un
   // ítem) ven SOLO sus ítems.
   const puedeGestionar = isAdmin || (!!currentUser && tarea.creadoPor === currentUser.id);
+  // Eliminar: además del admin y del creador, puede borrar quien TIENE la tarea
+  // asignada (se la creó otro para él). Es un permiso aparte de la gestión del
+  // checklist: el asignado sigue viendo sólo sus ítems.
+  const puedeEliminar = puedeGestionar || (!!currentUser && (tarea.asignadoA || []).includes(currentUser.id));
   const checklistVisible = puedeGestionar
     ? (tarea.checklist || [])
     : (tarea.checklist || []).filter(it => it.asignadoA === currentUser?.id);
@@ -463,7 +467,7 @@ function TareaRow({ tarea, currentUser, usuarios, obras, expanded, onToggleExpan
               />
             )}
             <Btn sm onClick={onEdit}>{puedeGestionar ? 'Editar tarea' : 'Ver tarea'}</Btn>
-            {puedeGestionar && (
+            {puedeEliminar && (
               <Btn sm onClick={() => { if (window.confirm(`¿Eliminar la tarea "${tarea.titulo}"? Esta acción no se puede deshacer.`)) onDelete(); }}
                 style={{ color: '#dc2626', borderColor: '#dc2626' }}>🗑 Eliminar</Btn>
             )}

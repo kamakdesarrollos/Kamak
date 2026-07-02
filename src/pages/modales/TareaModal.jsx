@@ -58,6 +58,9 @@ export default function TareaModal({ tareaId, presetAsignado, onClose }) {
   // completar SUS ítems.
   const esResponsableItem = !!tareaActual && (tareaActual.checklist || []).some(it => it.asignadoA === currentUser?.id);
   const puedeEditarCampos = esNueva || isAdmin || esCreador;
+  // Eliminar: el admin, el creador o quien tiene la tarea asignada (aunque el
+  // asignado no pueda editar los campos, sí puede borrarla).
+  const puedeEliminar = isAdmin || esCreador || esAsignado;
   const puedeAsignarAOtros = isAdmin;
 
   // Estado del form (solo se usa en modo nueva / edicion).
@@ -451,7 +454,7 @@ export default function TareaModal({ tareaId, presetAsignado, onClose }) {
         {/* Footer */}
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', gap: 8, flexShrink: 0, background: T.paper }}>
           <div>
-            {!esNueva && puedeEditarCampos && (
+            {!esNueva && puedeEliminar && (
               <Btn sm onClick={eliminar} style={{ color: '#dc2626', borderColor: '#dc2626' }}>
                 Eliminar
               </Btn>
