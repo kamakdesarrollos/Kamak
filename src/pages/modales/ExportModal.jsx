@@ -169,8 +169,12 @@ function generarHTML({ obra, detalle, vigencia, nota, condiciones, formaPago, lo
         </div>`;
       }
       const vu = tareaVentaUnit(t, rubro);
+      // Nota de la tarea (sector, qué no incluye…): debajo del nombre, en itálica
+      // clarita. La celda pasa a columna para que la nota no salga al lado del
+      // nombre y descoloque las columnas numéricas.
+      const notaHtml = t.nota ? `<div style="font-size:8.5px;color:#9a9892;font-style:italic;line-height:1.2;margin-top:1px;">(${esc(t.nota)})</div>` : '';
       return `<div class="task-row${ti % 2 === 1 ? ' alt' : ''}">
-        <div class="tc tc-name">${esc(t.nombre)}${t.codigo ? ` <span class="t-code">[${esc(t.codigo)}]</span>` : ''}</div>
+        <div class="tc tc-name"${t.nota ? ' style="flex-direction:column;align-items:flex-start;justify-content:center;"' : ''}><span>${esc(t.nombre)}${t.codigo ? ` <span class="t-code">[${esc(t.codigo)}]</span>` : ''}</span>${notaHtml}</div>
         <div class="tc tc-un">${t.unidad}</div>
         <div class="tc tc-num">${fmtN(t.cantidad)}</div>
         <div class="tc tc-num">U$S ${toUSD(vu)}</div>
