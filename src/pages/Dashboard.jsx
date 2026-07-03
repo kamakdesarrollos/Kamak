@@ -100,7 +100,9 @@ export default function Dashboard() {
   // ── KPIs del mes ──
   const movsMes         = useMemo(() => movimientos.filter(m => m.fecha.startsWith(mes) && !m.ccPrevia), [movimientos, mes]);
   const ingresosMes     = useMemo(() => movsMes.filter(m => m.tipo === 'ingreso'), [movsMes]);
-  const gastosMes       = useMemo(() => movsMes.filter(m => m.tipo === 'gasto'),   [movsMes]);
+  // Los 'prorrateo' se excluyen del consolidado: son asignación analítica por
+  // obra de gastos fijos ya pagados como gastos reales (doble conteo si suman).
+  const gastosMes       = useMemo(() => movsMes.filter(m => m.tipo === 'gasto' && m.categoria !== 'prorrateo'), [movsMes]);
   // KPIs consolidados en ARS: un movimiento en caja USD NO se suma como pesos
   // (antes inflaba/invertía el neto). montoEnARS convierte según la moneda de la caja.
   const totalIngresosMes = ingresosMes.reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
@@ -122,7 +124,7 @@ export default function Dashboard() {
       const d = new Date(y, mo - 1 - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
       const inp = movimientos.filter(m => m.tipo === 'ingreso' && !m.ccPrevia && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
-      const out = movimientos.filter(m => m.tipo === 'gasto'   && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
+      const out = movimientos.filter(m => m.tipo === 'gasto' && m.categoria !== 'prorrateo' && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
       result.push({ label: MESES_N[d.getMonth()], inp, out });
     }
     return result;

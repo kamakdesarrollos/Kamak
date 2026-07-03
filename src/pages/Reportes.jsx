@@ -61,8 +61,11 @@ export default function Reportes() {
     [movimientos]);
 
   // REP-01: consolidar en ARS (no sumar pesos + dólares como si fueran lo mismo).
+  // Los movimientos 'prorrateo' se EXCLUYEN del consolidado: son la asignación
+  // analítica por obra de gastos fijos que ya entraron como gastos reales de
+  // caja — sumarlos acá duplicaba el costo de la empresa (doble conteo).
   const facturacionYTD = allMovsYTD.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
-  const costoYTD       = allMovsYTD.filter(m => m.tipo === 'gasto').reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
+  const costoYTD       = allMovsYTD.filter(m => m.tipo === 'gasto' && m.categoria !== 'prorrateo').reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
   const margenProm = activas.length > 0
     ? activas.reduce((s, o) => s + (o.margen || 0), 0) / activas.length : 0;
 
