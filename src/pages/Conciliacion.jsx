@@ -67,7 +67,11 @@ function AgregarMovimientoModal({ linea, caja, onClose, onCrear }) {
       medioPago: caja.tipo === 'billetera' ? 'Billetera' : 'Banco',
       referencia: '',
       fondoReparo: false,
-      conciliado: true, // se crea ya conciliado contra esta línea del extracto
+      // OJO: NO nace conciliado. Se marca conciliado:true recién al CONFIRMAR la
+      // conciliación (movsAConciliar incluye los creados en esta sesión). Antes
+      // nacía conciliado:true y si el usuario abandonaba la sesión quedaba
+      // excluido del matching PARA SIEMPRE (matchExtracto ignora conciliados):
+      // re-importar el mismo extracto invitaba a crear un duplicado del gasto.
     });
     onClose();
   };
