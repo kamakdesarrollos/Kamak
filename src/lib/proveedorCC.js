@@ -114,7 +114,7 @@ export function libroProveedor(prov, facturas, movimientos, ccEntries, { cajas, 
   const rows = [];
   for (const f of facturasCC(facturas, prov, obraId)) {
     rows.push({
-      fecha: f.fecha || '', tipo: 'factura', ref: f.id,
+      fecha: f.fecha || '', tipo: 'factura', ref: f.id, obraId: f.obraId || null, obraNombre: f.obraNombre || '',
       concepto: `Factura ${f.tipoLetra || ''} ${f.numero || 's/n'}${f.concepto ? ` · ${f.concepto}` : ''}`.trim(),
       debe: Math.round(Number(f.monto) || 0), haber: 0,
     });
@@ -122,6 +122,7 @@ export function libroProveedor(prov, facturas, movimientos, ccEntries, { cajas, 
       const esCredito = p.tipo === 'credito';
       rows.push({
         fecha: p.fecha || '', tipo: esCredito ? 'credito' : 'pago', ref: p.movimientoId || f.id,
+        obraId: f.obraId || null, obraNombre: f.obraNombre || '',
         concepto: esCredito
           ? `Aplicación de crédito · factura ${f.numero || 's/n'}`
           : `Pago factura ${f.numero || 's/n'}`,
@@ -131,14 +132,14 @@ export function libroProveedor(prov, facturas, movimientos, ccEntries, { cajas, 
   }
   for (const m of anticiposDe(movimientos, prov, obraId)) {
     rows.push({
-      fecha: m.fecha || '', tipo: 'anticipo', ref: m.id,
+      fecha: m.fecha || '', tipo: 'anticipo', ref: m.id, obraId: m.obraId || null, obraNombre: m.obraNombre || '',
       concepto: m.descripcion || 'Anticipo a cuenta',
       debe: 0, haber: montoEnARS(m, cajas, tc),
     });
   }
   for (const e of (ccEntries || []).filter(e => e.proveedorId === prov.id && (!obraId || e.obraId === obraId))) {
     rows.push({
-      fecha: e.fecha || '', tipo: e.tipo || 'ajuste', ref: e.id,
+      fecha: e.fecha || '', tipo: e.tipo || 'ajuste', ref: e.id, obraId: e.obraId || null, obraNombre: e.obraNombre || '', legacy: true,
       concepto: e.concepto || '', debe: Math.round(e.debe || 0), haber: Math.round(e.haber || 0),
     });
   }
