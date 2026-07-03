@@ -5,11 +5,15 @@ import PageHero from '../components/ui/PageHero';
 import { Box, Btn } from '../components/ui';
 import { T } from '../theme';
 import { useProveedores } from '../store/ProveedoresContext';
+import { useMovimientos } from '../store/MovimientosContext';
+import { useDolar } from '../store/DolarContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import { saldoFacturaPendiente, estadoFacturaPendiente, totalPendiente } from '../lib/facturasPendientes';
+import { creditoDisponibleProveedor } from '../lib/proveedorCC';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
 import FacturaPendienteModal from './modales/FacturaPendienteModal';
+import AplicarCreditoModal from './modales/AplicarCreditoModal';
 
 // Cuentas por pagar: facturas de proveedor cargadas (devengadas para Libro IVA)
 // que todavía no se pagaron del todo. El pago se registra desde acá vía
@@ -64,11 +68,20 @@ export default function CuentasPorPagar() {
   }, [currentUser, puedeVer, navigate]);
 
   const { proveedores, facturasPendientes, updateFacturaPendiente } = useProveedores();
+  const { movimientos, cajas } = useMovimientos();
+  const { dolarVenta } = useDolar();
 
   const [filtroProv, setFiltroProv]   = useState('todos');
   const [filtroEstado, setFiltroEstado] = useState('abiertas');
   const [modalAlta, setModalAlta]     = useState(false);
   const [pagoFactura, setPagoFactura] = useState(null); // factura a saldar
+  const [creditoFactura, setCreditoFactura] = useState(null); // {factura, credito}
+
+  // Crédito a favor por proveedor (anticipos − aplicaciones): habilita "Aplicar
+  // crédito" en sus facturas abiertas — el pedido se descuenta sin pagar.
+  const creditoDe = (prov) => prov
+    ? creditoDisponibleProveedor(prov, facturasPendientes, movimientos, { cajas, tc: dolarVenta })
+    : 0;
 
   // Visibilidad por dueño: admin/administración ven todas; el resto solo las que
   // subió cada uno (createdBy). Todo lo demás (KPIs, filtros) opera sobre esto.
@@ -196,8 +209,11 @@ export default function CuentasPorPagar() {
                     </div>
                   )}
                 </div>
-                <span style={{ fontSize: 11, color: T.ink2, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                  Pendiente <b style={{ fontFamily: T.fontMono, color: g.subtotal > 0 ? T.warn : T.ok }}>$ {fmtN(g.subtotal)}</b>
+                <span style={{ fontSize: 11, color: T.ink2, flexShrink: 0, whiteSpace: 'nowrap', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                  <span>Pendiente <b style={{ fontFamily: T.fontMono, color: g.subtotal > 0 ? T.warn : T.ok }}>$ {fmtN(g.subtotal)}</b></span>
+                  {esAdmin && creditoDe(g.prov) > 1 && (
+                    <span style={{ fontSize: 10, color: T.ok }}>A favor <b style={{ fontFamily: T.fontMono }}>$ {fmtN(creditoDe(g.prov))}</b></span>
+                  )}
                 </span>
               </div>
 
@@ -254,6 +270,11 @@ export default function CuentasPorPagar() {
                       {f.comprobanteUrl && (
                         <Btn sm onClick={() => window.open(f.comprobanteUrl, '_blank', 'noopener')} style={{ fontSize: 10 }}>Ver</Btn>
                       )}
+                      {abierta && esAdmin && creditoDe(g.prov) > 1 && (
+                        <Btn sm onClick={() => setCreditoFactura({ factura: f, credito: creditoDe(g.prov) })}
+                          title={`Aplicar crédito a favor ($ ${fmtN(creditoDe(g.prov))}) — no mueve caja`}
+                          style={{ fontSize: 10, color: '#4f5bd5', borderColor: '#4f5bd5' }}>Aplicar crédito</Btn>
+                      )}
                       {abierta && esAdmin && (
                         <Btn sm accent onClick={() => setPagoFactura(f)} style={{ fontSize: 10 }}>Registrar pago</Btn>
                       )}
@@ -292,6 +313,12 @@ export default function CuentasPorPagar() {
           proveedor={pagoFactura.proveedor || proveedores.find(p => p.id === pagoFactura.proveedorId)?.nombre || ''}
           proveedorId={pagoFactura.proveedorId || null}
           onClose={() => setPagoFactura(null)} />
+      )}
+      {creditoFactura && (
+        <AplicarCreditoModal
+          factura={creditoFactura.factura}
+          credito={creditoFactura.credito}
+          onClose={() => setCreditoFactura(null)} />
       )}
     </PageLayout>
   );

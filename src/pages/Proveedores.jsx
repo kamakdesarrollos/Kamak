@@ -1,11 +1,13 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout';
 import { Box, Btn, Chip, Label } from '../components/ui';
 import PageHero from '../components/ui/PageHero';
 import { T } from '../theme';
-import { useProveedores, calcSaldoProveedorMov } from '../store/ProveedoresContext';
+import { useProveedores } from '../store/ProveedoresContext';
 import { useMovimientos } from '../store/MovimientosContext';
+import { useDolar } from '../store/DolarContext';
+import { saldoProveedorCC } from '../lib/proveedorCC';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import RegistrarPagoModal from './modales/RegistrarPagoModal';
@@ -230,7 +232,8 @@ export default function Proveedores() {
   // y cuenta corriente de proveedores (de mano de obra y de materiales).
   const isAdmin = currentUser?.rol === 'Admin' || currentUser?.rol === 'Administración';
   const { proveedores, addProveedor, updateProveedor, removeProveedor, getObrasProveedor, ccEntries: ccRaw, facturasPendientes } = useProveedores();
-  const { movimientos } = useMovimientos();
+  const { movimientos, cajas } = useMovimientos();
+  const { dolarVenta } = useDolar();
   // Deuda en facturas pendientes de pago (cuentas por pagar) por proveedor.
   // Total de saldos de sus facturas abiertas. Independiente del saldo CC clásico.
   const deudaFacturas = useMemo(() => {
@@ -239,9 +242,13 @@ export default function Proveedores() {
     return map;
   }, [proveedores, facturasPendientes]);
   const totalDeudaFacturas = useMemo(() => Object.values(deudaFacturas).reduce((s, v) => s + v, 0), [deudaFacturas]);
-  // Saldo DERIVADO: lo que debemos (debe de ccEntries) − lo que pagamos (gastos
-  // a ese proveedor en movimientos). Libro único: los pagos son movimientos.
-  const getSaldo = (pid, obraId = null) => calcSaldoProveedorMov(proveedores.find(p => p.id === pid), ccRaw, movimientos, obraId);
+  // Saldo DERIVADO con crédito (lib/proveedorCC): deuda = facturas no anuladas
+  // por su saldo + ccEntries legacy; crédito = anticipos − aplicaciones. Saldo
+  // negativo = A FAVOR nuestro. Arregla el bug de la derivación vieja: los pagos
+  // de facturas ya saldadas restaban para siempre (CC quedaba en −monto).
+  const getSaldo = useCallback((pid, obraId = null) =>
+    saldoProveedorCC(proveedores.find(p => p.id === pid), facturasPendientes, movimientos, ccRaw, { cajas, tc: dolarVenta, obraId }).saldo,
+    [proveedores, facturasPendientes, movimientos, ccRaw, cajas, dolarVenta]);
   const [pagoProvId, setPagoProvId] = useState(null);
   const [modalNuevo, setModalNuevo] = useState(false);
   const [editProv, setEditProv] = useState(null);
@@ -412,7 +419,7 @@ export default function Proveedores() {
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 9, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Saldo CC</div>
                       <div style={{ fontSize: 15, fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.warn : T.ok }}>
-                        {saldo > 0 ? `$ ${fmtN(saldo)}` : 'Al día'}
+                        {saldo > 1 ? `$ ${fmtN(saldo)}` : saldo < -1 ? `A favor $ ${fmtN(saldo)}` : 'Al día'}
                       </div>
                       {deudaFacturas[p.id] > 0 && (
                         <div style={{ fontSize: 10, fontFamily: T.fontMono, color: T.accent, fontWeight: 700 }}
@@ -516,7 +523,7 @@ export default function Proveedores() {
                 {isAdmin && (
                   <span style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
                     <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.warn : T.ok }}>
-                      {saldo > 0 ? `$ ${fmtN(saldo)}` : '—'}
+                      {saldo > 1 ? `$ ${fmtN(saldo)}` : saldo < -1 ? `A favor $ ${fmtN(saldo)}` : '—'}
                     </span>
                     {deudaFacturas[p.id] > 0 && (
                       <span style={{ fontSize: 9, fontFamily: T.fontMono, color: T.accent, fontWeight: 700 }}
@@ -581,7 +588,7 @@ export default function Proveedores() {
                   <div style={{ borderTop: `1px solid ${T.faint2}`, paddingTop: 8 }}>
                     <div style={{ fontSize: 10, color: T.ink2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Saldo CC</div>
                     <div style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 15, color: saldo > 0 ? T.warn : T.ok }}>
-                      {saldo > 0 ? `$ ${fmtN(saldo)}` : 'Al día'}
+                      {saldo > 1 ? `$ ${fmtN(saldo)}` : saldo < -1 ? `A favor $ ${fmtN(saldo)}` : 'Al día'}
                     </div>
                     {deudaFacturas[p.id] > 0 && (
                       <div style={{ fontSize: 10, fontFamily: T.fontMono, color: T.accent, fontWeight: 700, marginTop: 2 }}
