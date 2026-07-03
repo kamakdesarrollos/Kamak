@@ -132,7 +132,8 @@ export function desglosarCompraBot({ total, tipoLetra, percepcionIIBB = 0, perce
 const _normProvFP = s => (s || '').toString().toLowerCase().trim();
 
 // Saldo pendiente = monto − Σ pagos (nunca negativo).
-function saldoFacturaPendienteBot(f) {
+// Exportada para el test de paridad bot↔app (src/lib/bot-cc-parity.test.js).
+export function saldoFacturaPendienteBot(f) {
   if (!f) return 0;
   const pagado = (f.pagos || []).reduce((s, p) => s + (Number(p.monto) || 0), 0);
   return Math.max(0, (Number(f.monto) || 0) - pagado);
@@ -141,7 +142,7 @@ function saldoFacturaPendienteBot(f) {
 // Estado derivado de los pagos. 'anulada' y 'registrada' se guardan y no se derivan.
 // 'registrada' = factura solo fiscal (cuenta para Libro IVA pero NO es deuda ni mueve
 // caja) → no abierta, no matchea pagos, no figura en el resumen de pendientes.
-function estadoFacturaPendienteBot(f) {
+export function estadoFacturaPendienteBot(f) {
   if (!f) return 'pendiente';
   if (f.estado === 'anulada') return 'anulada';
   if (f.estado === 'registrada') return 'registrada';
