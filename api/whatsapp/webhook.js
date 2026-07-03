@@ -298,6 +298,45 @@ async function sbPatchDetalleObra(obraId, patch) {
   await broadcastChange('obras');
 }
 
+// ── Pago de factura ATÓMICO (espejo de src/lib/pagoAtomico.js) ────────────────
+// Camino preferido: RPC registrar_pago_factura (migración 0006) = movimiento +
+// pago en la factura en UNA transacción, validando sobrepago/estado contra datos
+// FRESCOS. Fallback (RPC 404 = no desplegada): appendMovimiento + patch con
+// RE-LECTURA fresca de la factura — antes el array pagos se computaba desde el
+// ctx leído al inicio del request y PISABA un pago concurrente de la app.
+// Un error de validación de la RPC (400) NO cae al fallback: se informa.
+async function sbRegistrarPago(mov, facturaId, pago) {
+  try {
+    await sbRpc('registrar_pago_factura', {
+      p_mov: mov,
+      p_factura_id: facturaId || null,
+      p_pago: pago || null,
+    });
+    await broadcastChange('movimientos');
+    if (facturaId) await broadcastChange('proveedores');
+    return { ok: true };
+  } catch (e) {
+    if (!/ 404$/.test(e.message || '')) {
+      console.error('[sbRegistrarPago] rechazo RPC:', e.message);
+      return { ok: false, error: e.message };
+    }
+    console.error('[sbRegistrarPago] RPC no desplegada, fallback verificado');
+  }
+  await appendMovimiento(mov);
+  if (!facturaId) return { ok: true };
+  const data = await loadSharedData('proveedores');
+  const fresca = (data?.facturasPendientes || []).find(f => f.id === facturaId);
+  if (!fresca) return { ok: true };
+  const pagos = [...(fresca.pagos || []), pago];
+  const facturaActualizada = { ...fresca, pagos };
+  await sbPatchObjectItem('proveedores', 'facturasPendientes', facturaId, {
+    pagos,
+    saldoPendiente: saldoFacturaPendienteBot(facturaActualizada),
+    estado: estadoFacturaPendienteBot(facturaActualizada),
+  });
+  return { ok: true, factura: facturaActualizada };
+}
+
 // ── Detección de comprobantes RECIBIDOS duplicados (mismo criterio que la app)
 // Huella: con N° → letra + serial(último segmento) + CUIT + total redondeado.
 //         sin N° → proveedor + fecha + total (heurística para tickets sin formal).
@@ -2501,19 +2540,24 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       creadoPorWA: true,
       creadoPor: user.user_name,
     };
-    await appendMovimiento(mov);
+    // Pago ATÓMICO: movimiento + pago en la factura en una transacción (RPC) o
+    // fallback verificado con re-lectura fresca. Antes: appendMovimiento + patch
+    // con pagos[] STALE del ctx → un pago concurrente de la app se perdía y la
+    // factura se podía pagar dos veces.
+    const pago = facturaSaldar
+      ? { movimientoId: mov.id, monto, fecha: mov.fecha, cajaId: caja.id, comprobanteUrl: mediaUrl || null }
+      : null;
+    const resPago = await sbRegistrarPago(mov, facturaSaldar?.id || null, pago);
+    if (!resPago.ok) {
+      return `❌ No pude registrar el pago: ${(resPago.error || '').includes('excede el saldo') ? 'el monto excede el saldo de la factura (quizás alguien la pagó recién desde la app). Escribí *pendientes de pago* para ver el saldo actual.' : 'error del servidor. Probá de nuevo en un momento.'}`;
+    }
 
-    // Si el pago salda una factura pendiente → registrar el pago en la factura
-    // (agregarlo a pagos[] y recalcular estado/saldo) de forma atómica.
     if (facturaSaldar) {
-      const pago = { movimientoId: mov.id, monto, fecha: mov.fecha, cajaId: caja.id, comprobanteUrl: mediaUrl || null };
-      const pagos = [...(facturaSaldar.pagos || []), pago];
-      const facturaActualizada = { ...facturaSaldar, pagos };
-      const nuevoSaldo = saldoFacturaPendienteBot(facturaActualizada);
-      const nuevoEstado = estadoFacturaPendienteBot(facturaActualizada);
-      await sbPatchObjectItem('proveedores', 'facturasPendientes', facturaSaldar.id, {
-        pagos, saldoPendiente: nuevoSaldo, estado: nuevoEstado,
-      });
+      // Para el mensaje: usamos la factura fresca del fallback si está; sino
+      // estimamos con la stale + este pago (solo texto — lo persistido es atómico).
+      const fRef = resPago.factura || { ...facturaSaldar, pagos: [...(facturaSaldar.pagos || []), pago] };
+      const nuevoSaldo = saldoFacturaPendienteBot(fRef);
+      const nuevoEstado = estadoFacturaPendienteBot(fRef);
       const lineaEstado = nuevoEstado === 'pagada'
         ? `✅ Factura *${facturaSaldar.numero || facturaSaldar.proveedor}* SALDADA.`
         : `🟡 Factura *${facturaSaldar.numero || facturaSaldar.proveedor}* abonada parcialmente · saldo restante ${fmt(nuevoSaldo)}.`;
@@ -3327,22 +3371,43 @@ async function ejecutarComando(comando, datos, user, ctx) {
     const pending = Array.isArray(pendingRows[0]?.data) ? pendingRows[0].data : [];
     const item = pending.find(p => p.id === pendienteId);
     if (!item) return 'El pendiente ya no existe (quizás fue resuelto desde la app).';
+    // FIX crítico: los resueltos nunca se borran del array — sin este check,
+    // "aprobar 1" dos veces (lista stale) o la carrera chat↔app re-aprobaba el
+    // mismo pendiente y creaba DOS movimientos por el mismo gasto.
+    if ((item.status || 'pending') !== 'pending') {
+      return `Ese pendiente ya fue ${item.status === 'confirmed' ? 'aprobado' : 'rechazado'}${item.resolvedBy ? ` por ${item.resolvedBy}` : ''}. Escribí *pendientes* para ver la lista actualizada.`;
+    }
 
     const accion = comando === 'aprobar_pendiente' ? 'confirmed' : 'rejected';
+
+    // Si es aprobación de MOVIMIENTO → aplicarlo de verdad. Camino preferido:
+    // RPC aprobar_pendiente_atomico (migración 0006) = test-and-set del status +
+    // alta del movimiento en UNA transacción (mata la carrera de doble aprobación).
+    if (accion === 'confirmed' && item.tipoPendiente === 'movimiento' && item.movimiento) {
+      const mov = { ...item.movimiento, id: `mov-${Date.now()}`, creadoPorWA: true };
+      try {
+        await sbRpc('aprobar_pendiente_atomico', { p_item_id: pendienteId, p_mov: mov, p_resuelto_por: user.user_name });
+        await broadcastChange('whatsapp_pending');
+        await broadcastChange('movimientos');
+        return `✅ Aprobado pendiente #${num} — gasto cargado.`;
+      } catch (e) {
+        if (!/ 404/.test(e.message || '')) {
+          // Error de validación (ej. ya resuelto en el medio): informar, no duplicar.
+          console.error('[aprobar_pendiente RPC]:', e.message);
+          return 'Ese pendiente ya fue resuelto (quizás desde la app justo ahora). Escribí *pendientes* para ver la lista.';
+        }
+        // RPC no desplegada → camino anterior (con el check de status de arriba).
+        await sbPatchItem('whatsapp_pending', pendienteId, {
+          status: accion, resolvedBy: user.user_name, resolvedAt: new Date().toISOString(),
+        });
+        await appendMovimiento(mov);
+        return `✅ Aprobado pendiente #${num} — gasto cargado.`;
+      }
+    }
+
     await sbPatchItem('whatsapp_pending', pendienteId, {
       status: accion, resolvedBy: user.user_name, resolvedAt: new Date().toISOString(),
     });
-
-    // Si es aprobación de MOVIMIENTO → aplicarlo de verdad.
-    if (accion === 'confirmed' && item.tipoPendiente === 'movimiento' && item.movimiento) {
-      const movData = await loadSharedData('movimientos');
-      const movs  = movData?.movimientos || [];
-      const cajas = movData?.cajas || ctx.cajas;
-      const mov = { ...item.movimiento, id: `mov-${Date.now()}`, creadoPorWA: true };
-      const delta = mov.tipo === 'ingreso' ? mov.monto : -mov.monto;
-      await appendMovimiento(mov);
-      return `✅ Aprobado pendiente #${num} — gasto cargado.`;
-    }
 
     // Si es aprobación de FACTURA → crear el gasto. La factura no trae caja
     // (la app la pide), pero desde WA usamos la caja efectivo del usuario y
@@ -3671,30 +3736,48 @@ async function ejecutarComando(comando, datos, user, ctx) {
     );
     if (!prov) return `❌ No encontré "${datos.proveedor}". Proveedores: ${ctx.proveedores.slice(0,5).map(p => p.nombre).join(', ')}`;
 
-    // Movimientos del proveedor
+    // Movimientos del proveedor (para el detalle de últimos movs)
     const movs = (ctx.movimientos || []).filter(m =>
       m.proveedor === prov.nombre || m.proveedorId === prov.id
     );
-    const gastos = movs.filter(m => m.tipo === 'gasto');
-    const pagado = gastos.reduce((s, m) => s + (m.monto || 0), 0);
 
-    // Deuda registrada: asientos DEBE de la CC del proveedor (certificaciones,
-    // facturas, contratos, adicionales). MISMA fuente que la app (ProveedorCC).
-    // Antes esto leía contratos[].certificaciones, que NUNCA se escribe → daba 0
-    // siempre y el saldo salía mal. Lo pagado ya se deriva de los movimientos.
+    // CC con crédito — MISMA semántica que la app (src/lib/proveedorCC.js):
+    //  deuda   = Σ saldo de facturas pendientes no anuladas/no 'registrada'
+    //          + Σ (debe − haber) de ccEntries legacy
+    //  crédito = Σ anticipos (gastos anticipo:true) − Σ aplicaciones (pagos tipo 'credito')
+    //  saldo   = deuda − crédito (>0 le debemos · <0 a favor nuestro)
+    // Antes: debe(ccEntries) − TODOS los gastos → cualquier pago sin deuda
+    // registrada (impuestos tipo ARCA) inventaba un "a favor" falso, y las
+    // facturas pendientes no contaban como deuda.
     const provDataCC = await loadSharedData('proveedores');
-    const debeTotal = (provDataCC?.ccEntries || [])
-      .filter(e => e.proveedorId === prov.id && (e.debe || 0) > 0)
-      .reduce((s, e) => s + (e.debe || 0), 0);
-
-    const saldo = debeTotal - pagado;
+    const facturasProv = (provDataCC?.facturasPendientes || []).filter(f => {
+      const esDelProv = f.proveedorId ? f.proveedorId === prov.id
+        : (f.proveedor || '').toLowerCase().trim() === (prov.nombre || '').toLowerCase().trim();
+      if (!esDelProv) return false;
+      const e = estadoFacturaPendienteBot(f);
+      return e !== 'anulada' && e !== 'registrada';
+    });
+    const deudaFacturas = facturasProv.reduce((s, f) => s + saldoFacturaPendienteBot(f), 0);
+    const deudaLegacy = (provDataCC?.ccEntries || [])
+      .filter(e => e.proveedorId === prov.id)
+      .reduce((s, e) => s + (e.debe || 0) - (e.haber || 0), 0);
+    const anticipado = movs
+      .filter(m => m.tipo === 'gasto' && m.anticipo === true)
+      .reduce((s, m) => s + (m.monto || 0), 0);
+    const aplicado = facturasProv
+      .flatMap(f => (f.pagos || []).filter(p => p.tipo === 'credito'))
+      .reduce((s, p) => s + (Number(p.monto) || 0), 0);
+    const credito = Math.max(0, Math.round(anticipado - aplicado));
+    const deudaTotal = Math.round(deudaFacturas + deudaLegacy);
+    const saldo = deudaTotal - credito;
     const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
 
     let r = `🏢 *${prov.nombre}*${prov.tipo ? ` · ${prov.tipo}` : ''}\n\n`;
-    if (saldo > 0) r += `💸 Saldo a favor del proveedor: *${fmt(saldo)}*\n`;
-    else if (saldo < 0) r += `💰 Está a favor nuestro: *${fmt(-saldo)}*\n`;
+    if (saldo > 1) r += `💸 Le debemos: *${fmt(saldo)}*\n`;
+    else if (saldo < -1) r += `💰 A favor nuestro: *${fmt(-saldo)}* (se descuenta del próximo pedido)\n`;
     else r += `✓ Al día\n`;
-    if (debeTotal > 0) r += `Debe: ${fmt(debeTotal)} · Pagado: ${fmt(pagado)}\n`;
+    if (deudaTotal > 0) r += `Deuda registrada: ${fmt(deudaTotal)}\n`;
+    if (credito > 0) r += `Crédito disponible: ${fmt(credito)}\n`;
 
     // Últimos 3 movimientos
     const recientes = movs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).slice(0, 3);
@@ -3713,20 +3796,52 @@ async function ejecutarComando(comando, datos, user, ctx) {
   if (comando === 'deshacer') {
     const movData = await loadSharedData('movimientos');
     const movs    = movData?.movimientos || [];
-    const cajas   = movData?.cajas || ctx.cajas;
     // Último movimiento creado por WA por este usuario (los ids llevan timestamp).
     const mio = movs
       .filter(m => m.creadoPorWA && m.creadoPor === user.user_name)
       .sort((a, b) => (b.id || '').localeCompare(a.id || ''))[0];
     if (!mio) return '🤷 No encontré ningún movimiento reciente tuyo para deshacer.';
 
-    // El saldo se calcula solo desde los movimientos: deshacer solo QUITA el
-    // movimiento (la app recalcula el saldo). Preservamos las cajas tal cual.
-    const sinMov = movs.filter(m => m.id !== mio.id);
-    await saveSharedData('movimientos', { movimientos: sinMov, cajas });
+    // Efectos cruzados que el borrado pelado dejaba rotos:
+    //  • si el mov era el PAGO de una factura → la factura quedaba 'pagada' con
+    //    movimientoId muerto (deuda desaparecida). La revertimos: el pago sale
+    //    de pagos[] y estado/saldo se recalculan.
+    //  • si el mov está vinculado a un CHEQUE (ingreso al recibirlo / traspaso
+    //    de depósito) NO se deshace por chat: hay que revertir el cheque también
+    //    y eso se hace desde la app (pantalla Cheques).
+    const provData = await loadSharedData('proveedores');
+    const facturaPagada = (provData?.facturasPendientes || [])
+      .find(f => (f.pagos || []).some(p => p.movimientoId === mio.id));
+    const chequesData = await loadSharedData('cheques');
+    const chequeVinc = (Array.isArray(chequesData) ? chequesData : []).find(c => c.movimientoId === mio.id);
+    if (chequeVinc) {
+      return `⚠️ Ese movimiento está vinculado al cheque${chequeVinc.numero ? ` #${chequeVinc.numero}` : ''}. Deshacelo desde la app (pantalla Cheques) para que el cheque se revierta junto con la plata.`;
+    }
+
+    // Borrado ATÓMICO por ítem (antes: saveSharedData del blob ENTERO → pisaba
+    // cualquier movimiento agregado por la app u otro webhook en el medio).
+    try {
+      await sbRpc('remove_shared_object_item', { p_key: 'movimientos', p_collection: 'movimientos', p_id: mio.id });
+      await broadcastChange('movimientos');
+    } catch (e) {
+      console.error('[deshacer] RPC no disponible, fallback RMW fresco:', e.message);
+      const fresco = await loadSharedData('movimientos');
+      await saveSharedData('movimientos', { ...(fresco || {}), movimientos: (fresco?.movimientos || []).filter(m => m.id !== mio.id) });
+    }
+
+    if (facturaPagada) {
+      const pagos = (facturaPagada.pagos || []).filter(p => p.movimientoId !== mio.id);
+      const facturaActualizada = { ...facturaPagada, pagos };
+      await sbPatchObjectItem('proveedores', 'facturasPendientes', facturaPagada.id, {
+        pagos,
+        saldoPendiente: saldoFacturaPendienteBot(facturaActualizada),
+        estado: estadoFacturaPendienteBot(facturaActualizada),
+      });
+    }
 
     const fmt = n => `$${Math.round(n).toLocaleString('es-AR')}`;
-    return `↩️ Deshecho: *${mio.tipo}* de ${fmt(mio.monto)}${mio.obraNombre && mio.obraNombre !== 'General' ? ` en ${mio.obraNombre}` : ''}.\n_${mio.descripcion || ''}_`;
+    const notaFactura = facturaPagada ? `\n↩️ La factura *${facturaPagada.numero || facturaPagada.proveedor}* volvió a deber ese pago.` : '';
+    return `↩️ Deshecho: *${mio.tipo}* de ${fmt(mio.monto)}${mio.obraNombre && mio.obraNombre !== 'General' ? ` en ${mio.obraNombre}` : ''}.\n_${mio.descripcion || ''}_${notaFactura}`;
   }
 
   // ── Búsqueda cross-obra: "últimos N gastos de [obra]" / "gastos de cemento" ──
