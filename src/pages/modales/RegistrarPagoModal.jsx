@@ -6,6 +6,8 @@ import { useObras } from '../../store/ObrasContext';
 import { useConfiguracion } from '../../store/ConfiguracionContext';
 import { useProveedores } from '../../store/ProveedoresContext';
 import { facturasPendientesDeProveedor, saldoFacturaPendiente } from '../../lib/facturasPendientes';
+import { validarPagoFactura } from '../../lib/proveedorCC';
+import { ejecutarPagoFactura, rpcSupabase } from '../../lib/pagoAtomico';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { uploadFoto } from '../../lib/upload';
 
@@ -22,10 +24,10 @@ const DEFAULT_MEDIOS = ['Transferencia', 'Cheque', 'E-cheq', 'Efectivo', 'Tarjet
 // pendientes (o dejarlo "sin vincular", comportamiento histórico).
 export default function RegistrarPagoModal({ proveedor = '', proveedorId = null, facturaPendiente = null, onClose }) {
   const isMobile = useIsMobile();
-  const { cajas, addMovimiento } = useMovimientos();
+  const { cajas, addMovimientoAsync, removeMovimiento } = useMovimientos();
   const { obras } = useObras();
   const { config } = useConfiguracion();
-  const { proveedores, facturasPendientes, registrarPagoFactura } = useProveedores();
+  const { proveedores, facturasPendientes, registrarPagoFacturaAsync } = useProveedores();
   const mediosDePago = config?.mediosDePago?.length ? config.mediosDePago : DEFAULT_MEDIOS;
 
   const obrasActivas = obras.filter(o => o.estado === 'activa' || o.estado === 'en-presupuesto');
@@ -70,12 +72,24 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
   // fiscal de la factura (comprobanteRecibido) → no afecta el Libro IVA.
   const [file, setFile] = useState(null);
   const [subiendo, setSubiendo] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  // Pago suelto (sin factura): ¿gasto directo (impuestos, sin deuda registrada)
+  // o ANTICIPO a cuenta (queda como crédito a favor en la CC del proveedor)?
+  const [tipoPagoSuelto, setTipoPagoSuelto] = useState('directo');
+  // Sobrepago: registrar el excedente como anticipo (nunca se "traga" plata).
+  const [excedenteComoAnticipo, setExcedenteComoAnticipo] = useState(true);
 
   const obraNombre = obras.find(o => o.id === obraId)?.nombre || '';
   const cajaNombre = cajas.find(c => c.id === cajaId)?.nombre || '';
   const montoNum = Math.round(parseFloat(monto.replace(/[^0-9.]/g, '')) || 0);
   // Pago parcial: el monto cubre menos que el saldo de la factura vinculada.
   const esParcial = facturaVinc && montoNum > 0 && montoNum < saldoVinc;
+  // Guard de sobrepago (fix: antes el excedente desaparecía — el saldo clampea en 0).
+  const validacion = facturaVinc && montoNum > 0 ? validarPagoFactura(facturaVinc, montoNum) : null;
+  const excedente = validacion?.excedente || 0;
+  const puedeConfirmar = montoNum > 0 && !subiendo && !guardando &&
+    (!facturaVinc || validacion?.ok || (excedente > 0 && excedenteComoAnticipo));
 
   // Al elegir una factura del selector, sugerimos su saldo como monto (si el
   // usuario no tocó el campo o estaba en otra factura). Mantiene UX simple.
@@ -90,7 +104,9 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
   };
 
   const confirmar = async () => {
-    if (!montoNum || montoNum <= 0 || subiendo) return;
+    if (!puedeConfirmar) return;
+    setGuardando(true);
+    setErrorMsg('');
 
     // Subir el comprobante del pago (si lo adjuntaron). Best-effort: si la subida
     // falla, el pago se registra igual (sin doc) y se loguea.
@@ -104,38 +120,69 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
 
     const concFinal = concepto.trim()
       || (facturaVinc ? `Pago factura ${facturaVinc.numero || ''} · ${provNombre}`.trim().replace(/ · $/, '')
-                      : `Pago a ${provNombre}${obraNombre ? ` · ${obraNombre}` : ''}`);
+                      : `${tipoPagoSuelto === 'anticipo' ? 'Anticipo a cuenta' : 'Pago'} · ${provNombre}${obraNombre ? ` · ${obraNombre}` : ''}`);
 
-    // Libro único: el pago al proveedor queda SOLO como movimiento de gasto.
-    // La cuenta corriente del proveedor (lo pagado) se DERIVA de los movimientos
-    // (por proveedorId o nombre), así que no escribimos un asiento 'haber' en
-    // ccEntries (sería duplicar el pago). Los 'debe' (deuda) sí viven en ccEntries.
-    // Si hay factura vinculada, el movimiento NO lleva comprobanteRecibido (el
-    // dato fiscal ya vive en la factura pendiente → no se duplica el IVA) y se
-    // marca con facturaPendienteId para trazar el pago.
-    const movId = addMovimiento({
+    // Libro único: el pago al proveedor queda SOLO como movimiento de gasto; la
+    // CC del proveedor se DERIVA (facturas por saldo + anticipos − aplicaciones,
+    // ver lib/proveedorCC). Si hay factura vinculada, el movimiento se marca con
+    // facturaPendienteId y NO lleva comprobanteRecibido (el dato fiscal vive en
+    // la factura → no se duplica el IVA).
+    const baseMov = {
       fecha,
       tipo: 'gasto',
-      descripcion: concFinal,
-      monto: montoNum,
       obraId: imputar === 'obra' ? obraId : null,
       obraNombre: imputar === 'obra' ? obraNombre : 'General',
       cajaId,
       cajaDestinoId: null,
       proveedor: provNombre,
       proveedorId: provId,
-      facturaPendienteId: facturaVinc ? facturaVinc.id : undefined,
       categoria: 'subcontrato',
       medioPago: medio,
       referencia,
       fondoReparo,
       comprobanteUrl,
-    });
+    };
 
-    // Registra el pago contra la factura pendiente (recalcula estado/saldo). El
-    // comprobante del pago se guarda también en el pago para verlo desde la orden.
-    if (facturaVinc) {
-      registrarPagoFactura(facturaVinc.id, { movimientoId: movId, monto: montoNum, fecha, cajaId, comprobanteUrl });
+    const efectores = { rpc: rpcSupabase, addMovimientoAsync, registrarPagoFacturaAsync, removeMovimiento };
+
+    // Sobrepago sobre factura vinculada: el pago cubre el saldo y el EXCEDENTE
+    // queda como anticipo a cuenta (crédito a favor) — nunca se pierde plata.
+    const montoFactura = facturaVinc ? Math.min(montoNum, saldoVinc) : montoNum;
+    const montoExcedente = facturaVinc ? montoNum - montoFactura : 0;
+
+    const res = await ejecutarPagoFactura({
+      movData: {
+        ...baseMov,
+        descripcion: concFinal,
+        monto: montoFactura,
+        facturaPendienteId: facturaVinc ? facturaVinc.id : undefined,
+        anticipo: !facturaVinc && tipoPagoSuelto === 'anticipo' ? true : undefined,
+      },
+      facturaId: facturaVinc ? facturaVinc.id : null,
+      pago: facturaVinc ? { monto: montoFactura, fecha, cajaId, comprobanteUrl } : null,
+    }, efectores);
+
+    if (!res.ok) {
+      setGuardando(false);
+      setErrorMsg(res.error || 'No se pudo registrar el pago.');
+      return;
+    }
+
+    if (montoExcedente > 0 && excedenteComoAnticipo) {
+      const resAnticipo = await ejecutarPagoFactura({
+        movData: {
+          ...baseMov,
+          descripcion: `Anticipo a cuenta (excedente de pago) · ${provNombre}`,
+          monto: montoExcedente,
+          anticipo: true,
+        },
+      }, efectores);
+      if (!resAnticipo.ok) {
+        // El pago principal ya quedó bien; el anticipo se puede recargar a mano.
+        setGuardando(false);
+        setErrorMsg(`El pago se registró, pero el anticipo del excedente ($ ${fmtN(montoExcedente)}) falló: ${resAnticipo.error} Cargalo de nuevo como pago suelto tipo anticipo.`);
+        return;
+      }
     }
 
     onClose();
@@ -192,14 +239,52 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
             <input style={{ ...inputSt, fontFamily: T.fontMono, fontWeight: 700, fontSize: 14 }}
               type="number" min="0" placeholder="0"
               value={monto} onChange={e => setMonto(e.target.value)} />
-            {facturaVinc && montoNum > 0 && (
+            {facturaVinc && montoNum > 0 && excedente === 0 && (
               <div style={{ fontSize: 10.5, marginTop: 4, color: esParcial ? '#b45309' : T.ok }}>
                 {esParcial
                   ? `Pago parcial: quedan $ ${fmtN(saldoVinc - montoNum)} de saldo en la factura.`
                   : montoNum >= saldoVinc ? 'Cubre el saldo completo de la factura.' : ''}
               </div>
             )}
+            {/* Sobrepago: antes el excedente se "tragaba" (el saldo clampea en 0).
+                Ahora se registra como ANTICIPO a cuenta → crédito a favor en la CC. */}
+            {facturaVinc && excedente > 0 && (
+              <div style={{ fontSize: 10.5, marginTop: 6, padding: '8px 10px', background: '#fff3e0', border: '1px solid #d4923a55', borderRadius: 4 }}>
+                <div style={{ color: '#b45309', fontWeight: 700, marginBottom: 4 }}>
+                  El pago excede el saldo de la factura en $ {fmtN(excedente)}.
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={excedenteComoAnticipo}
+                    onChange={e => setExcedenteComoAnticipo(e.target.checked)} style={{ accentColor: T.accent }} />
+                  <span>Registrar el excedente como <b>anticipo a cuenta</b> (queda a favor en la CC de {provNombre || 'el proveedor'})</span>
+                </label>
+                {!excedenteComoAnticipo && (
+                  <div style={{ color: '#b45309', marginTop: 4 }}>Destildado no se puede confirmar: bajá el monto al saldo (${fmtN(saldoVinc)}) o dejá el excedente como anticipo.</div>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* Pago suelto: ¿gasto directo o anticipo a cuenta? (solo con proveedor) */}
+          {!facturaVinc && provNombre && (
+            <div>
+              <label style={labelSt}>Tipo de pago</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                {[
+                  { key: 'directo', label: 'Gasto directo (sin deuda registrada)', sub: 'Impuestos, servicios, compras sin factura cargada. No toca la cuenta corriente.' },
+                  { key: 'anticipo', label: 'Anticipo a cuenta (queda a favor)', sub: `Deja crédito a favor en la CC de ${provNombre}: el próximo pedido se descuenta de ahí.` },
+                ].map(opt => (
+                  <label key={opt.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, cursor: 'pointer', padding: '7px 10px', borderRadius: 4, border: `1.5px solid ${tipoPagoSuelto === opt.key ? T.accent : T.faint2}`, background: tipoPagoSuelto === opt.key ? T.accentSoft : 'transparent' }}>
+                    <input type="radio" name="tipoPagoSuelto" checked={tipoPagoSuelto === opt.key} onChange={() => setTipoPagoSuelto(opt.key)} style={{ accentColor: T.accent, marginTop: 2 }} />
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</div>
+                      <div style={{ fontSize: 10, color: T.ink2 }}>{opt.sub}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           <Divider />
 
@@ -282,15 +367,24 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
           </div>
         </div>
 
-        <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-          {montoNum > 0 && (
-            <span style={{ fontSize: 12, color: T.ink2 }}>
-              Deducir <b style={{ fontFamily: T.fontMono }}>$ {fmtN(montoNum)}</b> de {cajaNombre}
-            </span>
+        <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {errorMsg && (
+            <div style={{ fontSize: 11, color: '#dc2626', background: '#fde8e8', border: '1px solid #dc262655', borderRadius: 4, padding: '7px 10px' }}>
+              {errorMsg}
+            </div>
           )}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <Btn sm onClick={onClose}>Cancelar</Btn>
-            <Btn sm fill onClick={confirmar} style={{ opacity: montoNum > 0 && !subiendo ? 1 : 0.5 }}>{subiendo ? 'Subiendo…' : 'Registrar pago'}</Btn>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            {montoNum > 0 && (
+              <span style={{ fontSize: 12, color: T.ink2 }}>
+                Deducir <b style={{ fontFamily: T.fontMono }}>$ {fmtN(montoNum)}</b> de {cajaNombre}
+              </span>
+            )}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              <Btn sm onClick={onClose}>Cancelar</Btn>
+              <Btn sm fill onClick={confirmar} style={{ opacity: puedeConfirmar ? 1 : 0.5 }}>
+                {subiendo ? 'Subiendo…' : guardando ? 'Guardando…' : 'Registrar pago'}
+              </Btn>
+            </div>
           </div>
         </div>
       </div>
