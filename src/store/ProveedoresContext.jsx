@@ -277,6 +277,22 @@ export function ProveedoresProvider({ children }) {
     return registrarPagoFacturaAsync(facturaId, pago).factura;
   }, [registrarPagoFacturaAsync]);
 
+  // Al BORRAR un movimiento que era el pago de una factura, la factura tiene que
+  // volver a deber ese monto. Sin esto quedaba 'pagada' con un movimientoId
+  // muerto — deuda real desaparecida (pasó en prod con un pago de $405.336).
+  // Busca por movimientoId en los pagos (robusto aunque el mov no tenga marca).
+  const quitarPagoDeFactura = useCallback((movimientoId) => {
+    const f = (facRef.current || []).find(x => (x.pagos || []).some(p => p.movimientoId === movimientoId));
+    if (!f) return null;
+    const next = { ...f, pagos: (f.pagos || []).filter(p => p.movimientoId !== movimientoId) };
+    next.saldoPendiente = saldoFacturaPendiente(next);
+    next.estado = estadoFacturaPendiente(next);
+    mark();
+    setFacturasPendientes(prev => { const n = prev.map(x => x.id === f.id ? next : x); save(LS_FAC, n); return n; });
+    patchObjectItem('proveedores', 'facturasPendientes', f.id, { pagos: next.pagos, estado: next.estado, saldoPendiente: next.saldoPendiente });
+    return next;
+  }, []);
+
   const getObrasProveedor = useCallback((proveedorId) => {
     const map = {};
     ccEntries
@@ -290,13 +306,13 @@ export function ProveedoresProvider({ children }) {
     addProveedor, updateProveedor, removeProveedor,
     addCC, updateCC, removeCC, getObrasProveedor,
     addFacturaPendiente, updateFacturaPendiente, removeFacturaPendiente,
-    registrarPagoFactura, registrarPagoFacturaAsync,
+    registrarPagoFactura, registrarPagoFacturaAsync, quitarPagoDeFactura,
   }), [
     proveedores, ccEntries, facturasPendientes,
     addProveedor, updateProveedor, removeProveedor,
     addCC, updateCC, removeCC, getObrasProveedor,
     addFacturaPendiente, updateFacturaPendiente, removeFacturaPendiente,
-    registrarPagoFactura, registrarPagoFacturaAsync,
+    registrarPagoFactura, registrarPagoFacturaAsync, quitarPagoDeFactura,
   ]);
 
   return (

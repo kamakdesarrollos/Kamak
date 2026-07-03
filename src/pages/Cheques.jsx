@@ -448,7 +448,11 @@ function DepositarModal({ cheque, cajas, onConfirm, onClose }) {
         </div>
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn sm onClick={onClose}>Cancelar</Btn>
-          <Btn sm fill onClick={() => onConfirm({ cajaId, fecha })} style={{ background: '#2d7a2d', opacity: cajaId ? 1 : 0.5 }}>Confirmar depósito</Btn>
+          {/* Gate REAL por cajaId (no solo opacity): confirmar sin caja destino
+              ejecutaba un traspaso a '' → la caja origen perdía el monto y
+              ninguna lo recibía (plata evaporada). */}
+          <Btn sm fill onClick={() => { if (cajaId) onConfirm({ cajaId, fecha }); }} disabled={!cajaId}
+            style={{ background: '#2d7a2d', opacity: cajaId ? 1 : 0.5, cursor: cajaId ? 'pointer' : 'not-allowed' }}>Confirmar depósito</Btn>
         </div>
       </div>
     </div>
@@ -816,6 +820,9 @@ export default function Cheques() {
 
   const handleDepositar = ({ cajaId, fecha }) => {
     const c = modal.cheque;
+    // Guard duro: sin caja destino NO hay depósito (un traspaso a '' evaporaba
+    // el monto de la caja origen sin acreditarlo en ninguna).
+    if (!cajaId) return;
     const caja = cajas.find(x => x.id === cajaId);
     // Modelo "al recibirlo": el cheque ya entró a una caja al registrarlo.
     // Depositar = TRASPASO de esa caja al banco (baja de una, sube de otra),

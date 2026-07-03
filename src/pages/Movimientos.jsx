@@ -1165,7 +1165,7 @@ export default function Movimientos() {
   const isMobile = useIsMobile();
   const { movimientos, cajas: allCajas, addMovimiento, removeMovimiento, traspasar } = useMovimientos();
   const { obras, getDetalle } = useObras();
-  const { proveedores }    = useProveedores();
+  const { proveedores, quitarPagoDeFactura } = useProveedores();
   const { clientes }       = useClientes();
   const { dolarVenta }     = useDolar();
   const { currentUser }    = useUsuarios();
@@ -1189,11 +1189,13 @@ export default function Movimientos() {
   };
 
   // Borrar un movimiento revierte también el cheque vinculado (si lo hay), para
-  // que no quede un cheque colgado sin respaldo en caja. (Los asientos de CC de
-  // proveedor no se revierten acá porque no guardan el id del movimiento.)
+  // que no quede un cheque colgado sin respaldo en caja, y el PAGO registrado en
+  // la factura pendiente: la factura vuelve a deber ese monto (sin esto quedaba
+  // 'pagada' con un movimientoId muerto — caso real en prod, pago de $405.336).
   const handleRemoveMov = (id) => {
     const chq = cheques.find(c => c.movimientoId === id);
     if (chq) removeCheque(chq.id);
+    quitarPagoDeFactura(id);
     removeMovimiento(id);
   };
 
