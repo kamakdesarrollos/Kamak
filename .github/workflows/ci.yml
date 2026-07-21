@@ -1,0 +1,39 @@
+name: CI
+
+# Corre en cada Pull Request hacia main y en cada push a main.
+# Es el "candado automático": si los tests o el build fallan, GitHub
+# no deja mergear a main. Nadie tiene que aprobar a mano.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # --- BLOQUEANTES: si fallan, el PR no se puede mergear ---
+      - name: Tests (bloqueante)
+        run: npm test
+
+      - name: Build (bloqueante)
+        run: npm run build
+
+      # --- INFORMATIVO: se ve el resultado pero no frena el merge ---
+      # Hoy el lint tiene ~250 errores preexistentes (ruido de react-refresh).
+      # Lo dejamos visible para ir limpiándolo, sin bloquear el trabajo.
+      - name: Lint (informativo, no bloquea)
+        run: npm run lint
+        continue-on-error: true

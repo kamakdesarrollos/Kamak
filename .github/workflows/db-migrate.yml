@@ -1,0 +1,53 @@
+name: DB Migrate (producción)
+
+# Aplica automáticamente las migraciones SQL a la base REAL cuando se mergea a main.
+# Solo corre si el merge tocó archivos en supabase/migrations/ — los merges que no
+# tienen migraciones no ejecutan nada contra la base.
+#
+# Así el circuito de plata deja de depender de que alguien se acuerde de correr
+# "supabase db push" a mano. Si la migración falla, este job queda ROJO y llega
+# la notificación de GitHub.
+#
+# REQUISITO (una sola vez): cargar estos secrets en el repo
+#   Settings → Secrets and variables → Actions → New repository secret
+#     - SUPABASE_ACCESS_TOKEN   (token personal: supabase.com/dashboard/account/tokens)
+#     - SUPABASE_DB_PASSWORD    (password de la base de PRODUCCIÓN)
+#     - SUPABASE_PROJECT_REF    (ref del proyecto de prod, el de la URL xxxx.supabase.co)
+#   Con gh:
+#     gh secret set SUPABASE_ACCESS_TOKEN -R kamakdesarrollos/Kamak
+#     gh secret set SUPABASE_DB_PASSWORD  -R kamakdesarrollos/Kamak
+#     gh secret set SUPABASE_PROJECT_REF  -R kamakdesarrollos/Kamak
+#
+# Hasta que estén los secrets, este job va a fallar (en rojo) si se mergea una
+# migración — sirve de recordatorio de aplicarla a mano mientras tanto.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+
+# Evita que dos merges casi simultáneos apliquen migraciones a la vez.
+concurrency:
+  group: db-migrate-prod
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: migrate-prod
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link al proyecto de producción
+        run: supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+
+      - name: Aplicar migraciones pendientes a producción
+        run: supabase db push
