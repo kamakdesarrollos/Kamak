@@ -1,0 +1,44 @@
+name: Auto-merge
+
+# Activa "auto-merge" en cada PR hacia main apenas se abre (o se marca "ready").
+# GitHub lo mergea SOLO cuando el check "verify" está verde. Cero clicks.
+#
+# ESCAPE HATCH: si querés que un PR NO salga solo (para que alguien lo mire
+# antes), abrilo como DRAFT (borrador). Mientras sea borrador no se activa el
+# auto-merge; cuando lo marcás "Ready for review", ahí recién se activa.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, ready_for_review]
+
+# Permisos mínimos para que el token pueda activar el auto-merge del PR.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-auto-merge:
+    # No hacer nada en borradores: ese es el freno manual.
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Activar auto-merge (squash)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        # Reintenta unas veces: recién abierto, GitHub a veces todavía está
+        # calculando si el PR es mergeable. Si no lo logra, no falla el job
+        # (es una comodidad, no un candado): se activa a mano si hace falta.
+        run: |
+          for i in 1 2 3 4; do
+            if gh pr merge "$PR" --auto --squash --repo "$REPO"; then
+              echo "Auto-merge activado."
+              exit 0
+            fi
+            echo "Intento $i falló; reintentando en 5s..."
+            sleep 5
+          done
+          echo "::warning::No se pudo activar auto-merge automáticamente. Activalo a mano en el PR si querés que salga solo."
+          exit 0
