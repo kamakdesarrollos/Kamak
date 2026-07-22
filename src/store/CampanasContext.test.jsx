@@ -756,3 +756,88 @@ describe('actualizarOperador', () => {
     expect(args(upd, 'eq')).toEqual(['id', 'op-2']);
   });
 });
+
+// ── crearEstacion (alta manual de una boca — pedido de Franco) ────────────────
+describe('crearEstacion', () => {
+  it("inserta con defaults (operador_id / SIN LLAMAR / datos {}) + telefono_norm normalizado + actividad 'alta_estacion'", async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_operadores' && tiene(log, 'maybeSingle')) return { data: OPERADOR_LIBRE, error: null };
+      if (log.table === 'camp_estaciones' && tiene(log, 'insert')) {
+        return { data: { id: 'est-9', operador_id: 'op-2', nombre: 'Boca Nueva' }, error: null };
+      }
+      if (log.table === 'camp_estaciones') return { data: [], error: null }; // dedup: sin repetidas
+      return null;
+    });
+    const api = getApi();
+    const res = await api.crearEstacion('op-2', {
+      nombre: 'Boca Nueva', bandera: 'YPF', localidad: 'Lomas de Zamora', provincia: 'Buenos Aires',
+      telefono: '011 15-4444-5555',
+    }, { usuario: 'u-fede' });
+    expect(res.error).toBeNull();
+    expect(res.data).toMatchObject({ id: 'est-9' });
+    const [ins] = llamadasCon('camp_estaciones', 'insert');
+    const fila = args(ins, 'insert')[0];
+    expect(fila).toMatchObject({
+      operador_id: 'op-2', nombre: 'Boca Nueva', bandera: 'YPF',
+      localidad: 'Lomas de Zamora', provincia: 'Buenos Aires',
+      estado_llamada: 'SIN LLAMAR', datos: {},
+      telefono: '011 15-4444-5555',
+      telefono_norm: '5491144445555', // E.164 sin '+' vía normalizarTelefonoAR
+    });
+    expect(fila.created_at).toBeTruthy();
+    expect(fila.updated_at).toBeTruthy(); // sin trigger: timestamps explícitos
+    const [act] = llamadasCon('camp_actividades', 'insert');
+    expect(args(act, 'insert')[0]).toMatchObject({
+      operador_id: 'op-2', estacion_id: 'est-9', tipo: 'alta_estacion', canal: 'otro', usuario: 'u-fede',
+    });
+    expect(args(act, 'insert')[0].texto).toContain('Boca Nueva');
+  });
+
+  it('dedup suave: ya hay una estación del MISMO operador con ese telefono_norm → rechaza sin insertar', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_operadores' && tiene(log, 'maybeSingle')) return { data: OPERADOR_LIBRE, error: null };
+      if (log.table === 'camp_estaciones' && !tiene(log, 'insert')) return { data: [{ id: 'est-1' }], error: null };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.crearEstacion('op-2', { nombre: 'Repetida', telefono: '011 4444-5555' }, { usuario: 'u-fede' });
+    expect(res.error?.message).toMatch(/ya está en otra boca/);
+    expect(llamadasCon('camp_estaciones', 'insert').length).toBe(0);
+    expect(llamadasA('camp_actividades').length).toBe(0);
+    // la query de dedup filtra por operador Y teléfono normalizado
+    const [dedup] = llamadasA('camp_estaciones');
+    expect(dedup.ops.filter((o) => o.m === 'eq').map((o) => o.args)).toEqual([
+      ['operador_id', 'op-2'],
+      ['telefono_norm', '541144445555'],
+    ]);
+  });
+
+  it('sin teléfono → sin query de dedup (directo al insert, telefono_norm null)', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_operadores' && tiene(log, 'maybeSingle')) return { data: OPERADOR_LIBRE, error: null };
+      if (log.table === 'camp_estaciones' && tiene(log, 'insert')) return { data: { id: 'est-10', nombre: 'Sin Tel' }, error: null };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.crearEstacion('op-2', { nombre: 'Sin Tel' }, { usuario: 'u-fede' });
+    expect(res.error).toBeNull();
+    expect(llamadasA('camp_estaciones').length).toBe(1); // SOLO el insert
+    expect(args(llamadasA('camp_estaciones')[0], 'insert')[0].telefono_norm).toBeNull();
+  });
+
+  it('operador tomado por otro → rechaza con colisión sin tocar camp_estaciones; force: true bypasea', async () => {
+    responderOperador(OPERADOR_TOMADO);
+    const api = getApi();
+    const res = await api.crearEstacion('op-1', { nombre: 'X' }, { usuario: 'u-fede' });
+    expect(res.error?.colision?.ownerId).toBe('u-caro');
+    expect(llamadasA('camp_estaciones').length).toBe(0);
+    expect(llamadasA('camp_actividades').length).toBe(0);
+
+    // force (Admin con confirmación): mismo operador tomado, pero inserta igual
+    supabase.__reset();
+    responderOperador(OPERADOR_TOMADO);
+    const res2 = await api.crearEstacion('op-1', { nombre: 'X' }, { usuario: 'u-admin', force: true });
+    expect(res2.error).toBeNull();
+    expect(llamadasCon('camp_estaciones', 'insert').length).toBe(1);
+  });
+});

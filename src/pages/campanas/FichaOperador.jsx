@@ -84,7 +84,7 @@ const TIPOS_ACTIVIDAD = [
 const ICONO_TIPO = {
   llamada: '📞', email: '✉️', linkedin: '💼', whatsapp: '💬', reunion: '🤝',
   nota: '📝', cambio_etapa: '↔️', tomado: '🔒', liberado: '🔓', promovido: '▶️',
-  obra_vinculada: '🔗', import: '📥',
+  obra_vinculada: '🔗', import: '📥', alta_estacion: '⛽',
 };
 const ICONO_CANAL = { llamada: '📞', email: '✉️', linkedin: '💼', whatsapp: '💬', presencial: '🤝', otro: '📝' };
 const iconoActividad = (a) => ICONO_TIPO[a.tipo] || ICONO_CANAL[a.canal] || '•';
@@ -224,7 +224,7 @@ function BannerColision({ ownerNombre, canal }) {
 export default function FichaOperador({ operador, onClose, onPatch, vista = 'panel' }) {
   const {
     fetchEstaciones, fetchDecisores, fetchActividades,
-    registrarActividad, setEtapaProspeccion, actualizarOperador, chequearColision,
+    registrarActividad, setEtapaProspeccion, actualizarOperador, crearEstacion, chequearColision,
     tomarOperador, liberarOperador, promoverAEmbudo, vincularObra,
   } = useCampanas();
   const { currentUser, usuarios } = useUsuarios();
@@ -257,6 +257,11 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
   const [draftDatos, setDraftDatos] = useState(null);    // { banderas, modoEst, nEstaciones, rubro } | null = leyendo
   const [otraBandera, setOtraBandera] = useState('');
   const [guardandoDatos, setGuardandoDatos] = useState(false);
+  // Alta de estación ("+ estación" — pedido de Franco: agregarle una boca a un
+  // cliente): el draft nace recién al tocar el link, nunca en un effect.
+  const [draftEst, setDraftEst] = useState(null);        // { nombre, bandera, localidad, provincia, telefono } | null
+  const [avisoEst, setAvisoEst] = useState(null);        // warn inline (dedup / validación)
+  const [guardandoEst, setGuardandoEst] = useState(false);
 
   // Transición de entrada (translateX + opacity).
   const [abierto, setAbierto] = useState(false);
@@ -279,6 +284,8 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
     setNuevaAct({ tipo: 'llamada', texto: '' });
     setDraftDatos(null);
     setOtraBandera('');
+    setDraftEst(null);
+    setAvisoEst(null);
   }
 
   // Carga de la ficha (estaciones + decisores + timeline) al abrir o al
@@ -500,6 +507,69 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
     if (manejarError(error)) return;
     onPatch(operador.id, cambios);
     cerrarEdicionDatos();
+  };
+
+  // ── Alta de estación ("+ estación": Franco quiere agregarle bocas a un cliente) ──
+
+  const abrirAltaEstacion = () => {
+    setDraftEst({
+      nombre: '',
+      bandera: (operador.banderas || [])[0] || null,   // preseleccionada la primera del operador
+      localidad: '', provincia: '', telefono: '',
+    });
+    setAvisoEst(null);
+  };
+
+  const cerrarAltaEstacion = () => { setDraftEst(null); setAvisoEst(null); };
+
+  const guardarEstacion = async () => {
+    if (!draftEst || guardandoEst) return;
+    const nombre = draftEst.nombre.trim();
+    if (!nombre) { setAvisoEst('Poné el nombre de la boca.'); return; }
+    const data = { nombre };
+    if (draftEst.bandera) data.bandera = draftEst.bandera;
+    if (draftEst.localidad.trim()) data.localidad = draftEst.localidad.trim();
+    if (draftEst.provincia.trim()) data.provincia = draftEst.provincia.trim();
+    if (draftEst.telefono.trim()) data.telefono = draftEst.telefono.trim();
+    setGuardandoEst(true);
+    const r = await crearEstacion(operador.id, data, { usuario: myId });
+    setGuardandoEst(false);
+    if (r?.error?.colision) { manejarError(r.error); return; }   // P6 → banner existente
+    if (r?.error) { setAvisoEst(r.error.message || 'No se pudo crear la boca.'); return; }  // dedup → warn inline
+
+    // Creada: al tope de la lista local (sin re-fetch) + cerrar el form.
+    if (r.data) {
+      setFichaRaw((f) => (f && f.opId === operador.id ? { ...f, estaciones: [r.data, ...f.estaciones] } : f));
+    }
+    cerrarAltaEstacion();
+
+    // Cambios al operador derivados del alta, en UN solo actualizarOperador
+    // (+ onPatch con los mismos cambios para que el caller no re-fetchee):
+    // · bandera que el operador NO tiene → confirm; si acepta se agrega (con
+    //   multibandera recalculado); si cancela, la boca queda con esa bandera
+    //   igual y el operador no cambia.
+    // · n_estaciones numérico que quedó por DEBAJO de las cargadas → se corrige
+    //   a las cargadas (la realidad de la ficha manda).
+    // Sin re-chequeo de colisión: crearEstacion acaba de pasar el P6 recién.
+    const cambiosOp = {};
+    const b = draftEst.bandera;
+    const banderasOp = operador.banderas || [];
+    if (b && !banderasOp.includes(b)) {
+      const nuevas = [...banderasOp, b];
+      if (window.confirm(`¿Le agrego la bandera ${b} al operador? (se va a mudar a la sección ${nuevas.join('-')} del árbol)`)) {
+        cambiosOp.banderas = nuevas;
+        cambiosOp.multibandera = nuevas.length > 1;   // misma regla que importUnificado
+      }
+    }
+    const cargadas = estaciones.length + 1;   // las de la ficha + la recién creada
+    if (typeof operador.n_estaciones === 'number' && operador.n_estaciones < cargadas) {
+      cambiosOp.n_estaciones = cargadas;
+    }
+    if (Object.keys(cambiosOp).length > 0) {
+      const { error } = await actualizarOperador(operador.id, cambiosOp);
+      if (!manejarError(error)) onPatch(operador.id, cambiosOp);
+    }
+    recargarActividades();
   };
 
   const razones = (operador.razones_sociales || []).join(' · ');
@@ -815,8 +885,86 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
 
           {/* Estaciones del operador */}
           {!cargando && (
-            <Seccion titulo={`Estaciones (${estaciones.length})`}>
-              {estaciones.length === 0 && <div style={vacioSt}>Sin estaciones cargadas.</div>}
+            <Seccion
+              titulo={`Estaciones (${estaciones.length})`}
+              extra={!draftEst && <LinkAccion onClick={abrirAltaEstacion}>+ estación</LinkAccion>}
+            >
+              {draftEst && (
+                <div
+                  // Escape cierra SOLO el form (stopPropagation frena el
+                  // listener de document que cierra la ficha entera).
+                  onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); cerrarAltaEstacion(); } }}
+                  style={{
+                    border: `1px solid ${T.faint2}`, borderRadius: 9, background: '#fff',
+                    padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 10,
+                  }}
+                >
+                  <div>
+                    <div style={etiquetaCampoSt}>Nombre *</div>
+                    <input
+                      autoFocus
+                      value={draftEst.nombre}
+                      onChange={(e) => setDraftEst((d) => (d ? { ...d, nombre: e.target.value } : d))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') guardarEstacion(); }}
+                      placeholder="Estación / boca…"
+                      style={{ ...inputSt, width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  {/* Bandera: chips de las conocidas + las custom del operador */}
+                  <div>
+                    <div style={etiquetaCampoSt}>Bandera</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {[...BANDERAS, ...(operador.banderas || []).filter((b) => !BANDERAS.includes(b))].map((b) => (
+                        <ChipToggle
+                          key={b}
+                          activo={draftEst.bandera === b}
+                          onClick={() => setDraftEst((d) => (d ? { ...d, bandera: d.bandera === b ? null : b } : d))}
+                        >
+                          {b}
+                        </ChipToggle>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={etiquetaCampoSt}>Localidad</div>
+                      <input
+                        value={draftEst.localidad}
+                        onChange={(e) => setDraftEst((d) => (d ? { ...d, localidad: e.target.value } : d))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') guardarEstacion(); }}
+                        style={{ ...inputSt, padding: '6px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={etiquetaCampoSt}>Provincia</div>
+                      <input
+                        value={draftEst.provincia}
+                        onChange={(e) => setDraftEst((d) => (d ? { ...d, provincia: e.target.value } : d))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') guardarEstacion(); }}
+                        style={{ ...inputSt, padding: '6px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={etiquetaCampoSt}>Teléfono</div>
+                    <input
+                      value={draftEst.telefono}
+                      onChange={(e) => setDraftEst((d) => (d ? { ...d, telefono: e.target.value } : d))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') guardarEstacion(); }}
+                      placeholder="011 4444-5555 (opcional)"
+                      style={{ ...inputSt, padding: '6px 10px', fontSize: 12, fontFamily: T.fontMono, width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  {avisoEst && <div style={{ fontSize: 11, color: T.warn }}>{avisoEst}</div>}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <Btn sm accent onClick={guardarEstacion} disabled={guardandoEst} style={{ opacity: guardandoEst ? 0.5 : 1 }}>
+                      Guardar
+                    </Btn>
+                    <Btn sm onClick={cerrarAltaEstacion} disabled={guardandoEst}>Cancelar</Btn>
+                  </div>
+                </div>
+              )}
+              {estaciones.length === 0 && !draftEst && <div style={vacioSt}>Sin estaciones cargadas.</div>}
               <div style={{ display: 'grid', gridTemplateColumns: esPanel ? 'repeat(auto-fill, minmax(200px, 1fr))' : '1fr', gap: 10 }}>
                 {estaciones.map((est) => (
                   <div key={est.id} style={{ background: '#fff', border: `1px solid ${T.faint2}`, borderRadius: 10, padding: '12px 14px' }}>

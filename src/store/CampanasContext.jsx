@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { normalizarTelefonoAR } from '../lib/campanas/normalizar.js';
 
 const CTX = createContext(null);
 
@@ -260,6 +261,50 @@ const actualizarOperador = async (id, changes) => {
     .update({ ...changes, updated_at: ahora() })
     .eq('id', id).select().single();
   return { data: row || null, error: error || null };
+};
+
+// Alta manual de una boca/estación de un operador (pedido de Franco: "agregarle
+// una boca a un cliente"). Anti-colisión PRIMERO (mismo patrón que el resto de
+// las mutaciones; force bypasea), dedup SUAVE por telefono_norm dentro del
+// mismo operador, insert con defaults sanos + actividad tipo 'alta_estacion'.
+const crearEstacion = async (operadorId, data = {}, { usuario, force = false } = {}) => {
+  const { rechazo } = await chequearOperadorParaMutar(operadorId, usuario, force);
+  if (rechazo) return { data: null, ...rechazo };
+  const now = ahora();
+  const fila = {
+    operador_id: operadorId,
+    estado_llamada: 'SIN LLAMAR',
+    datos: {},
+    // Clave de dedup: E.164 sin '+' — solo si vino un teléfono parseable.
+    telefono_norm: data.telefono ? normalizarTelefonoAR(data.telefono) : null,
+    created_at: now,
+    updated_at: now,
+    ...data,  // lo del caller PISA los defaults (incluido un telefono_norm explícito)
+  };
+  // Dedup suave: mismo operador + mismo telefono_norm = esa boca ya existe.
+  if (fila.telefono_norm) {
+    const { data: repetidas, error: eDup } = await supabase
+      .from('camp_estaciones').select('id')
+      .eq('operador_id', operadorId).eq('telefono_norm', fila.telefono_norm)
+      .limit(1);
+    if (eDup) return { data: null, error: eDup };
+    if (repetidas?.length) {
+      return { data: null, error: { message: 'Ese teléfono ya está en otra boca de este operador' } };
+    }
+  }
+  const { data: row, error } = await supabase
+    .from('camp_estaciones').insert(fila).select().single();
+  if (error) return { data: null, error };
+  await insertarActividad({
+    operador_id: operadorId,
+    estacion_id: row?.id || null,
+    tipo: 'alta_estacion',
+    canal: 'otro',
+    texto: `Nueva boca — ${row?.nombre || fila.nombre || 'estación'}`,
+    usuario: usuario || null,
+    fecha: now,
+  });
+  return { data: row || null, error: null };
 };
 
 const setEtapaProspeccion = async (operadorId, etapa, { usuario, force = false } = {}) => {
@@ -637,7 +682,7 @@ const API = {
   // config del explorador (shared_data 'campanas_config')
   fetchConfigExplorador, guardarConfigExplorador,
   // mutaciones
-  crearOperador, actualizarOperador, setEtapaProspeccion, registrarLlamada, registrarActividad,
+  crearOperador, actualizarOperador, crearEstacion, setEtapaProspeccion, registrarLlamada, registrarActividad,
   // anti-colisión (P6)
   chequearColision, tomarOperador, liberarOperador,
   // promoción al embudo real / vínculo con obra existente
