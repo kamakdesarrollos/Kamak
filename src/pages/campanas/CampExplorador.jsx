@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageLayout from '../../components/layout/PageLayout';
 import { Btn } from '../../components/ui';
@@ -16,10 +16,15 @@ import RitmoCampana from './RitmoCampana';
 // ─────────────────────────────────────────────────────────────────────────────
 // EXPLORADOR JERÁRQUICO — LA pantalla del módulo Campañas (pivot de UX,
 // decisión de Franco 2026-07-22): UNA página con el árbol
-//   ⛽ Estaciones de servicio → Bandera → Operadores
-// con los KPIs pegados a cada nivel. La ficha del operador abre en panel
-// lateral (mobile: fullscreen), la cola de llamadas de Caro es una vista del
-// mismo explorador y el "Ritmo de la campaña" vive en un panel colapsable.
+//   Rubro (⛽ Estaciones / 🏪 Franquicias / …) → Sección → Operadores
+// con los KPIs pegados a cada nivel. SECCIÓN = combinación canónica de
+// banderas del operador (RPC 0009): las multibandera ("YPF-SHELL-AXION") son
+// una sección propia — el segmento premium — con chip "multi". Los rubros y
+// las secciones se administran desde acá (⚙, solo Admin) contra la config
+// compartida de shared_data ('campanas_config'): ocultar/agregar secciones y
+// rubros sin tocar datos. La ficha del operador abre en panel lateral
+// (mobile: fullscreen), la cola de llamadas de Caro es una vista del mismo
+// explorador y el "Ritmo de la campaña" vive en un panel colapsable.
 // Datos: fetchResumenArbol() (un RPC, cero filas) para todos los counts del
 // árbol + fetchOperadores() paginado (30 por rama) recién al expandir.
 // P11: acá JAMÁS se muestran montos de obras — solo nombres.
@@ -37,6 +42,21 @@ const CHIPS_ETAPA = [
   ['reunion', 'Reunión'],
   ['promovido', 'Promovidas'],
 ];
+
+// Orden canónico de banderas (espejo del v_orden del RPC 0009): para nombrar
+// secciones nuevas igual que las nombraría la DB cuando tengan operadores.
+const BANDERAS_CANONICAS = [
+  'YPF', 'Shell', 'Axion', 'Puma', 'ACA', 'Gulf', 'Refinor',
+  'Voy con Energía', 'Dapsa', 'Wico', 'Rhasa', 'Líder Oil',
+];
+
+// Config del explorador (shared_data 'campanas_config') cuando nunca se guardó.
+const DEFAULT_CONFIG = {
+  rubros: [
+    { key: 'estaciones', nombre: 'Estaciones de servicio', emoji: '⛽' },
+    { key: 'franquicias', nombre: 'Franquicias', emoji: '🏪' },
+  ],
+};
 
 // ── Helpers puros ────────────────────────────────────────────────────────────
 
@@ -59,7 +79,96 @@ const tiempoRelativo = (iso) => {
 
 const pctResp = (respondieron, total) => (total > 0 ? Math.round((respondieron / total) * 100) : 0);
 
+const capitalizar = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+// key de una rama del árbol (sección dentro de un rubro) para ramas/abiertas.
+const ramaKey = (rubroKey, seccion) => `${rubroKey}::${seccion}`;
+
+const posCanonica = (b) => {
+  const i = BANDERAS_CANONICAS.findIndex((c) => c.toUpperCase() === String(b).toUpperCase());
+  return i === -1 ? 999 : i;
+};
+
+const ordenarBanderas = (arr) => [...arr].sort((a, b) =>
+  posCanonica(a) - posCanonica(b) || String(a).toUpperCase().localeCompare(String(b).toUpperCase()));
+
+const nombreSeccion = (banderas) => banderas.map((b) => String(b).toUpperCase()).join('-');
+
+const slugRubro = (nombre) => String(nombre || '').trim().toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+// Normaliza la config guardada al shape de trabajo:
+//   { rubros: [{ key, nombre, emoji, oculto, seccionesOcultas, seccionesExtra }] }
+// Compat: el comentario del context (pre-0009) documentaba banderasOcultas /
+// banderasExtra como string[] — se leen ambos nombres (una bandera suelta se
+// traduce a su sección de una bandera) y SIEMPRE se guarda el shape nuevo.
+const normalizarConfig = (raw) => {
+  const rubros = Array.isArray(raw?.rubros) && raw.rubros.length ? raw.rubros : DEFAULT_CONFIG.rubros;
+  return {
+    rubros: rubros.filter((r) => r && r.key).map((r) => ({
+      key: String(r.key),
+      nombre: r.nombre || capitalizar(String(r.key)),
+      emoji: r.emoji || '📁',
+      oculto: !!r.oculto,
+      seccionesOcultas: (r.seccionesOcultas || r.banderasOcultas || []).filter(Boolean),
+      seccionesExtra: (r.seccionesExtra
+        || (r.banderasExtra || []).map((b) => (typeof b === 'string' ? { seccion: b.toUpperCase(), banderas: [b] } : b)))
+        .filter((x) => x && x.seccion),
+    })),
+  };
+};
+
+// Merge RPC + config → árbol renderizable. La config manda nombre/emoji/orden/
+// oculto; los rubros con datos que no están en la config se muestran igual (al
+// final, con nombre derivado). Secciones = las del RPC menos las ocultas, más
+// las extra (con 0 operadores — sirven para crear operadores ahí).
+const armarArbol = (rpcRubros, config) => {
+  const cfg = config || normalizarConfig(null);
+  const datosPorKey = new Map((rpcRubros || []).map((r) => [r.rubro, r]));
+  const armarRubro = (c, datos) => {
+    const ocultas = new Set(c.seccionesOcultas || []);
+    const nombresRpc = new Set((datos?.secciones || []).map((s) => s.seccion));
+    const secciones = [
+      ...(datos?.secciones || []).filter((s) => !ocultas.has(s.seccion)),
+      ...(c.seccionesExtra || [])
+        .filter((x) => !nombresRpc.has(x.seccion) && !ocultas.has(x.seccion))
+        .map((x) => ({
+          seccion: x.seccion, banderas: x.banderas || [], multibandera: (x.banderas || []).length > 1,
+          total: 0, por_etapa: {}, respondieron: 0, reuniones: 0, obras: 0, extra: true,
+        })),
+    ];
+    return {
+      key: c.key, nombre: c.nombre || c.key, emoji: c.emoji || '📁', oculto: !!c.oculto,
+      total: datos?.total || 0, por_etapa: datos?.por_etapa || {},
+      respondieron: datos?.respondieron || 0, reuniones: datos?.reuniones || 0, obras: datos?.obras || 0,
+      secciones, nOcultas: (c.seccionesOcultas || []).length,
+    };
+  };
+  const out = cfg.rubros.map((c) => armarRubro(c, datosPorKey.get(c.key)));
+  const enConfig = new Set(cfg.rubros.map((c) => c.key));
+  for (const r of rpcRubros || []) {
+    if (!enConfig.has(r.rubro)) out.push(armarRubro({ key: r.rubro, nombre: capitalizar(r.rubro), emoji: '📁' }, r));
+  }
+  return out;
+};
+
+// Banderas candidatas para armar una sección nueva en un rubro: las canónicas
+// (solo estaciones) + todas las que ya aparecen en sus secciones.
+const candidatasDe = (r) => {
+  const out = [];
+  const push = (b) => { if (b && !out.some((x) => x.toUpperCase() === String(b).toUpperCase())) out.push(b); };
+  if (r.key === 'estaciones') BANDERAS_CANONICAS.forEach(push);
+  r.secciones.forEach((s) => (s.banderas || []).forEach(push));
+  return ordenarBanderas(out);
+};
+
 // ── Piezas chicas de presentación ────────────────────────────────────────────
+
+const INPUT_MINI = {
+  padding: '6px 10px', borderRadius: 8, border: `1.5px solid ${T.faint2}`,
+  fontSize: 12, fontFamily: T.font, color: T.ink, background: '#fff', outline: 'none',
+};
 
 // Número + label chiquito del mini-cluster de KPIs de cada rama.
 function ParKpi({ v, l, color }) {
@@ -136,6 +245,35 @@ function SkeletonRamas({ alto }) {
   );
 }
 
+// Chip sobrio de sección multibandera (borde, sin relleno): el segmento
+// premium — operadores con varias banderas a la vez.
+function ChipMulti() {
+  return (
+    <span
+      title="Sección multibandera — operadores con varias banderas"
+      style={{
+        fontSize: 9, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase',
+        border: `1px solid ${T.ink3}`, borderRadius: 999, padding: '1px 7px',
+        color: T.ink2, flexShrink: 0, whiteSpace: 'nowrap',
+      }}
+    >multi</span>
+  );
+}
+
+// "✕ ocultar" del modo administración (secciones y rubros).
+function BtnOcultar({ onClick, title }) {
+  return (
+    <span
+      onClick={onClick}
+      title={title}
+      style={{
+        fontSize: 10, fontWeight: 700, color: T.ink3, border: `1px solid ${T.faint2}`,
+        borderRadius: 999, padding: '2px 8px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
+      }}
+    >✕ ocultar</span>
+  );
+}
+
 // Fila de OPERADOR: semáforo de etapa (LA señal dominante) + nombre + chips
 // discretos + "hace 3 d". El "→" aparece solo al hover (CSS .ce-fila).
 function FilaOperador({ op, isMobile, conBandera, myId, nombreUsuario, onClick }) {
@@ -188,6 +326,188 @@ function FilaOperador({ op, isMobile, conBandera, myId, nombreUsuario, onClick }
         <span className="ce-arrow" style={{ color: T.accent, fontWeight: 700, fontSize: 13 }}>→</span>
       </span>
     </div>
+  );
+}
+
+// Fila fantasma "+ operador" al pie de la lista de una sección: click → input
+// de nombre + toggle [1|Varias] (n_estaciones). Enter guarda, Escape cancela.
+function FilaNuevoOperador({ alto, onCrear }) {
+  const [editando, setEditando] = useState(false);
+  const [nombre, setNombre] = useState('');
+  const [varias, setVarias] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+
+  const cancelar = () => { setEditando(false); setNombre(''); setVarias(false); };
+
+  const guardar = async () => {
+    const n = nombre.trim();
+    if (!n || guardando) return;
+    setGuardando(true);
+    const { error } = await onCrear(n, varias ? null : 1);
+    setGuardando(false);
+    if (error) {
+      window.alert(`No se pudo crear el operador${error.message ? ` (${error.message})` : ''}.`);
+      return;
+    }
+    cancelar();
+  };
+
+  if (!editando) {
+    return (
+      <div
+        className="ce-fila"
+        onClick={() => setEditando(true)}
+        style={{
+          height: alto - 8, display: 'flex', alignItems: 'center', gap: 10,
+          padding: '0 8px 0 2px', cursor: 'pointer', borderRadius: 6, color: T.ink3,
+          transition: 'background 0.15s ease',
+        }}
+      >
+        <span style={{ width: 9, textAlign: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>+</span>
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>operador</span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ height: alto, display: 'flex', alignItems: 'center', gap: 8, padding: '0 8px 0 2px' }}>
+      <input
+        autoFocus
+        value={nombre}
+        onChange={(e) => setNombre(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') guardar();
+          if (e.key === 'Escape') cancelar();
+        }}
+        placeholder="Nombre del operador…"
+        disabled={guardando}
+        style={{ ...INPUT_MINI, flex: 1, minWidth: 0, borderColor: T.accent }}
+      />
+      <span style={{ display: 'inline-flex', border: `1.5px solid ${T.faint2}`, borderRadius: 999, overflow: 'hidden', flexShrink: 0 }}>
+        {[[false, '1'], [true, 'Varias']].map(([v, l]) => (
+          <button
+            key={l}
+            type="button"
+            onClick={() => setVarias(v)}
+            title="¿Cuántas estaciones tiene?"
+            style={{
+              border: 'none', padding: '5px 10px', fontSize: 11, fontWeight: 700, fontFamily: T.font,
+              cursor: 'pointer', background: varias === v ? T.ink : 'transparent',
+              color: varias === v ? T.paper : T.ink3,
+            }}
+          >{l}</button>
+        ))}
+      </span>
+      <LinkAccion onClick={guardar} style={{ color: guardando || !nombre.trim() ? T.ink3 : T.accent }}>
+        {guardando ? 'Guardando…' : 'Guardar'}
+      </LinkAccion>
+      {!guardando && <LinkAccion onClick={cancelar} style={{ color: T.ink3 }}>✕</LinkAccion>}
+    </div>
+  );
+}
+
+// Alta de sección (modo admin): chips de banderas conocidas + campo libre para
+// una nueva. El nombre se arma igual que en el RPC (orden canónico, MAYÚSCULAS).
+function FormNuevaSeccion({ candidatas, onCrear, onCancelar }) {
+  const [sel, setSel] = useState([]);
+  const [texto, setTexto] = useState('');
+
+  const toggle = (b) => setSel((prev) => (prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]));
+
+  const agregarTexto = () => {
+    const b = texto.trim();
+    if (!b) return false;
+    setSel((prev) => (prev.some((x) => x.toUpperCase() === b.toUpperCase()) ? prev : [...prev, b]));
+    setTexto('');
+    return true;
+  };
+
+  const crear = () => {
+    const pendiente = texto.trim();
+    const todas = pendiente && !sel.some((x) => x.toUpperCase() === pendiente.toUpperCase())
+      ? [...sel, pendiente] : sel;
+    if (todas.length) onCrear(todas);
+  };
+
+  const opciones = [...candidatas];
+  sel.forEach((b) => { if (!opciones.some((x) => x.toUpperCase() === b.toUpperCase())) opciones.push(b); });
+
+  return (
+    <div style={{
+      border: `1px dashed ${T.faint2}`, borderRadius: 10, padding: '10px 12px',
+      margin: '4px 0 8px', display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0,
+    }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {opciones.map((b) => {
+          const activa = sel.includes(b);
+          return (
+            <button
+              key={b}
+              type="button"
+              onClick={() => toggle(b)}
+              style={{
+                border: `1.5px solid ${activa ? T.ink : T.faint2}`,
+                background: activa ? T.ink : 'transparent',
+                color: activa ? T.paper : T.ink2,
+                borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700,
+                fontFamily: T.font, cursor: 'pointer',
+              }}
+            >{b}</button>
+          );
+        })}
+        <input
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !agregarTexto()) crear();
+            if (e.key === 'Escape') onCancelar();
+          }}
+          placeholder="otra bandera…"
+          style={{
+            width: 110, padding: '4px 10px', borderRadius: 999, border: `1.5px dashed ${T.faint2}`,
+            fontSize: 11, fontFamily: T.font, color: T.ink, background: 'transparent', outline: 'none',
+          }}
+        />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
+        <span style={{
+          fontSize: 10.5, color: T.ink3, fontFamily: T.fontMono, minWidth: 0,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {sel.length ? `→ ${nombreSeccion(ordenarBanderas(sel))}` : 'Elegí una o más banderas'}
+        </span>
+        <LinkAccion onClick={crear} style={{ marginLeft: 'auto', color: sel.length || texto.trim() ? T.accent : T.ink3 }}>
+          Crear sección
+        </LinkAccion>
+        <LinkAccion onClick={onCancelar} style={{ color: T.ink3 }}>✕</LinkAccion>
+      </div>
+    </div>
+  );
+}
+
+// Alta de rubro (modo admin): emoji + nombre. Enter guarda, Escape cancela.
+function FormNuevoRubro({ onCrear, onCancelar }) {
+  const [nombre, setNombre] = useState('');
+  const [emoji, setEmoji] = useState('');
+  const crear = () => { if (nombre.trim()) onCrear(nombre.trim(), emoji.trim()); };
+  const teclas = (e) => {
+    if (e.key === 'Enter') crear();
+    if (e.key === 'Escape') onCancelar();
+  };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <input
+        value={emoji} onChange={(e) => setEmoji(e.target.value)} onKeyDown={teclas}
+        placeholder="🏪" maxLength={4}
+        style={{ ...INPUT_MINI, width: 36, textAlign: 'center', padding: '6px 4px' }}
+      />
+      <input
+        autoFocus value={nombre} onChange={(e) => setNombre(e.target.value)} onKeyDown={teclas}
+        placeholder="Nombre del rubro…"
+        style={{ ...INPUT_MINI, width: 180 }}
+      />
+      <LinkAccion onClick={crear} style={{ color: nombre.trim() ? T.accent : T.ink3 }}>Guardar</LinkAccion>
+      <LinkAccion onClick={onCancelar} style={{ color: T.ink3 }}>✕</LinkAccion>
+    </span>
   );
 }
 
@@ -302,7 +622,9 @@ function LinkAccion({ onClick, children, style }) {
 
 export default function CampExplorador() {
   const { currentUser, usuarios } = useUsuarios();
-  const { fetchResumenArbol, fetchOperadores } = useCampanas();
+  const {
+    fetchResumenArbol, fetchOperadores, fetchConfigExplorador, guardarConfigExplorador, crearOperador,
+  } = useCampanas();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
 
@@ -311,8 +633,9 @@ export default function CampExplorador() {
   useEffect(() => { if (currentUser && !puede) navigate('/', { replace: true }); }, [currentUser, puede, navigate]);
 
   const myId = currentUser?.id || null;
+  const esAdmin = currentUser?.rol === 'Admin';
 
-  // ── Resumen del árbol (RPC: global + banderas, cero filas) ────────────────
+  // ── Resumen del árbol (RPC: global + rubros → secciones, cero filas) ──────
   const [resumen, setResumen] = useState(null); // { data, error }
   const [resumenTick, setResumenTick] = useState(0);
   useEffect(() => {
@@ -329,33 +652,79 @@ export default function CampExplorador() {
     setResumenTick((t) => t + 1);
   };
 
+  // Refetch silencioso (tras crear un operador): pisa los counts sin volver a
+  // los skeletons — el árbol queda en pantalla con los números frescos.
+  const refrescarResumen = useCallback(() => {
+    fetchResumenArbol().then(({ data, error }) => {
+      if (!error && data) setResumen({ data, error: null });
+    });
+  }, [fetchResumenArbol]);
+
+  // ── Config compartida del explorador (shared_data 'campanas_config') ──────
+  // Se carga junto al resumen; null = todavía no llegó (el árbol espera a las
+  // dos). Config vacía/rota → default (estaciones + franquicias).
+  const [config, setConfig] = useState(null);
+  useEffect(() => {
+    if (!puede) return undefined;
+    let vivo = true;
+    fetchConfigExplorador().then(({ data }) => {
+      if (vivo) setConfig(normalizarConfig(data));
+    });
+    return () => { vivo = false; };
+  }, [puede, fetchConfigExplorador]);
+
+  // Árbol renderizable = RPC + config (merge puro, memoizado).
+  const arbol = useMemo(() => armarArbol(resumen?.data?.rubros || [], config), [resumen, config]);
+
+  // Lookup rama-key → { rubro, seccion } (para refetch por etapa y ColaLlamadas).
+  const seccionPorKey = useMemo(() => {
+    const m = new Map();
+    for (const r of arbol) {
+      if (r.oculto) continue;
+      for (const s of r.secciones) m.set(ramaKey(r.key, s.seccion), { rubro: r, seccion: s });
+    }
+    return m;
+  }, [arbol]);
+
   // ── Estado del árbol ──────────────────────────────────────────────────────
-  const [raizAbierta, setRaizAbierta] = useState(true);
-  const [abiertas, setAbiertas] = useState(() => new Set()); // banderas expandidas
+  // rubrosAbiertos null = default: abiertos los rubros que tienen operadores.
+  const [rubrosAbiertos, setRubrosAbiertos] = useState(null);
+  const [abiertas, setAbiertas] = useState(() => new Set()); // rama-keys de sección expandidas
   const [etapaFiltro, setEtapaFiltro] = useState('');
-  // bandera → { clave (etapa del fetch), rows, total, page, error, cargandoMas }
+  // rama-key → { clave (etapa del fetch), rows, total, page, error, cargandoMas }
   const [ramas, setRamas] = useState({});
   const seqRef = useRef(0);
-  const pedidosRef = useRef({}); // bandera → token del último pedido en vuelo
+  const pedidosRef = useRef({}); // rama-key → token del último pedido en vuelo
 
-  const cargarRama = useCallback((bandera, etapa, { append = false, page = 1 } = {}) => {
+  // ── Modo administración (solo Admin: ⚙ junto al título) ───────────────────
+  const [modoAdmin, setModoAdmin] = useState(false);
+  const [formSeccionRubro, setFormSeccionRubro] = useState(null); // key del rubro con el form abierto
+  const [formRubro, setFormRubro] = useState(false);
+
+  const cargarRama = useCallback((key, seccion, etapa, { append = false, page = 1 } = {}) => {
     const clave = etapa || '';
     const token = ++seqRef.current;
-    pedidosRef.current[bandera] = token;
+    pedidosRef.current[key] = token;
+    // Sección "Sin bandera" = grupo sintético del RPC → filtro bandera SIN_BANDERA
+    // (banderas null/vacías). El resto filtra por igualdad EXACTA del array de
+    // banderas de la sección (las combos multibandera son secciones propias).
+    const filtros = seccion.seccion === SIN_BANDERA
+      ? { bandera: SIN_BANDERA }
+      : { banderasExactas: seccion.banderas || [] };
     fetchOperadores({
       page, pageSize: PAGE,
-      filtros: { bandera, ...(etapa ? { etapa } : {}) },
+      filtros: { ...filtros, ...(etapa ? { etapa } : {}) },
       orden: 'etapa',
     })
       .then(({ rows, total, error }) => {
-        if (pedidosRef.current[bandera] !== token) return; // respuesta vieja
+        if (pedidosRef.current[key] !== token) return; // respuesta vieja
         setRamas((prev) => {
-          const previa = prev[bandera];
+          const previa = prev[key];
           const base = append && previa && previa.clave === clave ? previa.rows : [];
           if (error) {
             return {
               ...prev,
-              [bandera]: {
+              [key]: {
                 clave, page: previa?.clave === clave ? previa.page : 1,
                 rows: previa?.clave === clave ? previa.rows : [],
                 total: previa?.clave === clave ? previa.total : 0,
@@ -363,32 +732,33 @@ export default function CampExplorador() {
               },
             };
           }
-          return { ...prev, [bandera]: { clave, page, rows: [...base, ...(rows || [])], total, error: null, cargandoMas: false } };
+          return { ...prev, [key]: { clave, page, rows: [...base, ...(rows || [])], total, error: null, cargandoMas: false } };
         });
       })
       .catch((e) => {
-        if (pedidosRef.current[bandera] !== token) return;
+        if (pedidosRef.current[key] !== token) return;
         setRamas((prev) => ({
           ...prev,
-          [bandera]: {
+          [key]: {
             clave, page: 1,
-            rows: prev[bandera]?.clave === clave ? prev[bandera].rows : [],
-            total: prev[bandera]?.clave === clave ? prev[bandera].total : 0,
+            rows: prev[key]?.clave === clave ? prev[key].rows : [],
+            total: prev[key]?.clave === clave ? prev[key].total : 0,
             error: { message: e?.message || 'Error de red' }, cargandoMas: false,
           },
         }));
       });
   }, [fetchOperadores]);
 
-  const toggleRama = (bandera) => {
-    const abriendo = !abiertas.has(bandera);
+  const toggleRama = (rubro, seccion) => {
+    const key = ramaKey(rubro.key, seccion.seccion);
+    const abriendo = !abiertas.has(key);
     setAbiertas((prev) => {
       const next = new Set(prev);
-      if (next.has(bandera)) next.delete(bandera); else next.add(bandera);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
-    const r = ramas[bandera];
-    if (abriendo && (!r || r.clave !== (etapaFiltro || '') || r.error)) cargarRama(bandera, etapaFiltro);
+    const r = ramas[key];
+    if (abriendo && (!r || r.clave !== (etapaFiltro || '') || r.error)) cargarRama(key, seccion, etapaFiltro);
   };
 
   const elegirEtapa = (etapa) => {
@@ -396,14 +766,144 @@ export default function CampExplorador() {
     setEtapaFiltro(etapa);
     // Las ramas abiertas refetchean con el filtro nuevo (mientras llega, el
     // mismatch de clave las muestra con skeleton — derivado, sin flags).
-    abiertas.forEach((bandera) => cargarRama(bandera, etapa));
+    abiertas.forEach((key) => {
+      const nodo = seccionPorKey.get(key);
+      if (nodo) cargarRama(key, nodo.seccion, etapa);
+    });
   };
 
-  const cargarMas = (bandera) => {
-    const r = ramas[bandera];
+  const cargarMas = (key, seccion) => {
+    const r = ramas[key];
     if (!r || r.cargandoMas) return;
-    setRamas((prev) => ({ ...prev, [bandera]: { ...prev[bandera], cargandoMas: true } }));
-    cargarRama(bandera, etapaFiltro, { append: true, page: (r.page || 1) + 1 });
+    setRamas((prev) => ({ ...prev, [key]: { ...prev[key], cargandoMas: true } }));
+    cargarRama(key, seccion, etapaFiltro, { append: true, page: (r.page || 1) + 1 });
+  };
+
+  // ── Alta manual de operador en una sección (todos los que entran acá) ─────
+  const crearOperadorEnSeccion = async (rubro, seccion, nombre, nEstaciones) => {
+    const { data, error } = await crearOperador({
+      nombre,
+      banderas: seccion.seccion === SIN_BANDERA ? [] : (seccion.banderas || []),
+      rubro: rubro.key,
+      n_estaciones: nEstaciones,
+    }, { usuario: myId });
+    if (error) return { error };
+    const key = ramaKey(rubro.key, seccion.seccion);
+    setRamas((prev) => {
+      const r = prev[key];
+      if (!r) return prev;
+      return { ...prev, [key]: { ...r, rows: [data, ...r.rows], total: (r.total || 0) + 1 } };
+    });
+    refrescarResumen();
+    return { error: null };
+  };
+
+  // ── Administración de la config (guarda entera + auditoría en el context) ──
+  const rubrosCfg = () => (config || normalizarConfig(null)).rubros;
+
+  // Materializa en la config un rubro que hasta ahora solo existía por datos
+  // del RPC (para poder ocultarlo / colgarle secciones).
+  const conRubro = (rubros, r) => (rubros.some((x) => x.key === r.key)
+    ? rubros
+    : [...rubros, { key: r.key, nombre: r.nombre, emoji: r.emoji, oculto: false, seccionesOcultas: [], seccionesExtra: [] }]);
+
+  const guardarYSetear = async (rubrosNuevos) => {
+    const previa = config;
+    const nueva = { rubros: rubrosNuevos };
+    setConfig(nueva); // optimista: el árbol refresca al toque
+    const { error } = await guardarConfigExplorador(nueva, { usuario: myId });
+    if (error) {
+      setConfig(previa);
+      window.alert(`No se pudo guardar la configuración${error.message ? ` (${error.message})` : ''}.`);
+    }
+  };
+
+  const ocultarSeccion = (rubro, seccion) => {
+    if (seccion.total > 0
+      && !window.confirm(`Se oculta de la vista, los ${fmtN(seccion.total)} operadores no se tocan. ¿Ocultar "${seccion.seccion}"?`)) return;
+    const key = ramaKey(rubro.key, seccion.seccion);
+    setAbiertas((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    guardarYSetear(conRubro(rubrosCfg(), rubro).map((c) => {
+      if (c.key !== rubro.key) return c;
+      // Una sección extra (sin operadores) se borra directo; una con datos del
+      // RPC va a seccionesOcultas (restaurable con "mostrar ocultas").
+      return seccion.extra
+        ? { ...c, seccionesExtra: c.seccionesExtra.filter((x) => x.seccion !== seccion.seccion) }
+        : {
+            ...c,
+            seccionesOcultas: c.seccionesOcultas.includes(seccion.seccion)
+              ? c.seccionesOcultas : [...c.seccionesOcultas, seccion.seccion],
+          };
+    }));
+  };
+
+  const restaurarOcultas = (rubro) => {
+    guardarYSetear(rubrosCfg().map((c) => (c.key === rubro.key ? { ...c, seccionesOcultas: [] } : c)));
+  };
+
+  const agregarSeccion = (rubro, banderasElegidas) => {
+    const vistas = new Set();
+    const banderas = ordenarBanderas(banderasElegidas.map((b) => String(b).trim()).filter(Boolean))
+      .filter((b) => {
+        const u = b.toUpperCase();
+        if (vistas.has(u)) return false;
+        vistas.add(u);
+        return true;
+      });
+    if (!banderas.length) return;
+    const seccion = nombreSeccion(banderas);
+    const cfgPrevio = rubrosCfg().find((x) => x.key === rubro.key);
+    // Si estaba oculta, "agregarla" = restaurarla.
+    if (cfgPrevio?.seccionesOcultas?.includes(seccion)) {
+      guardarYSetear(rubrosCfg().map((c) => (c.key === rubro.key
+        ? { ...c, seccionesOcultas: c.seccionesOcultas.filter((x) => x !== seccion) } : c)));
+      setFormSeccionRubro(null);
+      return;
+    }
+    if (rubro.secciones.some((s) => s.seccion === seccion)) {
+      window.alert(`La sección "${seccion}" ya existe en ${rubro.nombre}.`);
+      return;
+    }
+    guardarYSetear(conRubro(rubrosCfg(), rubro).map((c) => (c.key === rubro.key
+      ? { ...c, seccionesExtra: [...c.seccionesExtra, { seccion, banderas }] } : c)));
+    setFormSeccionRubro(null);
+  };
+
+  const ocultarRubro = (rubro) => {
+    if (rubro.total > 0
+      && !window.confirm(`Se oculta de la vista, los ${fmtN(rubro.total)} operadores no se tocan. ¿Ocultar "${rubro.nombre}"?`)) return;
+    setAbiertas((prev) => {
+      const next = new Set([...prev].filter((k) => !k.startsWith(`${rubro.key}::`)));
+      return next.size === prev.size ? prev : next;
+    });
+    guardarYSetear(conRubro(rubrosCfg(), rubro).map((c) => (c.key === rubro.key ? { ...c, oculto: true } : c)));
+  };
+
+  const mostrarRubrosOcultos = () => {
+    guardarYSetear(rubrosCfg().map((c) => (c.oculto ? { ...c, oculto: false } : c)));
+  };
+
+  const agregarRubro = (nombre, emoji) => {
+    const key = slugRubro(nombre);
+    if (!key) return;
+    const existentes = new Set([
+      ...rubrosCfg().map((x) => x.key),
+      ...(resumen?.data?.rubros || []).map((x) => x.rubro),
+    ]);
+    if (existentes.has(key)) {
+      window.alert(`Ya existe un rubro "${key}".`);
+      return;
+    }
+    guardarYSetear([
+      ...rubrosCfg(),
+      { key, nombre: nombre.trim(), emoji: emoji || '📁', oculto: false, seccionesOcultas: [], seccionesExtra: [] },
+    ]);
+    setFormRubro(false);
   };
 
   // ── Búsqueda global (debounce 300ms; ≥2 chars → resultados planos) ────────
@@ -546,33 +1046,46 @@ export default function CampExplorador() {
 
   // ── Derivados de render ───────────────────────────────────────────────────
   const global = resumen?.data?.global || null;
-  const banderas = resumen?.data?.banderas || [];
   const resumenCargando = !resumen;
   const resumenError = resumen?.error || null;
-  const arbolVacio = !!resumen?.data && (!global || !global.total) && banderas.length === 0;
-  // Bandera única abierta → filtra la cola de llamadas. 'Sin bandera' es el
-  // grupo sintético del RPC: camp_estaciones no tiene ese valor, no se propaga.
-  const primeraAbierta = abiertas.size === 1 ? [...abiertas][0] : null;
-  const banderaUnica = primeraAbierta === SIN_BANDERA ? null : primeraAbierta;
+  const arbolCargando = resumenCargando || !config; // el árbol espera resumen + config
+  const arbolVacio = !!resumen?.data && (!global || !global.total) && (resumen?.data?.rubros || []).length === 0;
+  const rubrosVisibles = arbol.filter((r) => !r.oculto);
+  const nRubrosOcultos = arbol.length - rubrosVisibles.length;
+  // Rubros abiertos por defecto: los que tienen operadores (estaciones hoy).
+  const rubrosAbiertosEf = rubrosAbiertos || new Set(rubrosVisibles.filter((r) => r.total > 0).map((r) => r.key));
+  const toggleRubro = (key) => {
+    const next = new Set(rubrosAbiertosEf);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setRubrosAbiertos(next);
+  };
+  // Única sección abierta y de UNA sola bandera → filtra la cola de llamadas.
+  // Combos multibandera y "Sin bandera" (grupo sintético del RPC) → sin filtro.
+  const nodoUnico = abiertas.size === 1 ? seccionPorKey.get([...abiertas][0]) : null;
+  const seccionUnica = nodoUnico?.seccion || null;
+  const banderaUnica = seccionUnica && seccionUnica.seccion !== SIN_BANDERA
+    && (seccionUnica.banderas || []).length === 1
+    ? seccionUnica.banderas[0] : null;
   const claveRama = etapaFiltro || '';
   const altoFila = isMobile ? 52 : 44;
 
   const limpiarBusquedaUI = () => { setBusquedaInput(''); setBusqueda(''); };
 
-  // ── Sub-render: una rama de bandera con sus operadores ────────────────────
-  const renderRama = (b) => {
-    const abierta = abiertas.has(b.bandera);
-    const rama = ramas[b.bandera];
+  // ── Sub-render: una sección de un rubro con sus operadores ────────────────
+  const renderSeccion = (rubro, s) => {
+    const key = ramaKey(rubro.key, s.seccion);
+    const abierta = abiertas.has(key);
+    const rama = ramas[key];
     const ramaVigente = rama && rama.clave === claveRama;
     // "Cargando" DERIVADO del mismatch de clave (sin flags en effects): recién
     // abierta sin datos, o refetch en vuelo por cambio de filtro de etapa.
     const cargandoRama = abierta && !ramaVigente;
     const conFiltroVacia = ramaVigente && !rama.error && rama.rows.length === 0;
     return (
-      <div key={b.bandera}>
+      <div key={key}>
         <div
           className="ce-fila"
-          onClick={() => toggleRama(b.bandera)}
+          onClick={() => toggleRama(rubro, s)}
           style={{
             height: isMobile ? 52 : 50, display: 'flex', alignItems: 'center', gap: 8,
             cursor: 'pointer', borderBottom: `1px solid ${T.faint2}`, borderRadius: 6,
@@ -584,11 +1097,18 @@ export default function CampExplorador() {
             fontSize: 14, fontWeight: 700, color: T.ink, minWidth: 0,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
-            {b.bandera}
+            {s.seccion}
           </span>
+          {s.multibandera && <ChipMulti />}
+          {modoAdmin && (
+            <BtnOcultar
+              title={`Ocultar la sección ${s.seccion}`}
+              onClick={(e) => { e.stopPropagation(); ocultarSeccion(rubro, s); }}
+            />
+          )}
           <MiniKpis
-            total={b.total} respondieron={b.respondieron} reuniones={b.reuniones}
-            obras={b.obras} porEtapa={b.por_etapa} etapaFiltro={etapaFiltro} isMobile={isMobile}
+            total={s.total} respondieron={s.respondieron} reuniones={s.reuniones}
+            obras={s.obras} porEtapa={s.por_etapa} etapaFiltro={etapaFiltro} isMobile={isMobile}
           />
         </div>
         <Expandible abierto={abierta}>
@@ -601,13 +1121,13 @@ export default function CampExplorador() {
               )}
               {!cargandoRama && ramaVigente && rama.error && (
                 <div style={{ padding: '12px 4px', fontSize: 12, color: T.ink2 }}>
-                  Se nos cayó la carga de {b.bandera}{rama.error.message ? ` (${rama.error.message})` : ''}.{' '}
-                  <LinkAccion onClick={() => cargarRama(b.bandera, etapaFiltro)}>Reintentar</LinkAccion>
+                  Se nos cayó la carga de {s.seccion}{rama.error.message ? ` (${rama.error.message})` : ''}.{' '}
+                  <LinkAccion onClick={() => cargarRama(key, s, etapaFiltro)}>Reintentar</LinkAccion>
                 </div>
               )}
               {!cargandoRama && conFiltroVacia && (
                 <div style={{ padding: '12px 4px', fontSize: 12, color: T.ink3 }}>
-                  {etapaFiltro ? 'Ningún operador en esta etapa.' : 'Sin operadores cargados en esta bandera.'}
+                  {etapaFiltro ? 'Ningún operador en esta etapa.' : 'Sin operadores cargados en esta sección.'}
                 </div>
               )}
               {!cargandoRama && ramaVigente && !rama.error && rama.rows.map((op) => (
@@ -618,13 +1138,81 @@ export default function CampExplorador() {
               ))}
               {!cargandoRama && ramaVigente && !rama.error && rama.total > rama.rows.length && (
                 <div style={{ padding: '10px 4px' }}>
-                  <LinkAccion onClick={() => cargarMas(b.bandera)} style={{ color: rama.cargandoMas ? T.ink3 : T.accent }}>
+                  <LinkAccion onClick={() => cargarMas(key, s)} style={{ color: rama.cargandoMas ? T.ink3 : T.accent }}>
                     {rama.cargandoMas ? 'Cargando…' : `Cargar más (quedan ${fmtN(rama.total - rama.rows.length)})`}
                   </LinkAccion>
                 </div>
               )}
+              {!cargandoRama && ramaVigente && !rama.error && (
+                <FilaNuevoOperador
+                  alto={altoFila}
+                  onCrear={(nombre, nEst) => crearOperadorEnSeccion(rubro, s, nombre, nEst)}
+                />
+              )}
             </div>
           )}
+        </Expandible>
+      </div>
+    );
+  };
+
+  // ── Sub-render: un rubro (nodo raíz) con sus secciones ────────────────────
+  const renderRubro = (r) => {
+    const abierto = rubrosAbiertosEf.has(r.key);
+    return (
+      <div key={r.key}>
+        <div
+          className="ce-fila"
+          onClick={() => toggleRubro(r.key)}
+          style={{
+            height: 52, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            borderBottom: `1px solid ${T.faint2}`, borderRadius: 6, padding: '0 8px 0 0',
+            transition: 'background 0.15s ease',
+          }}
+        >
+          <Chevron abierto={abierto} />
+          <span style={{ fontSize: 15, flexShrink: 0 }}>{r.emoji}</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+            {r.nombre}
+          </span>
+          {modoAdmin && (
+            <BtnOcultar
+              title={`Ocultar el rubro ${r.nombre}`}
+              onClick={(e) => { e.stopPropagation(); ocultarRubro(r); }}
+            />
+          )}
+          <MiniKpis
+            total={r.total} respondieron={r.respondieron} reuniones={r.reuniones}
+            obras={r.obras} porEtapa={r.por_etapa} etapaFiltro={etapaFiltro} isMobile={isMobile}
+          />
+        </div>
+        <Expandible abierto={abierto}>
+          <div style={{ marginLeft: 8, borderLeft: `1px solid ${T.faint2}`, paddingLeft: 14 }}>
+            {r.secciones.map((s) => renderSeccion(r, s))}
+            {r.secciones.length === 0 && !modoAdmin && (
+              <div style={{ padding: '14px 4px', fontSize: 12, color: T.ink3, fontStyle: 'italic' }}>
+                Sin secciones todavía.
+              </div>
+            )}
+            {modoAdmin && (
+              <div style={{ padding: '10px 4px', display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                {formSeccionRubro === r.key
+                  ? (
+                    <FormNuevaSeccion
+                      candidatas={candidatasDe(r)}
+                      onCrear={(banderas) => agregarSeccion(r, banderas)}
+                      onCancelar={() => setFormSeccionRubro(null)}
+                    />
+                  )
+                  : <LinkAccion onClick={() => setFormSeccionRubro(r.key)}>+ Agregar sección</LinkAccion>}
+                {r.nOcultas > 0 && formSeccionRubro !== r.key && (
+                  <LinkAccion onClick={() => restaurarOcultas(r)} style={{ color: T.ink3 }}>
+                    mostrar ocultas ({r.nOcultas})
+                  </LinkAccion>
+                )}
+              </div>
+            )}
+          </div>
         </Expandible>
       </div>
     );
@@ -685,7 +1273,7 @@ export default function CampExplorador() {
   } else {
     areaCentral = (
       <div key="arbol" style={{ animation: 'ceIn 0.22s ease' }}>
-        {resumenCargando && <SkeletonRamas alto={50} />}
+        {arbolCargando && !resumenError && <SkeletonRamas alto={50} />}
         {resumenError && (
           <div style={{ textAlign: 'center', padding: '44px 16px' }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>🤦</div>
@@ -694,7 +1282,7 @@ export default function CampExplorador() {
             <Btn sm accent onClick={reintentarResumen}>↻ Reintentar</Btn>
           </div>
         )}
-        {!resumenCargando && !resumenError && arbolVacio && (
+        {!arbolCargando && !resumenError && arbolVacio && (
           <div style={{ textAlign: 'center', padding: '52px 16px', color: T.ink3 }}>
             <div style={{ fontSize: 34, marginBottom: 8 }}>⛽</div>
             <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>Todavía no hay operadores cargados</div>
@@ -705,44 +1293,21 @@ export default function CampExplorador() {
             </div>
           </div>
         )}
-        {!resumenCargando && !resumenError && !arbolVacio && global && (
+        {!arbolCargando && !resumenError && !arbolVacio && global && (
           <div>
-            {/* Nodo raíz: ⛽ Estaciones de servicio (expandido por defecto) */}
-            <div
-              className="ce-fila"
-              onClick={() => setRaizAbierta((v) => !v)}
-              style={{
-                height: 52, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
-                borderBottom: `1px solid ${T.faint2}`, borderRadius: 6, padding: '0 8px 0 0',
-                transition: 'background 0.15s ease',
-              }}
-            >
-              <Chevron abierto={raizAbierta} />
-              <span style={{ fontSize: 15, flexShrink: 0 }}>⛽</span>
-              <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-                Estaciones de servicio
-              </span>
-              <MiniKpis
-                total={global.total} respondieron={global.respondieron} reuniones={global.reuniones}
-                obras={global.obras_vinculadas} porEtapa={global.por_etapa} etapaFiltro={etapaFiltro} isMobile={isMobile}
-              />
-            </div>
-            <Expandible abierto={raizAbierta}>
-              <div style={{ marginLeft: 8, borderLeft: `1px solid ${T.faint2}`, paddingLeft: 14 }}>
-                {banderas.map(renderRama)}
+            {rubrosVisibles.map(renderRubro)}
+            {modoAdmin && (
+              <div style={{ padding: '12px 4px', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                {formRubro
+                  ? <FormNuevoRubro onCrear={agregarRubro} onCancelar={() => setFormRubro(false)} />
+                  : <LinkAccion onClick={() => setFormRubro(true)}>+ Agregar rubro</LinkAccion>}
+                {nRubrosOcultos > 0 && !formRubro && (
+                  <LinkAccion onClick={mostrarRubrosOcultos} style={{ color: T.ink3 }}>
+                    mostrar rubros ocultos ({nRubrosOcultos})
+                  </LinkAccion>
+                )}
               </div>
-            </Expandible>
-
-            {/* Rubro futuro (deshabilitado): la campaña a franquicias */}
-            <div style={{
-              height: 52, display: 'flex', alignItems: 'center', gap: 8,
-              padding: '0 8px 0 0', borderBottom: `1px solid ${T.faint2}`, opacity: 0.55, cursor: 'default',
-            }}>
-              <Chevron abierto={false} dim />
-              <span style={{ fontSize: 15, flexShrink: 0, filter: 'grayscale(1)' }}>🍔</span>
-              <span style={{ fontSize: 15, fontWeight: 800, color: T.ink3 }}>Franquicias</span>
-              <span style={{ fontSize: 10.5, color: T.ink3, fontStyle: 'italic', marginLeft: 6 }}>próximamente</span>
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -762,6 +1327,20 @@ export default function CampExplorador() {
         {/* ── Cabecera compacta: título chico + acciones ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <h1 style={{ fontSize: 20, fontWeight: 800, color: T.ink, margin: 0, letterSpacing: 0.2 }}>Campañas</h1>
+          {esAdmin && (
+            <button
+              type="button"
+              onClick={() => setModoAdmin((v) => !v)}
+              title={modoAdmin ? 'Salir del modo administración' : 'Administrar rubros y secciones'}
+              className="ce-accion"
+              style={{
+                border: 'none', background: modoAdmin ? T.ink : 'transparent',
+                color: modoAdmin ? T.paper : T.ink3, opacity: modoAdmin ? 1 : 0.65,
+                borderRadius: 999, width: 26, height: 26, fontSize: 13, cursor: 'pointer',
+                padding: 0, lineHeight: 1, flexShrink: 0,
+              }}
+            >⚙</button>
+          )}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '0 1 240px', minWidth: 170, order: isMobile ? 2 : 0 }}>
               <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, opacity: 0.5, pointerEvents: 'none' }}>🔎</span>

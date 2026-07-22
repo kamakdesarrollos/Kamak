@@ -10,7 +10,7 @@ vi.mock('../lib/supabase', () => {
   const DEFAULT = { data: null, error: null, count: 0 };
   const METODOS = [
     'select', 'insert', 'update', 'upsert', 'delete',
-    'eq', 'neq', 'in', 'is', 'not', 'ilike', 'or', 'contains',
+    'eq', 'neq', 'in', 'is', 'not', 'ilike', 'or', 'contains', 'containedBy',
     'order', 'range', 'limit', 'single', 'maybeSingle',
   ];
   function makeChain(table, opsIniciales = []) {
@@ -295,6 +295,40 @@ describe('fetchOperadores', () => {
       .toContainEqual('banderas.is.null,banderas.eq.{}');
     expect(ypf.ops.filter((o) => o.m === 'contains').map((o) => o.args)).toContainEqual(['banderas', ['YPF']]);
   });
+
+  it('banderasExactas (sección combo del árbol) → contains + containedBy con el MISMO array (cs+cd = igualdad exacta de conjunto), cero or/contains suelto', async () => {
+    const api = getApi();
+    await api.fetchOperadores({ filtros: { banderasExactas: ['YPF', 'SHELL', 'AXION'] } });
+    const [q] = llamadasA('camp_operadores');
+    expect(q.ops.filter((o) => o.m === 'contains').map((o) => o.args))
+      .toEqual([['banderas', ['YPF', 'SHELL', 'AXION']]]);
+    expect(q.ops.filter((o) => o.m === 'containedBy').map((o) => o.args))
+      .toEqual([['banderas', ['YPF', 'SHELL', 'AXION']]]);
+    expect(q.ops.filter((o) => o.m === 'or')).toHaveLength(0);
+  });
+
+  it('bandera (string suelto) NO usa containedBy — contrato intacto para ColaLlamadas/compat; banderasExactas vacío no pisa nada', async () => {
+    const api = getApi();
+    await api.fetchOperadores({ filtros: { bandera: 'YPF' } });
+    await api.fetchOperadores({ filtros: { bandera: 'YPF', banderasExactas: [] } }); // vacío = como si no viniera
+    const [sola, conVacio] = llamadasA('camp_operadores');
+    for (const q of [sola, conVacio]) {
+      expect(q.ops.filter((o) => o.m === 'contains').map((o) => o.args)).toEqual([['banderas', ['YPF']]]);
+      expect(q.ops.filter((o) => o.m === 'containedBy')).toHaveLength(0);
+    }
+  });
+
+  it('banderasExactas + bandera juntas → GANA banderasExactas (el string se ignora, incluso Sin bandera)', async () => {
+    const api = getApi();
+    await api.fetchOperadores({ filtros: { bandera: 'PUMA', banderasExactas: ['YPF', 'SHELL'] } });
+    await api.fetchOperadores({ filtros: { bandera: 'Sin bandera', banderasExactas: ['YPF', 'SHELL'] } });
+    const [conString, conSinBandera] = llamadasA('camp_operadores');
+    for (const q of [conString, conSinBandera]) {
+      expect(q.ops.filter((o) => o.m === 'contains').map((o) => o.args)).toEqual([['banderas', ['YPF', 'SHELL']]]);
+      expect(q.ops.filter((o) => o.m === 'containedBy').map((o) => o.args)).toEqual([['banderas', ['YPF', 'SHELL']]]);
+      expect(q.ops.filter((o) => o.m === 'or')).toHaveLength(0); // ni el or de 'Sin bandera'
+    }
+  });
 });
 
 // ── fetchResumenArbol ─────────────────────────────────────────────────────────
@@ -575,5 +609,150 @@ describe('vincularObra', () => {
     const res = await api.vincularObra('op-2', { usuario: 'u-fede' });
     expect(res.error?.message).toMatch(/obraId/);
     expect(supabase.__calls.length).toBe(0);
+  });
+});
+
+// ── Config del explorador (shared_data 'campanas_config') ─────────────────────
+describe('fetchConfigExplorador', () => {
+  const CONFIG = {
+    rubros: [
+      { key: 'estaciones', nombre: 'Estaciones', emoji: '⛽', banderasOcultas: ['OTRA'] },
+      { key: 'panaderias', nombre: 'Panaderías', emoji: '🥖', oculto: true, banderasExtra: ['Fan de Pan'] },
+    ],
+  };
+
+  it("lee shared_data key 'campanas_config' (select data + maybeSingle) y devuelve el jsonb tal cual", async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'shared_data' && tiene(log, 'maybeSingle')) return { data: { data: CONFIG }, error: null };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.fetchConfigExplorador();
+    expect(res).toEqual({ data: CONFIG, error: null });
+    const [q] = llamadasA('shared_data');
+    expect(args(q, 'select')).toEqual(['data']);
+    expect(args(q, 'eq')).toEqual(['key', 'campanas_config']);
+    expect(tiene(q, 'maybeSingle')).toBe(true);
+  });
+
+  it('fila inexistente (config nunca guardada) → data null SIN error', async () => {
+    // handler default del mock: maybeSingle sin fila → { data: null, error: null }
+    const api = getApi();
+    const res = await api.fetchConfigExplorador();
+    expect(res).toEqual({ data: null, error: null });
+  });
+
+  it('error de la query → passthrough del error con data null', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'shared_data') return { data: null, error: { message: 'boom' } };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.fetchConfigExplorador();
+    expect(res).toEqual({ data: null, error: { message: 'boom' } });
+  });
+});
+
+describe('guardarConfigExplorador', () => {
+  const CONFIG = { rubros: [{ key: 'estaciones', nombre: 'Estaciones', emoji: '⛽' }] };
+
+  it("upsertea { key: 'campanas_config', data } con onConflict 'key' + actividad tipo 'config'", async () => {
+    const api = getApi();
+    const res = await api.guardarConfigExplorador(CONFIG, { usuario: 'u-fede' });
+    expect(res).toEqual({ ok: true, error: null });
+    const [up] = llamadasCon('shared_data', 'upsert');
+    expect(args(up, 'upsert')).toEqual([
+      { key: 'campanas_config', data: CONFIG },
+      { onConflict: 'key' },
+    ]);
+    const [act] = llamadasCon('camp_actividades', 'insert');
+    expect(args(act, 'insert')[0]).toMatchObject({
+      tipo: 'config',
+      texto: 'Configuración del explorador actualizada',
+      usuario: 'u-fede',
+    });
+    expect(args(act, 'insert')[0].fecha).toBeTruthy();
+  });
+
+  it('error del upsert → { error } y NO registra actividad', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'shared_data' && tiene(log, 'upsert')) return { data: null, error: { message: 'boom' } };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.guardarConfigExplorador(CONFIG, { usuario: 'u-fede' });
+    expect(res.error?.message).toBe('boom');
+    expect(res.ok).toBeUndefined();
+    expect(llamadasA('camp_actividades').length).toBe(0);
+  });
+});
+
+// ── crearOperador (alta manual: "+ operador" del explorador) ──────────────────
+describe('crearOperador', () => {
+  const responderInsert = (row) => supabase.__setHandler((log) => {
+    if (log.table === 'camp_operadores' && tiene(log, 'insert')) return { data: row, error: null };
+    return null;
+  });
+
+  it("inserta con defaults sanos (sin_contactar / estaciones / banderas [] / datos {}) + actividad 'alta'", async () => {
+    responderInsert({ id: 'op-9', nombre: 'Nuevo Operador SA' });
+    const api = getApi();
+    const res = await api.crearOperador({ nombre: 'Nuevo Operador SA' }, { usuario: 'u-fede' });
+    expect(res.error).toBeNull();
+    expect(res.data).toMatchObject({ id: 'op-9' });
+    const [ins] = llamadasCon('camp_operadores', 'insert');
+    const fila = args(ins, 'insert')[0];
+    expect(fila).toMatchObject({
+      nombre: 'Nuevo Operador SA',
+      etapa_prospeccion: 'sin_contactar',
+      rubro: 'estaciones',
+      banderas: [],
+      datos: {},
+    });
+    expect(fila.updated_at).toBeTruthy(); // sin trigger: updated_at explícito
+    const [act] = llamadasCon('camp_actividades', 'insert');
+    expect(args(act, 'insert')[0]).toMatchObject({ operador_id: 'op-9', tipo: 'alta', usuario: 'u-fede' });
+  });
+
+  it('lo que manda el caller PISA los defaults (la ficha editable manda campos propios)', async () => {
+    responderInsert({ id: 'op-10', nombre: 'Panificadora X' });
+    const api = getApi();
+    await api.crearOperador({ nombre: 'Panificadora X', rubro: 'panaderias', banderas: ['Fan de Pan'] });
+    const fila = args(llamadasCon('camp_operadores', 'insert')[0], 'insert')[0];
+    expect(fila).toMatchObject({
+      rubro: 'panaderias',
+      banderas: ['Fan de Pan'],
+      etapa_prospeccion: 'sin_contactar', // default intacto donde el caller no manda nada
+    });
+  });
+
+  it('error del insert → { data: null, error } sin actividad', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_operadores' && tiene(log, 'insert')) return { data: null, error: { message: 'boom' } };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.crearOperador({ nombre: 'X' }, { usuario: 'u-fede' });
+    expect(res).toEqual({ data: null, error: { message: 'boom' } });
+    expect(llamadasA('camp_actividades').length).toBe(0);
+  });
+});
+
+// ── actualizarOperador (ficha editable) ───────────────────────────────────────
+describe('actualizarOperador', () => {
+  it('update parcial por id que SIEMPRE setea updated_at (no hay trigger en la DB)', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_operadores' && tiene(log, 'update')) return { data: { id: 'op-2', notas: 'nuevo dato' }, error: null };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.actualizarOperador('op-2', { notas: 'nuevo dato' });
+    expect(res.error).toBeNull();
+    expect(res.data).toMatchObject({ id: 'op-2' });
+    const [upd] = llamadasCon('camp_operadores', 'update');
+    const cambios = args(upd, 'update')[0];
+    expect(cambios).toMatchObject({ notas: 'nuevo dato' });
+    expect(cambios.updated_at).toBeTruthy();
+    expect(args(upd, 'eq')).toEqual(['id', 'op-2']);
   });
 });

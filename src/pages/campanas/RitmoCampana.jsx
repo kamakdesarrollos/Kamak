@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Btn } from '../../components/ui';
 import { T } from '../../theme';
 import { useCampanas } from '../../store/CampanasContext';
@@ -7,28 +7,24 @@ import { seriePorSemana, serieRespuestasPorSemana } from '../../lib/campanas/kpi
 import { fmtN } from '../../lib/format';
 
 // "Ritmo de la campaña" — panel colapsable del Explorador (CampExplorador).
-// El gráfico es COPIA fiel del ChartRitmo de CampanasDashboard.jsx (que muere
-// en la próxima ola y no se toca): barras apiladas de toques por canal + línea
-// de Respuestas en el MISMO eje, leyenda interactiva, tooltip fijable y vista
-// tabla accesible. Este componente además carga sus propios datos al montarse
-// (el Explorador lo monta recién cuando el usuario abre "📈 Ritmo", así que el
-// costo es on-demand): últimas 500 actividades + respondido_at de los miembros
-// de listas (para la serie de respuestas).
+// Rediseño total (2026-07): UNA curva suave de UNA métrica por vez (Respuestas
+// o Toques por semana), estilo app financiera: titular grande con tendencia,
+// spline Catmull-Rom con degradado, ejes casi invisibles, crosshair + tooltip
+// y animación de trazo al entrar. Vista tabla accesible detrás del microlink
+// "tabla". Carga sus propios datos al montarse (el Explorador lo monta recién
+// cuando el usuario abre "📈 Ritmo", así que el costo es on-demand): últimas
+// 500 actividades + respondido_at de los miembros de listas.
 
-// Colores por canal (validados con el validador de paletas del dataviz sobre
-// T.paper — mismos del dashboard). Asignación FIJA por entidad; 'otro' queda
-// fuera de los slots categóricos: gris recesivo, plegado al final del apilado.
-const CANAL_META = {
-  llamada:  { label: 'Llamadas', color: '#12969a' },
-  email:    { label: 'Email',    color: '#3f66b0' },
-  linkedin: { label: 'LinkedIn', color: '#b97a1e' },
-  whatsapp: { label: 'WhatsApp', color: '#2e7032' },
-  otro:     { label: 'Otro',     color: '#9a9892' },
+// Color único de TODO el gráfico (curva, degradado, dots). Teal validado con el
+// validador de paletas del dataviz sobre superficie clara (mismo teal que ya
+// estaba validado sobre T.paper en el dashboard viejo).
+const COLOR = '#12969a';
+const CARD_BG = '#ffffff'; // fondo de la card — el anillo de los dots lo usa
+
+const METRICAS = {
+  respuestas: { label: 'Respuestas', unidad: 'respuestas' },
+  toques: { label: 'Toques', unidad: 'toques' },
 };
-const CANALES_FILTRO = ['llamada', 'email', 'linkedin', 'whatsapp'];
-
-// Orden fijo del apilado (abajo → arriba); 'otro' se pliega al final.
-const STACK_ORDEN = ['llamada', 'email', 'linkedin', 'whatsapp', 'otro'];
 
 const MESES_CORTO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const etiquetaSemana = (iso) => {
@@ -36,296 +32,263 @@ const etiquetaSemana = (iso) => {
   return m ? `${+d} ${MESES_CORTO[+m - 1] || ''}` : '';
 };
 
-// % con coma decimal (los pct vienen con 1 decimal).
-const fmtPct = (v) => String(Number.isFinite(v) ? v : 0).replace('.', ',');
+const r2 = (v) => Math.round(v * 100) / 100;
 
-// Rect con SOLO las esquinas de arriba redondeadas (cap del segmento superior).
-function pathTopeRedondeado(x, y, w, h, r) {
-  const rr = Math.max(0, Math.min(r, h, w / 2));
-  return `M ${x} ${y + h} L ${x} ${y + rr} Q ${x} ${y} ${x + rr} ${y} `
-    + `L ${x + w - rr} ${y} Q ${x + w} ${y} ${x + w} ${y + rr} L ${x + w} ${y + h} Z`;
+// Spline Catmull-Rom → cubic bezier (NUNCA segmentos rectos). Los puntos de
+// control se acotan en Y al área de dibujo para que la curva no "sobregire"
+// por debajo de la baseline cerca de semanas en cero.
+function trazoSuave(pts, yTecho, yPiso) {
+  if (pts.length < 2) return '';
+  const acotar = (v) => Math.max(yTecho, Math.min(yPiso, v));
+  let d = `M ${r2(pts[0].x)} ${r2(pts[0].y)}`;
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    d += ` C ${r2(p1.x + (p2.x - p0.x) / 6)} ${r2(acotar(p1.y + (p2.y - p0.y) / 6))}`
+      + ` ${r2(p2.x - (p3.x - p1.x) / 6)} ${r2(acotar(p2.y - (p3.y - p1.y) / 6))}`
+      + ` ${r2(p2.x)} ${r2(p2.y)}`;
+  }
+  return d;
 }
 
-// Delta del mini-strip: ▲ ok / ▼ warn / = neutro, siempre con el número.
-function DeltaSemana({ d, sufijo }) {
-  if (d === 0) return <span style={{ color: T.ink3, fontWeight: 700, fontSize: 11 }}>= {sufijo}</span>;
+// Índices de las 3-4 fechas del eje X: primera, última y 1-2 intermedias.
+function indicesFechas(n) {
+  if (n <= 4) return Array.from({ length: n }, (_, i) => i);
+  return [...new Set([0, Math.round((n - 1) / 3), Math.round((2 * (n - 1)) / 3), n - 1])];
+}
+
+// ── Piezas chicas de UI ──────────────────────────────────────────────────────
+
+// Selector segmentado discreto (pills chicas sobre fondo suave).
+function Pills({ opciones, valor, onElegir, etiqueta }) {
   return (
-    <span style={{ color: d > 0 ? T.ok : T.warn, fontWeight: 800, fontSize: 11, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>
-      {d > 0 ? '▲' : '▼'} {fmtN(Math.abs(d))} {sufijo}
+    <div role="group" aria-label={etiqueta} style={{ display: 'inline-flex', gap: 2, background: T.faint, borderRadius: 999, padding: 2 }}>
+      {opciones.map((op) => {
+        const activa = op.valor === valor;
+        return (
+          <button
+            key={op.valor}
+            type="button"
+            onClick={() => onElegir(op.valor)}
+            aria-pressed={activa}
+            style={{
+              border: 'none', borderRadius: 999, padding: '3px 10px', fontSize: 11, lineHeight: 1.5,
+              fontFamily: T.font, cursor: 'pointer', whiteSpace: 'nowrap',
+              background: activa ? CARD_BG : 'transparent',
+              color: activa ? T.ink : T.ink3,
+              fontWeight: activa ? 700 : 500,
+              boxShadow: activa ? '0 1px 2px rgba(45,45,45,0.10)' : 'none',
+              transition: 'background .15s ease, color .15s ease',
+            }}
+          >
+            {op.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Flecha de tendencia del titular: ▲ ok / ▼ warn, % vs semana anterior.
+function Tendencia({ actual, previa }) {
+  const estilo = (color) => ({ color, fontFamily: T.fontMono, fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap' });
+  if (!Number.isFinite(previa) || (previa === 0 && actual === 0)) return null;
+  if (previa === 0) return <span title="La semana anterior no tuvo registros" style={estilo(T.ok)}>▲</span>;
+  const pct = Math.round(((actual - previa) / previa) * 100);
+  if (pct === 0) return <span title="vs semana anterior" style={estilo(T.ink3)}>= 0%</span>;
+  return (
+    <span title="vs semana anterior" style={estilo(pct > 0 ? T.ok : T.warn)}>
+      {pct > 0 ? '▲' : '▼'} {Math.abs(pct)}%
     </span>
   );
 }
 
-function ChartRitmo({ serie, respuestas, canales }) {
-  const [ocultos, setOcultos] = useState(() => new Set()); // canales apagados desde la leyenda
-  const [lineaOculta, setLineaOculta] = useState(false);
-  const [hoverIdx, setHoverIdx] = useState(null);
-  const [pinIdx, setPinIdx] = useState(null); // tooltip fijado por tap/click
-  const [vistaTabla, setVistaTabla] = useState(false);
+// ── La curva ─────────────────────────────────────────────────────────────────
 
-  // Tap/click fuera del gráfico cierra el tooltip fijado (la columna hace
+// filas: [{ semanaIso, valor }] (siempre ≥ 4: el esqueleto de kpis.js rellena
+// con ceros). claveAnim reinicia la animación de trazo al cambiar métrica/rango.
+function CurvaRitmo({ filas, unidad, claveAnim }) {
+  const cajaRef = useRef(null);
+  const [ancho, setAncho] = useState(640);
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const [pinIdx, setPinIdx] = useState(null); // tap fija; tap afuera suelta
+
+  // Ancho real de la caja → coordenadas SVG 1:1 con px CSS (texto siempre nítido).
+  useEffect(() => {
+    const el = cajaRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver((entradas) => {
+      const w = entradas[0]?.contentRect?.width || 0;
+      if (w > 0) setAncho(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Tap/click fuera del gráfico suelta el tooltip fijado (el overlay hace
   // stopPropagation para que fijar/alternar no se auto-cierre).
   useEffect(() => {
     if (pinIdx == null) return undefined;
-    const cerrar = () => setPinIdx(null);
-    document.addEventListener('pointerdown', cerrar);
-    return () => document.removeEventListener('pointerdown', cerrar);
+    const soltar = () => setPinIdx(null);
+    document.addEventListener('pointerdown', soltar);
+    return () => document.removeEventListener('pointerdown', soltar);
   }, [pinIdx]);
 
-  // Respuestas indexadas por semanaIso (robusto ante cualquier desalineación).
-  const respPorSemana = useMemo(
-    () => new Map((respuestas || []).map((r) => [r.semanaIso, r.respuestas || 0])),
-    [respuestas],
-  );
+  // ── Geometría ──────────────────────────────────────────────────────────────
+  const n = filas.length;
+  const H = 210; const padL = 40; const padR = 18; const padT = 16; const padB = 26;
+  const innerW = Math.max(ancho - padL - padR, 40);
+  const innerH = H - padT - padB;
+  const yBase = padT + innerH;
+  const maxVal = Math.max(0, ...filas.map((f) => f.valor));
+  const maxY = Math.max(4, Math.ceil(maxVal / 4) * 4); // múltiplo de 4 → mitad entera
+  const paso = n > 1 ? innerW / (n - 1) : innerW;
+  const xDe = (i) => padL + i * paso;
+  const yDe = (v) => padT + innerH - (v / maxY) * innerH;
 
-  const enLeyenda = STACK_ORDEN.filter((c) => canales.includes(c));
-  const visibles = useMemo(
-    () => STACK_ORDEN.filter((c) => canales.includes(c) && !ocultos.has(c)),
-    [canales, ocultos],
-  );
+  const puntos = filas.map((f, i) => ({ x: xDe(i), y: yDe(f.valor) }));
+  const dCurva = trazoSuave(puntos, padT, yBase);
+  const dArea = `${dCurva} L ${r2(xDe(n - 1))} ${yBase} L ${r2(xDe(0))} ${yBase} Z`;
+  const ultimo = puntos[n - 1];
 
-  // Todo (barras, línea, titulares, tooltip y tabla) sale de la MISMA rebanada
-  // visible → los números siempre acuerdan entre sí.
-  const semanas = useMemo(() => serie.map((s) => {
-    const porCanal = visibles.map((c) => ({ canal: c, v: s.porCanal?.[c] || 0 }));
-    const toques = porCanal.reduce((suma, x) => suma + x.v, 0);
-    return { semanaIso: s.semanaIso, porCanal, toques, respuestas: respPorSemana.get(s.semanaIso) || 0 };
-  }), [serie, respPorSemana, visibles]);
+  const bruto = pinIdx != null ? pinIdx : hoverIdx;
+  const activo = bruto != null && bruto >= 0 && bruto < n ? bruto : null;
+  const pAct = activo != null ? puntos[activo] : null;
 
-  const n = semanas.length;
-
-  // ── Geometría (viewBox 1:1 con px al ancho mínimo → mobile scrollea) ───────
-  const bandW = 56; const barW = 18; const GAP = 2;
-  const padL = 36; const padR = 20; const padT = 18; const padB = 24; const innerH = 168;
-  const W = padL + padR + n * bandW;
-  const H = padT + innerH + padB;
-  const maxDato = Math.max(0, ...semanas.map((s) => Math.max(s.toques, lineaOculta ? 0 : s.respuestas)));
-  // Tope múltiplo de 4 → ticks (0, mitad, tope) siempre enteros. UN solo eje.
-  const maxY = Math.max(4, Math.ceil(maxDato / 4) * 4);
-  const cx = (i) => padL + (i + 0.5) * bandW;
-  const yPx = (v) => padT + innerH - (v / maxY) * innerH;
-  const ticksY = [0, maxY / 2, maxY];
-
-  const activo = (() => {
-    const idx = pinIdx != null ? pinIdx : hoverIdx;
-    return idx != null && idx >= 0 && idx < n ? idx : null;
-  })();
-  const semActiva = activo != null ? semanas[activo] : null;
-  const tasaDe = (s) => (s.toques > 0 ? `${fmtPct(Math.round((s.respuestas / s.toques) * 1000) / 10)}%` : '—');
-
-  const actual = n > 0 ? semanas[n - 1] : null;
-  const previa = n > 1 ? semanas[n - 2] : null;
-
-  const toggleCanal = (c) => setOcultos((prev) => {
-    const sig = new Set(prev);
-    if (sig.has(c)) sig.delete(c); else sig.add(c);
-    return sig;
-  });
-
-  const chip = (off) => ({
-    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.ink2,
-    border: `1px solid ${T.faint2}`, borderRadius: 999, padding: '3px 9px',
-    background: 'transparent', cursor: 'pointer', fontFamily: T.font, opacity: off ? 0.45 : 1,
-  });
-  const filaTooltip = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '1.5px 0', whiteSpace: 'nowrap' };
-  const th = {
-    fontSize: 9, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 0.8, fontWeight: 700,
-    textTransform: 'uppercase', textAlign: 'right', padding: '4px 8px',
-    borderBottom: `1.5px solid ${T.faint2}`, whiteSpace: 'nowrap',
-  };
-  const td = {
-    fontFamily: T.fontMono, fontSize: 11.5, color: T.ink, textAlign: 'right', padding: '5px 8px',
-    borderBottom: `1px dashed ${T.faint2}`, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+  const idxDesdeEvento = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return Math.max(0, Math.min(n - 1, Math.round((e.clientX - rect.left) / paso)));
   };
 
   return (
-    <div>
-      {/* Mini-strip de titulares: esta semana + delta vs la anterior */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 10px', marginBottom: 10 }}>
-        <span style={{ fontSize: 11, color: T.ink3 }}>Esta semana:</span>
-        <span style={{ fontFamily: T.fontMono, fontSize: 12.5, fontWeight: 800, color: T.ink, whiteSpace: 'nowrap' }}>
-          {fmtN(actual?.toques || 0)} toques · {fmtN(actual?.respuestas || 0)} respuestas
-        </span>
-        {previa && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <DeltaSemana d={actual.toques - previa.toques} sufijo="toques" />
-            <DeltaSemana d={actual.respuestas - previa.respuestas} sufijo="resp." />
-            <span style={{ fontSize: 10.5, color: T.ink3 }}>vs semana anterior</span>
-          </span>
+    <div ref={cajaRef} style={{ position: 'relative' }}>
+      <svg
+        width="100%" height={H} viewBox={`0 0 ${ancho} ${H}`} role="img"
+        aria-label={`Curva de ${unidad} por semana, últimas ${n} semanas`}
+        style={{ display: 'block', overflow: 'visible' }}
+      >
+        <defs>
+          <linearGradient id="ritmoDegrade" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={COLOR} stopOpacity={0.16} />
+            <stop offset="100%" stopColor={COLOR} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+
+        {/* Ejes casi invisibles: 3 hairlines con número chiquito; 3-4 fechas */}
+        {[0, maxY / 2, maxY].map((t) => (
+          <g key={t}>
+            <line x1={padL} x2={ancho - padR} y1={r2(yDe(t))} y2={r2(yDe(t))} stroke={T.faint} strokeWidth={1} />
+            <text x={padL - 8} y={r2(yDe(t)) + 3} textAnchor="end" fontSize={10} fill={T.ink3} fontFamily={T.fontMono}>
+              {fmtN(t)}
+            </text>
+          </g>
+        ))}
+        {indicesFechas(n).map((i) => (
+          <text
+            key={`f-${filas[i].semanaIso}`}
+            x={r2(xDe(i))} y={H - 8}
+            textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
+            fontSize={10} fill={T.ink3} fontFamily={T.fontMono}
+          >
+            {etiquetaSemana(filas[i].semanaIso)}
+          </text>
+        ))}
+
+        {/* Área + curva + dot final — la key reinicia el trazo animado */}
+        <g key={claveAnim}>
+          <path className="ritmoArea" d={dArea} fill="url(#ritmoDegrade)" />
+          <path
+            className="ritmoCurva" d={dCurva} fill="none" stroke={COLOR} strokeWidth={2}
+            strokeLinecap="round" strokeLinejoin="round" pathLength={1}
+          />
+          <circle className="ritmoDotFin" cx={r2(ultimo.x)} cy={r2(ultimo.y)} r={4} fill={COLOR} stroke={CARD_BG} strokeWidth={2} />
+        </g>
+
+        {/* Crosshair + dot de la semana activa (hover o fijada) */}
+        {pAct != null && (
+          <g style={{ pointerEvents: 'none' }}>
+            <line x1={r2(pAct.x)} x2={r2(pAct.x)} y1={padT} y2={yBase} stroke={T.faint2} strokeWidth={1} />
+            <circle cx={r2(pAct.x)} cy={r2(pAct.y)} r={4} fill={COLOR} stroke={CARD_BG} strokeWidth={2} />
+          </g>
         )}
-        <Btn sm onClick={() => setVistaTabla((v) => !v)} style={{ marginLeft: 'auto' }} title="Alternar entre gráfico y tabla">
-          {vistaTabla ? '↩ Gráfico' : '⊞ Tabla'}
-        </Btn>
-      </div>
 
-      {vistaTabla ? (
-        /* Vista tabla — gemela accesible del gráfico (mismos números) */
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 420 }}>
-            <thead>
-              <tr>
-                <th style={{ ...th, textAlign: 'left' }}>Semana</th>
-                {visibles.map((c) => (
-                  <th key={c} style={th}>
-                    <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: CANAL_META[c].color, marginRight: 5 }} />
-                    {CANAL_META[c].label}
-                  </th>
-                ))}
-                <th style={th}>Toques</th>
-                {!lineaOculta && <th style={th}>Respuestas</th>}
-                {!lineaOculta && <th style={th}>Tasa</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {semanas.map((s) => (
-                <tr key={s.semanaIso}>
-                  <td style={{ ...td, fontFamily: T.font, textAlign: 'left', color: T.ink2 }}>{etiquetaSemana(s.semanaIso)}</td>
-                  {s.porCanal.map(({ canal, v }) => <td key={canal} style={td}>{fmtN(v)}</td>)}
-                  <td style={{ ...td, fontWeight: 700 }}>{fmtN(s.toques)}</td>
-                  {!lineaOculta && <td style={{ ...td, fontWeight: 700 }}>{fmtN(s.respuestas)}</td>}
-                  {!lineaOculta && <td style={{ ...td, color: T.ink2 }}>{tasaDe(s)}</td>}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        /* Gráfico — scrollea horizontal en su propio contenedor si no entra */
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ position: 'relative', minWidth: W }}>
-            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} aria-label="Ritmo de la campaña: toques por canal y respuestas por semana">
-              {/* Grilla recesiva: hairlines sólidas, ticks enteros, un solo eje */}
-              {ticksY.map((t) => (
-                <g key={t}>
-                  <line x1={padL} x2={W - padR} y1={yPx(t)} y2={yPx(t)} stroke={T.faint2} strokeWidth={1} />
-                  <text x={padL - 6} y={yPx(t) + 3} textAnchor="end" fontSize={9} fill={T.ink3} fontFamily={T.fontMono}>{t}</text>
-                </g>
-              ))}
-              {/* Banda de la semana activa (suave, detrás de las marcas) */}
-              {activo != null && (
-                <rect x={padL + activo * bandW} y={padT} width={bandW} height={innerH} fill={T.faint} opacity={0.6} />
-              )}
-              {/* Barras apiladas: gap de 2px color papel entre segmentos, cap 4px solo arriba */}
-              {semanas.map((s, i) => {
-                const segs = s.porCanal.filter((x) => x.v > 0);
-                let acumulado = 0;
-                return (
-                  <g key={s.semanaIso}>
-                    {segs.map((seg, j) => {
-                      const yTope = yPx(acumulado + seg.v);
-                      const yBase = yPx(acumulado);
-                      acumulado += seg.v;
-                      const esTope = j === segs.length - 1;
-                      const top = esTope ? yTope : yTope + GAP; // el gap muestra el papel
-                      const h = Math.max(yBase - top, 0.75);
-                      const xBar = cx(i) - barW / 2;
-                      return esTope
-                        ? <path key={seg.canal} d={pathTopeRedondeado(xBar, top, barW, h, 4)} fill={CANAL_META[seg.canal].color} />
-                        : <rect key={seg.canal} x={xBar} y={top} width={barW} height={h} fill={CANAL_META[seg.canal].color} />;
-                    })}
-                  </g>
-                );
-              })}
-              {/* Línea de Respuestas en el MISMO eje: 2px tinta, markers 8px con anillo papel */}
-              {!lineaOculta && n > 1 && (
-                <polyline
-                  points={semanas.map((s, i) => `${cx(i)},${yPx(s.respuestas)}`).join(' ')}
-                  fill="none" stroke={T.ink} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"
-                />
-              )}
-              {!lineaOculta && semanas.map((s, i) => (
-                <circle key={`r-${s.semanaIso}`} cx={cx(i)} cy={yPx(s.respuestas)} r={4} fill={T.ink} stroke={T.paper} strokeWidth={2} />
-              ))}
-              {/* Label directo SOLO del último valor de la línea (el resto: eje + tooltip) */}
-              {!lineaOculta && n > 0 && (
-                <text x={cx(n - 1)} y={Math.max(yPx(semanas[n - 1].respuestas) - 9, 10)} textAnchor="middle" fontSize={10} fontWeight={700} fontFamily={T.fontMono} fill={T.ink}>
-                  {fmtN(semanas[n - 1].respuestas)}
-                </text>
-              )}
-              {/* Etiquetas de semana */}
-              {semanas.map((s, i) => (
-                <text key={`x-${s.semanaIso}`} x={cx(i)} y={H - 8} textAnchor="middle" fontSize={9} fill={T.ink3} fontFamily={T.fontMono}>
-                  {etiquetaSemana(s.semanaIso)}
-                </text>
-              ))}
-              {/* Hit targets: la COLUMNA entera (56px), no las marcas — hover + tap fija */}
-              {semanas.map((s, i) => (
-                <rect
-                  key={`hit-${s.semanaIso}`}
-                  x={padL + i * bandW} y={padT} width={bandW} height={innerH}
-                  fill="transparent" style={{ cursor: 'pointer' }} tabIndex={0}
-                  aria-label={`Semana del ${etiquetaSemana(s.semanaIso)}: ${fmtN(s.toques)} toques, ${fmtN(s.respuestas)} respuestas`}
-                  onPointerEnter={() => setHoverIdx(i)}
-                  onPointerLeave={() => setHoverIdx(null)}
-                  onPointerDown={(e) => { e.stopPropagation(); setPinIdx((p) => (p === i ? null : i)); }}
-                  onFocus={() => setHoverIdx(i)}
-                  onBlur={() => setHoverIdx(null)}
-                />
-              ))}
-            </svg>
-            {/* Tooltip HTML de la columna activa (hover o fijado) */}
-            {semActiva != null && (
-              <div style={{
-                position: 'absolute', top: 6,
-                left: `${((padL + (activo + 0.5) * bandW) / W) * 100}%`,
-                transform: activo <= 1 ? 'translateX(-10%)' : activo >= n - 2 ? 'translateX(-90%)' : 'translateX(-50%)',
-                background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 6,
-                boxShadow: '0 4px 14px rgba(45,45,45,0.14)', padding: '8px 10px',
-                minWidth: 168, zIndex: 5, pointerEvents: 'none',
-              }}>
-                <div style={{ fontSize: 9.5, fontFamily: T.fontMono, fontWeight: 700, letterSpacing: 0.6, color: T.ink3, textTransform: 'uppercase', marginBottom: 5, whiteSpace: 'nowrap' }}>
-                  Semana del {etiquetaSemana(semActiva.semanaIso)}
-                </div>
-                {semActiva.porCanal.map(({ canal, v }) => (
-                  <div key={canal} style={filaTooltip}>
-                    <span style={{ width: 10, height: 3, borderRadius: 2, background: CANAL_META[canal].color, flexShrink: 0 }} />
-                    <span style={{ flex: 1, color: T.ink2 }}>{CANAL_META[canal].label}</span>
-                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: T.ink }}>{fmtN(v)}</span>
-                  </div>
-                ))}
-                <div style={{ borderTop: `1px solid ${T.faint2}`, margin: '5px 0' }} />
-                <div style={filaTooltip}>
-                  <span style={{ flex: 1, color: T.ink2, fontWeight: 700 }}>Toques</span>
-                  <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: T.ink }}>{fmtN(semActiva.toques)}</span>
-                </div>
-                {!lineaOculta && (
-                  <div style={filaTooltip}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: T.ink, flexShrink: 0 }} />
-                    <span style={{ flex: 1, color: T.ink2, fontWeight: 700 }}>Respuestas</span>
-                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: T.ink }}>{fmtN(semActiva.respuestas)}</span>
-                  </div>
-                )}
-                {!lineaOculta && (
-                  <div style={filaTooltip}>
-                    <span style={{ flex: 1, color: T.ink2 }}>Tasa de la semana</span>
-                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: T.ink }}>{tasaDe(semActiva)}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+        {/* Overlay de interacción: toda el área es hit target; teclado ←/→/Esc */}
+        <rect
+          x={padL} y={padT} width={innerW} height={innerH} fill="transparent"
+          style={{ cursor: 'crosshair', touchAction: 'pan-y' }} tabIndex={0}
+          aria-label="Explorar semanas: flechas izquierda y derecha; Escape suelta"
+          onPointerMove={(e) => setHoverIdx(idxDesdeEvento(e))}
+          onPointerLeave={() => setHoverIdx(null)}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            const i = idxDesdeEvento(e);
+            setPinIdx((p) => (p === i ? null : i));
+          }}
+          onFocus={() => setHoverIdx(n - 1)}
+          onBlur={() => setHoverIdx(null)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { setPinIdx(null); return; }
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            e.preventDefault();
+            const d = e.key === 'ArrowLeft' ? -1 : 1;
+            setPinIdx((p) => Math.max(0, Math.min(n - 1, (p != null ? p : n - 1) + d)));
+          }}
+        />
+      </svg>
 
-      {/* Leyenda interactiva: click = mostrar/ocultar; el color sigue a la entidad */}
-      {!vistaTabla && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          {enLeyenda.map((c) => {
-            const off = ocultos.has(c);
-            return (
-              <button key={c} type="button" onClick={() => toggleCanal(c)} style={chip(off)} title={off ? `Mostrar ${CANAL_META[c].label}` : `Ocultar ${CANAL_META[c].label}`}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: off ? 'transparent' : CANAL_META[c].color, border: `1.5px solid ${CANAL_META[c].color}`, boxSizing: 'border-box' }} />
-                {CANAL_META[c].label}
-              </button>
-            );
-          })}
-          <button type="button" onClick={() => setLineaOculta((v) => !v)} style={chip(lineaOculta)} title={lineaOculta ? 'Mostrar Respuestas' : 'Ocultar Respuestas'}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: lineaOculta ? 'transparent' : T.ink, border: `1.5px solid ${T.ink}`, boxSizing: 'border-box' }} />
-            Respuestas
-          </button>
+      {/* Tooltip flotante minimalista: semana + valor */}
+      {activo != null && (
+        <div
+          style={{
+            position: 'absolute',
+            left: Math.max(64, Math.min(ancho - 64, pAct.x)),
+            top: pAct.y < 52 ? pAct.y + 14 : pAct.y - 10,
+            transform: pAct.y < 52 ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+            background: T.ink, color: T.paper, borderRadius: 8, padding: '5px 10px',
+            fontSize: 11, whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 5,
+            boxShadow: '0 6px 18px rgba(45,45,45,0.22)',
+          }}
+        >
+          <span style={{ opacity: 0.72 }}>Sem. del {etiquetaSemana(filas[activo].semanaIso)}</span>
+          <span style={{ fontFamily: T.fontMono, fontWeight: 700, marginLeft: 8 }}>{fmtN(filas[activo].valor)}</span>
+          <span style={{ opacity: 0.72, marginLeft: 4 }}>{unidad}</span>
         </div>
       )}
     </div>
+  );
+}
+
+// ── Vista tabla accesible (gemela sobria de la curva: semana × valor) ────────
+
+function TablaRitmo({ filas, etiquetaValor }) {
+  const th = {
+    fontSize: 9, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 0.8, fontWeight: 700,
+    textTransform: 'uppercase', padding: '4px 8px', borderBottom: `1.5px solid ${T.faint2}`, whiteSpace: 'nowrap',
+  };
+  const td = {
+    fontSize: 11.5, color: T.ink, padding: '5px 8px', borderBottom: `1px dashed ${T.faint2}`, whiteSpace: 'nowrap',
+  };
+  return (
+    <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+      <thead>
+        <tr>
+          <th style={{ ...th, textAlign: 'left' }}>Semana</th>
+          <th style={{ ...th, textAlign: 'right' }}>{etiquetaValor}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {filas.map((f) => (
+          <tr key={f.semanaIso}>
+            <td style={{ ...td, color: T.ink2 }}>{etiquetaSemana(f.semanaIso)}</td>
+            <td style={{ ...td, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+              {fmtN(f.valor)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -365,7 +328,9 @@ async function cargarDatosRitmo(camp) {
 export default function RitmoCampana() {
   const camp = useCampanas();
   const [carga, setCarga] = useState({ estado: 'cargando', datos: null, error: '' });
+  const [metrica, setMetrica] = useState('respuestas');
   const [semanas, setSemanas] = useState(8);
+  const [vistaTabla, setVistaTabla] = useState(false);
   const [tick, setTick] = useState(0); // bump → recarga (Reintentar)
 
   // setState SOLO en .then/.catch (regla react-hooks/set-state-in-effect).
@@ -389,39 +354,41 @@ export default function RitmoCampana() {
     () => serieRespuestasPorSemana({ actividades, miembros: carga.datos?.miembros || [], semanas }),
     [actividades, carga.datos, semanas],
   );
-  const canales = useMemo(() => {
-    const hayOtro = serie.some((s) => (s.porCanal?.otro || 0) > 0);
-    return hayOtro ? [...CANALES_FILTRO, 'otro'] : CANALES_FILTRO;
-  }, [serie]);
   const serieVacia = serie.every((s) => (s.total || 0) === 0)
     && serieRespuestas.every((s) => (s.respuestas || 0) === 0);
 
+  // La única serie que se dibuja: la métrica activa, semana × valor.
+  const filas = useMemo(() => (
+    metrica === 'toques'
+      ? serie.map((s) => ({ semanaIso: s.semanaIso, valor: s.total || 0 }))
+      : serieRespuestas.map((s) => ({ semanaIso: s.semanaIso, valor: s.respuestas || 0 }))
+  ), [metrica, serie, serieRespuestas]);
+
+  const n = filas.length;
+  const valorActual = n > 0 ? filas[n - 1].valor : 0;
+  const valorPrevio = n > 1 ? filas[n - 2].valor : null;
+  const { unidad, label } = METRICAS[metrica];
+
   return (
-    <div style={{ background: '#fff', border: `1px solid ${T.faint2}`, borderRadius: 12, padding: '14px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: T.ink }}>Ritmo de la campaña</div>
-          <div style={{ fontSize: 10.5, color: T.ink3, marginTop: 1 }}>
-            Toques por canal y respuestas — últimas {semanas} semanas
-          </div>
-        </div>
-        <select
-          value={semanas}
-          onChange={(e) => setSemanas(Number(e.target.value))}
-          style={{
-            marginLeft: 'auto', padding: '5px 9px', borderRadius: 999, border: `1.5px solid ${T.faint2}`,
-            fontSize: 11.5, fontFamily: T.font, background: T.paper, color: T.ink2, cursor: 'pointer', outline: 'none',
-          }}
-        >
-          <option value={4}>4 semanas</option>
-          <option value={8}>8 semanas</option>
-          <option value={12}>12 semanas</option>
-        </select>
+    <div
+      className="ritmoCard"
+      style={{
+        background: CARD_BG, borderRadius: 12, border: `1px solid ${T.faint}`,
+        boxShadow: '0 1px 2px rgba(45,45,45,0.04), 0 10px 30px rgba(45,45,45,0.05)',
+      }}
+    >
+      {/* Título de sección chiquito, uppercase */}
+      <div style={{
+        fontSize: 10, fontFamily: T.fontMono, fontWeight: 700, letterSpacing: 1.2,
+        textTransform: 'uppercase', color: T.ink3, marginBottom: 14,
+      }}>
+        Ritmo de la campaña
       </div>
 
       {carga.estado === 'cargando' && (
-        <div style={{ height: 190, borderRadius: 8, background: T.faint, animation: 'ritmoPulso 1.3s ease-in-out infinite' }} />
+        <div style={{ height: 220, borderRadius: 8, background: T.faint, animation: 'ritmoPulso 1.3s ease-in-out infinite' }} />
       )}
+
       {carga.estado === 'error' && (
         <div style={{ padding: '28px 12px', textAlign: 'center' }}>
           <div style={{ fontSize: 12.5, color: T.ink2, marginBottom: 10 }}>
@@ -430,16 +397,93 @@ export default function RitmoCampana() {
           <Btn sm accent onClick={reintentar}>↻ Reintentar</Btn>
         </div>
       )}
-      {carga.estado === 'listo' && (serieVacia
-        ? <div style={{ padding: '32px 0', textAlign: 'center', fontSize: 12, color: T.ink3 }}>Sin actividades registradas en el rango.</div>
-        : <ChartRitmo serie={serie} respuestas={serieRespuestas} canales={canales} />)}
 
-      {carga.estado === 'listo' && !serieVacia && (
-        <div style={{ marginTop: 10, paddingTop: 7, borderTop: `1px dashed ${T.faint2}`, fontSize: 10, color: T.ink3 }}>
-          Actividades consideradas: últimas 500 (las más recientes).
+      {carga.estado === 'listo' && serieVacia && (
+        <div style={{ padding: '36px 8px', textAlign: 'center', fontSize: 12.5, color: T.ink2, lineHeight: 1.6 }}>
+          Todavía no hay movimiento en estas semanas.<br />
+          <span style={{ fontSize: 11.5, color: T.ink3 }}>
+            Apenas se registren toques o respuestas, acá se dibuja la curva sola.
+          </span>
         </div>
       )}
-      <style>{`@keyframes ritmoPulso { 0%, 100% { opacity: 0.6; } 50% { opacity: 0.3; } }`}</style>
+
+      {carga.estado === 'listo' && !serieVacia && (
+        <>
+          {/* Titular grande + selectores discretos */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px 16px', flexWrap: 'wrap', marginBottom: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                <span className="ritmoTitular" style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.ink, lineHeight: 1.05, letterSpacing: -0.5 }}>
+                  {fmtN(valorActual)}
+                </span>
+                <Tendencia actual={valorActual} previa={valorPrevio} />
+              </div>
+              <div style={{ fontSize: 11, color: T.ink3, marginTop: 3 }}>{unidad} esta semana</div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <Pills
+                etiqueta="Métrica de la curva"
+                valor={metrica}
+                onElegir={(v) => setMetrica(v)}
+                opciones={[
+                  { valor: 'respuestas', label: 'Respuestas' },
+                  { valor: 'toques', label: 'Toques' },
+                ]}
+              />
+              <Pills
+                etiqueta="Rango de semanas"
+                valor={semanas}
+                onElegir={(v) => setSemanas(v)}
+                opciones={[
+                  { valor: 4, label: '4 sem' },
+                  { valor: 8, label: '8 sem' },
+                  { valor: 12, label: '12 sem' },
+                ]}
+              />
+            </div>
+          </div>
+
+          {vistaTabla
+            ? <TablaRitmo filas={filas} etiquetaValor={label} />
+            : <CurvaRitmo filas={filas} unidad={unidad} claveAnim={`${metrica}-${semanas}`} />}
+
+          {/* Pie: franja de honestidad discretísima + microlink tabla/curva */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginTop: 10 }}>
+            <span style={{ fontSize: 10, color: T.ink3, opacity: 0.85 }}>
+              Sobre las últimas 500 actividades (las más recientes).
+            </span>
+            <button
+              type="button"
+              onClick={() => setVistaTabla((v) => !v)}
+              title={vistaTabla ? 'Volver a la curva' : 'Ver los números en tabla'}
+              style={{
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                fontSize: 10.5, color: T.ink3, fontFamily: T.font, textDecoration: 'underline dotted',
+              }}
+            >
+              {vistaTabla ? 'curva' : 'tabla'}
+            </button>
+          </div>
+        </>
+      )}
+
+      <style>{`
+        @keyframes ritmoPulso { 0%, 100% { opacity: 0.6; } 50% { opacity: 0.3; } }
+        @keyframes ritmoTrazo { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+        @keyframes ritmoAparece { from { opacity: 0; } to { opacity: 1; } }
+        .ritmoCurva { stroke-dasharray: 1; animation: ritmoTrazo 0.6s ease-out both; }
+        .ritmoArea { animation: ritmoAparece 0.6s ease-out both; }
+        .ritmoDotFin { animation: ritmoAparece 0.35s ease-out 0.4s both; }
+        .ritmoCard { padding: 22px 24px; }
+        .ritmoTitular { font-size: 30px; }
+        @media (max-width: 640px) {
+          .ritmoCard { padding: 18px 16px; }
+          .ritmoTitular { font-size: 24px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .ritmoCurva, .ritmoArea, .ritmoDotFin { animation: none; }
+        }
+      `}</style>
     </div>
   );
 }

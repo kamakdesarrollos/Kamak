@@ -8,7 +8,7 @@ import { useClientes } from '../../store/ClientesContext';
 import { useObras } from '../../store/ObrasContext';
 import { useComercial } from '../../store/ComercialContext';
 import {
-  ESTADO_LLAMADA_META, ETAPAS_PROSPECCION, ETAPA_PROSPECCION_META, CANALES,
+  ESTADO_LLAMADA_META, ETAPAS_PROSPECCION, ETAPA_PROSPECCION_META, CANALES, BANDERAS,
 } from '../../lib/campanas/constants';
 
 // Ficha del operador — componente standalone y reutilizable (sin asunciones de
@@ -22,9 +22,10 @@ import {
 //   />
 //
 // Incluye: datos de contacto, anti-colisión (tomar/liberar/forzar), etapa +
-// promover al embudo, vincular con obra EXISTENTE (camino nuevo), estaciones
-// con estado + "Caro anotó", decisores con LinkedIn, timeline y registro de
-// actividad manual.
+// promover al embudo, vincular con obra EXISTENTE (camino nuevo), datos del
+// operador editables (banderas / cuántas estaciones / rubro — pedido de Franco),
+// estaciones con estado + "Caro anotó", decisores con LinkedIn, timeline y
+// registro de actividad manual.
 // P11: acá JAMÁS se muestran montos de obras — solo nombres.
 
 // ── Helpers puros ─────────────────────────────────────────────────────────────
@@ -61,6 +62,15 @@ const CONFIANZA_META = {
   baja:  { label: 'Baja',  color: T.ink3 },
 };
 
+// Rubros del operador (nivel 1 del explorador, migración 0007). Por ahora
+// hardcodeados: cuando el explorador tenga su config de rubros, esta lista
+// sale de esa config en vez de vivir acá.
+const RUBROS = [
+  ['estaciones', '⛽ Estaciones de servicio'],
+  ['franquicias', '🏪 Franquicias'],
+];
+const rubroLabel = (r) => RUBROS.find(([v]) => v === r)?.[1] || r || '—';
+
 // Tipos de actividad manual (canal: reunión/nota → 'otro'; el resto = el tipo).
 const TIPOS_ACTIVIDAD = [
   ['llamada', '📞 Llamada'],
@@ -94,6 +104,10 @@ const tituloSeccionSt = {
   color: T.ink3, marginBottom: 10,
 };
 const vacioSt = { fontSize: 12, color: T.ink3 };
+const etiquetaCampoSt = {
+  fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase',
+  color: T.ink3, marginBottom: 6,
+};
 const headerBtnSt = {
   cursor: 'pointer', background: 'transparent', border: 'none', color: 'inherit',
   padding: 0, lineHeight: 1, opacity: 0.7, transition: 'opacity 0.15s ease', flexShrink: 0,
@@ -170,6 +184,26 @@ function TagBandera({ children }) {
   );
 }
 
+// Pill toggleable (edición de "Datos"): prendida = fondo suave del accent.
+function ChipToggle({ activo, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        border: `1.5px solid ${activo ? T.accent : T.faint2}`,
+        background: activo ? T.accentSoft : 'transparent',
+        color: activo ? T.accent2 : T.ink2,
+        borderRadius: 999, padding: '4px 11px', fontSize: 11, fontWeight: 700,
+        fontFamily: T.font, cursor: 'pointer', whiteSpace: 'nowrap',
+        transition: 'background 0.15s ease, color 0.15s ease, border-color 0.15s ease',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 // Banner warn de anti-colisión (P6): tomado por OTRO usuario, o una mutación
 // rebotó con {error:{colision}}.
 function BannerColision({ ownerNombre, canal }) {
@@ -190,7 +224,7 @@ function BannerColision({ ownerNombre, canal }) {
 export default function FichaOperador({ operador, onClose, onPatch, vista = 'panel' }) {
   const {
     fetchEstaciones, fetchDecisores, fetchActividades,
-    registrarActividad, setEtapaProspeccion,
+    registrarActividad, setEtapaProspeccion, actualizarOperador, chequearColision,
     tomarOperador, liberarOperador, promoverAEmbudo, vincularObra,
   } = useCampanas();
   const { currentUser, usuarios } = useUsuarios();
@@ -218,6 +252,11 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
   const [vinculando, setVinculando] = useState(false);   // picker de obra abierto
   const [busqObra, setBusqObra] = useState('');
   const [guardandoVinculo, setGuardandoVinculo] = useState(false);
+  // Sección "Datos" (banderas / estaciones / rubro): lectura por defecto, el
+  // draft nace recién al tocar "✎ Editar" (nunca en un effect).
+  const [draftDatos, setDraftDatos] = useState(null);    // { banderas, modoEst, nEstaciones, rubro } | null = leyendo
+  const [otraBandera, setOtraBandera] = useState('');
+  const [guardandoDatos, setGuardandoDatos] = useState(false);
 
   // Transición de entrada (translateX + opacity).
   const [abierto, setAbierto] = useState(false);
@@ -238,6 +277,8 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
     setVinculando(false);
     setBusqObra('');
     setNuevaAct({ tipo: 'llamada', texto: '' });
+    setDraftDatos(null);
+    setOtraBandera('');
   }
 
   // Carga de la ficha (estaciones + decisores + timeline) al abrir o al
@@ -385,6 +426,80 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
     setVinculando(false);
     setBusqObra('');
     recargarActividades();
+  };
+
+  // ── Sección "Datos": banderas + cuántas estaciones + rubro (pedido de Franco) ──
+
+  const abrirEdicionDatos = () => {
+    const n = operador.n_estaciones;
+    setDraftDatos({
+      banderas: [...(operador.banderas || [])],
+      modoEst: n === 1 ? '1' : n > 1 ? 'varias' : null,   // null = sin dato
+      nEstaciones: n ?? '',
+      rubro: operador.rubro || 'estaciones',
+    });
+    setOtraBandera('');
+  };
+
+  const cerrarEdicionDatos = () => { setDraftDatos(null); setOtraBandera(''); };
+
+  const toggleBandera = (b) => {
+    setDraftDatos((d) => (d ? {
+      ...d,
+      banderas: d.banderas.includes(b) ? d.banderas.filter((x) => x !== b) : [...d.banderas, b],
+    } : d));
+  };
+
+  // "otra…": si ya la conocemos (chip listado o ya prendida, aun con otra
+  // grafía/tildes) prendemos la canónica en vez de duplicar.
+  const agregarOtraBandera = () => {
+    const b = otraBandera.trim();
+    if (!b) return;
+    setDraftDatos((d) => {
+      if (!d) return d;
+      const canonica = [...BANDERAS, ...d.banderas].find((x) => normalizar(x) === normalizar(b)) || b;
+      return d.banderas.includes(canonica) ? d : { ...d, banderas: [...d.banderas, canonica] };
+    });
+    setOtraBandera('');
+  };
+
+  const elegirModoEst = (modo) => {
+    setDraftDatos((d) => {
+      if (!d) return d;
+      if (modo === '1') return { ...d, modoEst: '1', nEstaciones: 1 };
+      const n = Number(d.nEstaciones);
+      return { ...d, modoEst: 'varias', nEstaciones: n > 1 ? d.nEstaciones : Math.max(2, estaciones.length) };
+    });
+  };
+
+  const guardarDatos = async () => {
+    if (!draftDatos || guardandoDatos) return;
+    // n_estaciones exacto según el toggle; "Varias" con el input vacío/inválido = sin dato.
+    let nEst = operador.n_estaciones ?? null;
+    if (draftDatos.modoEst === '1') nEst = 1;
+    else if (draftDatos.modoEst === 'varias') {
+      const n = Math.round(Number(draftDatos.nEstaciones));
+      nEst = Number.isFinite(n) && n >= 2 ? n : null;
+    }
+    // UN solo actualizarOperador con lo que realmente cambió.
+    const antes = operador.banderas || [];
+    const cambios = {};
+    if (antes.length !== draftDatos.banderas.length || draftDatos.banderas.some((b) => !antes.includes(b))) {
+      cambios.banderas = draftDatos.banderas;
+      cambios.multibandera = draftDatos.banderas.length > 1;   // misma regla que importUnificado
+    }
+    if (nEst !== (operador.n_estaciones ?? null)) cambios.n_estaciones = nEst;
+    if (draftDatos.rubro !== (operador.rubro || 'estaciones')) cambios.rubro = draftDatos.rubro;
+    if (Object.keys(cambios).length === 0) { cerrarEdicionDatos(); return; }
+    setGuardandoDatos(true);
+    // P6: mismo contrato que el resto — colisión → banner y NO se guarda nada.
+    const col = await chequearColision(operador.id, myId);
+    if (col) { setGuardandoDatos(false); manejarError({ colision: col }); return; }
+    const { error } = await actualizarOperador(operador.id, cambios);
+    setGuardandoDatos(false);
+    if (manejarError(error)) return;
+    onPatch(operador.id, cambios);
+    cerrarEdicionDatos();
   };
 
   const razones = (operador.razones_sociales || []).join(' · ');
@@ -598,6 +713,100 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
                     {o.cliente && <span style={{ fontSize: 11, color: T.ink2 }}> · {o.cliente}</span>}
                   </div>
                 ))}
+              </div>
+            )}
+          </Seccion>
+
+          {/* Datos del operador: banderas + cuántas estaciones + rubro. Lectura
+              por defecto; "✎ Editar" abre los controles (pedido de Franco). */}
+          <Seccion
+            titulo="Datos"
+            extra={!draftDatos && <LinkAccion onClick={abrirEdicionDatos}>✎ Editar</LinkAccion>}
+          >
+            {!draftDatos ? (
+              <div style={{ background: T.faint, borderRadius: 9, padding: '12px 14px', fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                  <span style={{ color: T.ink3 }}>Banderas:</span>
+                  {(operador.banderas || []).length > 0
+                    ? (operador.banderas || []).map((b) => <TagBandera key={b}>{b}</TagBandera>)
+                    : <span style={vacioSt}>sin bandera</span>}
+                </div>
+                <div>
+                  <span style={{ color: T.ink3 }}>Estaciones: </span>
+                  <span style={{ fontFamily: T.fontMono, fontSize: 12, fontWeight: 600 }}>{operador.n_estaciones ?? '—'}</span>
+                  {!cargando && estaciones.length > 0 && estaciones.length !== operador.n_estaciones && (
+                    <span style={{ fontSize: 11, color: T.ink3 }}> · cargadas: {estaciones.length}</span>
+                  )}
+                </div>
+                <div>
+                  <span style={{ color: T.ink3 }}>Rubro: </span>
+                  <span style={{ fontWeight: 600 }}>{rubroLabel(operador.rubro || 'estaciones')}</span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ border: `1px solid ${T.faint2}`, borderRadius: 9, background: '#fff', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Banderas: chips de TODAS las conocidas + las custom del draft */}
+                <div>
+                  <div style={etiquetaCampoSt}>Banderas</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    {[...BANDERAS, ...draftDatos.banderas.filter((b) => !BANDERAS.includes(b))].map((b) => (
+                      <ChipToggle key={b} activo={draftDatos.banderas.includes(b)} onClick={() => toggleBandera(b)}>
+                        {b}
+                      </ChipToggle>
+                    ))}
+                    <input
+                      value={otraBandera}
+                      onChange={(e) => setOtraBandera(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') agregarOtraBandera(); }}
+                      placeholder="otra…"
+                      style={{ ...inputSt, padding: '4px 11px', fontSize: 11, width: 84, borderRadius: 999 }}
+                    />
+                    {otraBandera.trim() && (
+                      <LinkAccion onClick={agregarOtraBandera} style={{ fontSize: 11 }}>+ agregar</LinkAccion>
+                    )}
+                  </div>
+                  {draftDatos.banderas.length === 0 && (
+                    <div style={{ fontSize: 11, color: T.warn, marginTop: 6 }}>
+                      Sin banderas: va a aparecer en “Sin bandera” en el explorador.
+                    </div>
+                  )}
+                </div>
+                {/* Estaciones: 1 / Varias (+ número exacto) */}
+                <div>
+                  <div style={etiquetaCampoSt}>Estaciones</div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <ChipToggle activo={draftDatos.modoEst === '1'} onClick={() => elegirModoEst('1')}>1</ChipToggle>
+                    <ChipToggle activo={draftDatos.modoEst === 'varias'} onClick={() => elegirModoEst('varias')}>Varias</ChipToggle>
+                    {draftDatos.modoEst === 'varias' && (
+                      <input
+                        type="number" min={2}
+                        value={draftDatos.nEstaciones}
+                        onChange={(e) => setDraftDatos((d) => (d ? { ...d, nEstaciones: e.target.value } : d))}
+                        style={{ ...inputSt, padding: '4px 10px', fontSize: 12, width: 64, fontFamily: T.fontMono }}
+                      />
+                    )}
+                    {!cargando && estaciones.length > 0 && estaciones.length !== Number(draftDatos.nEstaciones) && (
+                      <span style={{ fontSize: 11, color: T.ink3 }}>cargadas: {estaciones.length}</span>
+                    )}
+                  </div>
+                </div>
+                {/* Rubro */}
+                <div>
+                  <div style={etiquetaCampoSt}>Rubro</div>
+                  <select
+                    value={draftDatos.rubro}
+                    onChange={(e) => setDraftDatos((d) => (d ? { ...d, rubro: e.target.value } : d))}
+                    style={selSt}
+                  >
+                    {RUBROS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Btn sm accent onClick={guardarDatos} disabled={guardandoDatos} style={{ opacity: guardandoDatos ? 0.5 : 1 }}>
+                    Guardar
+                  </Btn>
+                  <Btn sm onClick={cerrarEdicionDatos} disabled={guardandoDatos}>Cancelar</Btn>
+                </div>
               </div>
             )}
           </Seccion>

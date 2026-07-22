@@ -85,17 +85,27 @@ const insertarActividad = (fila) =>
 // ── Fetch paginado (server-side, NUNCA cargar todo) ───────────────────────────
 
 const fetchOperadores = async ({ page = 1, pageSize = 50, filtros = {}, orden } = {}) => {
-  const { bandera, rubro, provincia, etapa, estadoLlamada, confianza, busqueda, listaId } = filtros;
+  const { bandera, banderasExactas, rubro, provincia, etapa, estadoLlamada, confianza, busqueda, listaId } = filtros;
   // provincia/estadoLlamada viven en camp_estaciones y listaId en
   // camp_lista_miembros → embed !inner solo cuando el filtro está activo.
   let sel = '*';
   if (provincia || estadoLlamada) sel += ', camp_estaciones!inner(id)';
   if (listaId) sel += ', camp_lista_miembros!inner(lista_id)';
   let q = supabase.from('camp_operadores').select(sel, { count: 'exact' });
+  // banderasExactas (array de strings): igualdad EXACTA de conjunto — para las
+  // secciones combo del árbol (multibandera "YPF-SHELL-AXION" es una sección
+  // propia y el RPC devuelve su array `banderas` canónico). contains (cs) +
+  // containedBy (cd) con el MISMO array = mismo conjunto, tolerando orden
+  // distinto en la DB. Si viene junto con `bandera`, banderasExactas GANA;
+  // `bandera` (string suelto, incluye SIN_BANDERA) queda intacto para
+  // ColaLlamadas y compat.
+  if (Array.isArray(banderasExactas) && banderasExactas.length > 0) {
+    q = q.contains('banderas', banderasExactas).containedBy('banderas', banderasExactas);
+  }
   // 'Sin bandera' es el nombre SINTÉTICO que usa el RPC camp_resumen_arbol para
   // agrupar operadores con banderas null/vacías — acá se traduce a ese filtro
   // real (contains con el literal daría siempre 0 filas).
-  if (bandera === SIN_BANDERA) q = q.or('banderas.is.null,banderas.eq.{}');
+  else if (bandera === SIN_BANDERA) q = q.or('banderas.is.null,banderas.eq.{}');
   else if (bandera) q = q.contains('banderas', [bandera]);  // banderas es text[]
   if (rubro) q = q.eq('rubro', rubro);                      // nivel 1 del árbol (0007)
   if (etapa) q = q.eq('etapa_prospeccion', etapa);
@@ -194,12 +204,54 @@ const fetchResumenArbol = async () => {
   return { data, error: null };
 };
 
+// ── Config del explorador (shared_data, key 'campanas_config') ────────────────
+// Shape esperado del jsonb:
+//   { rubros: [{ key, nombre, emoji, oculto?, banderasOcultas?: string[], banderasExtra?: string[] }] }
+// data = el jsonb tal cual, o null si la fila no existe todavía (primer uso).
+const fetchConfigExplorador = async () => {
+  const { data, error } = await supabase
+    .from('shared_data').select('data').eq('key', 'campanas_config').maybeSingle();
+  return { data: data?.data ?? null, error: error || null };
+};
+
+// Upsert de la config entera (mismo patrón que push_subscriptions en
+// src/lib/push.js: onConflict 'key') + actividad de auditoría tipo 'config'.
+const guardarConfigExplorador = async (config, { usuario } = {}) => {
+  const { error } = await supabase
+    .from('shared_data')
+    .upsert({ key: 'campanas_config', data: config }, { onConflict: 'key' });
+  if (error) return { error };
+  await insertarActividad({
+    tipo: 'config',
+    texto: 'Configuración del explorador actualizada',
+    usuario: usuario || null,
+  });
+  return { ok: true, error: null };
+};
+
 // ── Mutaciones (todas setean updated_at: no hay trigger en la DB) ─────────────
 
-const crearOperador = async (data) => {
+// Alta manual de un operador (el "+ operador" del explorador): el caller manda
+// solo lo que sabe y acá se completan defaults sanos + actividad tipo 'alta'.
+const crearOperador = async (data = {}, { usuario } = {}) => {
+  const fila = {
+    etapa_prospeccion: 'sin_contactar',
+    rubro: 'estaciones',
+    banderas: [],
+    datos: {},
+    updated_at: ahora(),
+    ...data,
+  };
   const { data: row, error } = await supabase
-    .from('camp_operadores').insert({ ...data }).select().single();
-  return { data: row || null, error: error || null };
+    .from('camp_operadores').insert(fila).select().single();
+  if (error) return { data: null, error };
+  await insertarActividad({
+    operador_id: row?.id || null,
+    tipo: 'alta',
+    texto: `Alta manual — ${row?.nombre || fila.nombre || 'operador'}`,
+    usuario: usuario || null,
+  });
+  return { data: row || null, error: null };
 };
 
 const actualizarOperador = async (id, changes) => {
@@ -582,6 +634,8 @@ const API = {
   // datos paginados + KPIs del árbol
   fetchOperadores, fetchEstaciones, fetchDecisores, fetchActividades, contarPorEtapa,
   fetchResumenArbol,
+  // config del explorador (shared_data 'campanas_config')
+  fetchConfigExplorador, guardarConfigExplorador,
   // mutaciones
   crearOperador, actualizarOperador, setEtapaProspeccion, registrarLlamada, registrarActividad,
   // anti-colisión (P6)
