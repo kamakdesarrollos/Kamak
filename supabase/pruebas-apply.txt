@@ -1,2 +1,2 @@
 # Archivos .sql que el workflow db-pruebas.yml aplica a Kamak-Pruebas (en orden)
-supabase/migrations/0007_campanas_explorador.sql
+supabase/migrations/0008_camp_etapa_orden.sql
