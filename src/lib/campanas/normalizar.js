@@ -41,11 +41,41 @@ export function esEstadoConocido(raw) {
 
 // Estado sucio → { estado (canónico), original (crudo tal cual), flags }.
 // Vacío/null → SIN LLAMAR. Desconocido no-vacío → SIN LLAMAR + original.
+// Crudo compuesto 'ESTADO · refuerzo' (el mapeo posicional del Unificado junta
+// el estado de la col 8 con el refuerzo que Caro escribió en la col de email):
+// canoniza el PRIMER segmento y preserva el original ENTERO.
 export function normalizarEstado(raw) {
   const original = raw == null ? null : String(raw);
-  const hit = MAPA_ESTADOS[clave(raw)];
+  let hit = MAPA_ESTADOS[clave(raw)];
+  if (!hit && original != null && original.includes('·')) {
+    hit = MAPA_ESTADOS[clave(original.split('·')[0])];
+  }
   if (hit) return { estado: hit.estado, original, flags: { ...hit.flags } };
   return { estado: 'SIN LLAMAR', original, flags: {} };
+}
+
+// Email sucio de la planilla → { email, reparado, sospechoso }. Reusada por
+// importContactados e importUnificado (planImportListos).
+// - Normaliza trim + lowercase (eso NO cuenta como reparación).
+// - Repara SOLO typos inequívocos: puntos repetidos ('..') y proveedores
+//   conocidos con el '.com' pegado (@gmailcom, @hotmailcom).
+// - Lo dudoso queda TAL CUAL (email = crudo lowercase) + sospechoso:
+//   · dominio sin punto (ej. @yahoocom): no hay reparación inequívoca.
+//   · hmail.com: ¿hotmail o gmail? ambiguo.
+//   · 'com' pegado antes del TLD (adolfosartorisacom.ar): falta un punto pero
+//     no sabemos dónde ('.com.ar' legítimo NO matchea).
+export function repararEmail(raw) {
+  const original = String(raw ?? '').trim().toLowerCase();
+  const arreglado = original
+    .replace(/\.{2,}/g, '.')
+    .replace(/@gmailcom$/, '@gmail.com')
+    .replace(/@hotmailcom$/, '@hotmail.com');
+  const dominio = arreglado.split('@')[1] || '';
+  const sospechoso = !dominio.includes('.')
+    || dominio === 'hmail.com'
+    || (/com\.ar$/.test(dominio) && !/\.com\.ar$/.test(dominio));
+  if (sospechoso) return { email: original, reparado: false, sospechoso: true };
+  return { email: arreglado, reparado: arreglado !== original, sospechoso: false };
 }
 
 // Teléfono argentino → E.164 sin '+' ('5492262530944') o null.

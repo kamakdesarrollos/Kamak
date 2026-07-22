@@ -8,7 +8,8 @@ import { useIsMobile } from '../../hooks/useMediaQuery';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useCampanas } from '../../store/CampanasContext';
 import { supabase } from '../../lib/supabase';
-import { planImportUnificado } from '../../lib/campanas/importUnificado';
+import { planImportUnificado, planImportListos, mapearFilasPosicionales } from '../../lib/campanas/importUnificado';
+import { planImportContactados, fusionarPlanes } from '../../lib/campanas/importContactados';
 import { parseLinkedInZip, planImportLinkedIn } from '../../lib/campanas/importLinkedIn';
 
 // Importador de la "base viva" del módulo Campañas: importación INCREMENTAL
@@ -30,7 +31,7 @@ const TIPOS_IMPORT = [
     key: 'unificado',
     icono: '📗',
     titulo: 'Planilla Unificado (.xlsx)',
-    desc: 'La planilla madre de estaciones: operadores, estaciones, decisores y estados de llamada. Suma lo nuevo y completa huecos, sin pisar lo cargado.',
+    desc: 'La planilla madre: reconoce la hoja de estaciones (con o sin encabezados), "LISTOS PARA ENVIAR" y "Contactado…", y fusiona todo en un plan. Suma lo nuevo y completa huecos, sin pisar lo cargado.',
     formatos: '.xlsx / .xls',
     accept: '.xlsx,.xls',
     re: /\.(xlsx|xls)$/i,
@@ -114,17 +115,57 @@ async function cargarXlsx() {
   return mod.read ? mod : mod.default;
 }
 
-// Elige la hoja a importar: preferimos "LISTOS PARA ENVIAR" (la hoja curada de
-// la planilla madre) si existe y tiene datos; si no, la primera hoja con datos.
-function elegirFilas(XLSX, wb) {
-  const nombres = wb.SheetNames || [];
-  const preferida = nombres.find((n) => String(n).trim().toUpperCase() === 'LISTOS PARA ENVIAR');
-  const orden = preferida ? [preferida, ...nombres.filter((n) => n !== preferida)] : nombres;
-  for (const nombre of orden) {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[nombre] || {});
-    if (rows.length) return { hoja: nombre, rows };
+// ¿Hoja de operadores YA contactados? (ej. "Contactado Caro" del Unificado):
+// se procesa aparte con planImportContactados y se fusiona al plan principal.
+const esHojaContactados = (n) => normNombre(n).includes('contactado');
+
+// ¿Hoja "LISTOS PARA ENVIAR" (la curada para la campaña de mails)?
+const esHojaListos = (n) => normNombre(n).includes('listos');
+
+// Clasifica las hojas del workbook en los 3 formatos que sabemos leer:
+// - contactados: nombre ~'contactado' → planImportContactados.
+// - listos: nombre ~'listos' → planImportListos.
+// - estaciones: la primera hoja restante que sea posicional SIN encabezados
+//   (mapearFilasPosicionales la detecta por contenido, ej. "Todas las
+//   estaciones") o que tenga filas con encabezados (Unificado clásico y
+//   también el CSV de decisores) → planImportUnificado.
+function clasificarHojas(XLSX, wb) {
+  const out = { estaciones: null, listos: null, contactados: null };
+  for (const nombre of wb.SheetNames || []) {
+    const sheet = wb.Sheets[nombre] || {};
+    if (esHojaContactados(nombre)) {
+      if (!out.contactados) {
+        const rows = XLSX.utils.sheet_to_json(sheet);
+        if (rows.length) out.contactados = { hoja: nombre, rows };
+      }
+      continue;
+    }
+    if (esHojaListos(nombre)) {
+      if (!out.listos) {
+        const rows = XLSX.utils.sheet_to_json(sheet);
+        if (rows.length) out.listos = { hoja: nombre, rows };
+      }
+      continue;
+    }
+    if (out.estaciones) continue;
+    const posicionales = mapearFilasPosicionales(XLSX.utils.sheet_to_json(sheet, { header: 1 }));
+    if (posicionales) {
+      out.estaciones = { hoja: nombre, rows: posicionales, posicional: true };
+      continue;
+    }
+    const rows = XLSX.utils.sheet_to_json(sheet);
+    if (rows.length) out.estaciones = { hoja: nombre, rows, posicional: false };
   }
-  return null;
+  return out;
+}
+
+// "12 nuevos · 3 actualizados · 5 salteados · 2 con error" — conteos por hoja.
+function conteosPlan(p) {
+  const r = p?.resumen || {};
+  const partes = [`${sumar(r.nuevos)} nuevos`, `${sumar(r.actualizados)} actualizados`, `${sumar(r.salteados)} salteados`];
+  const errs = Array.isArray(r.errores) ? r.errores.length : 0;
+  if (errs) partes.push(`${errs} con error`);
+  return partes.join(' · ');
 }
 
 // Trae TODAS las páginas de un fetch paginado del contrato (fetchOperadores /
@@ -381,7 +422,8 @@ export default function CampImportar() {
   const [paso, setPaso] = useState('elegir');
   const [tipo, setTipo] = useState(null);          // 'unificado' | 'decisores' | 'linkedin'
   const [archivo, setArchivo] = useState(null);    // File
-  const [detalle, setDetalle] = useState('');      // "hoja X · N filas" / CSVs hallados
+  const [detalle, setDetalle] = useState('');      // "2 hojas · N filas" / CSVs hallados
+  const [hojas, setHojas] = useState([]);          // [{ hoja, rol, filas, nota }] reconocidas del xlsx
   const [plan, setPlan] = useState(null);          // plan (unificado ya completado / linkedin puro)
   const [opPorDecisor, setOpPorDecisor] = useState({});       // decisorId → operador_id (linkedin)
   const [nombrePorDecisor, setNombrePorDecisor] = useState({}); // decisorId → nombre (preview linkedin)
@@ -413,7 +455,7 @@ export default function CampImportar() {
   }, [currentUser, puede, histTick]);
 
   const reset = () => {
-    setPaso('elegir'); setTipo(null); setArchivo(null); setDetalle('');
+    setPaso('elegir'); setTipo(null); setArchivo(null); setDetalle(''); setHojas([]);
     setPlan(null); setOpPorDecisor({}); setNombrePorDecisor({});
     setError(null); setResultado(null); setProgreso({ hecho: 0, total: 0 });
   };
@@ -426,7 +468,7 @@ export default function CampImportar() {
       setError(`"${file.name}" no parece un archivo de ${meta.titulo}. Esperaba ${meta.formatos}.`);
       return;
     }
-    setError(null); setTipo(tipoKey); setArchivo(file); setPaso('parseando');
+    setError(null); setTipo(tipoKey); setArchivo(file); setHojas([]); setPaso('parseando');
     try {
       if (tipoKey === 'linkedin') {
         const { default: JSZip } = await import('jszip');
@@ -451,22 +493,51 @@ export default function CampImportar() {
         setDetalle(hallados.map((k) => `${k}.csv`).join(' · '));
         setPlan(p);
       } else {
-        // Unificado y CSV de decisores: mismas columnas → mismo planificador.
+        // Unificado y CSV de decisores: se clasifican las hojas por formato y
+        // cada una va a su planificador; todo se fusiona en UN plan.
         // XLSX.read también lee CSV (patrón src/pages/obra/AdjuntarPresupuestoModal.jsx).
         const XLSX = await cargarXlsx();
         let wb;
         try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); }
         catch { throw new Error('No pude leer el archivo. ¿Está dañado o abierto en Excel? Cerralo y probá de nuevo.'); }
-        const elegida = elegirFilas(XLSX, wb);
-        if (!elegida) throw new Error('La planilla no tiene ninguna hoja con datos. Revisá que la primera fila sean los encabezados (Bandera, Estacion, Operador…).');
+        const cls = clasificarHojas(XLSX, wb);
+        if (!cls.estaciones && !cls.listos && !cls.contactados) {
+          throw new Error('No reconocí ninguna hoja con datos en la planilla. Espero la hoja de estaciones (con encabezados Bandera, Estacion, Operador… o el formato posicional que arranca con la bandera), "LISTOS PARA ENVIAR" o una hoja "Contactado…". ¿Es el archivo correcto?');
+        }
         const [operadores, estaciones, decisores] = await Promise.all([
           traerTodo(fetchOperadores),
           traerTodo(fetchEstaciones),
           traerTodo(fetchDecisores),
         ]);
-        const puro = planImportUnificado(elegida.rows, { existentes: { operadores, estaciones, decisores } });
-        setDetalle(`hoja "${elegida.hoja}" · ${elegida.rows.length} filas`);
-        setPlan(completarPlanUnificado(puro, { operadores, estaciones, decisores }));
+        const existentes = { operadores, estaciones, decisores };
+        // Fusión en orden estaciones → listos → contactados: la etapa
+        // 'contactado' de las últimas hojas gana (la más avanzada nunca se
+        // degrada) y los duplicados entre hojas se funden en fusionarPlanes.
+        let puro = null;
+        const lineas = [];
+        if (cls.estaciones) {
+          const p = planImportUnificado(cls.estaciones.rows, { existentes });
+          puro = fusionarPlanes(puro, p);
+          lineas.push({
+            hoja: cls.estaciones.hoja,
+            rol: cls.estaciones.posicional ? 'Estaciones (sin encabezados)' : 'Estaciones',
+            filas: cls.estaciones.rows.length,
+            nota: conteosPlan(p),
+          });
+        }
+        if (cls.listos) {
+          const p = planImportListos(cls.listos.rows, { existentes });
+          puro = fusionarPlanes(puro, p);
+          lineas.push({ hoja: cls.listos.hoja, rol: 'Listos para enviar', filas: cls.listos.rows.length, nota: conteosPlan(p) });
+        }
+        if (cls.contactados) {
+          const p = planImportContactados(cls.contactados.rows, { existentes });
+          puro = fusionarPlanes(puro, p);
+          lineas.push({ hoja: cls.contactados.hoja, rol: 'Contactados', filas: cls.contactados.rows.length, nota: conteosPlan(p) });
+        }
+        setHojas(lineas);
+        setDetalle(`${lineas.length} ${lineas.length === 1 ? 'hoja' : 'hojas'} · ${lineas.reduce((s, h) => s + h.filas, 0)} filas`);
+        setPlan(completarPlanUnificado(puro, existentes));
       }
       setPaso('preview');
     } catch (e) {
@@ -561,6 +632,18 @@ export default function CampImportar() {
             <span style={{ fontSize: 13, fontWeight: 700 }}>{archivo?.name}</span>
             {detalle && <span style={{ fontSize: 12, color: T.ink3, fontFamily: T.fontMono }}>{detalle}</span>}
           </Box>
+
+          {/* Hojas reconocidas del archivo → cada una con sus conteos; abajo, los totales del plan fusionado */}
+          {!esLinkedIn && hojas.length > 0 && (
+            <Box style={{ padding: '8px 14px', marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {hojas.map((h) => (
+                <div key={h.hoja} style={{ fontSize: 12.5, color: T.ink2 }}>
+                  📄 <span style={{ fontWeight: 700, color: T.ink }}>{h.hoja}</span>
+                  {' — '}{h.rol} · {h.filas} filas · <span style={{ color: T.ink3 }}>{h.nota}</span>
+                </div>
+              ))}
+            </Box>
+          )}
 
           {/* Tarjetas resumen */}
           {esLinkedIn ? (

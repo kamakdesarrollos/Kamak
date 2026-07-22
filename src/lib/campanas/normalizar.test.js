@@ -4,7 +4,7 @@ import {
   ETAPAS_PROSPECCION, ETAPA_PROSPECCION_META,
   BANDERAS, CANALES,
 } from './constants.js';
-import { normalizarEstado, normalizarTelefonoAR, esEstadoConocido } from './normalizar.js';
+import { normalizarEstado, normalizarTelefonoAR, esEstadoConocido, repararEmail } from './normalizar.js';
 
 describe('constants — datos canónicos del módulo campañas', () => {
   it('ESTADOS_LLAMADA: los 9 canónicos en orden', () => {
@@ -88,6 +88,36 @@ describe('normalizarEstado — estados sucios de la planilla → canónico + ori
     expect(normalizarEstado('HABLE CON EL CONTADOR')).toEqual({
       estado: 'SIN LLAMAR', original: 'HABLE CON EL CONTADOR', flags: {},
     });
+  });
+  it('crudo compuesto "ESTADO · refuerzo" (la col Email del posicional refuerza) → canoniza el 1º segmento, original ENTERO', () => {
+    expect(normalizarEstado('FUERA DE SERVICIO · VOLVER A LLAMAR')).toEqual({
+      estado: 'FUERA DE SERVICIO', original: 'FUERA DE SERVICIO · VOLVER A LLAMAR', flags: {},
+    });
+    expect(normalizarEstado('TELEFONO FIJO · VOLVER A LLAMAR').flags).toEqual({ telefonoFijo: true });
+  });
+  it('compuesto con 1º segmento desconocido → SIN LLAMAR con el original completo', () => {
+    expect(normalizarEstado('hablar con contador · NO ATIENDE')).toEqual({
+      estado: 'SIN LLAMAR', original: 'hablar con contador · NO ATIENDE', flags: {},
+    });
+  });
+});
+
+describe('repararEmail — typos de la planilla → {email, reparado, sospechoso}', () => {
+  it('repara los typos inequívocos: @gmailcom, @hotmailcom y ".."', () => {
+    expect(repararEmail('admi.petrokom@gmailcom')).toEqual({ email: 'admi.petrokom@gmail.com', reparado: true, sospechoso: false });
+    expect(repararEmail('pedidos@hotmailcom')).toEqual({ email: 'pedidos@hotmail.com', reparado: true, sospechoso: false });
+    expect(repararEmail('estacion406@hotmail..com')).toEqual({ email: 'estacion406@hotmail.com', reparado: true, sospechoso: false });
+  });
+  it('normaliza a lowercase con trim, sin marcarlo como reparación', () => {
+    expect(repararEmail(' VENTAS@Estacion.COM ')).toEqual({ email: 'ventas@estacion.com', reparado: false, sospechoso: false });
+  });
+  it('lo dudoso queda TAL CUAL + sospechoso (hmail, "com" pegado al dominio, dominio sin punto)', () => {
+    expect(repararEmail('ariescomcosrl@hmail.com')).toEqual({ email: 'ariescomcosrl@hmail.com', reparado: false, sospechoso: true });
+    expect(repararEmail('luisaguilar@adolfosartorisacom.ar')).toEqual({ email: 'luisaguilar@adolfosartorisacom.ar', reparado: false, sospechoso: true });
+    expect(repararEmail('algo@yahoocom')).toEqual({ email: 'algo@yahoocom', reparado: false, sospechoso: true });
+  });
+  it('un .com.ar legítimo pasa limpio', () => {
+    expect(repararEmail('ventas@estacioncentro.com.ar')).toEqual({ email: 'ventas@estacioncentro.com.ar', reparado: false, sospechoso: false });
   });
 });
 
