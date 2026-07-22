@@ -55,7 +55,8 @@ jobs:
             echo "── Aplicando: $f"
             if [ ! -f "$f" ]; then echo "::error::No existe $f"; exit 1; fi
             # El body es {"query": "<sql>"} — jq arma el JSON escapando el SQL.
-            jq -Rs '{query: .}' < "$f" > /tmp/body.json
+            # sed: quitar BOM UTF-8 si el archivo viene de Windows.
+            sed '1s/^\xEF\xBB\xBF//' "$f" | jq -Rs '{query: .}' > /tmp/body.json
             code=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
               -X POST "https://api.supabase.com/v1/projects/${PRUEBAS_REF}/database/query" \
               -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
