@@ -17,6 +17,7 @@ import { AlertasProvider } from './store/AlertasContext';
 import { SolicitudesProvider } from './store/SolicitudesContext';
 import { TareasProvider } from './store/TareasContext';
 import { ComercialProvider } from './store/ComercialContext';
+import { CampanasProvider } from './store/CampanasContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
 import { NotificacionesProvider } from './store/NotificacionesContext';
@@ -200,6 +201,9 @@ function DataProviders({ children }) {
     <MovimientosProvider>
     <ChequesProvider>
     <UsuariosProvider>
+    {/* CampanasProvider es LAZY (no fetchea nada al boot): solo expone el data
+        layer del módulo Campañas; cada página pide sus datos al entrar. */}
+    <CampanasProvider>
     {/* NotificacionesProvider consume useUsuarios (currentUser + usuarios), por
         eso va DENTRO de UsuariosProvider; y envuelve a SolicitudesProvider para
         que Solicitudes (y demás) puedan consumir useNotificaciones. */}
@@ -214,6 +218,7 @@ function DataProviders({ children }) {
     </SolicitudesProvider>
     </WhatsappPendingProvider>
     </NotificacionesProvider>
+    </CampanasProvider>
     </UsuariosProvider>
     </ChequesProvider>
     </MovimientosProvider>
