@@ -9,7 +9,7 @@ import { useObras } from '../../store/ObrasContext';
 import { useCampanas } from '../../store/CampanasContext';
 import { supabase } from '../../lib/supabase';
 import {
-  kpisGenerales, comparativaListas, embudoConcrecion, seriePorSemana, statsLlamadasCaro,
+  kpisGenerales, comparativaListas, embudoConcrecion, seriePorSemana, serieRespuestasPorSemana, statsLlamadasCaro,
 } from '../../lib/campanas/kpis';
 import { ESTADO_LLAMADA_META } from '../../lib/campanas/constants';
 import { fmtN } from '../../lib/format';
@@ -30,17 +30,18 @@ import { useIsMobile } from '../../hooks/useMediaQuery';
 // subrepresentadas. Cuando el contrato sume fetch por rango de fechas, migrar.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Colores por canal para la serie semanal, elegidos dentro de la estética sobria
-// del ERP y validados con el validador de paletas (dataviz): banda de luminancia,
+// Colores por canal, elegidos dentro de la estética sobria del ERP y validados
+// con el validador de paletas (dataviz) sobre T.paper: banda de luminancia,
 // piso de croma, separación CVD adyacente ≥ 9, piso visión normal ≥ 15 y
-// contraste ≥ 3:1 sobre T.paper — todo PASS. 'otro' queda FUERA de los slots
-// categóricos: neutro (T.ink3) con línea punteada (codificación secundaria).
+// contraste ≥ 3:1 — todo PASS. La asignación es FIJA por entidad (el color
+// sigue al canal aunque se filtre u oculte). 'otro' queda FUERA de los slots
+// categóricos: gris recesivo (T.ink3), plegado al final del apilado.
 const CANAL_META = {
   llamada:  { label: 'Llamadas', color: '#12969a' },
   email:    { label: 'Email',    color: '#3f66b0' },
   linkedin: { label: 'LinkedIn', color: '#b97a1e' },
   whatsapp: { label: 'WhatsApp', color: '#2e7032' },
-  otro:     { label: 'Otro',     color: '#9a9892', punteada: true },
+  otro:     { label: 'Otro',     color: '#9a9892' },
 };
 const CANALES_FILTRO = ['llamada', 'email', 'linkedin', 'whatsapp'];
 
@@ -111,73 +112,304 @@ function EmbudoChart({ escalones, isMobile }) {
   );
 }
 
-// ── GRÁFICO FOCAL 2 — Serie semanal por canal (SVG artesanal, sin librerías) ─
-// viewBox responsive, una línea por canal, puntos con tooltip nativo (<title>),
-// grilla recesiva y leyenda con punto de color. Con un solo canal filtrado se
-// suma un área suave bajo la línea.
-function ChartLineaSemanal({ serie, canales }) {
-  const W = 640; const H = 210; const padL = 34; const padR = 14; const padT = 14; const padB = 26;
-  const innerW = W - padL - padR;
-  const innerH = H - padT - padB;
-  const maxDato = Math.max(0, ...serie.map((s) => Math.max(0, ...canales.map((c) => s.porCanal?.[c] || 0))));
-  // Tope "lindo" múltiplo de 4 → los ticks (0, mitad, tope) son siempre enteros.
+// ── GRÁFICO FOCAL 2 — Ritmo de la campaña (SVG artesanal, sin librerías) ─────
+// "¿Cuánto empujamos cada semana y cuántas respuestas trajo?": barras apiladas
+// finas = toques por canal (color FIJO por entidad) + línea de Respuestas en el
+// MISMO eje (todo son conteos → un solo eje, sin doble escala). Leyenda
+// interactiva (click = mostrar/ocultar; los sobrevivientes conservan su color),
+// tooltip HTML por columna (hover / tap que lo fija), mini-titulares con delta
+// y vista tabla accesible (el tooltip nunca es la única vía a un valor).
+
+// Orden fijo del apilado (abajo → arriba); 'otro' se pliega al final, gris recesivo.
+const STACK_ORDEN = ['llamada', 'email', 'linkedin', 'whatsapp', 'otro'];
+
+// Rect con SOLO las esquinas de arriba redondeadas (cap del segmento superior;
+// la base y los segmentos interiores quedan rectos).
+function pathTopeRedondeado(x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, h, w / 2));
+  return `M ${x} ${y + h} L ${x} ${y + rr} Q ${x} ${y} ${x + rr} ${y} `
+    + `L ${x + w - rr} ${y} Q ${x + w} ${y} ${x + w} ${y + rr} L ${x + w} ${y + h} Z`;
+}
+
+// Delta del mini-strip: ▲ ok / ▼ warn / = neutro, siempre con el número.
+function DeltaSemana({ d, sufijo }) {
+  if (d === 0) return <span style={{ color: T.ink3, fontWeight: 700, fontSize: 11 }}>= {sufijo}</span>;
+  return (
+    <span style={{ color: d > 0 ? T.ok : T.warn, fontWeight: 800, fontSize: 11, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>
+      {d > 0 ? '▲' : '▼'} {fmtN(Math.abs(d))} {sufijo}
+    </span>
+  );
+}
+
+function ChartRitmo({ serie, respuestas, canales }) {
+  const [ocultos, setOcultos] = useState(() => new Set()); // canales apagados desde la leyenda
+  const [lineaOculta, setLineaOculta] = useState(false);
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const [pinIdx, setPinIdx] = useState(null); // tooltip fijado por tap/click
+  const [vistaTabla, setVistaTabla] = useState(false);
+
+  // Tap/click fuera del gráfico cierra el tooltip fijado (la columna hace
+  // stopPropagation para que fijar/alternar no se auto-cierre).
+  useEffect(() => {
+    if (pinIdx == null) return undefined;
+    const cerrar = () => setPinIdx(null);
+    document.addEventListener('pointerdown', cerrar);
+    return () => document.removeEventListener('pointerdown', cerrar);
+  }, [pinIdx]);
+
+  // Respuestas indexadas por semanaIso (robusto ante cualquier desalineación).
+  const respPorSemana = useMemo(
+    () => new Map((respuestas || []).map((r) => [r.semanaIso, r.respuestas || 0])),
+    [respuestas],
+  );
+
+  const enLeyenda = STACK_ORDEN.filter((c) => canales.includes(c));
+  const visibles = useMemo(
+    () => STACK_ORDEN.filter((c) => canales.includes(c) && !ocultos.has(c)),
+    [canales, ocultos],
+  );
+
+  // Todo (barras, línea, titulares, tooltip y tabla) sale de la MISMA rebanada
+  // visible → los números siempre acuerdan entre sí.
+  const semanas = useMemo(() => serie.map((s) => {
+    const porCanal = visibles.map((c) => ({ canal: c, v: s.porCanal?.[c] || 0 }));
+    const toques = porCanal.reduce((suma, x) => suma + x.v, 0);
+    return { semanaIso: s.semanaIso, porCanal, toques, respuestas: respPorSemana.get(s.semanaIso) || 0 };
+  }), [serie, respPorSemana, visibles]);
+
+  const n = semanas.length;
+
+  // ── Geometría (viewBox 1:1 con px al ancho mínimo → mobile scrollea) ───────
+  const bandW = 56; const barW = 18; const GAP = 2;
+  const padL = 36; const padR = 20; const padT = 18; const padB = 24; const innerH = 168;
+  const W = padL + padR + n * bandW;
+  const H = padT + innerH + padB;
+  const maxDato = Math.max(0, ...semanas.map((s) => Math.max(s.toques, lineaOculta ? 0 : s.respuestas)));
+  // Tope múltiplo de 4 → ticks (0, mitad, tope) siempre enteros. UN solo eje.
   const maxY = Math.max(4, Math.ceil(maxDato / 4) * 4);
-  const x = (i) => (serie.length <= 1 ? padL + innerW / 2 : padL + (i / (serie.length - 1)) * innerW);
-  const y = (v) => padT + innerH - (v / maxY) * innerH;
+  const cx = (i) => padL + (i + 0.5) * bandW;
+  const yPx = (v) => padT + innerH - (v / maxY) * innerH;
   const ticksY = [0, maxY / 2, maxY];
-  const idxEtiquetas = new Set([0, Math.floor((serie.length - 1) / 2), serie.length - 1]);
+
+  const activo = (() => {
+    const idx = pinIdx != null ? pinIdx : hoverIdx;
+    return idx != null && idx >= 0 && idx < n ? idx : null;
+  })();
+  const semActiva = activo != null ? semanas[activo] : null;
+  const tasaDe = (s) => (s.toques > 0 ? `${fmtPct(Math.round((s.respuestas / s.toques) * 1000) / 10)}%` : '—');
+
+  const actual = n > 0 ? semanas[n - 1] : null;
+  const previa = n > 1 ? semanas[n - 2] : null;
+
+  const toggleCanal = (c) => setOcultos((prev) => {
+    const sig = new Set(prev);
+    if (sig.has(c)) sig.delete(c); else sig.add(c);
+    return sig;
+  });
+
+  const chip = (off) => ({
+    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.ink2,
+    border: `1px solid ${T.faint2}`, borderRadius: 999, padding: '3px 9px',
+    background: 'transparent', cursor: 'pointer', fontFamily: T.font, opacity: off ? 0.45 : 1,
+  });
+  const filaTooltip = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '1.5px 0', whiteSpace: 'nowrap' };
+  const th = {
+    fontSize: 9, color: T.ink3, fontFamily: T.fontMono, letterSpacing: 0.8, fontWeight: 700,
+    textTransform: 'uppercase', textAlign: 'right', padding: '4px 8px',
+    borderBottom: `1.5px solid ${T.faint2}`, whiteSpace: 'nowrap',
+  };
+  const td = {
+    fontFamily: T.fontMono, fontSize: 11.5, color: T.ink, textAlign: 'right', padding: '5px 8px',
+    borderBottom: `1px dashed ${T.faint2}`, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+  };
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="Actividades por semana y canal">
-        {ticksY.map((t) => (
-          <g key={t}>
-            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke={T.faint2} strokeWidth={1} strokeDasharray={t === 0 ? undefined : '2 3'} />
-            <text x={padL - 6} y={y(t) + 3} textAnchor="end" fontSize={9} fill={T.ink3} fontFamily={T.fontMono}>{Math.round(t)}</text>
-          </g>
-        ))}
-        {serie.map((s, i) => (idxEtiquetas.has(i) ? (
-          <text key={s.semanaIso} x={x(i)} y={H - 8} textAnchor="middle" fontSize={9} fill={T.ink3} fontFamily={T.fontMono}>{etiquetaSemana(s.semanaIso)}</text>
-        ) : null))}
-        {canales.length === 1 && serie.length > 1 && (
-          <path
-            d={`M ${x(0)} ${y(0)} L ${serie.map((s, i) => `${x(i)} ${y(s.porCanal?.[canales[0]] || 0)}`).join(' L ')} L ${x(serie.length - 1)} ${y(0)} Z`}
-            fill={CANAL_META[canales[0]]?.color || T.ink3}
-            opacity={0.09}
-          />
-        )}
-        {canales.map((c) => (
-          <polyline
-            key={c}
-            points={serie.map((s, i) => `${x(i)},${y(s.porCanal?.[c] || 0)}`).join(' ')}
-            fill="none"
-            stroke={CANAL_META[c]?.color || T.ink3}
-            strokeWidth={2}
-            strokeDasharray={CANAL_META[c]?.punteada ? '5 4' : undefined}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        ))}
-        {canales.map((c) => serie.map((s, i) => (
-          <g key={`${c}-${s.semanaIso}`}>
-            <circle cx={x(i)} cy={y(s.porCanal?.[c] || 0)} r={3} fill={CANAL_META[c]?.color || T.ink3} stroke={T.paper} strokeWidth={1.5} />
-            {/* target de hover generoso (r=9) con tooltip nativo */}
-            <circle cx={x(i)} cy={y(s.porCanal?.[c] || 0)} r={9} fill="transparent">
-              <title>{`Semana del ${etiquetaSemana(s.semanaIso)} · ${CANAL_META[c]?.label || c}: ${s.porCanal?.[c] || 0}`}</title>
-            </circle>
-          </g>
-        )))}
-      </svg>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 6 }}>
-        {canales.map((c) => (
-          <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: T.ink2 }}>
-            {CANAL_META[c]?.punteada
-              ? <span style={{ width: 14, borderTop: `2px dashed ${CANAL_META[c].color}`, display: 'inline-block' }} />
-              : <span style={{ width: 8, height: 8, borderRadius: '50%', background: CANAL_META[c]?.color || T.ink3, display: 'inline-block' }} />}
-            {CANAL_META[c]?.label || c}
+      {/* Mini-strip de titulares: esta semana + delta vs la anterior */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 10px', marginBottom: 10 }}>
+        <span style={{ fontSize: 11, color: T.ink3 }}>Esta semana:</span>
+        <span style={{ fontFamily: T.fontMono, fontSize: 12.5, fontWeight: 800, color: T.ink, whiteSpace: 'nowrap' }}>
+          {fmtN(actual?.toques || 0)} toques · {fmtN(actual?.respuestas || 0)} respuestas
+        </span>
+        {previa && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <DeltaSemana d={actual.toques - previa.toques} sufijo="toques" />
+            <DeltaSemana d={actual.respuestas - previa.respuestas} sufijo="resp." />
+            <span style={{ fontSize: 10.5, color: T.ink3 }}>vs semana anterior</span>
           </span>
-        ))}
+        )}
+        <Btn sm onClick={() => setVistaTabla((v) => !v)} style={{ marginLeft: 'auto' }} title="Alternar entre gráfico y tabla">
+          {vistaTabla ? '↩ Gráfico' : '⊞ Tabla'}
+        </Btn>
       </div>
+
+      {vistaTabla ? (
+        /* Vista tabla — gemela accesible del gráfico (mismos números) */
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 420 }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign: 'left' }}>Semana</th>
+                {visibles.map((c) => (
+                  <th key={c} style={th}>
+                    <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: CANAL_META[c].color, marginRight: 5 }} />
+                    {CANAL_META[c].label}
+                  </th>
+                ))}
+                <th style={th}>Toques</th>
+                {!lineaOculta && <th style={th}>Respuestas</th>}
+                {!lineaOculta && <th style={th}>Tasa</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {semanas.map((s) => (
+                <tr key={s.semanaIso}>
+                  <td style={{ ...td, fontFamily: T.font, textAlign: 'left', color: T.ink2 }}>{etiquetaSemana(s.semanaIso)}</td>
+                  {s.porCanal.map(({ canal, v }) => <td key={canal} style={td}>{fmtN(v)}</td>)}
+                  <td style={{ ...td, fontWeight: 700 }}>{fmtN(s.toques)}</td>
+                  {!lineaOculta && <td style={{ ...td, fontWeight: 700 }}>{fmtN(s.respuestas)}</td>}
+                  {!lineaOculta && <td style={{ ...td, color: T.ink2 }}>{tasaDe(s)}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        /* Gráfico — scrollea horizontal en su propio contenedor si no entra */
+        <div style={{ overflowX: 'auto' }}>
+          <div style={{ position: 'relative', minWidth: W }}>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} aria-label="Ritmo de la campaña: toques por canal y respuestas por semana">
+              {/* Grilla recesiva: hairlines sólidas, ticks enteros, un solo eje */}
+              {ticksY.map((t) => (
+                <g key={t}>
+                  <line x1={padL} x2={W - padR} y1={yPx(t)} y2={yPx(t)} stroke={T.faint2} strokeWidth={1} />
+                  <text x={padL - 6} y={yPx(t) + 3} textAnchor="end" fontSize={9} fill={T.ink3} fontFamily={T.fontMono}>{t}</text>
+                </g>
+              ))}
+              {/* Banda de la semana activa (suave, detrás de las marcas) */}
+              {activo != null && (
+                <rect x={padL + activo * bandW} y={padT} width={bandW} height={innerH} fill={T.faint} opacity={0.6} />
+              )}
+              {/* Barras apiladas: gap de 2px color papel entre segmentos, cap 4px solo arriba */}
+              {semanas.map((s, i) => {
+                const segs = s.porCanal.filter((x) => x.v > 0);
+                let acumulado = 0;
+                return (
+                  <g key={s.semanaIso}>
+                    {segs.map((seg, j) => {
+                      const yTope = yPx(acumulado + seg.v);
+                      const yBase = yPx(acumulado);
+                      acumulado += seg.v;
+                      const esTope = j === segs.length - 1;
+                      const top = esTope ? yTope : yTope + GAP; // el gap muestra el papel
+                      const h = Math.max(yBase - top, 0.75);
+                      const xBar = cx(i) - barW / 2;
+                      return esTope
+                        ? <path key={seg.canal} d={pathTopeRedondeado(xBar, top, barW, h, 4)} fill={CANAL_META[seg.canal].color} />
+                        : <rect key={seg.canal} x={xBar} y={top} width={barW} height={h} fill={CANAL_META[seg.canal].color} />;
+                    })}
+                  </g>
+                );
+              })}
+              {/* Línea de Respuestas en el MISMO eje: 2px tinta, markers 8px con anillo papel */}
+              {!lineaOculta && n > 1 && (
+                <polyline
+                  points={semanas.map((s, i) => `${cx(i)},${yPx(s.respuestas)}`).join(' ')}
+                  fill="none" stroke={T.ink} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"
+                />
+              )}
+              {!lineaOculta && semanas.map((s, i) => (
+                <circle key={`r-${s.semanaIso}`} cx={cx(i)} cy={yPx(s.respuestas)} r={4} fill={T.ink} stroke={T.paper} strokeWidth={2} />
+              ))}
+              {/* Label directo SOLO del último valor de la línea (el resto: eje + tooltip) */}
+              {!lineaOculta && n > 0 && (
+                <text x={cx(n - 1)} y={Math.max(yPx(semanas[n - 1].respuestas) - 9, 10)} textAnchor="middle" fontSize={10} fontWeight={700} fontFamily={T.fontMono} fill={T.ink}>
+                  {fmtN(semanas[n - 1].respuestas)}
+                </text>
+              )}
+              {/* Etiquetas de semana */}
+              {semanas.map((s, i) => (
+                <text key={`x-${s.semanaIso}`} x={cx(i)} y={H - 8} textAnchor="middle" fontSize={9} fill={T.ink3} fontFamily={T.fontMono}>
+                  {etiquetaSemana(s.semanaIso)}
+                </text>
+              ))}
+              {/* Hit targets: la COLUMNA entera (56px), no las marcas — hover + tap fija */}
+              {semanas.map((s, i) => (
+                <rect
+                  key={`hit-${s.semanaIso}`}
+                  x={padL + i * bandW} y={padT} width={bandW} height={innerH}
+                  fill="transparent" style={{ cursor: 'pointer' }} tabIndex={0}
+                  aria-label={`Semana del ${etiquetaSemana(s.semanaIso)}: ${fmtN(s.toques)} toques, ${fmtN(s.respuestas)} respuestas`}
+                  onPointerEnter={() => setHoverIdx(i)}
+                  onPointerLeave={() => setHoverIdx(null)}
+                  onPointerDown={(e) => { e.stopPropagation(); setPinIdx((p) => (p === i ? null : i)); }}
+                  onFocus={() => setHoverIdx(i)}
+                  onBlur={() => setHoverIdx(null)}
+                />
+              ))}
+            </svg>
+            {/* Tooltip HTML de la columna activa (hover o fijado) */}
+            {semActiva != null && (
+              <div style={{
+                position: 'absolute', top: 6,
+                left: `${((padL + (activo + 0.5) * bandW) / W) * 100}%`,
+                transform: activo <= 1 ? 'translateX(-10%)' : activo >= n - 2 ? 'translateX(-90%)' : 'translateX(-50%)',
+                background: T.paper, border: `1px solid ${T.faint2}`, borderRadius: 6,
+                boxShadow: '0 4px 14px rgba(45,45,45,0.14)', padding: '8px 10px',
+                minWidth: 168, zIndex: 5, pointerEvents: 'none',
+              }}>
+                <div style={{ fontSize: 9.5, fontFamily: T.fontMono, fontWeight: 700, letterSpacing: 0.6, color: T.ink3, textTransform: 'uppercase', marginBottom: 5, whiteSpace: 'nowrap' }}>
+                  Semana del {etiquetaSemana(semActiva.semanaIso)}
+                </div>
+                {semActiva.porCanal.map(({ canal, v }) => (
+                  <div key={canal} style={filaTooltip}>
+                    <span style={{ width: 10, height: 3, borderRadius: 2, background: CANAL_META[canal].color, flexShrink: 0 }} />
+                    <span style={{ flex: 1, color: T.ink2 }}>{CANAL_META[canal].label}</span>
+                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: T.ink }}>{fmtN(v)}</span>
+                  </div>
+                ))}
+                <div style={{ borderTop: `1px solid ${T.faint2}`, margin: '5px 0' }} />
+                <div style={filaTooltip}>
+                  <span style={{ flex: 1, color: T.ink2, fontWeight: 700 }}>Toques</span>
+                  <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: T.ink }}>{fmtN(semActiva.toques)}</span>
+                </div>
+                {!lineaOculta && (
+                  <div style={filaTooltip}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: T.ink, flexShrink: 0 }} />
+                    <span style={{ flex: 1, color: T.ink2, fontWeight: 700 }}>Respuestas</span>
+                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: T.ink }}>{fmtN(semActiva.respuestas)}</span>
+                  </div>
+                )}
+                {!lineaOculta && (
+                  <div style={filaTooltip}>
+                    <span style={{ flex: 1, color: T.ink2 }}>Tasa de la semana</span>
+                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: T.ink }}>{tasaDe(semActiva)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Leyenda interactiva: click = mostrar/ocultar; el color sigue a la entidad */}
+      {!vistaTabla && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {enLeyenda.map((c) => {
+            const off = ocultos.has(c);
+            return (
+              <button key={c} type="button" onClick={() => toggleCanal(c)} style={chip(off)} title={off ? `Mostrar ${CANAL_META[c].label}` : `Ocultar ${CANAL_META[c].label}`}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: off ? 'transparent' : CANAL_META[c].color, border: `1.5px solid ${CANAL_META[c].color}`, boxSizing: 'border-box' }} />
+                {CANAL_META[c].label}
+              </button>
+            );
+          })}
+          <button type="button" onClick={() => setLineaOculta((v) => !v)} style={chip(lineaOculta)} title={lineaOculta ? 'Mostrar Respuestas' : 'Ocultar Respuestas'}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: lineaOculta ? 'transparent' : T.ink, border: `1.5px solid ${T.ink}`, boxSizing: 'border-box' }} />
+            Respuestas
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -430,6 +662,13 @@ export default function CampanasDashboard() {
     [actividades, rangoSemanas],
   );
 
+  // Respuestas por semana (linkedin_respondio + respondido_at de miembros +
+  // notas del cruce web), alineadas con `serie` — misma ventana de semanas.
+  const serieRespuestas = useMemo(
+    () => serieRespuestasPorSemana({ actividades, miembros: datos?.miembros || [], semanas: rangoSemanas }),
+    [actividades, datos, rangoSemanas],
+  );
+
   const canalesVisibles = useMemo(() => {
     if (canalFiltro) return [canalFiltro];
     const hayOtro = serie.some((s) => (s.porCanal?.otro || 0) > 0);
@@ -449,7 +688,8 @@ export default function CampanasDashboard() {
   // tenga usuario propio en app_users, pasarlo acá para filtrar).
   const llamadas = useMemo(() => statsLlamadasCaro({ actividades: actividadesRango }), [actividadesRango]);
 
-  const serieVacia = serie.every((s) => (s.total || 0) === 0);
+  const serieVacia = serie.every((s) => (s.total || 0) === 0)
+    && serieRespuestas.every((s) => (s.respuestas || 0) === 0);
 
   const selStyle = {
     padding: '6px 10px', borderRadius: 4, border: `1.5px solid ${T.faint2}`,
@@ -517,11 +757,13 @@ export default function CampanasDashboard() {
               <EmbudoChart escalones={embudo} isMobile={isMobile} />
             </Box>
             <Box style={{ padding: 16 }}>
-              <div style={tituloSeccion}>Actividad semanal por canal</div>
-              <div style={subSeccion}>{`Últimas ${rangoSemanas} semanas${canalFiltro ? ` · solo ${CANAL_META[canalFiltro].label}` : ''}`}</div>
+              <div style={tituloSeccion}>Ritmo de la campaña</div>
+              <div style={subSeccion}>{`Toques por canal y respuestas — últimas ${rangoSemanas} semanas${canalFiltro ? ` · solo ${CANAL_META[canalFiltro].label}` : ''}`}</div>
               {serieVacia
                 ? <div style={{ padding: '32px 0', textAlign: 'center', fontSize: 12, color: T.ink3 }}>Sin actividades registradas en el rango.</div>
-                : <ChartLineaSemanal serie={serie} canales={canalesVisibles} />}
+                /* key por filtro de canal → al filtrar se resetea la leyenda (no
+                   quedan canales "ocultos" invisibles de una vista anterior) */
+                : <ChartRitmo key={canalFiltro || 'todos'} serie={serie} respuestas={serieRespuestas} canales={canalesVisibles} />}
             </Box>
           </div>
 

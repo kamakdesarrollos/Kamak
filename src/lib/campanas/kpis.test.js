@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { kpisGenerales, comparativaListas, embudoConcrecion, seriePorSemana, statsLlamadasCaro } from './kpis';
+import {
+  kpisGenerales, comparativaListas, embudoConcrecion, seriePorSemana, serieRespuestasPorSemana, statsLlamadasCaro,
+} from './kpis';
 
 // ─── Dataset fijo ────────────────────────────────────────────────────────────
 // AHORA = miércoles 2026-07-22 15:00 hora LOCAL (sin Z → independiente del TZ).
@@ -210,6 +212,47 @@ describe('seriePorSemana', () => {
   });
   it('sin actividades ni nada no explota', () => {
     expect(seriePorSemana({ ahora: AHORA })).toHaveLength(8);
+  });
+});
+
+// ─── serieRespuestasPorSemana ────────────────────────────────────────────────
+describe('serieRespuestasPorSemana', () => {
+  it('suma los 3 orígenes, cada uno en su semana; semana sin respuestas = 0', () => {
+    const acts = [
+      { id: 'r1', tipo: 'linkedin_respondio', fecha: '2026-07-01T10:00:00' }, // (a) → semana 06-29
+      { id: 'r2', tipo: 'nota', texto: 'Respondió por el form de la web (lead obra-9)', fecha: '2026-07-21T09:00:00' }, // (c) → semana 07-20
+      { id: 'r3', tipo: 'nota', texto: 'Motivo de descarte: no interesa', fecha: '2026-07-21T10:00:00' }, // nota común NO cuenta
+      { id: 'r4', tipo: 'email', canal: 'email', fecha: '2026-07-21T11:00:00' }, // toque, no respuesta
+      { id: 'r5', tipo: 'linkedin_respondio' }, // sin fecha → no cuenta
+    ];
+    const miembros = [
+      { id: 'm1', respondido_at: '2026-07-08T09:00:00' }, // (b) snake → semana 07-06
+      { id: 'm2', respondidoAt: '2026-07-22T09:00:00' },  // (b) camelCase → semana 07-20
+      { id: 'm3', estado: 'respondio' },                  // sin fecha → no suma
+      { id: 'm4', respondido_at: '2026-05-01T09:00:00' }, // fuera de la ventana
+    ];
+    expect(serieRespuestasPorSemana({ actividades: acts, miembros, semanas: 4, ahora: AHORA })).toEqual([
+      { semanaIso: '2026-06-29', respuestas: 1 },
+      { semanaIso: '2026-07-06', respuestas: 1 },
+      { semanaIso: '2026-07-13', respuestas: 0 },
+      { semanaIso: '2026-07-20', respuestas: 2 },
+    ]);
+  });
+  it('con el dataset general: m5+m8 respondido_at (semana 07-06) y a16 linkedin_respondio (07-13)', () => {
+    const serie = serieRespuestasPorSemana({ actividades: ACTIVIDADES, miembros: MIEMBROS, semanas: 4, ahora: AHORA });
+    expect(serie.map((s) => s.respuestas)).toEqual([0, 2, 1, 0]);
+  });
+  it('alineada con seriePorSemana: mismas semanas, mismo orden (default 8)', () => {
+    const toques = seriePorSemana({ actividades: ACTIVIDADES, ahora: AHORA });
+    const resp = serieRespuestasPorSemana({ actividades: ACTIVIDADES, miembros: MIEMBROS, ahora: AHORA });
+    expect(resp.map((s) => s.semanaIso)).toEqual(toques.map((s) => s.semanaIso));
+  });
+  it('vacío / sin miembros / sin argumentos no explota y rellena con ceros', () => {
+    const serie = serieRespuestasPorSemana({ ahora: AHORA });
+    expect(serie).toHaveLength(8);
+    expect(serie.every((s) => s.respuestas === 0)).toBe(true);
+    expect(serieRespuestasPorSemana({ actividades: [], semanas: 2, ahora: AHORA }).map((s) => s.semanaIso))
+      .toEqual(['2026-07-13', '2026-07-20']);
   });
 });
 

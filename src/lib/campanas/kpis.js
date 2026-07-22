@@ -41,6 +41,27 @@ function fmtYmd(d) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/**
+ * Esqueleto de las últimas `semanas` (lunes ISO, ascendente, incluida la actual):
+ * crea una fila por semana con `crearFila(semanaIso)` y devuelve además el índice
+ * por semanaIso. Compartido por seriePorSemana y serieRespuestasPorSemana para
+ * que ambas series queden SIEMPRE alineadas (mismas semanas, mismo orden).
+ */
+function esqueletoSemanas(semanas, ahora, crearFila) {
+  const cantidad = Math.max(1, num(semanas) || 8);
+  const lunesActual = lunesDeSemana(ahora);
+  const porSemana = new Map();
+  const serie = [];
+  for (let i = cantidad - 1; i >= 0; i--) {
+    const lunes = new Date(lunesActual);
+    lunes.setDate(lunes.getDate() - i * 7);
+    const fila = crearFila(fmtYmd(lunes));
+    porSemana.set(fila.semanaIso, fila);
+    serie.push(fila);
+  }
+  return { serie, porSemana };
+}
+
 /** Canal efectivo de una actividad: canal explícito, o linkedin_* → 'linkedin', o el tipo si coincide con un canal; sino 'otro'. */
 function canalDe(a) {
   const tipo = String(a?.tipo || '');
@@ -172,22 +193,11 @@ export function embudoConcrecion({ conteoPorEtapa = {}, actividades = [], obrasP
  * @returns {Array<{ semanaIso, porCanal: { llamada, email, linkedin, whatsapp, otro }, total }>}
  */
 export function seriePorSemana({ actividades = [], semanas = 8, ahora = new Date() } = {}) {
-  const cantidad = Math.max(1, num(semanas) || 8);
-  const lunesActual = lunesDeSemana(ahora);
-  const porSemana = new Map();
-  const serie = [];
-
-  for (let i = cantidad - 1; i >= 0; i--) {
-    const lunes = new Date(lunesActual);
-    lunes.setDate(lunes.getDate() - i * 7);
-    const fila = {
-      semanaIso: fmtYmd(lunes),
-      porCanal: { llamada: 0, email: 0, linkedin: 0, whatsapp: 0, otro: 0 },
-      total: 0,
-    };
-    porSemana.set(fila.semanaIso, fila);
-    serie.push(fila);
-  }
+  const { serie, porSemana } = esqueletoSemanas(semanas, ahora, (semanaIso) => ({
+    semanaIso,
+    porCanal: { llamada: 0, email: 0, linkedin: 0, whatsapp: 0, otro: 0 },
+    total: 0,
+  }));
 
   for (const a of actividades || []) {
     const f = parseFecha(a?.fecha);
@@ -197,6 +207,36 @@ export function seriePorSemana({ actividades = [], semanas = 8, ahora = new Date
     fila.porCanal[canalDe(a)] += 1;
     fila.total += 1;
   }
+
+  return serie;
+}
+
+/**
+ * Serie de RESPUESTAS por semana ISO, alineada con seriePorSemana (mismas
+ * semanas, mismo orden — comparten esqueletoSemanas). Una "respuesta" es:
+ *  (a) actividad tipo 'linkedin_respondio' de esa semana;
+ *  (b) miembro de lista con respondido_at/respondidoAt en esa semana;
+ *  (c) actividad tipo 'nota' cuyo texto empieza con 'Respondió por el form' —
+ *      texto EXACTO que inserta el cruce web (lib/web/campanasMatch.js) cuando
+ *      un lead del form de la web matchea una estación de la campaña.
+ * Sin fecha parseable no se puede asignar semana → no suma.
+ * @returns {Array<{ semanaIso, respuestas }>}
+ */
+export function serieRespuestasPorSemana({ actividades = [], miembros = [], semanas = 8, ahora = new Date() } = {}) {
+  const { serie, porSemana } = esqueletoSemanas(semanas, ahora, (semanaIso) => ({ semanaIso, respuestas: 0 }));
+
+  const sumar = (fechaCruda) => {
+    const f = parseFecha(fechaCruda);
+    if (!f) return;
+    const fila = porSemana.get(fmtYmd(lunesDeSemana(f)));
+    if (fila) fila.respuestas += 1; // sin fila → fuera de la ventana
+  };
+
+  for (const a of actividades || []) {
+    const esNotaDelForm = a?.tipo === 'nota' && String(a?.texto || '').startsWith('Respondió por el form');
+    if (a?.tipo === 'linkedin_respondio' || esNotaDelForm) sumar(a?.fecha);
+  }
+  for (const m of miembros || []) sumar(m?.respondido_at ?? m?.respondidoAt);
 
   return serie;
 }
