@@ -133,6 +133,12 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
     ? { ...initial, categoria: initCat }
     : { nombre: '', categoria: 'Mano de obra', tipo: '', cuit: '', domicilio: '', telefono: '', email: '', condicion: 'Responsable Inscripto', cbu: '', alias: '', calificacion: 0, grupos: [], notas: '' });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  // Saldo inicial de la cuenta (opcional): el usuario carga monto + dirección y
+  // se guarda como prov.saldoInicial CON SIGNO (>0 le debemos · <0 a favor
+  // nuestro). Es un saldo de apertura: NO mueve ninguna caja.
+  const initSaldo = Number(initial?.saldoInicial) || 0;
+  const [saldoDir, setSaldoDir]     = useState(initSaldo > 0 ? 'debe' : 'favor');
+  const [saldoMonto, setSaldoMonto] = useState(initSaldo ? String(Math.abs(initSaldo)) : '');
 
   return (
     <div className="k-modal-overlay" onClick={onClose}>
@@ -203,6 +209,22 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
               </div>
             </div>
           )}
+          {esAdmin && (
+            <div>
+              <label style={labelSt}>Saldo inicial de la cuenta (opcional)</label>
+              <div style={{ fontSize: 10, color: T.ink3, marginBottom: 6, marginTop: -1 }}>
+                Si el proveedor ya trae un saldo de antes. No mueve ninguna caja: es solo el arranque de la cuenta corriente.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.2fr', gap: 10 }}>
+                <select style={{ ...inputSt, cursor: 'pointer' }} value={saldoDir} onChange={e => setSaldoDir(e.target.value)}>
+                  <option value="favor">Tenemos a favor</option>
+                  <option value="debe">Le debemos</option>
+                </select>
+                <input style={inputSt} type="number" min="0" inputMode="numeric"
+                  value={saldoMonto} onChange={e => setSaldoMonto(e.target.value)} placeholder="0" />
+              </div>
+            </div>
+          )}
           <div>
             <label style={labelSt}>Calificación</label>
             <StarRating value={form.calificacion || 0} onChange={v => set('calificacion', v)} size={22} />
@@ -214,7 +236,13 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
         </div>
         <div style={{ padding: '10px 18px', borderTop: `1.5px solid ${T.faint2}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn sm onClick={onClose}>Cancelar</Btn>
-          <Btn sm fill onClick={() => { if (!form.nombre.trim()) return; onSave(form); onClose(); }}>
+          <Btn sm fill onClick={() => {
+            if (!form.nombre.trim()) return;
+            const abs = Math.abs(Number(saldoMonto) || 0);
+            const saldoInicial = abs === 0 ? 0 : (saldoDir === 'favor' ? -abs : abs);
+            onSave({ ...form, saldoInicial });
+            onClose();
+          }}>
             {initial ? 'Guardar cambios' : 'Agregar proveedor'}
           </Btn>
         </div>

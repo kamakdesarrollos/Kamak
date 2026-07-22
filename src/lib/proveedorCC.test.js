@@ -127,6 +127,56 @@ describe('saldoProveedorCC — deuda, a favor y el bug del doble descuento', () 
   });
 });
 
+describe('saldo inicial de apertura (prov.saldoInicial)', () => {
+  const provFavor = { id: 'pv-1', nombre: 'Corralón Norte', saldoInicial: -50000 }; // a favor nuestro
+  const provDebe  = { id: 'pv-1', nombre: 'Corralón Norte', saldoInicial: 80000 };  // le debemos de arranque
+
+  it('saldo inicial a favor (<0) genera crédito de apertura', () => {
+    expect(creditoDisponibleProveedor(provFavor, [], [], { cajas: CAJAS, tc: TC })).toBe(50000);
+    const r = saldoProveedorCC(provFavor, [], [], [], { cajas: CAJAS, tc: TC });
+    expect(r.saldo).toBe(-50000);
+    expect(r.credito).toBe(50000);
+  });
+
+  it('saldo inicial que le debemos (>0) suma a la deuda', () => {
+    const r = saldoProveedorCC(provDebe, [], [], [], { cajas: CAJAS, tc: TC });
+    expect(r.saldo).toBe(80000);
+    expect(r.deuda).toBe(80000);
+  });
+
+  it('el crédito de apertura es consumible: factura $30k pagada con crédito → quedan $20k', () => {
+    const f = factura({ monto: 30000, pagos: [{ tipo: 'credito', monto: 30000, fecha: '2026-06-03' }] });
+    expect(creditoDisponibleProveedor(provFavor, [f], [], { cajas: CAJAS, tc: TC })).toBe(20000);
+  });
+
+  it('se netea contra deuda nueva: factura $30k con $50k inicial a favor → saldo −$20k', () => {
+    const r = saldoProveedorCC(provFavor, [factura({ monto: 30000 })], [], [], { cajas: CAJAS, tc: TC });
+    expect(r.saldo).toBe(-20000);
+  });
+
+  it('combina saldo inicial a favor con un anticipo', () => {
+    const r = saldoProveedorCC(provFavor, [], [anticipo()], [], { cajas: CAJAS, tc: TC });
+    expect(r.credito).toBe(100000); // 50k inicial + 50k anticipo
+    expect(r.saldo).toBe(-100000);
+  });
+
+  it('el saldo inicial es de la cuenta entera: NO cuenta al filtrar por obra', () => {
+    const r = saldoProveedorCC(provFavor, [factura({ obraId: 'ob-1' })], [], [], { cajas: CAJAS, tc: TC, obraId: 'ob-1' });
+    expect(r.saldo).toBe(100000); // solo la factura de la obra, sin el inicial de apertura
+  });
+
+  it('aparece en el libro como primera fila de apertura', () => {
+    const libro = libroProveedor(provFavor, [factura()], [], [], { cajas: CAJAS, tc: TC });
+    expect(libro[0].tipo).toBe('inicial');
+    expect(libro[0].haber).toBe(50000);
+    expect(libro[0].saldoAcum).toBe(-50000);
+  });
+
+  it('el saldo inicial a favor cuenta como activo en el Dashboard', () => {
+    expect(creditosEnProveedores([provFavor], [], [], [], { cajas: CAJAS, tc: TC })).toBe(50000);
+  });
+});
+
 describe('estadoCCProveedor', () => {
   it('clasifica debe / a-favor / al-dia', () => {
     expect(estadoCCProveedor(10000)).toBe('debe');

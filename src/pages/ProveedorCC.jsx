@@ -21,8 +21,8 @@ const fmtFecha = (iso) => {
   return `${d}/${m}/${y.slice(2)}`;
 };
 
-const TIPO_LABEL = { contrato: 'Contrato', pago: 'Pago', cert: 'Certif.', factura: 'Factura', facturaPend: 'Orden pago', adicional: 'Adicional', echeq: 'ECHEQ', fondo: 'Fondo rep.', anticipo: 'Anticipo', credito: 'Crédito', ajuste: 'Ajuste' };
-const TIPO_COLOR = { contrato: T.ink, pago: T.ok, cert: T.ok, factura: T.accent, facturaPend: T.accent, adicional: T.warn, echeq: T.ink2, fondo: T.accent, anticipo: T.ok, credito: '#4f5bd5', ajuste: T.ink2 };
+const TIPO_LABEL = { contrato: 'Contrato', pago: 'Pago', cert: 'Certif.', factura: 'Factura', facturaPend: 'Orden pago', adicional: 'Adicional', echeq: 'ECHEQ', fondo: 'Fondo rep.', anticipo: 'Anticipo', credito: 'Crédito', ajuste: 'Ajuste', inicial: 'Saldo inicial' };
+const TIPO_COLOR = { contrato: T.ink, pago: T.ok, cert: T.ok, factura: T.accent, facturaPend: T.accent, adicional: T.warn, echeq: T.ink2, fondo: T.accent, anticipo: T.ok, credito: '#4f5bd5', ajuste: T.ink2, inicial: T.ink2 };
 const OBRA_GENERAL = '__general';
 
 function Avatar({ nombre, size = 50 }) {

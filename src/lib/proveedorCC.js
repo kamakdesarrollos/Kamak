@@ -6,11 +6,16 @@
 //  • Un gasto sin factura y sin marca de anticipo es "gasto directo" (impuestos
 //    tipo ARCA) y NO toca la CC — antes generaba un "a favor" falso.
 //
-// Todo DERIVADO del libro único (facturasPendientes + movimientos):
+// Todo DERIVADO del libro único (facturasPendientes + movimientos), más el
+// SALDO INICIAL de apertura cargado en la ficha (prov.saldoInicial, en ARS:
+// >0 = le debemos de arranque · <0 = a favor nuestro de arranque). Ese saldo
+// inicial NO mueve ninguna caja y es de la cuenta entera (no de una obra):
 //  deuda   = Σ saldoFacturaPendiente(facturas no anuladas / no 'registrada')
 //          + Σ (debe − haber) de ccEntries legacy (hoy vacío en prod)
+//          + saldo inicial si es > 0 (le debemos de arranque)
 //  crédito = Σ anticipos (movimientos gasto con anticipo:true, en ARS)
 //          − Σ aplicaciones de crédito (pagos {tipo:'credito'} en facturas)
+//          + saldo inicial a favor si es < 0 (crédito de apertura, consumible)
 //  saldo   = deuda − crédito   (>0 le debemos · <0 a favor nuestro · ~0 al día)
 //
 // Arregla además el doble descuento de la CC vieja (ProveedorCC.jsx:90): las
@@ -42,14 +47,23 @@ const aplicacionesDe = (facturas, prov, obraId) =>
   facturasCC(facturas, prov, obraId)
     .flatMap(f => (f.pagos || []).filter(p => p.tipo === 'credito'));
 
+// Saldo inicial de apertura de la cuenta (campo prov.saldoInicial, en ARS):
+//  > 0 = le debemos de arranque · < 0 = a favor nuestro de arranque.
+// Es un saldo de APERTURA (no mueve ninguna caja) de la cuenta ENTERA → solo
+// cuenta a nivel proveedor (obraId null), no se imputa a una obra puntual.
+const saldoInicialProv = (prov, obraId) => (obraId ? 0 : (Number(prov?.saldoInicial) || 0));
+
 /** Crédito a favor disponible con un proveedor (en ARS, ≥ 0). */
 export function creditoDisponibleProveedor(prov, facturas, movimientos, { cajas, tc, obraId = null } = {}) {
   if (!prov) return 0;
   const anticipado = anticiposDe(movimientos, prov, obraId)
     .reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
+  // Saldo inicial a favor (<0): crédito de apertura, consumible como un anticipo más.
+  const inicial = saldoInicialProv(prov, obraId);
+  const inicialAFavor = inicial < 0 ? -inicial : 0;
   const aplicado = aplicacionesDe(facturas, prov, obraId)
     .reduce((s, p) => s + (Number(p.monto) || 0), 0);
-  return Math.max(0, Math.round(anticipado - aplicado));
+  return Math.max(0, Math.round(anticipado + inicialAFavor - aplicado));
 }
 
 /**
@@ -63,7 +77,10 @@ export function saldoProveedorCC(prov, facturas, movimientos, ccEntries, { cajas
   const deudaLegacy = (ccEntries || [])
     .filter(e => e.proveedorId === prov.id && (!obraId || e.obraId === obraId))
     .reduce((s, e) => s + (e.debe || 0) - (e.haber || 0), 0);
-  const deuda = Math.round(deudaFacturas + deudaLegacy);
+  // Saldo inicial que le debemos de arranque (>0) suma a la deuda.
+  const inicial = saldoInicialProv(prov, obraId);
+  const inicialDeuda = inicial > 0 ? inicial : 0;
+  const deuda = Math.round(deudaFacturas + deudaLegacy + inicialDeuda);
   const credito = creditoDisponibleProveedor(prov, facturas, movimientos, { cajas, tc, obraId });
   return { saldo: deuda - credito, deuda, credito };
 }
@@ -144,6 +161,16 @@ export function libroProveedor(prov, facturas, movimientos, ccEntries, { cajas, 
     });
   }
   rows.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+  // Saldo inicial de apertura SIEMPRE primero (crédito/deuda de arranque de la
+  // cuenta). >0 = le debemos (debe) · <0 = a favor nuestro (haber).
+  const inicial = saldoInicialProv(prov, obraId);
+  if (inicial !== 0) {
+    rows.unshift({
+      fecha: prov.saldoInicialFecha || '', tipo: 'inicial', ref: 'inicial', obraId: null, obraNombre: '',
+      concepto: 'Saldo inicial de la cuenta',
+      debe: inicial > 0 ? inicial : 0, haber: inicial < 0 ? -inicial : 0,
+    });
+  }
   let acc = 0;
   return rows.map(r => { acc += r.debe - r.haber; return { ...r, saldoAcum: acc }; });
 }
