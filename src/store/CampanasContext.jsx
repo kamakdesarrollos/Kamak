@@ -657,9 +657,50 @@ const fetchListas = async () => {
   return { rows: data || [], error: error || null };
 };
 
-const crearLista = async (data) => {
+// Miembros de VARIAS listas de un saque (vista Campañas del explorador): SOLO
+// las columnas que usan los KPIs, con paginación .range en loop hasta un techo
+// duro de 10k filas (mismo patrón que el fetch de miembros de RitmoCampana).
+const LOTE_MIEMBROS = 1000;
+const MAX_MIEMBROS = 10000;
+
+const fetchMiembrosListas = async (listaIds = []) => {
+  const ids = (listaIds || []).filter(Boolean);
+  if (!ids.length) return { rows: [], error: null };
+  const rows = [];
+  for (let desde = 0; desde < MAX_MIEMBROS; desde += LOTE_MIEMBROS) {
+    const { data, error } = await supabase
+      .from('camp_lista_miembros')
+      .select('lista_id, estado, enviado_at, respondido_at, decisor_id, operador_id')
+      .in('lista_id', ids)
+      .range(desde, desde + LOTE_MIEMBROS - 1);
+    if (error) return { rows: [], error };
+    rows.push(...(data || []));
+    if (!data || data.length < LOTE_MIEMBROS) break; // página incompleta = no hay más
+  }
+  return { rows, error: null };
+};
+
+const crearLista = async (data, { usuario } = {}) => {
   const { data: row, error } = await supabase
     .from('camp_listas').insert({ ...data }).select().single();
+  if (error) return { data: null, error };
+  await insertarActividad({
+    lista_id: row?.id || null,
+    tipo: 'alta',
+    texto: `Nueva campaña — ${row?.nombre || data?.nombre || 'lista'}`,
+    usuario: usuario || null,
+  });
+  return { data: row || null, error: null };
+};
+
+// Update parcial de una campaña/lista (editar nombre/costo/activa desde la
+// vista Campañas). camp_listas SÍ tiene updated_at (0006) pero sin trigger →
+// explícito acá, mismo patrón que actualizarOperador.
+const actualizarLista = async (id, changes) => {
+  const { data: row, error } = await supabase
+    .from('camp_listas')
+    .update({ ...changes, updated_at: ahora() })
+    .eq('id', id).select().single();
   return { data: row || null, error: error || null };
 };
 
@@ -690,7 +731,7 @@ const API = {
   // import
   ejecutarImport,
   // listas
-  fetchListas, crearLista, setEstadoMiembro,
+  fetchListas, fetchMiembrosListas, crearLista, actualizarLista, setEstadoMiembro,
 };
 
 // Provider LAZY: no carga NADA al boot (a diferencia de los contexts de

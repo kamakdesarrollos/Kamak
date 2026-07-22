@@ -12,6 +12,7 @@ import { ETAPA_PROSPECCION_META } from '../../lib/campanas/constants';
 import FichaOperador from './FichaOperador';
 import ColaLlamadas from './ColaLlamadas';
 import RitmoCampana from './RitmoCampana';
+import VistaCampanas from './VistaCampanas';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXPLORADOR JERÁRQUICO — LA pantalla del módulo Campañas (pivot de UX,
@@ -964,8 +965,8 @@ export default function CampExplorador() {
     });
   };
 
-  // ── Vistas: árbol ↔ cola de llamadas · Ritmo colapsable ───────────────────
-  const [vista, setVista] = useState('arbol'); // 'arbol' | 'llamadas'
+  // ── Vistas: árbol ↔ cola de llamadas ↔ campañas · Ritmo colapsable ────────
+  const [vista, setVista] = useState('arbol'); // 'arbol' | 'llamadas' | 'campanas'
   const [ritmoAbierto, setRitmoAbierto] = useState(false);
   const [ritmoMontado, setRitmoMontado] = useState(false); // monta el panel recién al 1er open
 
@@ -976,8 +977,8 @@ export default function CampExplorador() {
 
   const escribirBusqueda = (v) => {
     setBusquedaInput(v);
-    // Buscar desde la vista llamadas te devuelve al árbol (donde viven los resultados).
-    if (vista === 'llamadas' && v.trim().length >= 2) setVista('arbol');
+    // Buscar desde llamadas/campañas te devuelve al árbol (donde viven los resultados).
+    if (vista !== 'arbol' && v.trim().length >= 2) setVista('arbol');
   };
 
   // ── Ficha del operador (panel lateral / fullscreen) + deep link ?op= ──────
@@ -1226,6 +1227,12 @@ export default function CampExplorador() {
         <ColaLlamadas compacto onVerFicha={verFichaDesdeCola} filtroBandera={banderaUnica} />
       </div>
     );
+  } else if (vista === 'campanas') {
+    areaCentral = (
+      <div key="campanas" style={{ animation: 'ceIn 0.22s ease' }}>
+        <VistaCampanas />
+      </div>
+    );
   } else if (modoBusqueda) {
     areaCentral = (
       <div key="busqueda" style={{ animation: 'ceIn 0.22s ease' }}>
@@ -1375,6 +1382,11 @@ export default function CampExplorador() {
               onClick={() => setVista((v) => (v === 'llamadas' ? 'arbol' : 'llamadas'))}
               title="Cola de llamadas del día"
             >☎ Llamadas</BotonAccion>
+            <BotonAccion
+              activo={vista === 'campanas'}
+              onClick={() => setVista((v) => (v === 'campanas' ? 'arbol' : 'campanas'))}
+              title="Campañas por plataforma y sus resultados"
+            >💰 Campañas</BotonAccion>
             <BotonAccion activo={ritmoAbierto} onClick={toggleRitmo} title="Ritmo de la campaña por semana">
               📈 Ritmo
             </BotonAccion>

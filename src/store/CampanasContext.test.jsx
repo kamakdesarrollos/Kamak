@@ -757,6 +757,121 @@ describe('actualizarOperador', () => {
   });
 });
 
+// ── fetchMiembrosListas (vista Campañas: miembros de varias listas de un saque) ─
+describe('fetchMiembrosListas', () => {
+  it('una query con in(lista_id, ids) + select mínimo; página incompleta → corta el loop', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_lista_miembros') {
+        return { data: [{ lista_id: 'l-1', estado: 'pendiente' }], error: null };
+      }
+      return null;
+    });
+    const api = getApi();
+    const res = await api.fetchMiembrosListas(['l-1', 'l-2']);
+    expect(res.error).toBeNull();
+    expect(res.rows).toEqual([{ lista_id: 'l-1', estado: 'pendiente' }]);
+    const consultas = llamadasA('camp_lista_miembros');
+    expect(consultas.length).toBe(1); // 1 fila < página → sin segunda vuelta
+    expect(args(consultas[0], 'in')).toEqual(['lista_id', ['l-1', 'l-2']]);
+    expect(args(consultas[0], 'select')[0])
+      .toBe('lista_id, estado, enviado_at, respondido_at, decisor_id, operador_id');
+    expect(args(consultas[0], 'range')).toEqual([0, 999]);
+  });
+
+  it('página llena → pide la siguiente con el range corrido (paginación en loop)', async () => {
+    let vuelta = 0;
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_lista_miembros') {
+        vuelta += 1;
+        return vuelta === 1
+          ? { data: Array.from({ length: 1000 }, () => ({ lista_id: 'l-1', estado: 'enviado' })), error: null }
+          : { data: [{ lista_id: 'l-1', estado: 'respondio' }], error: null };
+      }
+      return null;
+    });
+    const api = getApi();
+    const res = await api.fetchMiembrosListas(['l-1']);
+    expect(res.error).toBeNull();
+    expect(res.rows).toHaveLength(1001);
+    const ranges = llamadasA('camp_lista_miembros').map((c) => args(c, 'range'));
+    expect(ranges).toEqual([[0, 999], [1000, 1999]]);
+  });
+
+  it('sin ids → { rows: [], error: null } sin tocar la red', async () => {
+    const api = getApi();
+    expect(await api.fetchMiembrosListas([])).toEqual({ rows: [], error: null });
+    expect(await api.fetchMiembrosListas()).toEqual({ rows: [], error: null });
+    expect(supabase.__calls.length).toBe(0);
+  });
+
+  it('error de la query → { rows: [], error } passthrough', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_lista_miembros') return { data: null, error: { message: 'boom' } };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.fetchMiembrosListas(['l-1']);
+    expect(res).toEqual({ rows: [], error: { message: 'boom' } });
+  });
+});
+
+// ── crearLista (alta de una campaña desde la vista Campañas) ──────────────────
+describe('crearLista', () => {
+  it("inserta la lista y registra actividad tipo 'alta' con lista_id", async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_listas' && tiene(log, 'insert')) {
+        return { data: { id: 'l-9', nombre: 'Mailing julio' }, error: null };
+      }
+      return null;
+    });
+    const api = getApi();
+    const res = await api.crearLista(
+      { nombre: 'Mailing julio', canal: 'email', costo_mensual: 120000 },
+      { usuario: 'u-fede' },
+    );
+    expect(res.error).toBeNull();
+    expect(res.data).toMatchObject({ id: 'l-9' });
+    const [ins] = llamadasCon('camp_listas', 'insert');
+    expect(args(ins, 'insert')[0]).toMatchObject({ nombre: 'Mailing julio', canal: 'email', costo_mensual: 120000 });
+    const [act] = llamadasCon('camp_actividades', 'insert');
+    expect(args(act, 'insert')[0]).toMatchObject({ lista_id: 'l-9', tipo: 'alta', usuario: 'u-fede' });
+    expect(args(act, 'insert')[0].texto).toContain('Mailing julio');
+    expect(args(act, 'insert')[0].fecha).toBeTruthy();
+  });
+
+  it('error del insert → { data: null, error } sin actividad', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_listas' && tiene(log, 'insert')) return { data: null, error: { message: 'boom' } };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.crearLista({ nombre: 'X' }, { usuario: 'u-fede' });
+    expect(res).toEqual({ data: null, error: { message: 'boom' } });
+    expect(llamadasA('camp_actividades').length).toBe(0);
+  });
+});
+
+// ── actualizarLista (editar nombre/costo/activa de una campaña) ───────────────
+describe('actualizarLista', () => {
+  it('update parcial por id con updated_at explícito (camp_listas tiene la columna, sin trigger)', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_listas' && tiene(log, 'update')) {
+        return { data: { id: 'l-1', costo_mensual: 90000 }, error: null };
+      }
+      return null;
+    });
+    const api = getApi();
+    const res = await api.actualizarLista('l-1', { costo_mensual: 90000, activa: false });
+    expect(res.error).toBeNull();
+    expect(res.data).toMatchObject({ id: 'l-1' });
+    const [upd] = llamadasCon('camp_listas', 'update');
+    const cambios = args(upd, 'update')[0];
+    expect(cambios).toMatchObject({ costo_mensual: 90000, activa: false });
+    expect(cambios.updated_at).toBeTruthy();
+    expect(args(upd, 'eq')).toEqual(['id', 'l-1']);
+  });
+});
+
 // ── crearEstacion (alta manual de una boca — pedido de Franco) ────────────────
 describe('crearEstacion', () => {
   it("inserta con defaults (operador_id / SIN LLAMAR / datos {}) + telefono_norm normalizado + actividad 'alta_estacion'", async () => {

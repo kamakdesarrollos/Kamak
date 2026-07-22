@@ -1,5 +1,7 @@
 // Fusión de payment-reminders + sales-followups en una sola function (límite
-// Vercel Hobby = 12 functions). Se elige el job por query: ?job=reminders | ?job=followups.
+// Vercel Hobby = 12 functions; hoy el repo usa 10/12 — el portal se consolidó
+// en api/portal/[kind].js (4→1) y se sumó api/campana/sync.js).
+// Se elige el job por query: ?job=reminders | ?job=followups.
 //
 // CRONS: el plan Hobby también limita la CANTIDAD de cron jobs, así que en
 // vercel.json sólo está agendado ?job=reminders (+ sync-sanfrancisco = 2 crons,
