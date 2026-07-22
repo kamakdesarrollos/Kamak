@@ -1,0 +1,58 @@
+name: DB Pruebas (aplicar SQL a Kamak-Pruebas)
+
+# Aplica archivos .sql del repo a la base de PRUEBAS (Kamak-Pruebas) usando la
+# Management API de Supabase con el SUPABASE_ACCESS_TOKEN ya cargado en secrets.
+#
+# ⚠️ SOLO PRUEBAS: el project ref está HARDCODEADO abajo (ecszfsrrkoyzpirzdxlp =
+# Kamak-Pruebas). Este workflow NO puede tocar producción — la migración a prod
+# tiene su propio workflow (db-migrate.yml) que corre al mergear a main.
+#
+# Uso (manual, desde cualquier rama que contenga este archivo):
+#   gh workflow run db-pruebas.yml -r <rama> -f files="supabase/migrations/0006_campanas.sql"
+#   (varios archivos separados por coma; se aplican en orden)
+
+on:
+  workflow_dispatch:
+    inputs:
+      files:
+        description: 'Archivos .sql a aplicar (separados por coma, en orden)'
+        required: true
+        type: string
+
+concurrency:
+  group: db-pruebas
+  cancel-in-progress: false
+
+jobs:
+  aplicar:
+    name: aplicar-sql-a-pruebas
+    runs-on: ubuntu-latest
+    env:
+      # Kamak-Pruebas — NO CAMBIAR: es el candado que impide tocar prod.
+      PRUEBAS_REF: ecszfsrrkoyzpirzdxlp
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Aplicar cada archivo via Management API
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra FILES <<< "${{ inputs.files }}"
+          for f in "${FILES[@]}"; do
+            f="$(echo "$f" | xargs)"  # trim
+            echo "── Aplicando: $f"
+            if [ ! -f "$f" ]; then echo "::error::No existe $f"; exit 1; fi
+            # El body es {"query": "<sql>"} — jq arma el JSON escapando el SQL.
+            jq -Rs '{query: .}' < "$f" > /tmp/body.json
+            code=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+              -X POST "https://api.supabase.com/v1/projects/${PRUEBAS_REF}/database/query" \
+              -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data @/tmp/body.json)
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "::error::Fallo aplicando $f (HTTP $code)"; cat /tmp/resp.json; exit 1
+            fi
+            echo "   OK (HTTP $code)"
+          done
+          echo "✅ Todos los archivos aplicados a Kamak-Pruebas (${PRUEBAS_REF})"
