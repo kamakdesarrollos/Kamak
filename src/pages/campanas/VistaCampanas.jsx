@@ -4,7 +4,7 @@ import { T } from '../../theme';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useCampanas } from '../../store/CampanasContext';
 import { useIsMobile } from '../../hooks/useMediaQuery';
-import { fmtN, fmtMoney } from '../../lib/format';
+import { fmtN, fmtMoney, fmtFecha } from '../../lib/format';
 import { comparativaListas } from '../../lib/campanas/kpis.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,6 +20,14 @@ import { comparativaListas } from '../../lib/campanas/kpis.js';
 // Datos: fetchListas + fetchMiembrosListas (solo columnas de KPI, paginado) +
 // fetchActividades (reuniones por lista_id); la agregación por campaña la hace
 // comparativaListas (kpis.js) y acá solo se suma por plataforma.
+// Métricas REALES (camp_metricas, 0010 — las escribe el sync server-side):
+// fetchMetricasRecientes trae el último snapshot por (fuente, campaña externa).
+// Las campañas de la API que matchean una camp_lista por nombre se FUSIONAN en
+// su fila (los números reales pisan los internos, badge "· API"); las que no,
+// van como fila propia con badge "API" (sin ✎: no son editables acá). Las
+// filas globales de una fuente (campana_ext_id '') van una por fuente bajo su
+// plataforma. Si camp_metricas falla, la vista se pinta igual que siempre +
+// un avisito discreto (el caño de la API jamás rompe lo interno).
 // P11: el costo de campaña NO es monto de obra — lo ve todo el que tiene el
 // permiso `campanas` (no se gatea por Admin).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,6 +55,150 @@ const plataformaDeCanal = (canal) => {
   return 'otras';
 };
 
+// ── Métricas reales de plataformas (camp_metricas) ────────────────────────────
+
+// fuente del sync → plataforma del árbol + nombre de su fila GLOBAL (la fila
+// con campana_ext_id '': métricas del sitio/fuente entera, sin campaña).
+const FUENTES_API = {
+  instantly: { plataforma: 'instantly', nombreGlobal: 'Instantly (global)' },
+  meta_ads: { plataforma: 'meta', nombreGlobal: 'Meta Ads (global)' },
+  ga4: { plataforma: 'google', nombreGlobal: 'GA4 — tráfico web' },
+  gads: { plataforma: 'google', nombreGlobal: 'Google Ads (global)' },
+  gsc: { plataforma: 'google', nombreGlobal: 'SEO (Search Console)' },
+  clarity: { plataforma: 'otras', nombreGlobal: 'Clarity — UX web' },
+};
+const plataformaDeFuente = (fuente) => FUENTES_API[fuente]?.plataforma || 'otras';
+
+// Número seguro para el jsonb de la API (Graph manda strings: "15423.87").
+const nApi = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+// Nombre normalizado para el match campaña-interna ↔ campaña-de-la-API:
+// minúsculas + sin acentos + espacios colapsados (ilike-style, client-side;
+// matchea igual exacto o si un nombre contiene al otro).
+const normNombre = (s) => String(s || '')
+  .toLowerCase()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+const matchNombre = (a, b) => {
+  const x = normNombre(a);
+  const y = normNombre(b);
+  return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
+};
+
+// Clarity guarda { insights: [{ metricName, information: [{…}] }] } — extrae
+// lo básico del bloque 'Traffic' para el cluster (el detalle muestra todo).
+const clarityBasico = (m = {}) => {
+  const traffic = (Array.isArray(m.insights) ? m.insights : [])
+    .find((x) => x?.metricName === 'Traffic')?.information?.[0] || {};
+  return {
+    sesiones: nApi(traffic.totalSessionCount),
+    usuarios: nApi(traffic.distinctUserCount),
+    bots: nApi(traffic.totalBotSessionCount),
+  };
+};
+
+// Equivalentes internos (enviados/respuestas) de una fuente, para la fusión y
+// los Σ de plataforma: los números REALES pisan los contados a mano. Solo las
+// fuentes donde el mapeo es honesto (Instantly manda mails; Meta abre
+// conversaciones de WhatsApp). api = { fuente, metricas }.
+const envRespApi = (api) => {
+  const m = api?.metricas || {};
+  if (api?.fuente === 'instantly') return { enviados: nApi(m.enviados), respuestas: nApi(m.respondieron) };
+  if (api?.fuente === 'meta_ads') return { respuestas: nApi(m.conversaciones) };
+  return {};
+};
+
+// Cluster de KPIs por FUENTE, con las claves EXACTAS que escribe cada
+// lib/campana-sync/<fuente>.js en el jsonb `metricas`.
+const paresApi = (fuente, m = {}) => {
+  if (fuente === 'instantly') {
+    const enviados = nApi(m.enviados);
+    const resp = nApi(m.respondieron);
+    const tasa = enviados > 0 ? Math.round((resp / enviados) * 100) : 0;
+    return [
+      { v: fmtN(enviados), l: 'enviados' },
+      { v: fmtN(nApi(m.abiertos)), l: 'abiertos' },
+      { v: fmtN(resp), l: `resp (${tasa}%)`, color: T.accent },
+      { v: fmtN(nApi(m.bounces)), l: 'bounces', color: T.warn },
+    ];
+  }
+  if (fuente === 'meta_ads') {
+    return [
+      { v: fmtMoney(nApi(m.gasto)), l: 'gasto', color: T.ok },
+      { v: fmtN(nApi(m.impresiones)), l: 'impr' },
+      { v: fmtN(nApi(m.clics)), l: 'clics' },
+      { v: fmtN(nApi(m.conversaciones)), l: 'conv', color: T.accent },
+    ];
+  }
+  if (fuente === 'ga4' || fuente === 'gads') {
+    // ga4 guarda los clics pagos como `clicsPago`; gads como `clics`.
+    return [
+      { v: fmtN(nApi(m.sesiones)), l: 'sesiones' },
+      { v: fmtMoney(nApi(m.costo)), l: 'costo', color: T.ok },
+      { v: fmtN(nApi(fuente === 'ga4' ? m.clicsPago : m.clics)), l: 'clics' },
+    ];
+  }
+  if (fuente === 'gsc') {
+    return [
+      { v: fmtN(nApi(m.clicks)), l: 'clicks', color: T.accent },
+      { v: fmtN(nApi(m.impressions)), l: 'impr' },
+      { v: nApi(m.position).toLocaleString('es-AR', { maximumFractionDigits: 1 }), l: 'pos' },
+    ];
+  }
+  if (fuente === 'clarity') {
+    const b = clarityBasico(m);
+    return [
+      { v: fmtN(b.sesiones), l: 'sesiones' },
+      { v: fmtN(b.usuarios), l: 'usuarios' },
+      { v: fmtN(b.bots), l: 'bots' },
+    ];
+  }
+  // Fuente desconocida: primeras claves numéricas del jsonb, mejor que nada.
+  return Object.entries(m)
+    .filter(([, v]) => Number.isFinite(Number(v)))
+    .slice(0, 4)
+    .map(([k, v]) => ({ v: fmtN(Number(v)), l: k }));
+};
+
+// Pares [label, valor] del jsonb entero para la grilla del detalle. Clarity
+// ({ insights: [...] }) se aplana a "Metric · campo" para que sea legible.
+const entradasMetricas = (m = {}) => {
+  if (Array.isArray(m.insights)) {
+    const filas = [];
+    for (const ins of m.insights) {
+      const info = ins?.information?.[0] || {};
+      for (const [k, v] of Object.entries(info)) filas.push([`${ins?.metricName || '?'} · ${k}`, v]);
+    }
+    for (const [k, v] of Object.entries(m)) if (k !== 'insights') filas.push([k, v]);
+    return filas;
+  }
+  return Object.entries(m);
+};
+
+// Claves del jsonb que son plata → formateo con $.
+const ES_MONEY_API = ['gasto', 'costo', 'spend', 'cost'];
+
+const fmtValorApi = (k, v) => {
+  let x = v;
+  if (typeof x === 'string' && x.trim() !== '' && Number.isFinite(Number(x))) x = Number(x);
+  if (x == null) return '—';
+  if (typeof x === 'number') {
+    if (ES_MONEY_API.includes(k)) return fmtMoney(x);
+    return Number.isInteger(x) ? fmtN(x) : x.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  }
+  if (typeof x === 'object') {
+    const entradas = Object.entries(x);
+    // Objeto plano de escalares (ej. porFuente de GA4) → "google: 12 · direct: 3".
+    if (!Array.isArray(x) && entradas.length > 0 && entradas.every(([, e]) => typeof e === 'number' || typeof e === 'string')) {
+      return entradas.map(([kk, e]) => `${kk}: ${typeof e === 'number' ? fmtN(e) : e}`).join(' · ');
+    }
+    const s = JSON.stringify(x);
+    return s.length > 100 ? `${s.slice(0, 97)}…` : s;
+  }
+  return String(x);
+};
+
 const ICONO_CANAL = { email: '✉', linkedin: '💼', whatsapp: '💬', ads: '📣', llamada: '📞', google: '🔍', presencial: '🤝' };
 // Colores por canal para las mini barras del detalle (paleta del módulo:
 // mail azul apagado / WA T.ok / ads T.warn / llamada T.accent — constants.js).
@@ -65,12 +217,17 @@ const parseCosto = (s) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-// Agregación pura: listas+miembros+actividades → árbol renderizable
-//   [{ ...plataforma, campanas: [fila], miembros, respondieron, tasa, reuniones, costoMensual }]
-// Solo plataformas CON campañas. La fila de campaña reusa comparativaListas
-// (enviados / respondieron / tasaRespuesta / reuniones / costoMensual, tasa
-// desc) y le suma miembros + desglose por estado para el detalle.
-const armarArbol = ({ listas, miembros, actividades }) => {
+// Agregación pura: listas+miembros+actividades+metricas → árbol renderizable
+//   [{ ...plataforma, campanas: [fila], filasApi: [...], tieneApi, miembros,
+//      respondieron, tasa, reuniones, costoMensual }]
+// Solo plataformas CON campañas o con filas de la API. La fila de campaña
+// reusa comparativaListas (enviados / respondieron / tasaRespuesta / reuniones
+// / costoMensual, tasa desc) y le suma miembros + desglose por estado para el
+// detalle. Las metricas (snapshots de camp_metricas, ya deduplicadas por el
+// context) se FUSIONAN a la campaña interna de la misma plataforma que matchee
+// por nombre (f.api = { fuente, metricas, fecha }); las que no matchean van a
+// filasApi (fila propia); las globales (campana_ext_id '') siempre a filasApi.
+const armarArbol = ({ listas, miembros, actividades, metricas }) => {
   const listaPorId = new Map((listas || []).map((l) => [l.id, l]));
   const desglosePorLista = new Map();
   for (const m of miembros || []) {
@@ -85,15 +242,54 @@ const armarArbol = ({ listas, miembros, actividades }) => {
     const desglose = desglosePorLista.get(k.listaId) || { pendiente: 0, enviado: 0, respondio: 0, total: 0 };
     return { ...k, lista: listaPorId.get(k.listaId) || null, miembros: desglose.total, desglose };
   });
+
+  // Fusión / filas propias de la API por plataforma.
+  const apiPorPlat = new Map();       // plataforma key → filas API sin lista interna
+  const fusionadas = new Set();       // listaIds que ya tienen su API pegada
+  for (const s of metricas || []) {
+    const platKey = plataformaDeFuente(s.fuente);
+    const api = { fuente: s.fuente, metricas: s.metricas || {}, fecha: s.fecha };
+    const esGlobal = (s.campana_ext_id ?? '') === '';
+    if (!esGlobal) {
+      const fila = filas.find((f) => plataformaDeCanal(f.canal) === platKey
+        && !fusionadas.has(f.listaId)
+        && matchNombre(f.nombre, s.campana_ext_nombre));
+      if (fila) {
+        fila.api = api;
+        fusionadas.add(fila.listaId);
+        continue;
+      }
+    }
+    const extra = apiPorPlat.get(platKey) || [];
+    extra.push({
+      ...api,
+      key: `api:${s.fuente}:${s.campana_ext_id || ''}`,
+      esGlobal,
+      nombre: esGlobal
+        ? (FUENTES_API[s.fuente]?.nombreGlobal || `${s.fuente} (global)`)
+        : (s.campana_ext_nombre || s.campana_ext_id),
+    });
+    apiPorPlat.set(platKey, extra);
+  }
+
   return PLATAFORMAS.map((p) => {
     const campanas = filas.filter((f) => plataformaDeCanal(f.canal) === p.key);
-    if (!campanas.length) return null;
+    const filasApi = (apiPorPlat.get(p.key) || []).sort((a, b) => (
+      a.esGlobal !== b.esGlobal ? (a.esGlobal ? 1 : -1) : String(a.nombre).localeCompare(String(b.nombre))
+    ));
+    if (!campanas.length && !filasApi.length) return null;
     const suma = (fn) => campanas.reduce((acc, f) => acc + fn(f), 0);
-    const enviados = suma((f) => f.enviados);
-    const respondieron = suma((f) => f.respondieron);
+    // Σ con precedencia API: en las filas fusionadas los enviados/respuestas
+    // REALES pisan los internos, y las filas propias de la API suman lo suyo.
+    const enviados = suma((f) => (f.api && envRespApi(f.api).enviados != null ? envRespApi(f.api).enviados : f.enviados))
+      + filasApi.reduce((acc, r) => acc + (envRespApi(r).enviados || 0), 0);
+    const respondieron = suma((f) => (f.api && envRespApi(f.api).respuestas != null ? envRespApi(f.api).respuestas : f.respondieron))
+      + filasApi.reduce((acc, r) => acc + (envRespApi(r).respuestas || 0), 0);
     return {
       ...p,
       campanas,
+      filasApi,
+      tieneApi: filasApi.length > 0 || campanas.some((f) => !!f.api),
       miembros: suma((f) => f.miembros),
       respondieron,
       // tasa promedio PONDERADA (Σ respondieron / Σ enviados, no promedio de %).
@@ -194,6 +390,30 @@ function ChipCanal({ canal }) {
   );
 }
 
+// Badge "API": la fila muestra números REALES de la plataforma. En una campaña
+// fusionada va como sufijo chico "· API" en el color del canal; en una fila
+// propia de la API, como pill con borde (sin fondo — sobrio como ChipPausada).
+function BadgeApi({ color, sufijo }) {
+  if (sufijo) {
+    return (
+      <span
+        title="Números reales de la plataforma"
+        style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.8, color, flexShrink: 0, whiteSpace: 'nowrap' }}
+      >· API</span>
+    );
+  }
+  return (
+    <span
+      title="Viene de la plataforma — no se edita acá"
+      style={{
+        fontSize: 9, fontWeight: 800, letterSpacing: 0.8, textTransform: 'uppercase',
+        border: `1px solid ${color}`, borderRadius: 999, padding: '1px 7px',
+        color, flexShrink: 0, whiteSpace: 'nowrap',
+      }}
+    >API</span>
+  );
+}
+
 function ChipPausada() {
   return (
     <span style={{
@@ -224,8 +444,41 @@ function BarraEstado({ label, n, total, color, opacidad }) {
   );
 }
 
-// Detalle expandido de una campaña (nivel 3): desglose por estado + costo.
-function DetalleCampana({ f }) {
+// Grilla label/valor con TODAS las claves del snapshot de la API + su fecha.
+function GrillaApi({ api, color }) {
+  const entradas = entradasMetricas(api.metricas);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {entradas.length > 0 && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+          gap: '8px 16px', maxWidth: 620,
+        }}>
+          {entradas.map(([k, v]) => (
+            <div key={k} style={{ minWidth: 0 }}>
+              <div style={{
+                fontSize: 9.5, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
+                color: T.ink3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>{k}</div>
+              <div style={{ fontFamily: T.fontMono, fontSize: 12.5, fontWeight: 700, color: T.ink, overflowWrap: 'anywhere' }}>
+                {fmtValorApi(k, v)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ fontSize: 10.5, color: T.ink3 }}>
+        <span style={{ color, fontWeight: 800, letterSpacing: 0.8 }}>API</span>
+        {' '}· último snapshot: {fmtFecha(api.fecha)}
+      </div>
+    </div>
+  );
+}
+
+// Detalle expandido de una campaña (nivel 3): desglose por estado + costo, y
+// si tiene datos reales fusionados, la grilla completa del snapshot de la API.
+// El microtexto "Fase 2" solo queda en las plataformas SIN datos reales.
+function DetalleCampana({ f, platTieneApi }) {
   const color = colorCanal(f.canal);
   const barras = [
     ['pendiente', f.desglose.pendiente, 0.3],
@@ -255,22 +508,42 @@ function DetalleCampana({ f }) {
           <span style={{ color: T.ink3 }}> · {costoPorRespuesta(f.costoMensual, f.respondieron)} por respuesta</span>
         )}
       </div>
-      <div style={{ fontSize: 10.5, color: T.ink3, fontStyle: 'italic', paddingBottom: 4 }}>
-        El gasto real de la plataforma se enciende con la integración (Fase 2).
-      </div>
+      {f.api && (
+        <div style={{ borderTop: `1px solid ${T.faint}`, paddingTop: 8, paddingBottom: 4 }}>
+          <GrillaApi api={f.api} color={color} />
+        </div>
+      )}
+      {!platTieneApi && (
+        <div style={{ fontSize: 10.5, color: T.ink3, fontStyle: 'italic', paddingBottom: 4 }}>
+          El gasto real de la plataforma se enciende con la integración (Fase 2).
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Detalle expandido de una fila propia de la API: solo la grilla del snapshot.
+function DetalleApi({ r, canal }) {
+  return (
+    <div style={{ marginLeft: 8, borderLeft: `1px solid ${T.faint2}`, padding: '10px 8px 10px 14px' }}>
+      <GrillaApi api={r} color={colorCanal(canal)} />
     </div>
   );
 }
 
 // Fila de una CAMPAÑA (nivel 2): icono por canal + nombre + chips + ✎ + cluster.
+// Con datos de la API fusionados (f.api), los números reales de la plataforma
+// PISAN el cluster interno + sufijo "· API" en el color del canal.
 function FilaCampana({ f, abierto, isMobile, onClick, onEditar }) {
   const pausada = f.lista?.activa === false;
-  const pares = [
-    { v: fmtN(f.miembros), l: f.miembros === 1 ? 'miembro' : 'miembros' },
-    { v: fmtN(f.respondieron), l: `resp (${Math.round(f.tasaRespuesta)}%)`, color: T.accent },
-    { v: fmtN(f.reuniones), l: 'reun', color: T.accent2 },
-    { v: costoPorRespuesta(f.costoMensual, f.respondieron), l: '/resp', color: T.ok },
-  ];
+  const pares = f.api
+    ? paresApi(f.api.fuente, f.api.metricas)
+    : [
+      { v: fmtN(f.miembros), l: f.miembros === 1 ? 'miembro' : 'miembros' },
+      { v: fmtN(f.respondieron), l: `resp (${Math.round(f.tasaRespuesta)}%)`, color: T.accent },
+      { v: fmtN(f.reuniones), l: 'reun', color: T.accent2 },
+      { v: costoPorRespuesta(f.costoMensual, f.respondieron), l: '/resp', color: T.ok },
+    ];
   return (
     <div
       className="vc-fila"
@@ -290,19 +563,49 @@ function FilaCampana({ f, abierto, isMobile, onClick, onEditar }) {
         {f.nombre || '—'}
       </span>
       {!isMobile && <ChipCanal canal={f.canal} />}
+      {f.api && <BadgeApi sufijo color={colorCanal(f.canal)} />}
       {pausada && <ChipPausada />}
       <span
         onClick={(e) => { e.stopPropagation(); onEditar(); }}
         title="Editar campaña (nombre / costo / activa)"
         style={{ fontSize: 12, color: T.ink3, cursor: 'pointer', flexShrink: 0, padding: '2px 4px' }}
       >✎</span>
-      {f.miembros === 0
+      {f.miembros === 0 && !f.api
         ? (
           <span style={{ marginLeft: 'auto', fontSize: 11, color: T.ink3, fontStyle: 'italic', whiteSpace: 'nowrap', flexShrink: 0 }}>
             sin miembros todavía
           </span>
         )
         : <ClusterKpis pares={pares} isMobile={isMobile} />}
+    </div>
+  );
+}
+
+// Fila propia de una campaña o global que viene SOLO de la API (sin lista
+// interna que matchee): badge "API", sin ✎ — sus datos viven en la plataforma,
+// acá no se editan. Las globales llevan 🌐 (métricas de la fuente entera).
+function FilaApi({ r, canal, abierto, isMobile, onClick }) {
+  const color = colorCanal(canal);
+  return (
+    <div
+      className="vc-fila"
+      onClick={onClick}
+      style={{
+        height: isMobile ? 58 : 48, display: 'flex', alignItems: 'center', gap: 10,
+        padding: '0 8px 0 0', cursor: 'pointer', borderBottom: `1px solid ${T.faint}`,
+        borderRadius: 6, transition: 'background 0.15s ease',
+      }}
+    >
+      <Chevron abierto={abierto} />
+      <span style={{ fontSize: 13, flexShrink: 0 }}>{r.esGlobal ? '🌐' : iconoCanal(canal)}</span>
+      <span style={{
+        fontSize: 13.5, fontWeight: 700, color: T.ink, minWidth: 0,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        {r.nombre || '—'}
+      </span>
+      <BadgeApi color={color} />
+      <ClusterKpis pares={paresApi(r.fuente, r.metricas)} isMobile={isMobile} />
     </div>
   );
 }
@@ -537,7 +840,10 @@ function FormEditarCampana({ lista, onGuardar, onCancelar }) {
 
 export default function VistaCampanas({ onError }) {
   const { currentUser } = useUsuarios();
-  const { fetchListas, fetchMiembrosListas, fetchActividades, crearLista, actualizarLista } = useCampanas();
+  const {
+    fetchListas, fetchMiembrosListas, fetchActividades, fetchMetricasRecientes,
+    crearLista, actualizarLista,
+  } = useCampanas();
   const isMobile = useIsMobile();
   const myId = currentUser?.id || null;
 
@@ -560,17 +866,27 @@ export default function VistaCampanas({ onError }) {
       const rListas = await fetchListas();
       if (rListas.error) { fallar(rListas.error); return; }
       const listas = rListas.rows || [];
-      const [rMiembros, rActs] = await Promise.all([
+      const [rMiembros, rActs, rMetricas] = await Promise.all([
         fetchMiembrosListas(listas.map((l) => l.id)),
         fetchActividades({ limit: 500 }),
+        fetchMetricasRecientes(),
       ]);
       const error = rMiembros.error || rActs.error || null;
       if (!vivo) return;
       if (error) { fallar(error); return; }
-      setDatos({ listas, miembros: rMiembros.rows || [], actividades: rActs.rows || [], error: null });
+      // Las métricas de plataformas NUNCA rompen la vista: si su fetch falla,
+      // el árbol interno se pinta igual que siempre + un avisito discreto.
+      setDatos({
+        listas,
+        miembros: rMiembros.rows || [],
+        actividades: rActs.rows || [],
+        metricas: rMetricas.error ? [] : (rMetricas.rows || []),
+        metricasError: rMetricas.error || null,
+        error: null,
+      });
     })().catch((e) => fallar({ message: e?.message || 'Error de red' }));
     return () => { vivo = false; };
-  }, [fetchListas, fetchMiembrosListas, fetchActividades, tick]);
+  }, [fetchListas, fetchMiembrosListas, fetchActividades, fetchMetricasRecientes, tick]);
 
   const reintentar = () => {
     setDatos(null);
@@ -635,10 +951,12 @@ export default function VistaCampanas({ onError }) {
   // ── Derivados de render ───────────────────────────────────────────────────
   const cargando = !datos;
   const error = datos?.error || null;
-  const vacio = !!datos && !error && (datos.listas || []).length === 0;
+  // Vacío solo si no hay NADA que mostrar: ni listas internas ni filas de la API.
+  const vacio = !!datos && !error
+    && (datos.listas || []).length === 0 && (datos.metricas || []).length === 0;
   const altoFila = isMobile ? 58 : 48;
 
-  const renderCampana = (f) => {
+  const renderCampana = (f, platTieneApi) => {
     const abierto = abiertas.has(f.listaId);
     return (
       <div key={f.listaId}>
@@ -658,7 +976,22 @@ export default function VistaCampanas({ onError }) {
             />
           )}
         <Expandible abierto={abierto && editando !== f.listaId}>
-          <DetalleCampana f={f} />
+          <DetalleCampana f={f} platTieneApi={platTieneApi} />
+        </Expandible>
+      </div>
+    );
+  };
+
+  // Filas propias de la API (campañas sin lista interna + globales por fuente):
+  // usan la misma bolsa `abiertas` con su key 'api:<fuente>:<ext_id>' (nunca
+  // choca con un listaId).
+  const renderFilaApi = (r, canal) => {
+    const abierto = abiertas.has(r.key);
+    return (
+      <div key={r.key}>
+        <FilaApi r={r} canal={canal} abierto={abierto} isMobile={isMobile} onClick={() => toggleDetalle(r.key)} />
+        <Expandible abierto={abierto}>
+          <DetalleApi r={r} canal={canal} />
         </Expandible>
       </div>
     );
@@ -671,7 +1004,8 @@ export default function VistaCampanas({ onError }) {
         <FilaPlataforma p={p} abierta={abierta} isMobile={isMobile} onClick={() => togglePlataforma(p.key)} />
         <Expandible abierto={abierta}>
           <div style={{ marginLeft: 8, borderLeft: `1px solid ${T.faint2}`, paddingLeft: 14, paddingTop: 2, paddingBottom: 6 }}>
-            {p.campanas.map(renderCampana)}
+            {p.campanas.map((f) => renderCampana(f, p.tieneApi))}
+            {(p.filasApi || []).map((r) => renderFilaApi(r, p.canal))}
             <FilaNuevaCampana alto={altoFila} plataformaInicial={p.key} onCrear={crear} />
           </div>
         </Expandible>
@@ -713,6 +1047,11 @@ export default function VistaCampanas({ onError }) {
 
       {!cargando && !error && !vacio && (
         <div>
+          {datos.metricasError && (
+            <div style={{ fontSize: 10.5, color: T.ink3, fontStyle: 'italic', padding: '0 0 8px 2px' }}>
+              No pudimos traer las métricas de las plataformas ahora — se muestra solo lo interno.
+            </div>
+          )}
           {arbol.map(renderPlataforma)}
           {/* "+ campaña" global, siempre visible al pie (el usuario elige la plataforma). */}
           <FilaNuevaCampana alto={altoFila} onCrear={crear} />

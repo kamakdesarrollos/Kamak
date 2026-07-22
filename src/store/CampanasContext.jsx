@@ -680,6 +680,38 @@ const fetchMiembrosListas = async (listaIds = []) => {
   return { rows, error: null };
 };
 
+// Snapshots de métricas REALES de las plataformas (camp_metricas, 0010 — las
+// escribe solo el sync server-side). Trae los últimos DIAS_METRICAS días y se
+// queda client-side con el snapshot MÁS RECIENTE por (fuente, campana_ext_id):
+// las fuentes acumuladas (Instantly) pisan el snapshot viejo con el de hoy y
+// las diarias (Meta/GA4) muestran su último día disponible. campana_ext_id ''
+// = métricas globales de la fuente (GSC/Clarity del sitio entero).
+const DIAS_METRICAS = 3;
+const LIMITE_METRICAS = 1000;
+
+const fetchMetricasRecientes = async () => {
+  const desde = new Date(Date.now() - DIAS_METRICAS * 24 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('camp_metricas')
+    .select('*')
+    .gte('fecha', desde)
+    .order('fecha', { ascending: false })
+    .limit(LIMITE_METRICAS);
+  if (error) return { rows: [], error };
+  // Dedupe: las filas ya vienen fecha desc y el unique de la tabla garantiza
+  // una sola por (fuente, campana_ext_id, fecha) → la primera vista gana.
+  const vistos = new Set();
+  const rows = [];
+  for (const r of data || []) {
+    const clave = `${r.fuente}|${r.campana_ext_id ?? ''}`;
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    rows.push(r);
+  }
+  return { rows, error: null };
+};
+
 const crearLista = async (data, { usuario } = {}) => {
   const { data: row, error } = await supabase
     .from('camp_listas').insert({ ...data }).select().single();
@@ -732,6 +764,8 @@ const API = {
   ejecutarImport,
   // listas
   fetchListas, fetchMiembrosListas, crearLista, actualizarLista, setEstadoMiembro,
+  // métricas reales de plataformas (camp_metricas — escribe solo el sync)
+  fetchMetricasRecientes,
 };
 
 // Provider LAZY: no carga NADA al boot (a diferencia de los contexts de

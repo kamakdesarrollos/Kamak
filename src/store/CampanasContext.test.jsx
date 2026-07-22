@@ -10,7 +10,7 @@ vi.mock('../lib/supabase', () => {
   const DEFAULT = { data: null, error: null, count: 0 };
   const METODOS = [
     'select', 'insert', 'update', 'upsert', 'delete',
-    'eq', 'neq', 'in', 'is', 'not', 'ilike', 'or', 'contains', 'containedBy',
+    'eq', 'neq', 'gte', 'lte', 'in', 'is', 'not', 'ilike', 'or', 'contains', 'containedBy',
     'order', 'range', 'limit', 'single', 'maybeSingle',
   ];
   function makeChain(table, opsIniciales = []) {
@@ -811,6 +811,73 @@ describe('fetchMiembrosListas', () => {
     });
     const api = getApi();
     const res = await api.fetchMiembrosListas(['l-1']);
+    expect(res).toEqual({ rows: [], error: { message: 'boom' } });
+  });
+});
+
+// ── fetchMetricasRecientes (snapshots de plataformas — camp_metricas 0010) ────
+describe('fetchMetricasRecientes', () => {
+  it('pide los últimos 3 días (gte fecha) con orden fecha desc + limit 1000', async () => {
+    const api = getApi();
+    const res = await api.fetchMetricasRecientes();
+    expect(res).toEqual({ rows: [], error: null }); // default del mock: data null
+    const [q] = llamadasA('camp_metricas');
+    expect(q).toBeTruthy();
+    expect(args(q, 'select')).toEqual(['*']);
+    const [col, desde] = args(q, 'gte');
+    expect(col).toBe('fecha');
+    expect(desde).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // el corte es HOY - 3 días (tolerancia de huso: entre 2.5 y 4.5 días atrás)
+    const diffDias = (Date.now() - new Date(`${desde}T00:00:00Z`).getTime()) / 86400000;
+    expect(diffDias).toBeGreaterThanOrEqual(2.5);
+    expect(diffDias).toBeLessThanOrEqual(4.5);
+    expect(args(q, 'order')).toEqual(['fecha', { ascending: false }]);
+    expect(args(q, 'limit')).toEqual([1000]);
+  });
+
+  it('dedupe client-side: se queda con el snapshot MÁS RECIENTE por (fuente, campana_ext_id); la global (\'\') es clave propia', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_metricas') {
+        // Ya ordenadas fecha desc, como las devuelve la query real.
+        return {
+          data: [
+            { fuente: 'instantly', campana_ext_id: 'c-1', fecha: '2026-07-21', metricas: { enviados: 300 } },
+            { fuente: 'gsc', campana_ext_id: '', fecha: '2026-07-21', metricas: { clicks: 9 } },
+            { fuente: 'instantly', campana_ext_id: 'c-1', fecha: '2026-07-20', metricas: { enviados: 200 } },
+            { fuente: 'meta_ads', campana_ext_id: 'c-1', fecha: '2026-07-20', metricas: { gasto: 5 } },
+            { fuente: 'gsc', campana_ext_id: '', fecha: '2026-07-19', metricas: { clicks: 4 } },
+            { fuente: 'instantly', campana_ext_id: 'c-1', fecha: '2026-07-19', metricas: { enviados: 100 } },
+          ],
+          error: null,
+        };
+      }
+      return null;
+    });
+    const api = getApi();
+    const res = await api.fetchMetricasRecientes();
+    expect(res.error).toBeNull();
+    expect(res.rows).toHaveLength(3);
+    // instantly/c-1: gana el 21 (los del 20 y 19 se descartan)
+    expect(res.rows).toContainEqual(
+      expect.objectContaining({ fuente: 'instantly', campana_ext_id: 'c-1', fecha: '2026-07-21', metricas: { enviados: 300 } }),
+    );
+    // gsc global (''): gana el 21
+    expect(res.rows).toContainEqual(
+      expect.objectContaining({ fuente: 'gsc', campana_ext_id: '', fecha: '2026-07-21' }),
+    );
+    // meta_ads/c-1 NO choca con instantly/c-1: la clave es (fuente, campana_ext_id)
+    expect(res.rows).toContainEqual(
+      expect.objectContaining({ fuente: 'meta_ads', campana_ext_id: 'c-1' }),
+    );
+  });
+
+  it('error de la query → { rows: [], error } passthrough', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_metricas') return { data: null, error: { message: 'boom' } };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.fetchMetricasRecientes();
     expect(res).toEqual({ rows: [], error: { message: 'boom' } });
   });
 });

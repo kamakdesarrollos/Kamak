@@ -60,7 +60,14 @@ export default async function handler(req, res) {
         const r = await mod.sync();
         resultado = r.skipped
           ? { skipped: r.skipped }
-          : { ok: true, filas: await upsertMetricas(r.filas ?? []) };
+          : {
+              ok: true,
+              filas: await upsertMetricas(r.filas ?? []),
+              // Extras informativos que reporte el módulo (ej. instantly:
+              // campanas/conAnalytics) — pasan al summary del endpoint.
+              ...(r.campanas !== undefined ? { campanas: r.campanas } : {}),
+              ...(r.conAnalytics !== undefined ? { conAnalytics: r.conAnalytics } : {}),
+            };
       } catch (e) {
         // Aislamiento: la fuente que falla queda anotada y el resto sigue.
         console.error(`[campana/sync] ${nombre}:`, e.message);
