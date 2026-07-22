@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import PageLayout from '../../components/layout/PageLayout';
 import PageHero from '../../components/ui/PageHero';
 import { Box, Btn } from '../../components/ui';
@@ -8,6 +8,8 @@ import { useUsuarios } from '../../store/UsuariosContext';
 import { useCampanas } from '../../store/CampanasContext';
 import { useClientes } from '../../store/ClientesContext';
 import { useObras } from '../../store/ObrasContext';
+import { useComercial } from '../../store/ComercialContext';
+import { supabase } from '../../lib/supabase';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { fmtN } from '../../lib/format';
 import {
@@ -179,6 +181,7 @@ function FichaOperador({ operador, onClose, onPatch, nombreUsuario }) {
   const { currentUser } = useUsuarios();
   const { addCliente } = useClientes();
   const { addObra } = useObras();
+  const { addActividad } = useComercial();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
 
@@ -287,6 +290,18 @@ function FichaOperador({ operador, onClose, onPatch, nombreUsuario }) {
     const r = await promoverAEmbudo(operador.id, { usuario: myId, addCliente, addObra });
     setPromoviendo(false);
     if (manejarError(r.error)) return;
+    // La ficha 360 del cliente nuevo no nace vacía: dejamos rastro en
+    // crm_actividades con el contexto del operador (patrón Pipeline.jsx).
+    if (r.clienteId) {
+      const banderas = (operador.banderas || []);
+      addActividad({
+        clienteId: r.clienteId,
+        obraId: r.obraId || null,
+        tipo: 'primer_contacto',
+        texto: `Promovido desde campañas — ${operador.nombre || 'operador'} (${operador.n_estaciones ?? '?'} estaciones${banderas.length ? ', ' + banderas.join('/') : ''})`,
+        usuario: myId,
+      });
+    }
     onPatch(operador.id, { etapa_prospeccion: 'promovido', cliente_id: r.clienteId || null, obra_id: r.obraId || null });
     setPromovidoOk(true);
     recargarActividades();
@@ -544,6 +559,40 @@ export default function CampContactos() {
   const [resultado, setResultado] = useState(null);   // { query, rows, total, error }
   const [heroKpis, setHeroKpis] = useState(null);
   const [sel, setSel] = useState(null);   // operador abierto en el drawer
+
+  // Deep link ?op=<operadorId> (lo manda "Ver ficha" del modo llamadas): abre
+  // el drawer de ese operador. Si la fila ya está en la página cargada la
+  // usamos; si no, lectura directa mínima a camp_operadores por id con la misma
+  // proyección '*' de la lista (fetchOperadores no filtra por id — mismo patrón
+  // de query directa comentada que usa CampLlamadas). Id inexistente → silencio.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const opParam = searchParams.get('op');
+  const opAbiertoRef = useRef(null);   // último ?op= ya resuelto (evita reabrir/refetchear)
+  useEffect(() => {
+    if (!opParam) { opAbiertoRef.current = null; return undefined; }
+    if (!puede || opAbiertoRef.current === opParam) return undefined;
+    opAbiertoRef.current = opParam;
+    let vivo = true;
+    const local = resultado?.rows?.find((x) => x.id === opParam);
+    const promesa = local
+      ? Promise.resolve(local)
+      : supabase.from('camp_operadores').select('*').eq('id', opParam)
+          .maybeSingle().then(({ data }) => data);
+    promesa.then((op) => { if (vivo && op) setSel(op); });
+    return () => { vivo = false; };
+  }, [puede, opParam, resultado]);
+
+  // Cerrar el drawer limpia también el ?op= para que back/refresh no lo reabra.
+  const cerrarFicha = useCallback(() => {
+    setSel(null);
+    opAbiertoRef.current = null;
+    setSearchParams((prev) => {
+      if (!prev.has('op')) return prev;
+      const next = new URLSearchParams(prev);
+      next.delete('op');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   // Búsqueda con debounce 300ms → filtros.busqueda + página 1.
   useEffect(() => {
@@ -816,7 +865,7 @@ export default function CampContactos() {
         <FichaOperador
           key={sel.id}
           operador={sel}
-          onClose={() => setSel(null)}
+          onClose={cerrarFicha}
           onPatch={patchOperador}
           nombreUsuario={nombreUsuario}
         />

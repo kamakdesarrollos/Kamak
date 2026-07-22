@@ -237,11 +237,11 @@ export default function CampKanban() {
   const isAdmin = currentUser?.rol === 'Admin';
   useEffect(() => { if (currentUser && !puede) navigate('/', { replace: true }); }, [currentUser, puede, navigate]);
 
-  const { fetchOperadores, contarPorEtapa, setEtapaProspeccion, registrarActividad } = campanas || {};
+  const { fetchOperadores, setEtapaProspeccion, registrarActividad } = campanas || {};
 
   // Estado por columna en UN solo mapa {etapa: {rows, total, page, loading}}.
   const [cols, setCols] = useState({});
-  const [counts, setCounts] = useState(null);      // counts REALES por etapa (contarPorEtapa)
+  const [counts, setCounts] = useState(null);      // counts REALES por etapa (total del fetch de cada columna)
   const [drag, setDrag] = useState(null);          // operadorId arrastrándose
   const [dragOver, setDragOver] = useState(null);  // etapa bajo el cursor
   const [bandera, setBandera] = useState('');
@@ -292,18 +292,23 @@ export default function CampKanban() {
       const rowsNuevas = [...previas, ...rows.filter(r => !vistos.has(r.id))];
       return { ...prev, [etapa]: { rows: rowsNuevas, total: error ? ant.total : total, page, loading: false } };
     });
+    // Count de la etapa derivado del total del propio fetch (mismos filtros,
+    // mismo momento): reemplaza a contarPorEtapa acá, que duplicaba en 7
+    // queries extra lo que las columnas ya traen. Los ajustes optimistas ±1
+    // de aplicarMovimientoLocal siguen operando sobre este mismo mapa.
+    if (!error) setCounts(prev => ({ ...(prev || {}), [etapa]: total }));
     if (error) setAviso(error.message || 'Error cargando operadores');
   }, [fetchOperadores]);
 
-  // Carga inicial + recarga completa al cambiar filtros: counts en paralelo y
-  // primera página de cada columna (el reset visual ya ocurrió en el render).
+  // Carga inicial + recarga completa al cambiar filtros: primera página de
+  // cada columna (el reset visual ya ocurrió en el render). Los counts salen
+  // del total que devuelve cada fetch — sin queries de conteo aparte.
   useEffect(() => {
-    if (!puede || !contarPorEtapa) return;
+    if (!puede || !fetchOperadores) return;
     reqRef.current += 1;
     const req = reqRef.current;
-    contarPorEtapa(filtrosBase).then(c => { if (req === reqRef.current) setCounts(c); });
     ETAPAS_PROSPECCION.forEach(et => { cargarColumna(et, 1, filtrosBase, req); });
-  }, [puede, filtrosBase, contarPorEtapa, cargarColumna]);
+  }, [puede, filtrosBase, fetchOperadores, cargarColumna]);
 
   // El banner de aviso se va solo.
   useEffect(() => {
@@ -413,8 +418,12 @@ export default function CampKanban() {
     intentarMover(op, etapa);
   };
 
-  const enProspeccion = counts ? ETAPAS_ACTIVAS.reduce((s, e) => s + (counts[e] || 0), 0) : null;
-  const subtitle = counts
+  // counts se llena de a una etapa por vez (cada fetch de columna aporta la
+  // suya): el subtitle recién muestra números cuando TODAS reportaron — el
+  // equivalente exacto al momento en que antes resolvía contarPorEtapa.
+  const countsListos = !!counts && ETAPAS_PROSPECCION.every(e => counts[e] !== undefined);
+  const enProspeccion = countsListos ? ETAPAS_ACTIVAS.reduce((s, e) => s + (counts[e] || 0), 0) : null;
+  const subtitle = countsListos
     ? `${enProspeccion} operadores en prospección · ${counts.en_conversacion || 0} en conversación · ${counts.reunion || 0} ${(counts.reunion || 0) === 1 ? 'reunión' : 'reuniones'}`
     : 'Operadores por etapa: sin contactar → contactado → … → promovido';
 
@@ -467,7 +476,7 @@ export default function CampKanban() {
           const col = cols[etapa] || COL_VACIA;
           const meta = ETAPA_PROSPECCION_META[etapa];
           const isOver = !!drag && dragOver === etapa;
-          const nReal = counts ? (counts[etapa] ?? 0) : (col.loading ? '…' : (col.total ?? 0));
+          const nReal = counts?.[etapa] ?? (col.loading ? '…' : (col.total ?? 0));
           const faltan = Math.max(0, (col.total || 0) - col.rows.length);
           return (
             <div

@@ -165,13 +165,13 @@ async function traerActividadesLinkedIn() {
 }
 
 // Adapta el plan del Unificado al formato que ejecuta el context:
-// - 'actualizar' viene con data PARCIAL (solo los campos nuevos) + id a nivel
-//   ítem; ejecutarImport upserta {...data} en lotes → completamos cada
-//   'actualizar' con la fila existente entera + id, así el upsert pega sobre
-//   la fila real y ninguna columna ausente vuelve a su DEFAULT.
 // - a los operadores nuevos les agregamos nombre_norm (clave de búsqueda/dedup
 //   que la DB espera y el planificador puro no setea).
-// - _nombre es solo para mostrar en el preview (ejecutarImport lo ignora).
+// - 'actualizar' y 'saltear' solo reciben _nombre para mostrar en el preview
+//   (ejecutarImport lo ignora): los 'actualizar' viajan con el id + data
+//   PARCIAL tal cual — ejecutarImport los aplica como update por id con SOLO
+//   el delta, así lo tocado en la DB mientras el preview estaba abierto
+//   (tomas, estados de llamada, etapas) nunca se pisa con el snapshot.
 function completarPlanUnificado(plan, existentes) {
   const porId = (arr) => new Map((arr || []).map((r) => [r.id, r]));
   const mapas = {
@@ -185,10 +185,7 @@ function completarPlanUnificado(plan, existentes) {
       return { ...it, data: { ...it.data, nombre_norm: normNombre(it.data?.nombre) } };
     }
     const base = it.id ? mapa.get(it.id) : null;
-    if (it.accion === 'actualizar') {
-      return { ...it, _nombre: base?.nombre || '', data: { ...(base || {}), ...it.data, id: it.id } };
-    }
-    return base ? { ...it, _nombre: base.nombre || '' } : it; // saltear: solo display
+    return base ? { ...it, _nombre: base.nombre || '' } : it; // solo display
   });
   return {
     ...plan,

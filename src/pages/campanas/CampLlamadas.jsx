@@ -6,6 +6,7 @@ import { Btn, Label } from '../../components/ui';
 import { T } from '../../theme';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useCampanas } from '../../store/CampanasContext';
+import { useNotificaciones } from '../../store/NotificacionesContext';
 import { supabase } from '../../lib/supabase';
 import { ESTADOS_LLAMADA, ESTADO_LLAMADA_META } from '../../lib/campanas/constants.js';
 import { statsLlamadasCaro } from '../../lib/campanas/kpis.js';
@@ -238,6 +239,7 @@ export default function CampLlamadas() {
   const { currentUser, usuarios } = useUsuarios();
   const navigate = useNavigate();
   const { fetchEstaciones, fetchActividades, registrarLlamada } = useCampanas();
+  const { crearNotificacion } = useNotificaciones() || {};
 
   // Guard: solo Admin o usuarios con el permiso `campanas` (patrón Pipeline.jsx).
   const puede = currentUser?.rol === 'Admin' || !!currentUser?.permisos?.campanas;
@@ -273,8 +275,11 @@ export default function CampLlamadas() {
 
   // ── Carga de la cola: fetchEstaciones filtra de a UN estado_llamada →
   //    3 fetch en paralelo y unimos en el orden de prioridad de ESTADOS_COLA.
-  //    Traemos de a 50 por estado; al agotar el lote local se recarga y, como
-  //    las procesadas ya no matchean el filtro, entra el lote siguiente solo.
+  //    Traemos de a 50 por estado ORDENADOS por updated_at asc: registrarLlamada
+  //    setea updated_at=now, así las recién tocadas van al final y la página 1
+  //    trae naturalmente lo no trabajado (la cola no se agota en falso a escala).
+  //    Al agotar el lote local se recarga y, como las procesadas quedan al
+  //    fondo del orden (o ya no matchean el filtro), entra el lote siguiente solo.
   //    OJO: los setState van SOLO dentro de .then/.catch (regla react-hooks/
   //    set-state-in-effect — patrón CampKanban); el "cargando" visual sale del
   //    estado inicial, de los handlers o de `agotada`.
@@ -285,7 +290,7 @@ export default function CampLlamadas() {
 
     const trabajo = async () => {
       const res = await Promise.all(ESTADOS_COLA.map((estadoLlamada) =>
-        fetchEstaciones({ filtros: { estadoLlamada }, page: 1, pageSize: PAGE_COLA })));
+        fetchEstaciones({ filtros: { estadoLlamada }, page: 1, pageSize: PAGE_COLA, orden: 'updated_at' })));
       const conError = res.find((r) => r.error);
       if (conError) throw new Error(conError.error.message || 'No se pudo traer la cola.');
 
@@ -413,6 +418,18 @@ export default function CampLlamadas() {
       return;
     }
 
+    // LEAD CALIENTE = el único evento que amerita aviso inmediato → campanita +
+    // push a los Admin (excluye al actor). Best-effort: un fallo de la notif
+    // JAMÁS rompe el guardado ya hecho.
+    if (estadoLlamada === 'LEAD CALIENTE' && crearNotificacion) {
+      try {
+        crearNotificacion('camp_lead_caliente', {
+          estacion: est.nombre || 'Estación sin nombre',
+          operador: operadores[est.operador_id]?.nombre || '',
+        });
+      } catch (e) { console.warn('[llamadas] notif lead caliente falló (no crítico)', e?.message); }
+    }
+
     vistasRef.current.add(est.id);
     setHechasHoy((h) => h + 1);
     setExito(true);
@@ -421,7 +438,7 @@ export default function CampLlamadas() {
       setExito(false);
       avanzar();
     }, 700);
-  }, [cola, idx, guardando, usuarioId, usuarios, registrarLlamada, avanzar]);
+  }, [cola, idx, guardando, usuarioId, usuarios, registrarLlamada, avanzar, crearNotificacion, operadores]);
 
   const elegirEstado = useCallback((estado) => {
     if (guardando) return;

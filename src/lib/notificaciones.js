@@ -18,6 +18,7 @@ export const EVENTOS = {
   orden_pago_creada:       { roles: ['Admin', 'Administración'], titulo: (d) => `Orden de pago creada: ${d?.detalle || ''}`, link: '/ordenes-de-pago' },
   cliente_firmo:           { roles: ['Admin', 'Administración'], titulo: (d) => `${d?.cliente || 'Un cliente'} firmó un documento`, link: '/clientes' },
   proveedor_firmo:         { roles: ['Admin', 'Administración'], titulo: (d) => `${d?.proveedor || 'Un proveedor'} firmó/subió algo`, link: '/proveedores' },
+  camp_lead_caliente:      { roles: ['Admin'], titulo: (d) => `Lead caliente: ${d?.estacion || 'una estación'}${d?.operador ? ` (${d.operador})` : ''}`, link: '/campanas/contactos' },
 };
 
 // Tipos que YA se muestran in-app como alerta derivada en vivo del Topbar

@@ -151,7 +151,12 @@ export function embudoConcrecion({ conteoPorEtapa = {}, actividades = [], obrasP
     {
       key: 'obraGanada',
       label: 'Obra ganada',
-      valor: obras.filter((o) => o?.venta?.etapa === 'ganado' || o?.estado === 'ganado').length,
+      // Ganada = etapa de venta 'ganado' O estado real de obra activa/finalizada:
+      // cubre la obra confirmada desde Obras sin arrastrar la card del embudo
+      // (mismo criterio que etapaEfectiva de ventaEtapa.js, sin el edge 'perdido').
+      valor: obras.filter(
+        (o) => o?.venta?.etapa === 'ganado' || o?.estado === 'activa' || o?.estado === 'finalizada',
+      ).length,
     },
   ];
 

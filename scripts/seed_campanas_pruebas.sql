@@ -51,7 +51,7 @@ select
   case when 1 + ((1 + (i - 1) % 60) % 7) = 1 then 'APIES-TRUCHO-' || i end,
   (array['FULL','FULL NUEVA IMAGEN','SERVICOMPRAS','SIN TIENDA','MINIMERCADO'])[1 + i % 5],
   '02262-15-' || (400000 + i * 137),
-  '549226215' || lpad((400000 + i * 137)::text, 6, '0'),
+  '5492262' || lpad((400000 + i * 137)::text, 6, '0'),
   case when i % 3 = 0 then 'estacion' || i || '@trucho.example.com' end,
   (array['SIN LLAMAR','SIN LLAMAR','SIN LLAMAR','NO ATIENDE','VOLVER A LLAMAR','PASÓ MAIL','PASÓ WHATSAPP','DECISOR IDENTIFICADO','NO INTERESA','LEAD CALIENTE','FUERA DE SERVICIO'])[1 + i % 11],
   case when i % 4 = 0 then (array['me paso el mail','NUMERO EQUIVOCADO','volver a llamar 15hs','TELEFONO FIJO'])[1 + i % 4] end,
@@ -62,6 +62,10 @@ select
   '{"seed":true}'::jsonb
 from generate_series(1, 120) i
 on conflict (id) do nothing;
+
+-- Reparación idempotente de corridas viejas del seed: el telefono_norm quedaba
+-- con el '15' (549226215...), que no es el output de normalizarTelefonoAR.
+update camp_estaciones set telefono_norm = regexp_replace(telefono_norm, '^549226215', '5492262') where id like 'est_seed_%' and telefono_norm like '549226215%';
 
 -- 50 decisores (en los primeros 50 operadores)
 insert into camp_decisores (id, operador_id, nombre, cargo, linkedin_url, email, confianza, verificado, prioridad, fuente, lista_salesnav, datos)

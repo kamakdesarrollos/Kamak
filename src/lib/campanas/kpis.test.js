@@ -159,8 +159,16 @@ describe('embudoConcrecion', () => {
   it('cada escalón tiene label', () => {
     for (const e of embudo) expect(typeof e.label).toBe('string');
   });
-  it('obra con estado ganado (sin venta) también cuenta como ganada', () => {
-    const e = embudoConcrecion({ obrasPromovidas: [{ estado: 'ganado' }] });
+  it('obra sin venta pero con estado activa cuenta como ganada', () => {
+    const e = embudoConcrecion({ obrasPromovidas: [{ estado: 'activa' }] });
+    expect(e.find((x) => x.key === 'obraGanada').valor).toBe(1);
+  });
+  it('obra confirmada sin arrastrar la card (venta.etapa prospecto pero estado activa) cuenta como ganada', () => {
+    const e = embudoConcrecion({ obrasPromovidas: [{ venta: { etapa: 'prospecto' }, estado: 'activa' }] });
+    expect(e.find((x) => x.key === 'obraGanada').valor).toBe(1);
+  });
+  it('obra finalizada (venta.etapa prospecto) también cuenta como ganada', () => {
+    const e = embudoConcrecion({ obrasPromovidas: [{ venta: { etapa: 'prospecto' }, estado: 'finalizada' }] });
     expect(e.find((x) => x.key === 'obraGanada').valor).toBe(1);
   });
   it('todo vacío → 6 escalones en cero, primera conversión null y el resto 0', () => {

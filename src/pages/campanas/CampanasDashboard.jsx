@@ -261,6 +261,27 @@ function LlamadasCaro({ stats }) {
 // Fetch agregado del tablero (a nivel módulo: NO toca estado de React — el
 // efecto del componente setea estado en los callbacks .then/.catch).
 // Devuelve el snapshot de datos o tira Error.
+
+// Operadores promovidos: pagina hasta traerlos a TODOS (una sola página de 100
+// truncaba embudo y "Obras ganadas" en silencio). Tope sano de 2.000; si el
+// total real lo supera, la franja de honestidad lo declara.
+const PROMOVIDOS_TOPE = 2000;
+async function traerPromovidos(camp) {
+  const pageSize = 1000;
+  const filas = [];
+  let total = 0;
+  for (let page = 1; filas.length < PROMOVIDOS_TOPE; page++) {
+    const { rows, total: t, error } = await camp.fetchOperadores({
+      page, pageSize, filtros: { etapa: 'promovido' },
+    });
+    if (error) return { rows: filas, total, error };
+    filas.push(...(rows || []));
+    total = Math.max(t ?? 0, filas.length);
+    if (!rows?.length || filas.length >= total) break;
+  }
+  return { rows: filas, total, error: null };
+}
+
 async function cargarDatos(camp) {
   const [conteo, listasR, actsR, promovidosR, leadsR] = await Promise.all([
     camp.contarPorEtapa(),
@@ -268,7 +289,7 @@ async function cargarDatos(camp) {
     // Últimas 500 actividades (ver LIMITACIÓN arriba).
     camp.fetchActividades({ limit: 500 }),
     // Operadores promovidos al embudo real → sus obra_id se cruzan con useObras.
-    camp.fetchOperadores({ page: 1, pageSize: 100, filtros: { etapa: 'promovido' } }),
+    traerPromovidos(camp),
     // Solo el count de estaciones LEAD CALIENTE (pageSize 1, usamos total).
     camp.fetchEstaciones({ page: 1, pageSize: 1, filtros: { estadoLlamada: 'LEAD CALIENTE' } }),
   ]);
@@ -278,17 +299,27 @@ async function cargarDatos(camp) {
   // Miembros de listas: el contrato de CampanasContext no expone un fetch de
   // miembros con su estado (fetchDecisores solo embebe lista_id) → lectura
   // DIRECTA read-only de camp_lista_miembros, solo columnas de agregación.
-  // Mover a un fetchMiembros() del context cuando el contrato crezca.
+  // Paginada de a 1000 con .range() (patrón traerTodo de CampImportar):
+  // PostgREST capea cada request a 1000 filas aunque se pida un limit mayor.
+  // Tope sano de 20.000; si el count exacto supera lo traído, la franja de
+  // honestidad lo declara. Mover a una RPC de agregación server-side cuando
+  // el contrato crezca.
   const listaIds = (listasR.rows || []).map((l) => l.id).filter(Boolean);
-  let miembros = [];
+  const miembros = [];
+  let miembrosTotal = 0;
   if (listaIds.length > 0) {
-    const { data, error } = await supabase
-      .from('camp_lista_miembros')
-      .select('lista_id, estado, enviado_at, respondido_at')
-      .in('lista_id', listaIds)
-      .limit(5000);
-    if (error) throw new Error(error.message);
-    miembros = data || [];
+    const pageSize = 1000;
+    for (let desde = 0; desde < 20000; desde += pageSize) {
+      const { data, error, count } = await supabase
+        .from('camp_lista_miembros')
+        .select('lista_id, estado, enviado_at, respondido_at', { count: 'exact' })
+        .in('lista_id', listaIds)
+        .range(desde, desde + pageSize - 1);
+      if (error) throw new Error(error.message);
+      miembros.push(...(data || []));
+      miembrosTotal = Math.max(count ?? 0, miembros.length);
+      if (!data || data.length < pageSize || miembros.length >= miembrosTotal) break;
+    }
   }
 
   return {
@@ -296,8 +327,10 @@ async function cargarDatos(camp) {
     listas: listasR.rows || [],
     actividades: actsR.rows || [],
     promovidos: promovidosR.rows || [],
+    promovidosTotal: promovidosR.total ?? 0,
     leadsCalientes: leadsR.total ?? 0,
     miembros,
+    miembrosTotal,
   };
 }
 
@@ -373,6 +406,9 @@ export default function CampanasDashboard() {
 
   // Obras del embudo real que nacieron de operadores promovidos: cruce por
   // obra_id (camp_operadores.obra_id ← promoverAEmbudo) contra useObras().
+  // OJO: se pasan las obras ENTERAS (filter, sin re-mapear campos) para que
+  // `estado` llegue a kpis.js — el escalón "Obra ganada" también cuenta las
+  // obras con estado activa/finalizada (obras confirmadas sin drag ni cobro).
   const obrasPromovidas = useMemo(() => {
     const ids = new Set((datos?.promovidos || []).map((op) => op?.obra_id).filter(Boolean));
     if (ids.size === 0) return [];
@@ -511,6 +547,12 @@ export default function CampanasDashboard() {
           {/* Franja de honestidad de datos (regla 8 del proyecto) */}
           <div style={{ marginTop: 14, paddingTop: 8, borderTop: `1px dashed ${T.faint2}`, fontSize: 10.5, color: T.ink3, display: 'flex', flexWrap: 'wrap', gap: '2px 16px' }}>
             <span>Actividades consideradas: últimas 500 (las más recientes)</span>
+            {(datos?.promovidos?.length ?? 0) < (datos?.promovidosTotal ?? 0) && (
+              <span>{`Promovidos considerados: ${fmtN(datos.promovidos.length)} de ${fmtN(datos.promovidosTotal)} — embudo y obras ganadas parciales`}</span>
+            )}
+            {(datos?.miembros?.length ?? 0) < (datos?.miembrosTotal ?? 0) && (
+              <span>{`Miembros de listas considerados: ${fmtN(datos.miembros.length)} de ${fmtN(datos.miembrosTotal)}`}</span>
+            )}
             <span>Integraciones (Instantly · Meta · Google): Fase 2</span>
           </div>
         </>

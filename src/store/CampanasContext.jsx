@@ -13,7 +13,8 @@ export const ETAPAS_PROSPECCION = [
 // (mueven etapa_prospeccion 'sin_contactar' → 'contactado' al registrar la llamada).
 const ESTADOS_LLAMADA_CONTACTO = ['DECISOR IDENTIFICADO', 'LEAD CALIENTE'];
 
-const LOTE_IMPORT = 500;
+const LOTE_IMPORT = 500;  // upserts de filas nuevas, por lote
+const LOTE_UPDATE = 20;   // updates parciales en paralelo (Promise.all), por tanda
 
 const ahora = () => new Date().toISOString();
 
@@ -101,7 +102,7 @@ const fetchOperadores = async ({ page = 1, pageSize = 50, filtros = {}, orden } 
   return { rows: data || [], total: count ?? 0, error: error || null };
 };
 
-const fetchEstaciones = async ({ operadorId, filtros = {}, page = 1, pageSize = 50 } = {}) => {
+const fetchEstaciones = async ({ operadorId, filtros = {}, page = 1, pageSize = 50, orden } = {}) => {
   let q = supabase.from('camp_estaciones').select('*', { count: 'exact' });
   if (operadorId) q = q.eq('operador_id', operadorId);
   const { bandera, provincia, estadoLlamada, busqueda } = filtros;
@@ -110,7 +111,11 @@ const fetchEstaciones = async ({ operadorId, filtros = {}, page = 1, pageSize = 
   if (estadoLlamada) q = q.eq('estado_llamada', estadoLlamada);
   const b = limpiarBusqueda(busqueda);
   if (b) q = q.or(`nombre.ilike.%${b}%,direccion.ilike.%${b}%,localidad.ilike.%${b}%,telefono.ilike.%${b}%,apies.ilike.%${b}%`);
-  q = q.order('nombre', { ascending: true }).range((page - 1) * pageSize, page * pageSize - 1);
+  // orden: mismo contrato que fetchOperadores ('updated_at' asc / '-updated_at'
+  // desc / default nombre asc) — la cola de llamadas pide updated_at asc para
+  // que lo recién trabajado vaya al final y la página 1 traiga lo no tocado.
+  const [col, asc] = resolverOrden(orden, 'nombre');
+  q = q.order(col, { ascending: asc }).range((page - 1) * pageSize, page * pageSize - 1);
   const { data, error, count } = await q;
   return { rows: data || [], total: count ?? 0, error: error || null };
 };
@@ -321,6 +326,13 @@ const promoverAEmbudo = async (operadorId, { usuario, addCliente, addObra, force
   const { operador, rechazo } = await chequearOperadorParaMutar(operadorId, usuario, force);
   if (rechazo) return rechazo;
 
+  // Idempotencia: si la fila FRESCA ya está promovida (etapa o links seteados),
+  // devolvemos los links existentes SIN crear nada — cubre la fila vieja en la
+  // UI de otro usuario y el reintento tras un fallo parcial.
+  if (operador.etapa_prospeccion === 'promovido' || operador.cliente_id || operador.obra_id) {
+    return { clienteId: operador.cliente_id || null, obraId: operador.obra_id || null, error: null, yaPromovido: true };
+  }
+
   // Teléfono: el de la primera estación del operador.
   const { data: estaciones } = await supabase
     .from('camp_estaciones').select('*').eq('operador_id', operadorId)
@@ -335,11 +347,20 @@ const promoverAEmbudo = async (operadorId, { usuario, addCliente, addObra, force
   const obraId = await addObra({ nombre, cliente: operador.nombre, clienteId, tipo: 'Otro', presupuesto: 0, notas: '', venta, esLead: true });
 
   const now = ahora();
-  const { error } = await supabase
+  // Update CONDICIONAL (.is cliente_id null): si otra sesión promovió en el
+  // medio (dos clicks simultáneos), no pisamos sus links — 0 filas afectadas
+  // → releemos y devolvemos los de la DB como yaPromovido.
+  const { data: afectadas, error } = await supabase
     .from('camp_operadores')
     .update({ cliente_id: clienteId || null, obra_id: obraId || null, etapa_prospeccion: 'promovido', updated_at: now })
-    .eq('id', operadorId);
+    .eq('id', operadorId)
+    .is('cliente_id', null)
+    .select();
   if (error) return { error };
+  if (!afectadas?.length) {
+    const { data: fresco } = await getOperador(operadorId);
+    return { clienteId: fresco?.cliente_id || null, obraId: fresco?.obra_id || null, error: null, yaPromovido: true };
+  }
   await insertarActividad({
     operador_id: operadorId,
     tipo: 'promovido',
@@ -352,23 +373,31 @@ const promoverAEmbudo = async (operadorId, { usuario, addCliente, addObra, force
 };
 
 // ── Import (aplica el plan de src/lib/campanas/import*.js) ────────────────────
-// plan: { operadores:[{accion,data}], estaciones:[{accion,data,operadorRef}],
-//         decisores:[{accion,data,operadorRef}], actividades:[...], resumen? }
+// plan: { operadores:[{accion,data}], estaciones:[{accion,id?,data,operadorRef}],
+//         decisores:[{accion,id?,data,operadorRef}], actividades:[...], resumen? }
 // operadorRef: índice del array plan.operadores (número) → id insertado, o el
-// id de un operador ya existente (string). Upserts en batches de 500.
+// id de un operador ya existente (string).
+// Ejecución POR ACCIÓN: 'crear' → upsert en lotes de 500; 'actualizar' →
+// update parcial por id con SOLO los campos del delta (tandas de 20 en
+// paralelo). Nunca se pisa la fila entera con el snapshot del preview: lo que
+// otro usuario tocó mientras el preview estaba abierto (tomas, estados de
+// llamada, etapas) queda intacto.
 const ejecutarImport = async (plan, { usuario, archivo, tipo, onProgress } = {}) => {
   const now = ahora();
 
   // Pre-asignamos id a cada operador del plan para poder resolver operadorRef
   // ANTES de insertar (y que estaciones/decisores/actividades apunten bien).
   const idPorIndice = {};
-  const filasOperadores = [];
+  const opsCrear = [];
+  const opsActualizar = [];
   (plan?.operadores || []).forEach((item, i) => {
     const data = item?.data || {};
-    const id = data.id || genId();
+    const accion = item?.accion || 'crear';
+    const id = item?.id || data.id || genId();
     idPorIndice[i] = id;
-    if ((item?.accion || 'crear') === 'saltear') return;
-    filasOperadores.push({ ...data, id, updated_at: now });
+    if (accion === 'saltear') return;
+    if (accion === 'actualizar') { opsActualizar.push({ id, data }); return; }
+    opsCrear.push({ ...data, id, updated_at: now });
   });
 
   const resolverRef = (ref, data) => {
@@ -377,24 +406,39 @@ const ejecutarImport = async (plan, { usuario, archivo, tipo, onProgress } = {})
     return data?.operador_id || null;
   };
 
-  const armarFilas = (items) => (items || [])
-    .filter((item) => (item?.accion || 'crear') !== 'saltear')
-    .map((item) => {
+  // Separa los ítems de una entidad: filas listas para upsert ('crear') y
+  // pares { id, data } con el delta ('actualizar'; sin id se saltea).
+  const separarItems = (items) => {
+    const crear = [];
+    const actualizar = [];
+    for (const item of items || []) {
+      const accion = item?.accion || 'crear';
+      if (accion === 'saltear') continue;
       const data = item?.data || item || {};
-      return {
+      if (accion === 'actualizar') {
+        const id = item?.id || data.id || null;
+        if (id) actualizar.push({ id, data });
+        continue;
+      }
+      crear.push({
         ...data,
         id: data.id || genId(),
         operador_id: resolverRef(item?.operadorRef, data),
         updated_at: now,
-      };
-    });
+      });
+    }
+    return { crear, actualizar };
+  };
 
-  const filasEstaciones  = armarFilas(plan?.estaciones);
-  const filasDecisores   = armarFilas(plan?.decisores);
-  const filasActividades = armarFilas(plan?.actividades);
+  const porTabla = [
+    ['camp_operadores', { crear: opsCrear, actualizar: opsActualizar }],
+    ['camp_estaciones', separarItems(plan?.estaciones)],
+    ['camp_decisores', separarItems(plan?.decisores)],
+    ['camp_actividades', separarItems(plan?.actividades)],
+  ];
 
-  const total = filasOperadores.length + filasEstaciones.length
-    + filasDecisores.length + filasActividades.length;
+  const contarTabla = ({ crear, actualizar }) => crear.length + actualizar.length;
+  const total = porTabla.reduce((a, [, sep]) => a + contarTabla(sep), 0);
   let hecho = 0;
   const avisar = () => { if (typeof onProgress === 'function') onProgress(hecho, total); };
   avisar();
@@ -410,22 +454,37 @@ const ejecutarImport = async (plan, { usuario, archivo, tipo, onProgress } = {})
     return null;
   };
 
-  for (const [tabla, filas] of [
-    ['camp_operadores', filasOperadores],
-    ['camp_estaciones', filasEstaciones],
-    ['camp_decisores', filasDecisores],
-    ['camp_actividades', filasActividades],
-  ]) {
-    const error = await subirLotes(tabla, filas);
-    if (error) return { error, resumen: null };
+  // Updates parciales: SOLO el delta + updated_at, por id. En tandas de
+  // LOTE_UPDATE en paralelo para no serializar cientos de round-trips.
+  const actualizarLotes = async (tabla, items) => {
+    for (let i = 0; i < items.length; i += LOTE_UPDATE) {
+      const lote = items.slice(i, i + LOTE_UPDATE);
+      const resultados = await Promise.all(lote.map(({ id, data }) => {
+        const campos = { ...data, updated_at: now };
+        delete campos.id; // el id nunca viaja en el payload
+        return supabase.from(tabla).update(campos).eq('id', id);
+      }));
+      const fallo = resultados.find((r) => r?.error);
+      if (fallo) return fallo.error;
+      hecho += lote.length;
+      avisar();
+    }
+    return null;
+  };
+
+  for (const [tabla, { crear, actualizar }] of porTabla) {
+    const eCrear = await subirLotes(tabla, crear);
+    if (eCrear) return { error: eCrear, resumen: null };
+    const eAct = await actualizarLotes(tabla, actualizar);
+    if (eAct) return { error: eAct, resumen: null };
   }
 
   const resumen = {
     ...(plan?.resumen || {}),
-    operadores: filasOperadores.length,
-    estaciones: filasEstaciones.length,
-    decisores: filasDecisores.length,
-    actividades: filasActividades.length,
+    operadores: contarTabla(porTabla[0][1]),
+    estaciones: contarTabla(porTabla[1][1]),
+    decisores: contarTabla(porTabla[2][1]),
+    actividades: contarTabla(porTabla[3][1]),
   };
   const { data: run, error: eRun } = await supabase
     .from('camp_import_runs')

@@ -250,6 +250,22 @@ describe('registrarLlamada', () => {
   });
 });
 
+// ── fetchEstaciones ───────────────────────────────────────────────────────────
+describe('fetchEstaciones', () => {
+  it("acepta orden: 'updated_at' → asc, '-updated_at' → desc, default nombre asc", async () => {
+    const api = getApi();
+    await api.fetchEstaciones({ orden: 'updated_at' });
+    await api.fetchEstaciones({ orden: '-updated_at' });
+    await api.fetchEstaciones();
+    const ordenes = llamadasCon('camp_estaciones', 'order').map((c) => args(c, 'order'));
+    expect(ordenes).toEqual([
+      ['updated_at', { ascending: true }],
+      ['updated_at', { ascending: false }],
+      ['nombre', { ascending: true }],
+    ]);
+  });
+});
+
 // ── ejecutarImport ────────────────────────────────────────────────────────────
 describe('ejecutarImport', () => {
   it('batchea los upserts de a 500 (1200 filas → 3 llamadas de 500/500/200) + import_run + onProgress', async () => {
@@ -288,6 +304,51 @@ describe('ejecutarImport', () => {
     expect(progreso[progreso.length - 1]).toEqual([1200, 1200]);
   });
 
+  it("separa por acción: 'actualizar' → update parcial por id (NUNCA upsert); 'crear' → upsert", async () => {
+    const api = getApi();
+    const progreso = [];
+    const res = await api.ejecutarImport({
+      operadores: [
+        { accion: 'actualizar', id: 'op-ex', data: { web: 'https://x.com' } },
+      ],
+      estaciones: [
+        { accion: 'actualizar', id: 'est-a', data: { direccion: 'Ruta 3 km 40' } },
+        { accion: 'actualizar', id: 'est-b', data: { apies: '9901' } },
+        { accion: 'actualizar', id: 'est-c', data: { estado_llamada: 'NO ATIENDE', estado_original: 'no atendió' } },
+        { accion: 'crear', data: { nombre: 'Estación Nueva' }, operadorRef: 'op-ex' },
+      ],
+      decisores: [],
+    }, { usuario: 'u-fede', archivo: 'u.xlsx', tipo: 'unificado', onProgress: (h, t) => progreso.push([h, t]) });
+    expect(res.error).toBeNull();
+
+    // operador 'actualizar': update con eq por id, jamás upsert
+    const updOps = llamadasCon('camp_operadores', 'update');
+    expect(updOps.length).toBe(1);
+    expect(args(updOps[0], 'eq')).toEqual(['id', 'op-ex']);
+    expect(llamadasCon('camp_operadores', 'upsert').length).toBe(0);
+
+    // estaciones 'actualizar': un update con eq por CADA una
+    const updEst = llamadasCon('camp_estaciones', 'update');
+    expect(updEst.length).toBe(3);
+    expect(updEst.map((c) => args(c, 'eq'))).toEqual([['id', 'est-a'], ['id', 'est-b'], ['id', 'est-c']]);
+    // el payload es SOLO el delta + updated_at (nunca la fila entera ni el id)
+    const delta = args(updEst[0], 'update')[0];
+    expect(Object.keys(delta).sort()).toEqual(['direccion', 'updated_at']);
+    expect(delta.direccion).toBe('Ruta 3 km 40');
+    expect(delta.updated_at).toBeTruthy();
+
+    // el 'crear' sigue yendo por upsert en lote
+    const upserts = llamadasCon('camp_estaciones', 'upsert');
+    expect(upserts.length).toBe(1);
+    expect(args(upserts[0], 'upsert')[0]).toHaveLength(1);
+    expect(args(upserts[0], 'upsert')[0][0]).toMatchObject({ nombre: 'Estación Nueva', operador_id: 'op-ex' });
+
+    // resumen y progreso cuentan creados + actualizados
+    expect(res.resumen).toMatchObject({ operadores: 1, estaciones: 4, decisores: 0 });
+    expect(progreso[0]).toEqual([0, 5]);
+    expect(progreso[progreso.length - 1]).toEqual([5, 5]);
+  });
+
   it('resuelve operadorRef numérico contra el id del operador nuevo insertado', async () => {
     const api = getApi();
     const res = await api.ejecutarImport({
@@ -310,6 +371,7 @@ describe('promoverAEmbudo', () => {
   it('crea cliente + obra esLead (patrón Pipeline), linkea ids y pasa a promovido', async () => {
     supabase.__setHandler((log) => {
       if (log.table === 'camp_operadores' && tiene(log, 'maybeSingle')) return { data: OPERADOR_LIBRE, error: null };
+      if (log.table === 'camp_operadores' && tiene(log, 'update')) return { data: [{ id: 'op-2' }], error: null };
       if (log.table === 'camp_estaciones' && tiene(log, 'select')) return { data: [ESTACION], error: null };
       return null;
     });
@@ -331,9 +393,60 @@ describe('promoverAEmbudo', () => {
 
     const [upd] = llamadasCon('camp_operadores', 'update');
     expect(args(upd, 'update')[0]).toMatchObject({ cliente_id: 'cl-99', obra_id: 'obra-99', etapa_prospeccion: 'promovido' });
+    // update condicional: solo pega si nadie lo linkeó en el medio
+    expect(args(upd, 'is')).toEqual(['cliente_id', null]);
+    expect(tiene(upd, 'select')).toBe(true);
     const [act] = llamadasCon('camp_actividades', 'insert');
     expect(args(act, 'insert')[0]).toMatchObject({ operador_id: 'op-2', tipo: 'promovido' });
     expect(args(act, 'insert')[0].datos).toMatchObject({ clienteId: 'cl-99', obraId: 'obra-99' });
+  });
+
+  it('promover dos veces → la segunda devuelve los links existentes SIN volver a crear cliente/obra', async () => {
+    let op = { ...OPERADOR_LIBRE };
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_operadores' && tiene(log, 'maybeSingle')) return { data: { ...op }, error: null };
+      if (log.table === 'camp_operadores' && tiene(log, 'update')) {
+        if (op.cliente_id) return { data: [], error: null }; // .is('cliente_id', null) ya no matchea
+        op = { ...op, cliente_id: 'cl-99', obra_id: 'obra-99', etapa_prospeccion: 'promovido' };
+        return { data: [op], error: null };
+      }
+      if (log.table === 'camp_estaciones' && tiene(log, 'select')) return { data: [ESTACION], error: null };
+      return null;
+    });
+    const addCliente = vi.fn(() => 'cl-99');
+    const addObra = vi.fn(() => 'obra-99');
+    const api = getApi();
+
+    const r1 = await api.promoverAEmbudo('op-2', { usuario: 'u-fede', addCliente, addObra });
+    expect(r1).toMatchObject({ clienteId: 'cl-99', obraId: 'obra-99', error: null });
+
+    const r2 = await api.promoverAEmbudo('op-2', { usuario: 'u-caro', addCliente, addObra });
+    expect(r2).toEqual({ clienteId: 'cl-99', obraId: 'obra-99', error: null, yaPromovido: true });
+    expect(addCliente).toHaveBeenCalledTimes(1); // la segunda NO creó nada
+    expect(addObra).toHaveBeenCalledTimes(1);
+  });
+
+  it('carrera: el update condicional no afecta filas → relee y devuelve los links del otro como yaPromovido', async () => {
+    let lecturas = 0;
+    supabase.__setHandler((log) => {
+      if (log.table === 'camp_operadores' && tiene(log, 'maybeSingle')) {
+        lecturas += 1;
+        // 1ª lectura (guard): libre; relectura post-update: otro ya lo promovió
+        return lecturas === 1
+          ? { data: { ...OPERADOR_LIBRE }, error: null }
+          : { data: { ...OPERADOR_LIBRE, etapa_prospeccion: 'promovido', cliente_id: 'cl-otro', obra_id: 'obra-otro' }, error: null };
+      }
+      if (log.table === 'camp_operadores' && tiene(log, 'update')) return { data: [], error: null }; // 0 filas
+      if (log.table === 'camp_estaciones' && tiene(log, 'select')) return { data: [ESTACION], error: null };
+      return null;
+    });
+    const addCliente = vi.fn(() => 'cl-mio');
+    const addObra = vi.fn(() => 'obra-mia');
+    const api = getApi();
+    const res = await api.promoverAEmbudo('op-2', { usuario: 'u-fede', addCliente, addObra });
+    expect(res).toEqual({ clienteId: 'cl-otro', obraId: 'obra-otro', error: null, yaPromovido: true });
+    // no registró actividad 'promovido' porque no fue él quien promovió
+    expect(llamadasCon('camp_actividades', 'insert').length).toBe(0);
   });
 
   it('operador tomado por otro → rechaza sin crear nada', async () => {

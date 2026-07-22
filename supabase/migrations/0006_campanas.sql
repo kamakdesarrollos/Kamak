@@ -32,6 +32,7 @@ create table if not exists public.camp_operadores (
   multibandera      boolean,
   n_estaciones      integer,
   web               text,
+  linkedin_empresa  text,
   emails            text[],
   notas             text,
   -- anti-colisión (P6): si en_tratativas, solo owner_user_id (o Admin) lo toca
@@ -51,6 +52,10 @@ create table if not exists public.camp_operadores (
   created_at        timestamptz default now(),
   updated_at        timestamptz default now()
 );
+
+-- La tabla puede existir de una corrida anterior (Kamak-Pruebas): el create
+-- if not exists NO agrega columnas nuevas, así que la sumamos aditivamente.
+alter table public.camp_operadores add column if not exists linkedin_empresa text;
 
 -- Estación: la unidad de OPORTUNIDAD de obra (bandera, APIES, tipo tienda,
 -- teléfono). El estado de llamada vive acá (lo trabaja Carolina).
@@ -320,6 +325,16 @@ create policy "camp_import_runs_update"
   on public.camp_import_runs for update to authenticated using (public.puede_campanas()) with check (public.puede_campanas());
 create policy "camp_import_runs_delete"
   on public.camp_import_runs for delete to authenticated using (public.is_admin());
+
+
+-- ============================================================================
+-- 5. Backfill: los Admin existentes reciben el permiso `campanas` en su jsonb,
+-- consistente con el template ROLES.Admin del frontend. Idempotente: solo toca
+-- filas donde el flag no esté ya en 'true'.
+-- ============================================================================
+update app_users
+  set permisos = coalesce(permisos, '{}'::jsonb) || '{"campanas": true}'::jsonb
+  where rol = 'Admin' and (permisos->>'campanas') is distinct from 'true';
 
 
 -- ============================================================================

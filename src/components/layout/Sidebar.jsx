@@ -1,6 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Diamond } from '../ui';
-import { T } from '../../theme';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useSolicitudes } from '../../store/SolicitudesContext';
 import { useWhatsappPending } from '../../store/WhatsappPendingContext';
@@ -78,7 +77,7 @@ export default function Sidebar({ active, onNavigate }) {
     if (it.section) return true;
     if (it.adminOnly && !isAdmin) return false;
     if (it.allowedRoles && !it.allowedRoles.includes(currentUser?.rol)) return false;
-    if (it.perm && !p[it.perm]) return false;
+    if (it.perm && !isAdmin && !p[it.perm]) return false;
     return true;
   });
 
