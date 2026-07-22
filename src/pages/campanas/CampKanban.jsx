@@ -8,12 +8,15 @@ import { T } from '../../theme';
 import { useUsuarios } from '../../store/UsuariosContext';
 import { useCampanas } from '../../store/CampanasContext';
 import { ETAPAS_PROSPECCION, ETAPA_PROSPECCION_META, BANDERAS } from '../../lib/campanas/constants';
-import { useIsMobile } from '../../hooks/useMediaQuery';
+import { useIsMobile, useMediaQuery } from '../../hooks/useMediaQuery';
 
 // Kanban de prospección por etapa (pre-embudo de camp_operadores). Cards de
-// OPERADOR — acá NUNCA se muestran montos (P11). DnD HTML5 en desktop (patrón
-// exacto de Pipeline.jsx) + bottom-sheet de etapas para mobile (touch no tiene
-// DnD nativo) y como alternativa accesible en desktop (botón ⇢ de la card).
+// OPERADOR — acá NUNCA se muestran montos (P11). DnD HTML5 con puntero fino
+// (patrón de Pipeline.jsx; el gate es por capacidad del puntero — (pointer:
+// coarse) — y NO por ancho de ventana: una notebook con la ventana angosta
+// sigue arrastrando) + bottom-sheet de etapas para touch (sin DnD nativo).
+// El botón ⇢ de la card se muestra SIEMPRE: en touch es la vía principal de
+// mover, en desktop la alternativa accesible al drag.
 // Carga paginada por columna (30 por página + "Cargar más"): jamás la tabla
 // entera. Todo movimiento pasa por setEtapaProspeccion (registra actividad y
 // chequea colisión de tratativas — P6).
@@ -48,7 +51,7 @@ const tiempoDesde = (iso) => {
 };
 
 // ── Card de operador (estética exacta de las cards de Pipeline) ───────────────
-function CardOperador({ op, meta, isMobile, isDragging, hayDrag, lockDe, onDragStart, onDragEnd, onAbrirMover }) {
+function CardOperador({ op, meta, punteroGrueso, isDragging, hayDrag, lockDe, onDragStart, onDragEnd, onAbrirMover }) {
   const banderas = Array.isArray(op.banderas) ? op.banderas.filter(Boolean) : [];
   const visibles = banderas.slice(0, 3);
   const extra = banderas.length - visibles.length;
@@ -57,13 +60,17 @@ function CardOperador({ op, meta, isMobile, isDragging, hayDrag, lockDe, onDragS
   const lock = !!lockDe;
   return (
     <div
-      draggable={!isMobile}
-      onDragStart={isMobile ? undefined : onDragStart}
-      onDragEnd={isMobile ? undefined : onDragEnd}
-      onClick={() => { if (isMobile) onAbrirMover(); }}
+      draggable={!punteroGrueso}
+      onDragStart={punteroGrueso ? undefined : (e) => {
+        // Firefox no inicia NINGÚN drag sin un setData en dragstart (spec HTML5).
+        try { e.dataTransfer.setData('text/plain', op.id); } catch { /* sin dataTransfer, seguimos igual */ }
+        onDragStart(e);
+      }}
+      onDragEnd={punteroGrueso ? undefined : onDragEnd}
+      onClick={() => { if (punteroGrueso) onAbrirMover(); }}
       title={lock
         ? `En tratativas con ${lockDe}${op.canal_activo ? ` por ${op.canal_activo}` : ''}`
-        : (isMobile ? 'Tocar para mover de etapa' : 'Arrastrar para mover de etapa')}
+        : (punteroGrueso ? 'Tocar para mover de etapa' : 'Arrastrar para mover de etapa')}
       style={{
         background: '#fff',
         border: lock ? `1.5px dashed ${T.ink3}` : `1px solid ${T.faint2}`,
@@ -72,7 +79,7 @@ function CardOperador({ op, meta, isMobile, isDragging, hayDrag, lockDe, onDragS
         padding: '9px 11px 9px 12px',
         marginBottom: 9,
         minWidth: 0,
-        cursor: isMobile ? 'pointer' : 'grab',
+        cursor: punteroGrueso ? 'pointer' : 'grab',
         boxShadow: isDragging ? '0 10px 20px -6px rgba(20,18,15,0.38)' : '0 1px 2px rgba(20,18,15,0.06)',
         opacity: isDragging ? 0.55 : 1,
         transform: isDragging ? 'rotate(-1.5deg)' : 'none',
@@ -81,19 +88,19 @@ function CardOperador({ op, meta, isMobile, isDragging, hayDrag, lockDe, onDragS
       onMouseEnter={e => { if (!hayDrag) e.currentTarget.style.boxShadow = '0 4px 12px -4px rgba(20,18,15,0.20)'; }}
       onMouseLeave={e => { if (!hayDrag) e.currentTarget.style.boxShadow = '0 1px 2px rgba(20,18,15,0.06)'; }}
     >
-      {/* Nombre + lock + botón mover (accesibilidad desktop) */}
+      {/* Nombre + lock + botón mover — SIEMPRE visible: vía principal en touch,
+          alternativa accesible al drag en desktop */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {lock && <span style={{ fontSize: 10, flexShrink: 0 }}>🔒</span>}
         <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.25, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {op.nombre || 'Sin nombre'}
         </div>
-        {!isMobile && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onAbrirMover(); }}
-            title="Mover de etapa"
-            style={{ flexShrink: 0, border: `1px solid ${T.faint2}`, background: '#fff', color: T.ink2, borderRadius: 5, fontSize: 11, lineHeight: 1, padding: '3px 6px', cursor: 'pointer', fontFamily: T.font }}
-          >⇢</button>
-        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onAbrirMover(); }}
+          title="Mover de etapa"
+          aria-label="Mover de etapa"
+          style={{ flexShrink: 0, border: `1px solid ${T.faint2}`, background: '#fff', color: T.ink2, borderRadius: 5, fontSize: 11, lineHeight: 1, padding: '3px 6px', cursor: 'pointer', fontFamily: T.font }}
+        >⇢</button>
       </div>
 
       {/* Chips: banderas + estaciones + decisores (si vinieron en el row) */}
@@ -230,7 +237,11 @@ export default function CampKanban() {
   const { currentUser, usuarios } = useUsuarios();
   const campanas = useCampanas();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
+  const isMobile = useIsMobile(); // solo LAYOUT (anchos, paddings, posición del sheet)
+  // Capacidad del puntero decide el drag: puntero grueso (touch) no tiene DnD
+  // HTML5 nativo → tap abre el sheet; puntero fino arrastra, sin importar el
+  // ancho de la ventana.
+  const punteroGrueso = useMediaQuery('(pointer: coarse)');
 
   // Guard: solo Admin o usuarios con el permiso `campanas` (patrón Pipeline.jsx).
   const puede = currentUser?.rol === 'Admin' || !!currentUser?.permisos?.campanas;
@@ -513,7 +524,7 @@ export default function CampKanban() {
                     key={op.id}
                     op={op}
                     meta={meta}
-                    isMobile={isMobile}
+                    punteroGrueso={punteroGrueso}
                     isDragging={drag === op.id}
                     hayDrag={!!drag}
                     lockDe={lockDe}

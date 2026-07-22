@@ -44,9 +44,17 @@ export default function Pipeline() {
 
   const [drag, setDrag] = useState(null);          // obraId arrastrándose
   const [dragOver, setDragOver] = useState(null);  // etapa bajo el cursor
+  const [avisoLock, setAvisoLock] = useState(null); // texto al intentar mover una card bloqueada
   const [perdida, setPerdida] = useState(null);    // { obraId, nombre } -> modal
   const [nuevoContacto, setNuevoContacto] = useState(false);  // modal "+ Primer contacto"
   const [fichaCliente, setFichaCliente] = useState(null);     // panel de info al click en una card
+
+  // El aviso de card bloqueada se va solo a los 4 segundos.
+  useEffect(() => {
+    if (!avisoLock) return;
+    const t = setTimeout(() => setAvisoLock(null), 4000);
+    return () => clearTimeout(t);
+  }, [avisoLock]);
 
   // Una oportunidad por obra VISIBLE (las terminadas no van al board), con su
   // etapa efectiva y su monto USD.
@@ -126,6 +134,16 @@ export default function Pipeline() {
         <Btn sm accent onClick={() => setNuevoContacto(true)}>+ Primer contacto</Btn>
       </div>
 
+      {/* Aviso al intentar arrastrar una card bloqueada (antes fallaba en silencio) */}
+      {avisoLock && (
+        <div style={{
+          background: '#fdf6e3', border: `1px solid ${T.warn || '#c98a2b'}`, borderRadius: 8,
+          padding: '8px 12px', marginBottom: 10, fontSize: 12.5, color: T.ink,
+        }}>
+          {avisoLock}
+        </div>
+      )}
+
       {/* Tablero Kanban — scroll horizontal, columnas por etapa */}
       <div style={{
         display: 'flex',
@@ -176,8 +194,16 @@ export default function Pipeline() {
                   <div
                     key={obra.id}
                     draggable={arrastrable}
-                    onDragStart={() => { if (arrastrable) setDrag(obra.id); }}
+                    onDragStart={(e) => {
+                      if (!arrastrable) return;
+                      // Firefox no inicia el drag sin setData (Chrome lo tolera).
+                      try { e.dataTransfer.setData('text/plain', obra.id); } catch { /* jsdom/viejos */ }
+                      setDrag(obra.id);
+                    }}
                     onDragEnd={() => { setDrag(null); setDragOver(null); }}
+                    onMouseDown={() => {
+                      if (!arrastrable) setAvisoLock(`🔒 "${obra.nombre}" ya está confirmada: el embudo no la mueve para no desconfirmar una obra real. Su estado se gestiona desde la obra. Solo se arrastran las que están en presupuesto.`);
+                    }}
                     onClick={() => { if (!drag) abrirFicha(obra); }}
                     title={arrastrable ? 'Ver ficha del cliente' : 'Obra confirmada — clic para ver la ficha del cliente'}
                     style={{
