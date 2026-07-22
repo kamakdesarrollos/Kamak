@@ -7,16 +7,20 @@ name: DB Pruebas (aplicar SQL a Kamak-Pruebas)
 # Kamak-Pruebas). Este workflow NO puede tocar producción — la migración a prod
 # tiene su propio workflow (db-migrate.yml) que corre al mergear a main.
 #
-# Uso (manual, desde cualquier rama que contenga este archivo):
+# Uso A (sin tocar main): escribir la lista de .sql en supabase/pruebas-apply.txt
+#   (una ruta por línea) y pushear una rama llamada db-pruebas/run/<lo-que-sea>.
+#   El push dispara este workflow desde esa rama y aplica los archivos en orden.
+# Uso B (cuando este archivo llegue a main): workflow_dispatch clásico:
 #   gh workflow run db-pruebas.yml -r <rama> -f files="supabase/migrations/0006_campanas.sql"
-#   (varios archivos separados por coma; se aplican en orden)
 
 on:
+  push:
+    branches: ['db-pruebas/run/**']
   workflow_dispatch:
     inputs:
       files:
         description: 'Archivos .sql a aplicar (separados por coma, en orden)'
-        required: true
+        required: false
         type: string
 
 concurrency:
@@ -38,7 +42,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          IFS=',' read -ra FILES <<< "${{ inputs.files }}"
+          # Lista de archivos: input del dispatch, o el manifiesto en pushes a db-pruebas/run/**
+          RAW="${{ inputs.files }}"
+          if [ -z "$RAW" ]; then
+            if [ ! -f supabase/pruebas-apply.txt ]; then echo "::error::Sin input files ni supabase/pruebas-apply.txt"; exit 1; fi
+            RAW="$(grep -v '^\s*#' supabase/pruebas-apply.txt | grep -v '^\s*$' | paste -sd, -)"
+          fi
+          IFS=',' read -ra FILES <<< "$RAW"
           for f in "${FILES[@]}"; do
             f="$(echo "$f" | xargs)"  # trim
             echo "── Aplicando: $f"

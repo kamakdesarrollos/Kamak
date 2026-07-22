@@ -1,0 +1,3 @@
+# Archivos .sql que el workflow db-pruebas.yml aplica a Kamak-Pruebas (en orden)
+# al pushear una rama db-pruebas/run/**. Una ruta por línea. Líneas # = comentario.
+supabase/migrations/0006_campanas.sql
