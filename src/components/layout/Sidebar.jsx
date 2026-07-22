@@ -15,6 +15,7 @@ const ALL_ITEMS = [
   { icon: '📊', label: 'Embudo',        path: '/comercial',    allowedRoles: ['Admin'] },
   { icon: '📈', label: 'KPIs Ventas',   path: '/comercial/reportes', allowedRoles: ['Admin'] },
   { icon: '◎', label: 'Clientes',       path: '/clientes',     allowedRoles: ['Admin'] },
+  { icon: '📣', label: 'Campañas',      path: '/campanas',     perm: 'campanas' },
   { section: 'Administración' },
   { icon: '◉', label: 'Proveedores',    path: '/proveedores',  allowedRoles: ['Admin', 'Administración', 'Logística y compras'] },
   { icon: '📋', label: 'Contratos',      path: '/contratos',    allowedRoles: ['Admin', 'Administración'] },

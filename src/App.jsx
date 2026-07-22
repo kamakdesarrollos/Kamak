@@ -42,6 +42,11 @@ const Proveedores        = lazy(() => import('./pages/Proveedores'));
 const Clientes           = lazy(() => import('./pages/Clientes'));
 const Pipeline           = lazy(() => import('./pages/comercial/Pipeline'));
 const VentasReportes     = lazy(() => import('./pages/comercial/VentasReportes'));
+const CampanasDashboard  = lazy(() => import('./pages/campanas/CampanasDashboard'));
+const CampContactos      = lazy(() => import('./pages/campanas/CampContactos'));
+const CampKanban         = lazy(() => import('./pages/campanas/CampKanban'));
+const CampImportar       = lazy(() => import('./pages/campanas/CampImportar'));
+const CampLlamadas       = lazy(() => import('./pages/campanas/CampLlamadas'));
 const Facturacion        = lazy(() => import('./pages/Facturacion'));
 const ProveedorCC        = lazy(() => import('./pages/ProveedorCC'));
 const Movimientos        = lazy(() => import('./pages/Movimientos'));
@@ -264,6 +269,11 @@ function AppShell() {
                   <Route path="/clientes" element={<Clientes />} />
                   <Route path="/comercial" element={<Pipeline />} />
                   <Route path="/comercial/reportes" element={<VentasReportes />} />
+                  <Route path="/campanas" element={<CampanasDashboard />} />
+                  <Route path="/campanas/contactos" element={<CampContactos />} />
+                  <Route path="/campanas/kanban" element={<CampKanban />} />
+                  <Route path="/campanas/importar" element={<CampImportar />} />
+                  <Route path="/campanas/llamadas" element={<CampLlamadas />} />
                   <Route path="/proveedores/:id" element={<ProveedorCC />} />
                   <Route path="/movimientos" element={<Movimientos />} />
                   <Route path="/cajas" element={<Cajas />} />
