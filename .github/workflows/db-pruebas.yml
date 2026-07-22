@@ -46,7 +46,8 @@ jobs:
           RAW="${{ inputs.files }}"
           if [ -z "$RAW" ]; then
             if [ ! -f supabase/pruebas-apply.txt ]; then echo "::error::Sin input files ni supabase/pruebas-apply.txt"; exit 1; fi
-            RAW="$(grep -v '^\s*#' supabase/pruebas-apply.txt | grep -v '^\s*$' | paste -sd, -)"
+            # sed: tolerar BOM UTF-8 y CRLF (el manifiesto puede venir de Windows)
+            RAW="$(sed -e '1s/^\xEF\xBB\xBF//' -e 's/\r$//' supabase/pruebas-apply.txt | grep -v '^\s*#' | grep -v '^\s*$' | paste -sd, -)"
           fi
           IFS=',' read -ra FILES <<< "$RAW"
           for f in "${FILES[@]}"; do
