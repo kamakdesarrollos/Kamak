@@ -11,6 +11,7 @@ import { useMovimientos } from '../store/MovimientosContext';
 import { useProveedores } from '../store/ProveedoresContext';
 import { useDolar } from '../store/DolarContext';
 import { useSolicitudes } from '../store/SolicitudesContext';
+import { useCheques } from '../store/ChequesContext';
 import { useWhatsappPending } from '../store/WhatsappPendingContext';
 import AprobarFacturaModal from './modales/AprobarFacturaModal';
 import { cobradoObraUSD, repartirCobroEnCuotas, cuotaMontoUSD } from './obra/helpers';
@@ -295,7 +296,8 @@ export default function Autorizaciones() {
 
   const { obras, patchDetalle, getDetalle } = useObras();
   const { addMovimiento, removeMovimiento, cajas } = useMovimientos();
-  const { proveedores } = useProveedores();
+  const { proveedores, quitarPagoDeFactura } = useProveedores();
+  const { cheques, removeCheque } = useCheques();
   const { dolarVenta } = useDolar();
   const { solicitudes, resolveSolicitud } = useSolicitudes();
   const { pending, reload, rejectItem, confirmItem } = useWhatsappPending();
@@ -344,7 +346,14 @@ export default function Autorizaciones() {
 
   // ── Handlers ──
 
+  // Aprobar una eliminación revierte igual que /movimientos: el cheque vinculado
+  // (si lo hay) y el pago registrado en la factura pendiente. Antes esta ruta
+  // borraba el movimiento pelado y dejaba cheque colgado + factura 'pagada' con
+  // movimientoId muerto (M31-parcial del informe).
   const handleAprobarSol = (sol) => {
+    const chq = cheques.find(c => c.movimientoId === sol.movimientoId);
+    if (chq) removeCheque(chq.id);
+    quitarPagoDeFactura(sol.movimientoId);
     removeMovimiento(sol.movimientoId);
     resolveSolicitud(sol.id, 'aprobada', currentUser?.nombre || 'Admin');
   };
@@ -383,7 +392,19 @@ export default function Autorizaciones() {
     const m = item.movimiento;
     if (!m) return;
     const cajaResuelta = resolveCaja(item, m);
+    // Regla del dueño: movimientos sin caja NO deben existir (no afectan ningún
+    // saldo y quedan invisibles para no-admins). Fail-closed: no se aprueba.
+    if (!cajaResuelta) {
+      window.alert(`No se pudo determinar la caja para este movimiento (remitente: ${item.creadoPor || '—'}, tipo de caja: ${m.cajaTipo || 'sin especificar'}, moneda: ${m.moneda || 'ARS'}).\n\nAprobalo desde el chat indicando la caja, o creá/activá una caja que matchee.`);
+      return;
+    }
+    // Spread al final: conserva TODO lo que el bot extrajo del comprobante
+    // (comprobanteRecibido → Libro IVA, percepciones/retenciones, rubroId/Nombre,
+    // categoriaFiscal, proveedorId, montoARS/tipoCambio). Antes esta ruta copiaba
+    // una lista fija y aprobarlo por la app perdía el crédito de IVA y la
+    // imputación al presupuesto — resultado contable distinto según el canal.
     addMovimiento({
+      ...m,
       tipo:           m.tipo,
       descripcion:    m.descripcion,
       monto:          m.monto,
@@ -399,6 +420,8 @@ export default function Autorizaciones() {
       comprobanteUrl: m.comprobanteUrl || null,
       fondoReparo:    false,
       cuotaId:        cuotaId || null,
+      creadoPorWA:    true,
+      creadoPor:      item.creadoPor || m.creadoPor || 'WhatsApp',
     });
 
     // Libro único: el cobro queda como movimiento de ingreso (con cuotaId de

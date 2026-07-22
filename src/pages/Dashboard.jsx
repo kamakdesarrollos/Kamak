@@ -12,6 +12,7 @@ import { useProveedores } from '../store/ProveedoresContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { cobradoObraUSD, repartirCobroEnCuotas, cuotaEstadoDesdeCobrado, ccObra, obraConfirmada } from './obra/helpers';
 import { montoEnARS } from '../lib/caja';
+import { creditosEnProveedores } from '../lib/proveedorCC';
 import { cajasDelUsuario } from '../lib/permisosCaja';
 
 const fmtN = (n) => Math.round(Math.abs(n)).toLocaleString('es-AR');
@@ -43,7 +44,7 @@ export default function Dashboard() {
   const { dolarVenta }         = useDolar();
   const navigate               = useNavigate();
   const { alertas: alertasWA, noLeidas, marcarLeida, marcarTodasLeidas } = useAlertas();
-  const { proveedores }        = useProveedores();
+  const { proveedores, facturasPendientes, ccEntries } = useProveedores();
   const { currentUser }        = useUsuarios();
   const isAdmin = currentUser?.rol === 'Admin';
 
@@ -70,8 +71,14 @@ export default function Dashboard() {
   // ── Posición consolidada ──
   const totalARS    = useMemo(() => cajas.filter(c => c.activa && c.moneda === 'ARS').reduce((s, c) => s + (c.saldo || 0), 0), [cajas]);
   const totalUSD    = useMemo(() => cajas.filter(c => c.activa && c.moneda === 'USD').reduce((s, c) => s + (c.saldo || 0), 0), [cajas]);
-  const posicionUSD = Math.round(totalARS / tc + totalUSD);
-  const posicionARS = Math.round(totalARS + totalUSD * tc);
+  // Créditos a favor con proveedores (anticipos/sobrepagos aún no consumidos):
+  // son plata NUESTRA en manos de terceros → cuentan como activo (pedido del dueño).
+  const creditosProv = useMemo(
+    () => creditosEnProveedores(proveedores, facturasPendientes, movimientos, ccEntries, { cajas, tc }),
+    [proveedores, facturasPendientes, movimientos, ccEntries, cajas, tc]
+  );
+  const posicionUSD = Math.round((totalARS + creditosProv) / tc + totalUSD);
+  const posicionARS = Math.round(totalARS + creditosProv + totalUSD * tc);
 
   // ── Me deben (obras terminadas) ──
   // Saldo a cobrar de las obras FINALIZADAS (lo "naranja" en Obras): total
@@ -93,7 +100,9 @@ export default function Dashboard() {
   // ── KPIs del mes ──
   const movsMes         = useMemo(() => movimientos.filter(m => m.fecha.startsWith(mes) && !m.ccPrevia), [movimientos, mes]);
   const ingresosMes     = useMemo(() => movsMes.filter(m => m.tipo === 'ingreso'), [movsMes]);
-  const gastosMes       = useMemo(() => movsMes.filter(m => m.tipo === 'gasto'),   [movsMes]);
+  // Los 'prorrateo' se excluyen del consolidado: son asignación analítica por
+  // obra de gastos fijos ya pagados como gastos reales (doble conteo si suman).
+  const gastosMes       = useMemo(() => movsMes.filter(m => m.tipo === 'gasto' && m.categoria !== 'prorrateo'), [movsMes]);
   // KPIs consolidados en ARS: un movimiento en caja USD NO se suma como pesos
   // (antes inflaba/invertía el neto). montoEnARS convierte según la moneda de la caja.
   const totalIngresosMes = ingresosMes.reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
@@ -115,7 +124,7 @@ export default function Dashboard() {
       const d = new Date(y, mo - 1 - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
       const inp = movimientos.filter(m => m.tipo === 'ingreso' && !m.ccPrevia && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
-      const out = movimientos.filter(m => m.tipo === 'gasto'   && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
+      const out = movimientos.filter(m => m.tipo === 'gasto' && m.categoria !== 'prorrateo' && m.fecha.startsWith(key)).reduce((s, m) => s + montoEnARS(m, cajas, tc), 0);
       result.push({ label: MESES_N[d.getMonth()], inp, out });
     }
     return result;
@@ -360,6 +369,20 @@ export default function Dashboard() {
                 <div style={{ borderBottom: `1px solid ${T.faint2}`, padding: '11px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.faint }}>
                   <div style={{ fontSize: 13, color: T.ink, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 14 }}>💸</span> Saldo de obras</div>
                   <div style={{ fontSize: 11, color: T.ok, fontWeight: 700 }}>✓ Todo cobrado</div>
+                </div>
+              )}
+
+              {/* Créditos a favor con proveedores (anticipos/sobrepagos): activo. */}
+              {creditosProv > 1 && (
+                <div onClick={() => navigate('/proveedores')}
+                  style={{ borderBottom: `1px solid ${T.faint2}`, padding: '9px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#eaf4eb'}
+                  onMouseLeave={e => e.currentTarget.style.background = ''}>
+                  <div style={{ fontSize: 12, color: T.ink, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 13 }}>🤝</span> Créditos en proveedores
+                    <span style={{ fontSize: 10, color: T.ink2, fontWeight: 600 }}>· a favor, se consumen en el próximo pedido</span>
+                  </div>
+                  <span className="k-mono" style={{ fontSize: 13, fontWeight: 800, color: T.ok }}>$ {fmtN(creditosProv)}</span>
                 </div>
               )}
 

@@ -254,17 +254,42 @@ export function ProveedoresProvider({ children }) {
   // el bot/otra pestaña la tocó), agrega el pago, recalcula estado/saldo y persiste
   // SOLO esa factura. El movimiento de caja (gasto) se crea aparte y su id viene en
   // pago.movimientoId. Devuelve la factura actualizada (o null si no existe).
-  const registrarPagoFactura = useCallback((facturaId, pago) => {
+  // Variante para flujos ATÓMICOS: igual que registrarPagoFactura pero devuelve
+  // {factura, done} con la promesa de persistencia (para verificar/compensar).
+  // Con `soloLocal:true` NO persiste (el caller ya escribió vía RPC transaccional).
+  const registrarPagoFacturaAsync = useCallback((facturaId, pago, { soloLocal = false } = {}) => {
     const actual = (facRef.current || []).find(f => f.id === facturaId);
-    if (!actual) return null;
+    if (!actual) return { factura: null, done: Promise.resolve(false) };
     // Defensa: una factura 'registrada' (solo fiscal) o 'anulada' no es deuda → no
     // recibe pagos. Evita que un pago la "salde" o mueva caja contra ella por error.
     const est = estadoFacturaPendiente(actual);
-    if (est === 'registrada' || est === 'anulada') return actual;
+    if (est === 'registrada' || est === 'anulada') return { factura: actual, done: Promise.resolve(false) };
     const next = aplicarPagoAFactura(actual, pago);
     mark();
     setFacturasPendientes(prev => { const n = prev.map(f => f.id === facturaId ? next : f); save(LS_FAC, n); return n; });
-    patchObjectItem('proveedores', 'facturasPendientes', facturaId, { pagos: next.pagos, estado: next.estado, saldoPendiente: next.saldoPendiente });
+    const done = soloLocal
+      ? Promise.resolve(true)
+      : patchObjectItem('proveedores', 'facturasPendientes', facturaId, { pagos: next.pagos, estado: next.estado, saldoPendiente: next.saldoPendiente });
+    return { factura: next, done };
+  }, []);
+
+  const registrarPagoFactura = useCallback((facturaId, pago) => {
+    return registrarPagoFacturaAsync(facturaId, pago).factura;
+  }, [registrarPagoFacturaAsync]);
+
+  // Al BORRAR un movimiento que era el pago de una factura, la factura tiene que
+  // volver a deber ese monto. Sin esto quedaba 'pagada' con un movimientoId
+  // muerto — deuda real desaparecida (pasó en prod con un pago de $405.336).
+  // Busca por movimientoId en los pagos (robusto aunque el mov no tenga marca).
+  const quitarPagoDeFactura = useCallback((movimientoId) => {
+    const f = (facRef.current || []).find(x => (x.pagos || []).some(p => p.movimientoId === movimientoId));
+    if (!f) return null;
+    const next = { ...f, pagos: (f.pagos || []).filter(p => p.movimientoId !== movimientoId) };
+    next.saldoPendiente = saldoFacturaPendiente(next);
+    next.estado = estadoFacturaPendiente(next);
+    mark();
+    setFacturasPendientes(prev => { const n = prev.map(x => x.id === f.id ? next : x); save(LS_FAC, n); return n; });
+    patchObjectItem('proveedores', 'facturasPendientes', f.id, { pagos: next.pagos, estado: next.estado, saldoPendiente: next.saldoPendiente });
     return next;
   }, []);
 
@@ -280,12 +305,14 @@ export function ProveedoresProvider({ children }) {
     proveedores, ccEntries, facturasPendientes,
     addProveedor, updateProveedor, removeProveedor,
     addCC, updateCC, removeCC, getObrasProveedor,
-    addFacturaPendiente, updateFacturaPendiente, removeFacturaPendiente, registrarPagoFactura,
+    addFacturaPendiente, updateFacturaPendiente, removeFacturaPendiente,
+    registrarPagoFactura, registrarPagoFacturaAsync, quitarPagoDeFactura,
   }), [
     proveedores, ccEntries, facturasPendientes,
     addProveedor, updateProveedor, removeProveedor,
     addCC, updateCC, removeCC, getObrasProveedor,
-    addFacturaPendiente, updateFacturaPendiente, removeFacturaPendiente, registrarPagoFactura,
+    addFacturaPendiente, updateFacturaPendiente, removeFacturaPendiente,
+    registrarPagoFactura, registrarPagoFacturaAsync, quitarPagoDeFactura,
   ]);
 
   return (

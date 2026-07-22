@@ -188,19 +188,27 @@ export function MovimientosProvider({ children }) {
   // borrar un movimiento recalcula el saldo solo — sin drift y sin que el bot
   // y la app peleen por el mismo número.
 
-  const addMovimiento = useCallback((data) => {
+  // Variante para flujos ATÓMICOS (pago de factura): construye el movimiento
+  // con id, lo aplica al estado local y devuelve {mov, done} donde `done` es la
+  // promesa de la persistencia remota (true/false) para poder verificar/compensar.
+  // Con `soloLocal:true` NO persiste (el caller ya lo escribió vía RPC transaccional).
+  const addMovimientoAsync = useCallback((data, { soloLocal = false } = {}) => {
     const nuevo = {
       ...data,
-      id: newId(),
+      id: data.id || newId(),
       fecha: data.fecha || today(),
       creadoPor:   data.creadoPor   ?? 'Sistema',
       creadoPorWA: data.creadoPorWA ?? false,
     };
     mark();
     setMovimientos(prev => { const next = [nuevo, ...prev]; persist(LS_MOVS, next); return next; });
-    appendObjectItem('movimientos', 'movimientos', nuevo);
-    return nuevo.id;
+    const done = soloLocal ? Promise.resolve(true) : appendObjectItem('movimientos', 'movimientos', nuevo);
+    return { mov: nuevo, done };
   }, []);
+
+  const addMovimiento = useCallback((data) => {
+    return addMovimientoAsync(data).mov.id;
+  }, [addMovimientoAsync]);
 
   const updateMovimiento = useCallback((id, changes) => {
     // No pisar creadoPor/creadoPorWA: son de autoría, solo se setean al crear.
@@ -275,7 +283,7 @@ export function MovimientosProvider({ children }) {
   const value = useMemo(() => ({
     cajas: cajasConSaldo, movimientos,
     addCaja, updateCaja, removeCaja,
-    addMovimiento, updateMovimiento, removeMovimiento,
+    addMovimiento, addMovimientoAsync, updateMovimiento, removeMovimiento,
     renombrarRubroEnMovimientos,
     traspasar,
     totalARS, totalUSD,
@@ -283,7 +291,7 @@ export function MovimientosProvider({ children }) {
   }), [
     cajasConSaldo, movimientos,
     addCaja, updateCaja, removeCaja,
-    addMovimiento, updateMovimiento, removeMovimiento,
+    addMovimiento, addMovimientoAsync, updateMovimiento, removeMovimiento,
     renombrarRubroEnMovimientos,
     traspasar,
     totalARS, totalUSD,

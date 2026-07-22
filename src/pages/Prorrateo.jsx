@@ -8,7 +8,11 @@ import { useGastosFijos } from '../store/GastosFijosContext';
 import { useObras } from '../store/ObrasContext';
 import { useUsuarios } from '../store/UsuariosContext';
 import { useMovimientos } from '../store/MovimientosContext';
+import { useDolar } from '../store/DolarContext';
 import { useIsMobile } from '../hooks/useMediaQuery';
+import { esErrorRpcFaltante } from '../lib/pagoAtomico';
+import { newId } from '../lib/id';
+import { supabase } from '../lib/supabase';
 
 const fmtN = (n) => Math.round(n).toLocaleString('es-AR');
 
@@ -32,10 +36,22 @@ export default function Prorrateo() {
 
   const { items, setItems, totalMensual } = useGastosFijos();
   const { obras } = useObras();
-  const { addMovimiento } = useMovimientos();
+  const { addMovimientoAsync, movimientos } = useMovimientos();
+  const { dolarVenta } = useDolar();
   const [criterio, setCriterio]     = useState('mixto');
   const [manualPct, setManualPct]   = useState({});
   const [confirmado, setConfirmado] = useState(false);
+  const [guardando, setGuardando]   = useState(false);
+  const [errorMsg, setErrorMsg]     = useState('');
+
+  // Idempotencia (fix crítico: doble click / dos admins duplicaban TODOS los
+  // gastos del prorrateo): si ya hay movimientos 'prorrateo' este mes, el botón
+  // se bloquea. La RPC confirmar_prorrateo repite este guard server-side.
+  const mesISO = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const yaConfirmadoEsteMes = useMemo(
+    () => movimientos.some(m => m.categoria === 'prorrateo' && (m.fecha || '').startsWith(mesISO)),
+    [movimientos, mesISO]
+  );
 
   // ── Gastos fijos editing ──
   const [editId,  setEditId]  = useState(null);
@@ -64,10 +80,13 @@ export default function Prorrateo() {
 
   const distribuciones = useMemo(() => {
     if (obrasActivas.length === 0) return [];
-    const totalPresu = obrasActivas.reduce((s, o) => s + (o.presupuesto || 0), 0) || 1;
+    // Peso económico en ARS: los presupuestos USD se convierten con el TC (fix:
+    // antes se sumaban crudos ARS+USD y una obra USD grande pesaba casi nada).
+    const presuARS = (o) => o.moneda === 'USD' ? (o.presupuesto || 0) * (dolarVenta || 1) : (o.presupuesto || 0);
+    const totalPresu = obrasActivas.reduce((s, o) => s + presuARS(o), 0) || 1;
     return obrasActivas.map(o => {
       const pctTiempo  = 100 / obrasActivas.length;
-      const pctPeso    = totalPresu > 0 ? (o.presupuesto || 0) / totalPresu * 100 : 100 / obrasActivas.length;
+      const pctPeso    = totalPresu > 0 ? presuARS(o) / totalPresu * 100 : 100 / obrasActivas.length;
       let pctAsignado;
       if      (criterio === 'tiempo') pctAsignado = pctTiempo;
       else if (criterio === 'peso')   pctAsignado = pctPeso;
@@ -75,20 +94,32 @@ export default function Prorrateo() {
       else                            pctAsignado = parseFloat(manualPct[o.id] || 0);
       return { o, pctTiempo, pctPeso, pctAsignado };
     });
-  }, [obrasActivas, criterio, manualPct, diasMes]);
+  }, [obrasActivas, criterio, manualPct, diasMes, dolarVenta]);
 
   const totalPct = distribuciones.reduce((s, d) => s + d.pctAsignado, 0);
+  // El criterio manual exige que los % cierren en 100 (antes se podía confirmar
+  // un 30% o un 500% del gasto fijo sin ninguna validación).
+  const manualDescuadrado = criterio === 'manual' && Math.abs(totalPct - 100) >= 0.5;
+  const puedeConfirmar = totalMensual > 0 && obrasActivas.length > 0 &&
+    !yaConfirmadoEsteMes && !manualDescuadrado && !guardando;
 
   // Item 3.8: en vez de empujar a detalle.movimientos (fuente legacy/semilla)
   // ahora creamos movimientos reales via MovimientosContext, asi aparecen
   // en /movimientos, /cajas, Reportes, etc. (fuente unica).
-  const confirmar = () => {
-    if (obrasActivas.length === 0 || totalMensual === 0) return;
+  // Fix crítico de idempotencia: intenta la RPC confirmar_prorrateo (test-and-set
+  // por mes en una transacción — dos admins o un doble click ya no duplican);
+  // si la RPC no está desplegada, guard local yaConfirmadoEsteMes + escritura
+  // por ítem como antes.
+  const confirmar = async () => {
+    if (!puedeConfirmar) return;
+    setGuardando(true);
+    setErrorMsg('');
     const hoy = new Date().toISOString().split('T')[0];
-    distribuciones.forEach((d) => {
-      const monto = Math.round(totalMensual * d.pctAsignado / 100);
-      if (monto <= 0) return;
-      addMovimiento({
+    const movs = distribuciones
+      .map((d) => ({ d, monto: Math.round(totalMensual * d.pctAsignado / 100) }))
+      .filter(({ monto }) => monto > 0)
+      .map(({ d, monto }) => ({
+        id:          newId('mov'),
         tipo:        'gasto',
         descripcion: `Prorrateo administrativo · ${MES_ACTUAL}`,
         monto,
@@ -102,8 +133,21 @@ export default function Prorrateo() {
         medioPago:   'Prorrateo',
         referencia:  '',
         fondoReparo: false,
-      });
-    });
+        creadoPor:   currentUser?.nombre || 'Sistema',
+        creadoPorWA: false,
+      }));
+
+    const { error } = await supabase.rpc('confirmar_prorrateo', { p_mes: mesISO, p_movs: movs }) || {};
+    if (!error) {
+      movs.forEach(m => addMovimientoAsync(m, { soloLocal: true }));
+    } else if (esErrorRpcFaltante(error)) {
+      movs.forEach(m => addMovimientoAsync(m));
+    } else {
+      setGuardando(false);
+      setErrorMsg(error.message || 'No se pudo confirmar el prorrateo.');
+      return;
+    }
+    setGuardando(false);
     setConfirmado(true);
     setTimeout(() => setConfirmado(false), 4000);
   };
@@ -117,8 +161,15 @@ export default function Prorrateo() {
         actions={
           <>
             {confirmado && <span style={{ fontSize: 12, color: T.accent, fontWeight: 700 }}>✓ Confirmado</span>}
-            <Btn sm fill onClick={confirmar} style={{ opacity: (totalMensual > 0 && obrasActivas.length > 0) ? 1 : 0.5 }}>
-              Confirmar prorrateo
+            {errorMsg && <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 700 }}>{errorMsg}</span>}
+            {yaConfirmadoEsteMes && !confirmado && (
+              <span style={{ fontSize: 11, color: T.ok, fontWeight: 700 }}>✓ El prorrateo de este mes ya está confirmado</span>
+            )}
+            {manualDescuadrado && (
+              <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 700 }}>Los % manuales suman {totalPct.toFixed(1)}% — deben sumar 100%</span>
+            )}
+            <Btn sm fill onClick={confirmar} disabled={!puedeConfirmar} style={{ opacity: puedeConfirmar ? 1 : 0.5, cursor: puedeConfirmar ? 'pointer' : 'not-allowed' }}>
+              {guardando ? 'Confirmando…' : 'Confirmar prorrateo'}
             </Btn>
           </>
         }
@@ -258,7 +309,7 @@ export default function Prorrateo() {
                       {totalPct.toFixed(1)}%
                     </span>
                     <span style={{ flex: 1.2, minWidth: 0, textAlign: 'right', fontFamily: T.fontMono, color: T.accent }}>
-                      $ {fmtN(totalMensual)}
+                      $ {fmtN(distribuciones.reduce((s, d) => s + Math.round(totalMensual * d.pctAsignado / 100), 0))}
                     </span>
                   </div>
                 )}

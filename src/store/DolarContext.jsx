@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import useSyncedSharedData from '../lib/useSyncedSharedData';
 import { DOLAR_VENTA_FALLBACK, DOLAR_COMPRA_FALLBACK } from '../lib/constants';
 
@@ -39,7 +39,10 @@ export function DolarProvider({ children }) {
       if (!Number.isFinite(compra) || !Number.isFinite(venta)) {
         throw new Error('Cotizacion invalida desde dolarapi.com');
       }
-      patch(prev => ({ ...prev, compra, venta, updatedAt: new Date().toISOString(), manual: false }));
+      // Defensa: un refresh AUTOMÁTICO nunca saca del modo manual (si otro admin
+      // fijó el dólar a mano mientras este fetch estaba en vuelo, gana el manual;
+      // salir del modo manual es una acción explícita → setAutoMode).
+      patch(prev => prev.manual ? prev : ({ ...prev, compra, venta, updatedAt: new Date().toISOString(), manual: false }));
     } catch (e) {
       setError(`No se pudo obtener el dólar BNA: ${e.message}`);
     } finally {
@@ -47,17 +50,36 @@ export function DolarProvider({ children }) {
     }
   }, [patch]);
 
-  // Auto-fetch al montar si esta en modo automatico y los datos tienen mas
-  // de 1 hora (lee de localStorage para evitar trigger cuando llega el
-  // primer load remoto).
+  // Auto-fetch si está en modo automático y los datos tienen más de 1 hora.
+  // FIX CRÍTICO: en un dispositivo nuevo (sin localStorage) el fetch inmediato
+  // marcaba el estado auto como "edición del usuario" ANTES del primer load
+  // remoto → subía manual:false y pisaba el dólar MANUAL fijado por el admin
+  // para toda la organización. Ahora: si no hay cache local, se espera a que
+  // llegue el estado remoto (o 10s como tope) antes de decidir.
+  const dolarChequeado = useRef(false);
   useEffect(() => {
+    if (dolarChequeado.current) return;
     let d;
     try { d = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { d = null; }
-    if (!d?.manual) {
-      const age = d?.updatedAt ? Date.now() - new Date(d.updatedAt).getTime() : Infinity;
+    if (!d) {
+      // Dispositivo fresco: `data` todavía es DEFAULT hasta que el hook mergee
+      // el remoto. Cuando cambie, este effect re-corre y decide con datos reales.
+      const esDefault = data.updatedAt == null && !data.manual;
+      if (esDefault) {
+        const t = setTimeout(() => {
+          // Tope: si a los 10s sigue en default (org sin registro remoto), fetch.
+          if (!dolarChequeado.current) { dolarChequeado.current = true; fetchBNA(); }
+        }, 10000);
+        return () => clearTimeout(t);
+      }
+      d = data;
+    }
+    dolarChequeado.current = true;
+    if (!d.manual) {
+      const age = d.updatedAt ? Date.now() - new Date(d.updatedAt).getTime() : Infinity;
       if (age > REFRESH_MS) fetchBNA();
     }
-  }, [fetchBNA]);
+  }, [data, fetchBNA]);
 
   const setManual = useCallback((val) => {
     const n = Math.round(+val) || DOLAR_VENTA_FALLBACK;
