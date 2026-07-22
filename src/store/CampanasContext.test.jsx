@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock de supabase: query builder encadenable + thenable. Cada `from()` abre un
 // "log" con la tabla y los métodos encadenados; al await-earlo resuelve con lo
 // que devuelva el handler configurado por el test (routing por tabla/ops).
+// `rpc(fn)` loguea igual, con table `rpc:<fn>` y un op { m: 'rpc', args }.
 vi.mock('../lib/supabase', () => {
   const calls = [];
   let handler = null;
@@ -12,8 +13,8 @@ vi.mock('../lib/supabase', () => {
     'eq', 'neq', 'in', 'is', 'not', 'ilike', 'or', 'contains',
     'order', 'range', 'limit', 'single', 'maybeSingle',
   ];
-  function makeChain(table) {
-    const log = { table, ops: [] };
+  function makeChain(table, opsIniciales = []) {
+    const log = { table, ops: [...opsIniciales] };
     calls.push(log);
     const chain = {};
     for (const m of METODOS) {
@@ -28,6 +29,7 @@ vi.mock('../lib/supabase', () => {
   return {
     supabase: {
       from: (table) => makeChain(table),
+      rpc: (fn, params) => makeChain(`rpc:${fn}`, [{ m: 'rpc', args: params === undefined ? [fn] : [fn, params] }]),
       __calls: calls,
       __setHandler: (fn) => { handler = fn; },
       __reset: () => { calls.length = 0; handler = null; },
@@ -266,6 +268,62 @@ describe('fetchEstaciones', () => {
   });
 });
 
+// ── fetchOperadores ───────────────────────────────────────────────────────────
+describe('fetchOperadores', () => {
+  it("filtro rubro → eq('rubro') y orden 'etapa' → etapa_prospeccion desc + updated_at desc (default intacto)", async () => {
+    const api = getApi();
+    await api.fetchOperadores({ filtros: { rubro: 'estaciones' }, orden: 'etapa' });
+    await api.fetchOperadores(); // default: sigue nombre asc
+    const [conRubro, porDefecto] = llamadasA('camp_operadores');
+    expect(conRubro.ops.filter((o) => o.m === 'eq').map((o) => o.args)).toContainEqual(['rubro', 'estaciones']);
+    expect(conRubro.ops.filter((o) => o.m === 'order').map((o) => o.args)).toEqual([
+      ['etapa_prospeccion', { ascending: false }],
+      ['updated_at', { ascending: false }],
+    ]);
+    expect(porDefecto.ops.filter((o) => o.m === 'order').map((o) => o.args)).toEqual([
+      ['nombre', { ascending: true }],
+    ]);
+  });
+});
+
+// ── fetchResumenArbol ─────────────────────────────────────────────────────────
+describe('fetchResumenArbol', () => {
+  it('llama al rpc camp_resumen_arbol y devuelve el jsonb tal cual (passthrough)', async () => {
+    const RESUMEN = {
+      global: { operadores: 120, estaciones: 400, en_tratativas: 3 },
+      banderas: [{ rubro: 'estaciones', bandera: 'PUMA', operadores: 40 }],
+    };
+    supabase.__setHandler((log) => {
+      if (log.table === 'rpc:camp_resumen_arbol') return { data: RESUMEN, error: null };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.fetchResumenArbol();
+    expect(res).toEqual({ data: RESUMEN, error: null });
+    const rpcs = llamadasA('rpc:camp_resumen_arbol');
+    expect(rpcs.length).toBe(1);
+    expect(args(rpcs[0], 'rpc')).toEqual(['camp_resumen_arbol']);
+  });
+
+  it('data null (RLS: sin permiso) → error criollo, jamás un árbol vacío', async () => {
+    // handler default del mock: { data: null, error: null }
+    const api = getApi();
+    const res = await api.fetchResumenArbol();
+    expect(res.data).toBeNull();
+    expect(res.error?.message).toMatch(/permiso/i);
+  });
+
+  it('error del rpc → passthrough del error', async () => {
+    supabase.__setHandler((log) => {
+      if (log.table === 'rpc:camp_resumen_arbol') return { data: null, error: { message: 'boom' } };
+      return null;
+    });
+    const api = getApi();
+    const res = await api.fetchResumenArbol();
+    expect(res).toEqual({ data: null, error: { message: 'boom' } });
+  });
+});
+
 // ── ejecutarImport ────────────────────────────────────────────────────────────
 describe('ejecutarImport', () => {
   it('batchea los upserts de a 500 (1200 filas → 3 llamadas de 500/500/200) + import_run + onProgress', async () => {
@@ -459,5 +517,52 @@ describe('promoverAEmbudo', () => {
     expect(addCliente).not.toHaveBeenCalled();
     expect(addObra).not.toHaveBeenCalled();
     expect(llamadasCon('camp_operadores', 'update').length).toBe(0);
+  });
+});
+
+// ── vincularObra (obra EXISTENTE — hermana de promoverAEmbudo) ────────────────
+describe('vincularObra', () => {
+  it('setea obra_id + cliente_id + updated_at (SIN tocar etapa) y registra actividad obra_vinculada', async () => {
+    responderOperador(OPERADOR_LIBRE);
+    const api = getApi();
+    const res = await api.vincularObra('op-2', { obraId: 'obra-7', clienteId: 'cl-7', usuario: 'u-fede' });
+    expect(res).toEqual({ ok: true, error: null });
+    const [upd] = llamadasCon('camp_operadores', 'update');
+    const cambios = args(upd, 'update')[0];
+    expect(cambios).toMatchObject({ obra_id: 'obra-7', cliente_id: 'cl-7' });
+    expect(cambios.updated_at).toBeTruthy();
+    expect('etapa_prospeccion' in cambios).toBe(false); // la etapa la decide la UI aparte
+    expect(args(upd, 'eq')).toEqual(['id', 'op-2']);
+    const [act] = llamadasCon('camp_actividades', 'insert');
+    expect(args(act, 'insert')[0]).toMatchObject({
+      operador_id: 'op-2', tipo: 'obra_vinculada', canal: 'otro', usuario: 'u-fede',
+    });
+    expect(args(act, 'insert')[0].texto).toContain('obra-7');
+    expect(args(act, 'insert')[0].datos).toMatchObject({ obraId: 'obra-7', clienteId: 'cl-7' });
+  });
+
+  it('sin clienteId → el update NO incluye cliente_id (no pisa un link previo)', async () => {
+    responderOperador(OPERADOR_LIBRE);
+    const api = getApi();
+    const res = await api.vincularObra('op-2', { obraId: 'obra-7', usuario: 'u-fede' });
+    expect(res.error).toBeNull();
+    const cambios = args(llamadasCon('camp_operadores', 'update')[0], 'update')[0];
+    expect('cliente_id' in cambios).toBe(false);
+  });
+
+  it('operador tomado por otro → rechaza con colisión sin mutar ni registrar actividad', async () => {
+    responderOperador(OPERADOR_TOMADO);
+    const api = getApi();
+    const res = await api.vincularObra('op-1', { obraId: 'obra-7', usuario: 'u-fede' });
+    expect(res.error?.colision).toEqual({ ownerId: 'u-caro', canal: 'linkedin', desde: '2026-07-20T10:00:00.000Z' });
+    expect(llamadasCon('camp_operadores', 'update').length).toBe(0);
+    expect(llamadasA('camp_actividades').length).toBe(0);
+  });
+
+  it('sin obraId → error criollo sin tocar nada', async () => {
+    const api = getApi();
+    const res = await api.vincularObra('op-2', { usuario: 'u-fede' });
+    expect(res.error?.message).toMatch(/obraId/);
+    expect(supabase.__calls.length).toBe(0);
   });
 });

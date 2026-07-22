@@ -81,7 +81,7 @@ const insertarActividad = (fila) =>
 // ── Fetch paginado (server-side, NUNCA cargar todo) ───────────────────────────
 
 const fetchOperadores = async ({ page = 1, pageSize = 50, filtros = {}, orden } = {}) => {
-  const { bandera, provincia, etapa, estadoLlamada, confianza, busqueda, listaId } = filtros;
+  const { bandera, rubro, provincia, etapa, estadoLlamada, confianza, busqueda, listaId } = filtros;
   // provincia/estadoLlamada viven en camp_estaciones y listaId en
   // camp_lista_miembros → embed !inner solo cuando el filtro está activo.
   let sel = '*';
@@ -89,6 +89,7 @@ const fetchOperadores = async ({ page = 1, pageSize = 50, filtros = {}, orden } 
   if (listaId) sel += ', camp_lista_miembros!inner(lista_id)';
   let q = supabase.from('camp_operadores').select(sel, { count: 'exact' });
   if (bandera) q = q.contains('banderas', [bandera]);       // banderas es text[]
+  if (rubro) q = q.eq('rubro', rubro);                      // nivel 1 del árbol (0007)
   if (etapa) q = q.eq('etapa_prospeccion', etapa);
   if (confianza) q = q.eq('confianza', confianza);
   if (provincia) q = q.eq('camp_estaciones.provincia', provincia);
@@ -96,8 +97,12 @@ const fetchOperadores = async ({ page = 1, pageSize = 50, filtros = {}, orden } 
   if (listaId) q = q.eq('camp_lista_miembros.lista_id', listaId);
   const b = limpiarBusqueda(busqueda);
   if (b) q = q.or(`nombre.ilike.%${b}%,nombre_norm.ilike.%${b}%,notas.ilike.%${b}%`);
-  const [col, asc] = resolverOrden(orden, 'nombre');
-  q = q.order(col, { ascending: asc }).range((page - 1) * pageSize, page * pageSize - 1);
+  // orden 'etapa' (explorador jerárquico): etapa_prospeccion desc con
+  // updated_at desc como desempate; el resto sigue el contrato de resolverOrden.
+  const [col, asc] = resolverOrden(orden === 'etapa' ? '-etapa_prospeccion' : orden, 'nombre');
+  q = q.order(col, { ascending: asc });
+  if (orden === 'etapa') q = q.order('updated_at', { ascending: false });
+  q = q.range((page - 1) * pageSize, page * pageSize - 1);
   const { data, error, count } = await q;
   return { rows: data || [], total: count ?? 0, error: error || null };
 };
@@ -160,6 +165,20 @@ const contarPorEtapa = async (filtros = {}) => {
     return [etapa, error ? 0 : (count ?? 0)];
   }));
   return Object.fromEntries(pares);
+};
+
+// KPIs del explorador jerárquico: el RPC camp_resumen_arbol (migración 0007)
+// arma UN solo jsonb server-side ({ global: {...}, banderas: [...] }) — nunca
+// viajan filas. Passthrough del shape tal cual lo devuelve la DB. Si data
+// viene null es que puede_campanas() dio false (el RPC no ve nada) → error
+// criollo en vez de pintar un árbol vacío mentiroso.
+const fetchResumenArbol = async () => {
+  const { data, error } = await supabase.rpc('camp_resumen_arbol');
+  if (error) return { data: null, error };
+  if (data == null) {
+    return { data: null, error: { message: 'No tenés permiso para ver Campañas — pedile acceso a un Admin.' } };
+  }
+  return { data, error: null };
 };
 
 // ── Mutaciones (todas setean updated_at: no hay trigger en la DB) ─────────────
@@ -372,6 +391,32 @@ const promoverAEmbudo = async (operadorId, { usuario, addCliente, addObra, force
   return { clienteId, obraId, error: null };
 };
 
+// Vincular el operador a una obra EXISTENTE del ERP (hermana de promoverAEmbudo,
+// que crea cliente+obra nuevos): setea obra_id (+ cliente_id si viene) y deja
+// actividad 'obra_vinculada'. NO toca etapa_prospeccion — si corresponde
+// promover/descartar lo decide la UI aparte con setEtapaProspeccion.
+const vincularObra = async (operadorId, { obraId, clienteId, usuario, force = false } = {}) => {
+  if (!obraId) return { error: { message: 'vincularObra requiere obraId' } };
+  const { rechazo } = await chequearOperadorParaMutar(operadorId, usuario, force);
+  if (rechazo) return rechazo;
+  const now = ahora();
+  const cambios = { obra_id: obraId, updated_at: now };
+  if (clienteId) cambios.cliente_id = clienteId;
+  const { error } = await supabase
+    .from('camp_operadores').update(cambios).eq('id', operadorId);
+  if (error) return { error };
+  await insertarActividad({
+    operador_id: operadorId,
+    tipo: 'obra_vinculada',
+    canal: 'otro',
+    texto: `Vinculado a obra existente ${obraId}`,
+    usuario: usuario || null,
+    fecha: now,
+    datos: { obraId, clienteId: clienteId || null },
+  });
+  return { ok: true, error: null };
+};
+
 // ── Import (aplica el plan de src/lib/campanas/import*.js) ────────────────────
 // plan: { operadores:[{accion,data}], estaciones:[{accion,id?,data,operadorRef}],
 //         decisores:[{accion,id?,data,operadorRef}], actividades:[...], resumen? }
@@ -521,14 +566,15 @@ const setEstadoMiembro = async (listaId, decisorId, estado) => {
 
 // ── API (objeto estable: ninguna función depende de estado de React) ──────────
 const API = {
-  // datos paginados
+  // datos paginados + KPIs del árbol
   fetchOperadores, fetchEstaciones, fetchDecisores, fetchActividades, contarPorEtapa,
+  fetchResumenArbol,
   // mutaciones
   crearOperador, actualizarOperador, setEtapaProspeccion, registrarLlamada, registrarActividad,
   // anti-colisión (P6)
   chequearColision, tomarOperador, liberarOperador,
-  // promoción al embudo real
-  promoverAEmbudo,
+  // promoción al embudo real / vínculo con obra existente
+  promoverAEmbudo, vincularObra,
   // import
   ejecutarImport,
   // listas
