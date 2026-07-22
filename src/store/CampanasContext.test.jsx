@@ -270,19 +270,30 @@ describe('fetchEstaciones', () => {
 
 // ── fetchOperadores ───────────────────────────────────────────────────────────
 describe('fetchOperadores', () => {
-  it("filtro rubro → eq('rubro') y orden 'etapa' → etapa_prospeccion desc + updated_at desc (default intacto)", async () => {
+  it("filtro rubro → eq('rubro') y orden 'etapa' → etapa_orden asc (ranking embudo, 0008) + updated_at desc (default intacto)", async () => {
     const api = getApi();
     await api.fetchOperadores({ filtros: { rubro: 'estaciones' }, orden: 'etapa' });
     await api.fetchOperadores(); // default: sigue nombre asc
     const [conRubro, porDefecto] = llamadasA('camp_operadores');
     expect(conRubro.ops.filter((o) => o.m === 'eq').map((o) => o.args)).toContainEqual(['rubro', 'estaciones']);
     expect(conRubro.ops.filter((o) => o.m === 'order').map((o) => o.args)).toEqual([
-      ['etapa_prospeccion', { ascending: false }],
+      ['etapa_orden', { ascending: true }],
       ['updated_at', { ascending: false }],
     ]);
     expect(porDefecto.ops.filter((o) => o.m === 'order').map((o) => o.args)).toEqual([
       ['nombre', { ascending: true }],
     ]);
+  });
+
+  it("filtro bandera 'Sin bandera' (grupo sintético del RPC) → or(banderas null/vacías), nunca contains", async () => {
+    const api = getApi();
+    await api.fetchOperadores({ filtros: { bandera: 'Sin bandera' } });
+    await api.fetchOperadores({ filtros: { bandera: 'YPF' } });
+    const [sinBandera, ypf] = llamadasA('camp_operadores');
+    expect(sinBandera.ops.filter((o) => o.m === 'contains')).toHaveLength(0);
+    expect(sinBandera.ops.filter((o) => o.m === 'or').map((o) => o.args[0]))
+      .toContainEqual('banderas.is.null,banderas.eq.{}');
+    expect(ypf.ops.filter((o) => o.m === 'contains').map((o) => o.args)).toContainEqual(['banderas', ['YPF']]);
   });
 });
 

@@ -74,7 +74,7 @@ const TIPOS_ACTIVIDAD = [
 const ICONO_TIPO = {
   llamada: '📞', email: '✉️', linkedin: '💼', whatsapp: '💬', reunion: '🤝',
   nota: '📝', cambio_etapa: '↔️', tomado: '🔒', liberado: '🔓', promovido: '▶️',
-  vinculado: '🔗', import: '📥',
+  obra_vinculada: '🔗', import: '📥',
 };
 const ICONO_CANAL = { llamada: '📞', email: '✉️', linkedin: '💼', whatsapp: '💬', presencial: '🤝', otro: '📝' };
 const iconoActividad = (a) => ICONO_TIPO[a.tipo] || ICONO_CANAL[a.canal] || '•';

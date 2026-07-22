@@ -9,6 +9,10 @@ export const ETAPAS_PROSPECCION = [
   'reunion', 'promovido', 'descartado',
 ];
 
+// Nombre SINTÉTICO con el que el RPC camp_resumen_arbol agrupa operadores sin
+// banderas. fetchOperadores lo traduce al filtro real (null/array vacío).
+export const SIN_BANDERA = 'Sin bandera';
+
 // Estados de llamada que implican que el operador fue efectivamente contactado
 // (mueven etapa_prospeccion 'sin_contactar' → 'contactado' al registrar la llamada).
 const ESTADOS_LLAMADA_CONTACTO = ['DECISOR IDENTIFICADO', 'LEAD CALIENTE'];
@@ -88,7 +92,11 @@ const fetchOperadores = async ({ page = 1, pageSize = 50, filtros = {}, orden } 
   if (provincia || estadoLlamada) sel += ', camp_estaciones!inner(id)';
   if (listaId) sel += ', camp_lista_miembros!inner(lista_id)';
   let q = supabase.from('camp_operadores').select(sel, { count: 'exact' });
-  if (bandera) q = q.contains('banderas', [bandera]);       // banderas es text[]
+  // 'Sin bandera' es el nombre SINTÉTICO que usa el RPC camp_resumen_arbol para
+  // agrupar operadores con banderas null/vacías — acá se traduce a ese filtro
+  // real (contains con el literal daría siempre 0 filas).
+  if (bandera === SIN_BANDERA) q = q.or('banderas.is.null,banderas.eq.{}');
+  else if (bandera) q = q.contains('banderas', [bandera]);  // banderas es text[]
   if (rubro) q = q.eq('rubro', rubro);                      // nivel 1 del árbol (0007)
   if (etapa) q = q.eq('etapa_prospeccion', etapa);
   if (confianza) q = q.eq('confianza', confianza);
@@ -97,11 +105,16 @@ const fetchOperadores = async ({ page = 1, pageSize = 50, filtros = {}, orden } 
   if (listaId) q = q.eq('camp_lista_miembros.lista_id', listaId);
   const b = limpiarBusqueda(busqueda);
   if (b) q = q.or(`nombre.ilike.%${b}%,nombre_norm.ilike.%${b}%,notas.ilike.%${b}%`);
-  // orden 'etapa' (explorador jerárquico): etapa_prospeccion desc con
+  // orden 'etapa' (explorador jerárquico): usa la columna generada etapa_orden
+  // (migración 0008 — ranking del embudo: reunión primero, descartado último;
+  // ordenar por etapa_prospeccion text daba orden alfabético sin sentido) con
   // updated_at desc como desempate; el resto sigue el contrato de resolverOrden.
-  const [col, asc] = resolverOrden(orden === 'etapa' ? '-etapa_prospeccion' : orden, 'nombre');
-  q = q.order(col, { ascending: asc });
-  if (orden === 'etapa') q = q.order('updated_at', { ascending: false });
+  if (orden === 'etapa') {
+    q = q.order('etapa_orden', { ascending: true }).order('updated_at', { ascending: false });
+  } else {
+    const [col, asc] = resolverOrden(orden, 'nombre');
+    q = q.order(col, { ascending: asc });
+  }
   q = q.range((page - 1) * pageSize, page * pageSize - 1);
   const { data, error, count } = await q;
   return { rows: data || [], total: count ?? 0, error: error || null };

@@ -4,7 +4,7 @@ import PageLayout from '../../components/layout/PageLayout';
 import { Btn } from '../../components/ui';
 import { T } from '../../theme';
 import { useUsuarios } from '../../store/UsuariosContext';
-import { useCampanas } from '../../store/CampanasContext';
+import { useCampanas, SIN_BANDERA } from '../../store/CampanasContext';
 import { supabase } from '../../lib/supabase';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { fmtN } from '../../lib/format';
@@ -550,7 +550,10 @@ export default function CampExplorador() {
   const resumenCargando = !resumen;
   const resumenError = resumen?.error || null;
   const arbolVacio = !!resumen?.data && (!global || !global.total) && banderas.length === 0;
-  const banderaUnica = abiertas.size === 1 ? [...abiertas][0] : null;
+  // Bandera única abierta → filtra la cola de llamadas. 'Sin bandera' es el
+  // grupo sintético del RPC: camp_estaciones no tiene ese valor, no se propaga.
+  const primeraAbierta = abiertas.size === 1 ? [...abiertas][0] : null;
+  const banderaUnica = primeraAbierta === SIN_BANDERA ? null : primeraAbierta;
   const claveRama = etapaFiltro || '';
   const altoFila = isMobile ? 52 : 44;
 
