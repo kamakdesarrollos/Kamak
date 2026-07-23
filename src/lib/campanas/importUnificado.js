@@ -98,7 +98,11 @@ function detectarColumnaEstado(rows) {
 // - Detección: 1ª celda de la 1ª fila no-vacía es una bandera conocida Y la
 //   fila no trae headers conocidos.
 // - Estacion (nombre) = Dirección (la planilla no tiene nombre de estación).
-// - APIES: col 16, con fallback a los dígitos de la etiqueta de la col 2.
+// - APIES: col 16, con fallback a los dígitos de la etiqueta de la col 2 SOLO
+//   si empieza con "APIES" (formato YPF real "APIES 50014"). En Axion/Puma/ACA
+//   la col 2 es razón social o dirección ("59 SA", "AV. DINDART 1302"): sus
+//   dígitos NO son un código y usarlos como APIES fusionaba estaciones
+//   distintas vía el dedup (276 estaciones reales perdidas en el primer import).
 // - Col 9 sin '@' NUNCA es email (estado de refuerzo o texto suelto): va a la
 //   columna de estado — si la col 8 está vacía queda como EL estado; si no, se
 //   suma como 'COL8 · COL9' (normalizarEstado canoniza el 1º segmento y
@@ -140,7 +144,7 @@ export function mapearFilasPosicionales(filasHeader1) {
       LinkedIn_decisor: c(12),
       LinkedIn_empresa: c(13),
       Confianza: c(14),
-      APIES: c(15) || (c(1).match(/\d+/) || [''])[0],
+      APIES: c(15) || (/^apies/i.test(c(1)) ? (c(1).match(/\d+/) || [''])[0] : ''),
     };
   });
 }
@@ -156,6 +160,11 @@ export function planImportUnificado(rows, { existentes = {} } = {}) {
   const exOpPorClave = new Map(ex.operadores.map((o) => [claveNombre(o.nombre), o]));
   const exEstPorTel = new Map(ex.estaciones.filter((e) => !vacio(e.telefono_norm)).map((e) => [String(e.telefono_norm).trim(), e]));
   const exEstPorApies = new Map(ex.estaciones.filter((e) => !vacio(e.apies)).map((e) => [String(e.apies).trim(), e]));
+  // Último recurso para filas SIN teléfono normalizable NI APIES (típico
+  // Axion/Puma/ACA): nombre+localidad — sin esto, re-importar la planilla
+  // duplicaría cada estación sin datos de contacto.
+  const claveEst = (nombre, localidad) => `${claveNombre(nombre)}||${claveNombre(localidad)}`;
+  const exEstPorNombreLoc = new Map(ex.estaciones.filter((e) => !vacio(e.nombre)).map((e) => [claveEst(e.nombre, e.localidad), e]));
   const exDecPorLinkedIn = new Map();
   const exDecPorNombreOp = new Map();
   for (const d of ex.decisores) {
@@ -169,6 +178,7 @@ export function planImportUnificado(rows, { existentes = {} } = {}) {
   const decPorClave = new Map();     // claveLinkedIn o nombre||op → { item, existente|null }
   const telVistos = new Set();       // dedup interno de estaciones
   const apiesVistos = new Set();
+  const nombreLocVistos = new Set();
 
   // ── Operadores ────────────────────────────────────────────────────────────
   function resolverOperador(nombre) {
@@ -180,11 +190,13 @@ export function planImportUnificado(rows, { existentes = {} } = {}) {
     if (existente) {
       item = { accion: 'saltear', id: existente.id, data: {}, motivo: 'sin datos nuevos' };
     } else {
-      item = { accion: 'crear', data: { nombre: str(nombre), emails: [], web: null, linkedin_empresa: null } };
+      // banderas/multibandera SIEMPRE presentes (shape uniforme para el upsert
+      // por lotes); se completan al cierre con lo heredado de las estaciones.
+      item = { accion: 'crear', data: { nombre: str(nombre), emails: [], web: null, linkedin_empresa: null, banderas: null, multibandera: false } };
     }
     plan.operadores.push(item);
     const ref = existente ? existente.id : plan.operadores.length - 1;
-    entry = { item, existente, ref };
+    entry = { item, existente, ref, banderasVistas: new Set() };
     opsPorClave.set(k, entry);
     return entry;
   }
@@ -219,16 +231,23 @@ export function planImportUnificado(rows, { existentes = {} } = {}) {
       ? normalizarEstado(row[colEstado])
       : { estado: 'SIN LLAMAR', original: null, flags: {} };
 
-    // Dedup interno (misma clave ya vista en el archivo)
-    if ((telNorm && telVistos.has(telNorm)) || (apies && apiesVistos.has(apies))) {
+    // Dedup interno (misma clave ya vista en el archivo). nombre+localidad
+    // solo cuenta como clave si la fila no trae teléfono ni APIES.
+    const kNombreLoc = claveEst(nombre, row.Localidad);
+    const sinClaves = !telNorm && !apies;
+    if ((telNorm && telVistos.has(telNorm)) || (apies && apiesVistos.has(apies))
+      || (sinClaves && nombreLocVistos.has(kNombreLoc))) {
       plan.estaciones.push({ accion: 'saltear', operadorRef: opRef, data: { nombre }, motivo: 'duplicada en el archivo' });
       return;
     }
     if (telNorm) telVistos.add(telNorm);
     if (apies) apiesVistos.add(apies);
+    nombreLocVistos.add(kNombreLoc);
 
-    // Dedup contra existentes: por teléfono Y por APIES
-    const existente = (telNorm && exEstPorTel.get(telNorm)) || (apies && exEstPorApies.get(apies)) || null;
+    // Dedup contra existentes: por teléfono Y por APIES (nombre+localidad de
+    // último recurso si la fila no trae ninguno de los dos)
+    const existente = (telNorm && exEstPorTel.get(telNorm)) || (apies && exEstPorApies.get(apies))
+      || (sinClaves && exEstPorNombreLoc.get(kNombreLoc)) || null;
     if (existente) {
       const data = {};
       const fills = [
@@ -342,9 +361,33 @@ export function planImportUnificado(rows, { existentes = {} } = {}) {
       web: str(row.Web) || null,
       linkedinEmpresa: str(row.LinkedIn_empresa) || null,
     });
+    const banderaFila = normalizarBandera(row.Bandera);
+    if (banderaFila) opEntry.banderasVistas.add(banderaFila);
     procesarEstacion(row, opEntry.ref);
     procesarDecisor(row, opEntry);
   });
+
+  // ── Banderas del operador: unión de las banderas de sus filas ─────────────
+  // Orden canónico de BANDERAS con desconocidas al final (mismo criterio que
+  // el RPC camp_resumen_arbol). En nuevos completa el null inicial; en
+  // existentes SOLO si la DB no tiene ninguna (llenar-huecos, como
+  // importContactados) — sin esto, el primer import dejó 2.489 operadores
+  // "Sin bandera" y hubo que backfillear a mano.
+  const idxBandera = new Map(BANDERAS.map((b, i) => [b, i]));
+  const ordenBandera = (b) => (idxBandera.has(b) ? idxBandera.get(b) : BANDERAS.length);
+  for (const { item, existente, banderasVistas } of opsPorClave.values()) {
+    if (!banderasVistas.size) continue;
+    const banderas = [...banderasVistas].sort((a, b) => ordenBandera(a) - ordenBandera(b) || a.localeCompare(b));
+    if (!existente) {
+      item.data.banderas = banderas;
+      item.data.multibandera = banderas.length > 1;
+    } else if (!(existente.banderas || []).length && !item.data.banderas) {
+      item.data.banderas = banderas;
+      item.data.multibandera = banderas.length > 1;
+      item.accion = 'actualizar';
+      delete item.motivo;
+    }
+  }
 
   // ── Resumen ───────────────────────────────────────────────────────────────
   const contar = (items, accion) => items.filter((it) => it.accion === accion).length;

@@ -33,6 +33,8 @@ describe('planImportUnificado — agrupación y alta', () => {
       emails: ['ventas@perez.com', 'admin@perez.com'],
       web: 'https://perez.com',
       linkedin_empresa: null,
+      banderas: ['Puma'],       // heredada de sus estaciones
+      multibandera: false,
     });
     expect(plan.estaciones).toHaveLength(2);
     expect(plan.estaciones.map((e) => e.operadorRef)).toEqual([0, 0]);
@@ -66,6 +68,52 @@ describe('planImportUnificado — agrupación y alta', () => {
   });
 });
 
+describe('planImportUnificado — banderas del operador heredadas de sus estaciones', () => {
+  // Bug real: el Unificado nunca seteaba banderas en el operador → 2.489
+  // operadores quedaron "Sin bandera" en el primer import y hubo que
+  // backfillear. El operador hereda la UNIÓN de las banderas de sus filas.
+  it('operador nuevo hereda la unión de banderas de sus filas, en orden canónico y sin repetir', () => {
+    const rows = [
+      { Bandera: 'PUMA', Estacion: 'Puma Norte', Operador: 'Grupo Pérez SRL', APIES: '1' },
+      { Bandera: 'ypf', Estacion: 'YPF Centro', Operador: 'grupo perez srl', APIES: '2' },
+      { Bandera: 'Puma', Estacion: 'Puma Sur', Operador: 'Grupo Pérez SRL', APIES: '3' },
+    ];
+    const plan = planImportUnificado(rows, { existentes: vacios });
+    expect(plan.operadores).toHaveLength(1);
+    expect(plan.operadores[0].data.banderas).toEqual(['YPF', 'Puma']); // orden de BANDERAS
+    expect(plan.operadores[0].data.multibandera).toBe(true);
+  });
+
+  it('operador existente SIN banderas las recibe (llenar-huecos → actualizar); con banderas NO se pisan', () => {
+    const existentes = {
+      operadores: [
+        { id: 'op-1', nombre: 'Op Vacío', emails: [], web: '', linkedin_empresa: '', banderas: [] },
+        { id: 'op-2', nombre: 'Op Lleno', emails: [], web: '', linkedin_empresa: '', banderas: ['Shell'] },
+      ],
+      estaciones: [],
+      decisores: [],
+    };
+    const plan = planImportUnificado([
+      { Bandera: 'Axion', Estacion: 'Est A', Operador: 'Op Vacío', APIES: '10' },
+      { Bandera: 'YPF', Estacion: 'Est B', Operador: 'Op Lleno', APIES: '11' },
+    ], { existentes });
+    expect(plan.operadores[0].accion).toBe('actualizar');
+    expect(plan.operadores[0].data.banderas).toEqual(['Axion']);
+    expect(plan.operadores[0].data.multibandera).toBe(false);
+    expect(plan.operadores[1].accion).toBe('saltear');
+  });
+
+  it('fila sin bandera no aporta (banderas queda null); bandera no canónica se hereda tal cual', () => {
+    const plan = planImportUnificado([
+      { Bandera: 'La Trucha', Estacion: 'Est X', Operador: 'Op X', APIES: '20' },
+      { Estacion: 'Est Y', Operador: 'Op Y', APIES: '21' },
+    ], { existentes: vacios });
+    expect(plan.operadores[0].data.banderas).toEqual(['La Trucha']);
+    expect(plan.operadores[1].data.banderas).toBe(null);
+    expect(plan.operadores[1].data.multibandera).toBe(false);
+  });
+});
+
 describe('planImportUnificado — dedup de estaciones contra existentes', () => {
   const existentes = {
     operadores: [{
@@ -87,16 +135,16 @@ describe('planImportUnificado — dedup de estaciones contra existentes', () => 
       Telefono: '02262 15 530944', Email: 'ventas@perez.com', APIES: '1001',
     }];
     const plan = planImportUnificado(rows, { existentes });
-    // el operador ya existe y no trae nada nuevo
-    expect(plan.operadores[0].accion).toBe('saltear');
-    expect(plan.operadores[0].motivo).toBeTruthy();
+    // el operador ya existe sin banderas en DB → la hereda de la fila (actualizar)
+    expect(plan.operadores[0].accion).toBe('actualizar');
+    expect(plan.operadores[0].data).toEqual({ banderas: ['Puma'], multibandera: false });
     expect(plan.estaciones).toHaveLength(1);
     expect(plan.estaciones[0].accion).toBe('actualizar');
     expect(plan.estaciones[0].id).toBe('est-1');
     expect(plan.estaciones[0].operadorRef).toBe('op-1');
     expect(plan.estaciones[0].data).toEqual({ direccion: 'Ruta 2 km 10' });
     expect(plan.resumen.actualizados.estaciones).toBe(1);
-    expect(plan.resumen.salteados.operadores).toBe(1);
+    expect(plan.resumen.actualizados.operadores).toBe(1);
   });
 
   it('matchea por telefono_norm sin datos nuevos → saltear con motivo', () => {
@@ -127,6 +175,36 @@ describe('planImportUnificado — dedup de estaciones contra existentes', () => 
     expect(plan.estaciones[0].accion).toBe('actualizar');
     expect(plan.estaciones[0].id).toBe('est-9');
     expect(plan.estaciones[0].data).toEqual({ telefono: '0221 444-5566', telefono_norm: '542214445566' });
+  });
+
+  it('sin teléfono ni APIES matchea contra existentes por nombre+localidad: re-importar filas Axion/Puma/ACA sin contacto NO duplica', () => {
+    const ex = {
+      operadores: [{ id: 'op-1', nombre: '59 SA', emails: [], web: '', linkedin_empresa: '', banderas: ['Axion'] }],
+      estaciones: [{
+        id: 'est-1', operador_id: 'op-1', nombre: 'Calle 59 nro 100', bandera: 'Axion',
+        direccion: 'Calle 59 nro 100', localidad: 'La Plata', provincia: 'Buenos Aires',
+        telefono_norm: '', apies: null,
+      }],
+      decisores: [],
+    };
+    const plan = planImportUnificado([{
+      Bandera: 'Axion', Estacion: 'Calle 59 nro 100', Direccion: 'Calle 59 nro 100',
+      Localidad: 'La Plata', Provincia: 'Buenos Aires', Operador: '59 SA',
+    }], { existentes: ex });
+    expect(plan.estaciones[0].accion).toBe('saltear');
+    expect(plan.estaciones[0].id).toBe('est-1');
+    expect(plan.resumen.nuevos.estaciones).toBe(0);
+  });
+
+  it('sin teléfono ni APIES: la misma estación repetida en el archivo (nombre+localidad) → saltear como duplicada', () => {
+    const rows = [
+      { Bandera: 'Puma', Estacion: 'Av. Mitre 100', Localidad: 'Avellaneda', Operador: 'Op A' },
+      { Bandera: 'Puma', Estacion: 'av. mitre 100', Localidad: 'AVELLANEDA', Operador: 'Op A' },
+    ];
+    const plan = planImportUnificado(rows, { existentes: vacios });
+    expect(plan.estaciones[0].accion).toBe('crear');
+    expect(plan.estaciones[1].accion).toBe('saltear');
+    expect(plan.estaciones[1].motivo).toMatch(/duplicada/i);
   });
 
   it('estación repetida dentro del archivo (mismo teléfono) → saltear como duplicada', () => {
@@ -328,6 +406,28 @@ describe('mapearFilasPosicionales — hoja "Todas las estaciones" sin encabezado
     const rows = mapearFilasPosicionales([['PUMA', 'APIES 7', 'Av. 2 nro 300', 'Miramar', 'Buenos Aires', 'GRUPO PÉREZ SRL']]);
     expect(rows).toHaveLength(1);
     expect(rows[0].Bandera).toBe('PUMA');
+  });
+
+  it('APIES fallback SOLO si la etiqueta col 2 empieza con "APIES": en Axion/Puma/ACA la col 2 es razón social o dirección y sus dígitos NO son un código', () => {
+    // Bug real: "59 SA" → APIES "59", "AV. DINDART 1302" → "1302"… códigos
+    // inventados que colisionaban entre estaciones DISTINTAS y el dedup por
+    // APIES fusionó 276 estaciones reales (183 Axion · 87 Puma · 6 ACA).
+    const rows = mapearFilasPosicionales([
+      ['AXION', '59 SA', 'Calle 59 nro 100', 'La Plata', 'Buenos Aires', '59 SA'],
+      ['PUMA', 'AV. DINDART 1302', 'Av. Dindart 1302', 'Ayacucho', 'Buenos Aires', ''],
+      ['ACA', '9 DE JULIO', 'Av. San Martín 500', '9 de Julio', 'Buenos Aires', ''],
+    ]);
+    expect(rows.map((r) => r.APIES)).toEqual(['', '', '']);
+  });
+
+  it('integración: dos estaciones AXION distintas con dígitos coincidentes en la etiqueta NO se fusionan como duplicadas', () => {
+    const filas = [
+      ['AXION', '9 DE JULIO SRL', 'Av. Rivadavia 900', 'Junín', 'Buenos Aires', '9 DE JULIO SRL'],
+      ['AXION', 'RUTA NAC 9 KM 50', 'Ruta Nac. 9 km 50', 'Campana', 'Buenos Aires', 'OPERADORA NORTE'],
+    ];
+    const plan = planImportUnificado(mapearFilasPosicionales(filas), { existentes: vacios });
+    expect(plan.resumen.nuevos.estaciones).toBe(2);
+    expect(plan.resumen.salteados.estaciones).toBe(0);
   });
 
   it('integración con planImportUnificado: estados canónicos + original completo + flag teléfono fijo + dedup por APIES', () => {
