@@ -22,6 +22,12 @@ name: DB Migrate (producción)
 # migración — sirve de recordatorio de aplicarla a mano mientras tanto.
 
 on:
+  # Disparo manual: gh workflow run db-migrate.yml
+  # NECESARIO porque el auto-merge mergea con GITHUB_TOKEN y GitHub SUPRIME los
+  # workflows on:push de sus propios pushes → tras un auto-merge, esta Action
+  # NUNCA corre sola (gotcha descubierto en el estreno, 2026-07-23). Fix de
+  # fondo pendiente: que auto-merge.yml use un PAT en vez de GITHUB_TOKEN.
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
