@@ -1,0 +1,2 @@
+# Archivos .sql que el workflow db-pruebas.yml aplica a Kamak-Pruebas (en orden)
+supabase/migrations/0010_camp_metricas.sql

@@ -1,0 +1,71 @@
+name: Sync métricas de campañas
+
+# El "robot gratis" que reemplaza a los crons pagos de Vercel:
+# Vercel Hobby solo permite crons DIARIOS (y ya usamos los 2 disponibles),
+# pero este repo es público → GitHub Actions nos da minutos gratis ilimitados
+# para schedules. Cada 15 minutos le pega al endpoint de sync del módulo de
+# campañas, que se encarga de traer las métricas de cada plataforma.
+#
+# Autenticación: el endpoint exige `Authorization: Bearer <SYNC_SECRET>`.
+# El secret se carga una sola vez con:
+#   gh secret set SYNC_SECRET
+# (mismo valor que la env var SYNC_SECRET del proyecto en Vercel).
+#
+# ⏱ Nota: los schedules de GitHub NO son puntuales — pueden demorar algunos
+# minutos (o saltearse una corrida en horas pico). Para métricas de campaña
+# alcanza y sobra.
+#
+# 💸 Nota de eficiencia: mientras ninguna clave de plataforma esté cargada en
+# el ERP, el endpoint responde "skipped" en milisegundos — correr este cron
+# en vacío es prácticamente gratis.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      src:
+        description: "Fuente a sincronizar ('all', o una plataforma puntual)"
+        required: false
+        type: string
+        default: 'all'
+
+# Si una corrida se demora, la siguiente espera en cola (no se solapan).
+concurrency:
+  group: sync-campanas
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: sync-campanas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # URL base del ERP. Sale de la variable de repo SYNC_URL; si no está
+      # definida, cae al preview de PRUEBAS. Cuando el módulo pase a
+      # producción, basta con setear la variable — SIN tocar este YAML:
+      #   gh variable set SYNC_URL --body "https://app.kamak.com.ar"
+      SYNC_URL: ${{ vars.SYNC_URL || 'https://kamak1324-git-pruebas-kamak.vercel.app' }}
+      # En schedule no hay inputs → default 'all'.
+      SRC: ${{ inputs.src || 'all' }}
+      SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+    steps:
+      - name: POST /api/campana/sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "── Sync de campañas: ${SYNC_URL}/api/campana/sync?src=${SRC}"
+          code=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            --max-time 240 \
+            -X POST "${SYNC_URL}/api/campana/sync?src=${SRC}" \
+            -H "Authorization: Bearer ${SYNC_SECRET}")
+          # Siempre mostramos el summary JSON que devuelve el endpoint
+          # (qué fuentes corrieron, cuáles se saltearon, errores por fuente).
+          cat /tmp/resp.json || true
+          echo ""
+          # Falla SOLO si el HTTP no es 2xx.
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "::error::Sync de campañas falló (HTTP $code)"
+            exit 1
+          fi
+          echo "✅ Sync OK (HTTP $code)"

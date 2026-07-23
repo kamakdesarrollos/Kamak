@@ -1,5 +1,8 @@
 // Fusión de payment-reminders + sales-followups en una sola function (límite
-// Vercel Hobby = 12 functions). Se elige el job por query: ?job=reminders | ?job=followups.
+// Vercel Hobby = 12 functions; hoy el repo usa 11/12 — el portal se consolidó
+// en api/portal/[kind].js (4→1) y se sumaron api/campana/sync.js y
+// api/campana/[kind].js).
+// Se elige el job por query: ?job=reminders | ?job=followups.
 //
 // CRONS: el plan Hobby también limita la CANTIDAD de cron jobs, así que en
 // vercel.json sólo está agendado ?job=reminders (+ sync-sanfrancisco = 2 crons,
@@ -20,6 +23,8 @@ const CRON_SECRET     = process.env.CRON_SECRET;
 import { crearNotifServidor, enviarPushAUsuarios } from './_notif.js';
 import { chequesPorVencer, cuentasPorVencer } from '../../src/lib/vencimientos.js';
 import { estadoFacturaPendiente } from '../../src/lib/facturasPendientes.js';
+import { crearEvento } from '../../lib/campana-sync/googleCalendar.js';
+import { planEventosVencimientos } from '../../lib/campana-sync/vencimientosCalendario.js';
 
 const sbH = () => ({
   apikey: SUPABASE_KEY,
@@ -169,6 +174,42 @@ function findClienteByObra(obra, clientes) {
     const n = (c.nombre || '').toLowerCase().trim();
     return n && (n.includes(q) || q.includes(n));
   }) || null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Calendario: eventos de Google Calendar para vencimientos próximos (cuotas
+// impagas, cheques en cartera, facturas de proveedor, pólizas, tareas con fecha
+// límite). Corre DENTRO de runReminders (mismo cron diario, sin cron nuevo) pero
+// en try/catch propio en el caller: si Calendar falla, los WA/push de siempre no
+// se ven afectados. QUÉ se agenda es lógica PURA (planEventosVencimientos, en
+// lib/campana-sync/vencimientosCalendario.js, testeada con fixtures); acá solo:
+// gate de env, carga de tareas (lo único que runReminders no trae) y creación
+// vía crearEvento con idempotencia por clave `cal:<tipo>:<id>:<fecha>` en la
+// MISMA key notif_cron_sent (mismo marcar/prune que el resto del cron).
+// ─────────────────────────────────────────────────────────────────────────────
+async function runCalendario({ hoy, obras, detalles, cheques, proveedores, movimientos, cajas, dolarVenta, yaCreados, marcar }) {
+  if (!process.env.GOOGLE_CALENDAR_ID || !process.env.GOOGLE_SA_EMAIL || !process.env.GOOGLE_SA_KEY) {
+    return { skipped: 'sin calendario configurado' };
+  }
+  const tareasData = await loadSharedData('tareas');
+  const tareas = Array.isArray(tareasData) ? tareasData : [];
+  const eventos = planEventosVencimientos({
+    hoy, obras, detalles, cheques, proveedores, tareas, movimientos, cajas, dolarVenta, yaCreados,
+  });
+  let creados = 0, errores = 0;
+  for (const ev of eventos) {
+    try {
+      const r = await crearEvento({ titulo: ev.titulo, descripcion: ev.descripcion, fechaISO: ev.fechaISO, recordatorioMin: 60 });
+      if (r?.skipped) return { skipped: r.skipped, creados };
+      marcar(ev.clave);                                // solo tras crear OK
+      creados++;
+    } catch (e) {
+      // Un evento que falla no frena a los demás; sin marcar() reintenta mañana.
+      errores++;
+      console.error('[calendario]', ev.clave, e.message);
+    }
+  }
+  return errores ? { creados, errores } : { creados };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -334,9 +375,26 @@ async function runReminders(req, res) {
       }
     } catch (e) { console.error('[reminders] vencimientos internos:', e.message); }
 
+    // ── Calendario (Google): eventos para los vencimientos próximos ──────────
+    // try/catch propio: cualquier fallo de Calendar NO afecta los avisos de
+    // arriba. Marca las claves cal:* en el mismo `sent` (se persiste abajo).
+    let calendario;
+    try {
+      calendario = await runCalendario({
+        hoy: hoyStr, obras, detalles,
+        cheques: Array.isArray(chequesData) ? chequesData : [],
+        proveedores: proveedoresData,
+        movimientos: movs, cajas, dolarVenta,
+        yaCreados: sent, marcar,
+      });
+    } catch (e) {
+      console.error('[reminders] calendario:', e.message);
+      calendario = { error: e.message };
+    }
+
     await guardarSent();
 
-    return res.status(200).json({ ok: true, fecha: nowISO, enviados: resultados.filter(r => r.enviado).length, notifsVenc, resultados });
+    return res.status(200).json({ ok: true, fecha: nowISO, enviados: resultados.filter(r => r.enviado).length, notifsVenc, calendario, resultados });
   } catch (e) {
     console.error('payment-reminders error:', e);
     return res.status(500).json({ error: e.message });

@@ -27,6 +27,7 @@ const PERM_COLS = [
   { key: 'aprobarPagos', label: 'Aprobar pagos' },
   { key: 'crearObra',    label: 'Crear obra' },
   { key: 'verDashboard', label: 'Ver dashboard' },
+  { key: 'campanas',     label: 'Módulo Campañas' },
 ];
 
 const TABS_OCULTOS_OPTS = [

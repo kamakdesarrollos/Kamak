@@ -24,8 +24,10 @@ const META_APP_SECRET = process.env.META_APP_SECRET;
 
 // ── Telegram (bot INTERNO del equipo) ───────────────────────────────────────
 // El equipo interno migra a Telegram; los clientes siguen en WhatsApp (el QR del
-// presupuesto NO se toca). Telegram comparte ESTE mismo webhook (Vercel está en
-// 12/12 funciones, no se puede agregar una ruta) y reusa TODO el motor: cambia
+// presupuesto NO se toca). Telegram comparte ESTE mismo webhook (cuando se migró
+// Vercel estaba en 12/12 funciones — hoy 10/12 tras consolidar el portal en
+// api/portal/[kind].js y sumar api/campana/sync.js — y compartir ruta sigue
+// siendo lo más barato) y reusa TODO el motor: cambia
 // SOLO la capa de canal (envío/descarga). Identidad: tabla whatsapp_users con
 // phone = "tg:<chatId>" → getLinkedUser / getAllAdmins / estado / locks /
 // notificaciones se enrutan solos. Ver docs/telegram-migration/00-inventory.md.

@@ -76,9 +76,10 @@ export default function ClienteFicha360Modal({ cliente: clienteProp, onClose }) 
   };
 
   // Agendar a futuro (llamada/reunión/visita): registra la actividad + setea el
-  // próximo contacto. El evento de Google Calendar lo abre el propio modal.
-  const handleAgendado = ({ tipo, tipoLabel, fecha, hora, nota }) => {
-    addActividad({ clienteId: cliente.id, tipo, texto: `📅 Agendado: ${tipoLabel}${hora ? ` ${hora}` : ''} el ${fmtFecha(fecha)}${nota ? ` — ${nota}` : ''}`, usuario: currentUser?.id || null });
+  // próximo contacto. El evento REAL en el calendario compartido lo crea el
+  // propio modal (POST /api/campana/agendar); `enCalendario` dice si quedó.
+  const handleAgendado = ({ tipo, tipoLabel, fecha, hora, nota, enCalendario }) => {
+    addActividad({ clienteId: cliente.id, tipo, texto: `📅 Agendado: ${tipoLabel}${hora ? ` ${hora}` : ''} el ${fmtFecha(fecha)}${nota ? ` — ${nota}` : ''}${enCalendario ? ' — 📅 en calendario' : ''}`, usuario: currentUser?.id || null });
     updateCliente(cliente.id, { fechaProximoContacto: fecha });
   };
 

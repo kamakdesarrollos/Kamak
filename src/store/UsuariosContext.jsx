@@ -11,6 +11,7 @@ const PERMISOS_DEFAULT = {
   verCostos: false, verMargenes: false, verCaja: false,
   cargarGastos: false, cargarAvance: false, editarPresu: false,
   aprobarPagos: false, crearObra: false, verDashboard: false,
+  campanas: false,
 };
 
 // Roles del sistema. REGLA GLOBAL: ningún no-admin ve montos generales de obra
@@ -18,20 +19,20 @@ const PERMISOS_DEFAULT = {
 // cajasVisibles). El acceso por sección/pestaña NO sale de estos 9 flags sino del
 // Sidebar (allowedRoles) y de rolHiddenTabs por rol — ver Sidebar.jsx / ObraPresupuesto.jsx.
 export const ROLES = {
-  Admin:                 { verCostos:true,  verMargenes:true,  verCaja:true, cargarGastos:true,  cargarAvance:true,  editarPresu:true,  aprobarPagos:true,  crearObra:true,  verDashboard:true },
+  Admin:                 { verCostos:true,  verMargenes:true,  verCaja:true, cargarGastos:true,  cargarAvance:true,  editarPresu:true,  aprobarPagos:true,  crearObra:true,  verDashboard:true,  campanas:true  },
   // Administración: backoffice (proveedores/clientes/facturación/gastos fijos completo,
   // registra pagos a proveedores). NO ve costos/márgenes/valor de obra. Caja propia.
-  Administración:        { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:true,  cargarAvance:false, editarPresu:false, aprobarPagos:true,  crearObra:false, verDashboard:true },
+  Administración:        { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:true,  cargarAvance:false, editarPresu:false, aprobarPagos:true,  crearObra:false, verDashboard:true,  campanas:false },
   // Jefe de obra: ejecución (tareas, avance, materiales, archivos). Caja propia. Sin plata general.
-  'Jefe de obra':        { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:true,  cargarAvance:true,  editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
+  'Jefe de obra':        { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:true,  cargarAvance:true,  editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false, campanas:false },
   // Logística y compras: compra materiales (carga gastos, ve proveedores). Caja propia.
   // El precio de los materiales para comprar se ve en la pestaña Materiales (no en el total de obra).
-  'Logística y compras': { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:true,  cargarAvance:false, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
+  'Logística y compras': { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:true,  cargarAvance:false, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false, campanas:false },
   // Contador externo: solo Facturación (rol especial, se mantiene).
-  'Contador externo':    { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:false, cargarAvance:false, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
+  'Contador externo':    { verCostos:false, verMargenes:false, verCaja:true, cargarGastos:false, cargarAvance:false, editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false, campanas:false },
   // Ingeniero externo: ingeniero tercerizado. Ve y sube SOLO documentación/planos
   // (pestaña Archivos). Sin finanzas/presupuestos/caja. En el menú solo ve Obras.
-  'Ingeniero externo':   { verCostos:false, verMargenes:false, verCaja:false, cargarGastos:true,  cargarAvance:true,  editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false },
+  'Ingeniero externo':   { verCostos:false, verMargenes:false, verCaja:false, cargarGastos:true,  cargarAvance:true,  editarPresu:false, aprobarPagos:false, crearObra:false, verDashboard:false, campanas:false },
 };
 
 // Pestañas DENTRO de la obra ocultas por rol (solo aplica a no-admin; Admin ve todo).

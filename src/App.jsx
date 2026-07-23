@@ -17,6 +17,7 @@ import { AlertasProvider } from './store/AlertasContext';
 import { SolicitudesProvider } from './store/SolicitudesContext';
 import { TareasProvider } from './store/TareasContext';
 import { ComercialProvider } from './store/ComercialContext';
+import { CampanasProvider } from './store/CampanasContext';
 import { ConfiguracionProvider } from './store/ConfiguracionContext';
 import { UsuariosProvider, useUsuarios } from './store/UsuariosContext';
 import { NotificacionesProvider } from './store/NotificacionesContext';
@@ -42,6 +43,14 @@ const Proveedores        = lazy(() => import('./pages/Proveedores'));
 const Clientes           = lazy(() => import('./pages/Clientes'));
 const Pipeline           = lazy(() => import('./pages/comercial/Pipeline'));
 const VentasReportes     = lazy(() => import('./pages/comercial/VentasReportes'));
+const CampExplorador     = lazy(() => import('./pages/campanas/CampExplorador'));
+const CampImportar       = lazy(() => import('./pages/campanas/CampImportar'));
+
+// Rutas viejas del módulo Campañas → el Explorador, preservando el query (?op=).
+function RedirectCampanas() {
+  const loc = useLocation();
+  return <Navigate to={`/campanas${loc.search}`} replace />;
+}
 const Facturacion        = lazy(() => import('./pages/Facturacion'));
 const ProveedorCC        = lazy(() => import('./pages/ProveedorCC'));
 const Movimientos        = lazy(() => import('./pages/Movimientos'));
@@ -195,6 +204,9 @@ function DataProviders({ children }) {
     <MovimientosProvider>
     <ChequesProvider>
     <UsuariosProvider>
+    {/* CampanasProvider es LAZY (no fetchea nada al boot): solo expone el data
+        layer del módulo Campañas; cada página pide sus datos al entrar. */}
+    <CampanasProvider>
     {/* NotificacionesProvider consume useUsuarios (currentUser + usuarios), por
         eso va DENTRO de UsuariosProvider; y envuelve a SolicitudesProvider para
         que Solicitudes (y demás) puedan consumir useNotificaciones. */}
@@ -209,6 +221,7 @@ function DataProviders({ children }) {
     </SolicitudesProvider>
     </WhatsappPendingProvider>
     </NotificacionesProvider>
+    </CampanasProvider>
     </UsuariosProvider>
     </ChequesProvider>
     </MovimientosProvider>
@@ -264,6 +277,13 @@ function AppShell() {
                   <Route path="/clientes" element={<Clientes />} />
                   <Route path="/comercial" element={<Pipeline />} />
                   <Route path="/comercial/reportes" element={<VentasReportes />} />
+                  {/* Módulo Campañas = EL Explorador (pivot de UX 2026-07-22).
+                      Las rutas viejas redirigen preservando el query (?op=). */}
+                  <Route path="/campanas" element={<CampExplorador />} />
+                  <Route path="/campanas/importar" element={<CampImportar />} />
+                  <Route path="/campanas/contactos" element={<RedirectCampanas />} />
+                  <Route path="/campanas/kanban" element={<RedirectCampanas />} />
+                  <Route path="/campanas/llamadas" element={<RedirectCampanas />} />
                   <Route path="/proveedores/:id" element={<ProveedorCC />} />
                   <Route path="/movimientos" element={<Movimientos />} />
                   <Route path="/cajas" element={<Cajas />} />
