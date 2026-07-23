@@ -184,6 +184,22 @@ interacción antes del 1er mensaje PACS; Puma = clientes (referidos, no fría).
      gráficos: *"que quede super dinámico y también lindo estéticamente"*.
   Mandato: *"el mejor módulo de ventas que una constructora de retail haya
   tenido nunca"*.
+- **PIVOT DE UX (2026-07-22, decisión de Franco)**: la primera cara (5 páginas:
+  tabla + kanban + dashboard + importar + llamadas) NO le gustó ("no entiendo",
+  "no me gusta nada"). Su modelo mental es una JERARQUÍA navegable. Eligió el
+  concepto **"Explorador jerárquico"**: UNA pantalla — árbol Rubro (Estaciones
+  de servicio / Franquicias) → Bandera → Operadores desplegables con clic, KPIs
+  pegados a cada nivel (no en página aparte), ficha completa del operador en
+  panel lateral con acciones + **vincular con obra EXISTENTE o crear nueva**.
+  Todo lo demás se absorbe: la cola de llamadas de Caro es una vista del
+  explorador, el kanban muere (la etapa se cambia en la ficha), el dashboard
+  muere (queda tira de KPIs + Ritmo colapsable). El MOTOR (tablas, context,
+  importador multi-hoja, anti-colisión, notifs) queda intacto.
+  Aclaración de Franco: *"la información no la vi mal, lo que veo mal es el
+  front, la estética, la navegación"* → los DATOS que mostrábamos están bien;
+  la reconstrucción es de presentación: diseño visual de primera (aire,
+  jerarquía tipográfica, transiciones suaves, semáforos limpios) + la
+  navegación jerárquica de una pantalla.
 - **Paso 4 — Ejecución autónoma**: plan por etapas (MVP primero), TDD donde
   aplique, dudas menores se resuelven solas y quedan anotadas. Frenar SOLO por:
   (a) credenciales/accesos, (b) riesgo a datos reales o producción.
