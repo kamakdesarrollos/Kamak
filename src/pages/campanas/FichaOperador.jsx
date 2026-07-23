@@ -7,6 +7,7 @@ import { useCampanas } from '../../store/CampanasContext';
 import { useClientes } from '../../store/ClientesContext';
 import { useObras } from '../../store/ObrasContext';
 import { useComercial } from '../../store/ComercialContext';
+import { supabase } from '../../lib/supabase';
 import {
   ESTADO_LLAMADA_META, ETAPAS_PROSPECCION, ETAPA_PROSPECCION_META, CANALES, BANDERAS,
 } from '../../lib/campanas/constants';
@@ -49,6 +50,49 @@ const tiempoRelativo = (iso) => {
 
 const urlAbs = (u) => (/^https?:\/\//i.test(u || '') ? u : `https://${u}`);
 
+// yyyy-mm-dd LOCAL de mañana (default del input date de "Agendar llamada").
+const fechaManana = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+// Título del evento según el tipo de seguimiento (ampliación de Franco: "no
+// solamente llamadas, pueden ser otros contactos"). Tipos = TIPOS_ACTIVIDAD;
+// cualquier otro cae en el genérico "Seguimiento".
+const TITULO_AGENDA = {
+  llamada: (n) => `📞 Llamar a ${n}`,
+  email: (n) => `✉️ Escribir a ${n}`,
+  whatsapp: (n) => `💬 WhatsApp a ${n}`,
+  linkedin: (n) => `💼 LinkedIn a ${n}`,
+  reunion: (n) => `🤝 Reunión con ${n}`,
+};
+const tituloAgenda = (tipo, nombre) =>
+  (TITULO_AGENDA[tipo] || ((n) => `📌 Seguimiento: ${n}`))(nombre);
+
+// POST /api/campana/agendar → evento en el Google Calendar del que llama, con
+// alarma (el endpoint además registra la actividad — acá NO se registra nada).
+// Mismo patrón de fetch autenticado que UsuariosContext.updateUsuario y que
+// ColaLlamadas. Respuestas: {ok, htmlLink} | {skipped:'…'} | {error}.
+const agendarEnCalendario = async (body) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return { error: { message: 'No hay sesión activa.' } };
+    const r = await fetch('/api/campana/agendar', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const resp = await r.json().catch(() => ({}));
+    if (!r.ok || resp?.error) return { error: { message: resp?.error || `Error ${r.status} al agendar` } };
+    return resp;
+  } catch (e) {
+    return { error: { message: e?.message || 'Error de red al agendar' } };
+  }
+};
+
 // Para buscar obras sin pelearse con tildes/mayúsculas. El rango es
 // U+0300-U+036F (diacríticos combinantes) construido con fromCharCode para
 // mantener el fuente 100% ASCII.
@@ -84,7 +128,7 @@ const TIPOS_ACTIVIDAD = [
 const ICONO_TIPO = {
   llamada: '📞', email: '✉️', linkedin: '💼', whatsapp: '💬', reunion: '🤝',
   nota: '📝', cambio_etapa: '↔️', tomado: '🔒', liberado: '🔓', promovido: '▶️',
-  obra_vinculada: '🔗', import: '📥', alta_estacion: '⛽',
+  obra_vinculada: '🔗', import: '📥', alta_estacion: '⛽', agenda: '📅',
 };
 const ICONO_CANAL = { llamada: '📞', email: '✉️', linkedin: '💼', whatsapp: '💬', presencial: '🤝', otro: '📝' };
 const iconoActividad = (a) => ICONO_TIPO[a.tipo] || ICONO_CANAL[a.canal] || '•';
@@ -262,6 +306,12 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
   const [draftEst, setDraftEst] = useState(null);        // { nombre, bandera, localidad, provincia, telefono } | null
   const [avisoEst, setAvisoEst] = useState(null);        // warn inline (dedup / validación)
   const [guardandoEst, setGuardandoEst] = useState(false);
+  // "📅 Agendar llamada" (pedido de Franco: "llamar el 25/7 a las 10am y que
+  // se me ponga en el calendario con una alarma"): el draft nace al tocar el
+  // link, nunca en un effect.
+  const [draftAgenda, setDraftAgenda] = useState(null);  // { tipo, fecha, hora, nota } | null
+  const [avisoAgenda, setAvisoAgenda] = useState(null);  // { tipo:'ok'|'skip'|'warn', texto?, htmlLink? } | null
+  const [guardandoAgenda, setGuardandoAgenda] = useState(false);
 
   // Transición de entrada (translateX + opacity).
   const [abierto, setAbierto] = useState(false);
@@ -286,6 +336,8 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
     setOtraBandera('');
     setDraftEst(null);
     setAvisoEst(null);
+    setDraftAgenda(null);
+    setAvisoAgenda(null);
   }
 
   // Carga de la ficha (estaciones + decisores + timeline) al abrir o al
@@ -569,6 +621,63 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
       const { error } = await actualizarOperador(operador.id, cambiosOp);
       if (!manejarError(error)) onPatch(operador.id, cambiosOp);
     }
+    recargarActividades();
+  };
+
+  // ── Agendar seguimiento en Google Calendar (evento + alarma vía /api/campana/agendar) ──
+  // Ampliación de Franco: "no solamente llamadas, pueden ser otros contactos"
+  // → el form lleva selector de tipo (reusa TIPOS_ACTIVIDAD) y el título del
+  // evento se arma según el tipo.
+
+  const abrirAgenda = () => {
+    setDraftAgenda({ tipo: 'llamada', fecha: fechaManana(), hora: '10:00', nota: '' });
+    setAvisoAgenda(null);
+  };
+
+  const cerrarAgenda = () => setDraftAgenda(null);
+
+  const guardarAgenda = async () => {
+    if (!draftAgenda || guardandoAgenda) return;
+    if (!draftAgenda.fecha || !draftAgenda.hora) {
+      setAvisoAgenda({ tipo: 'warn', texto: 'Elegí fecha y hora para el seguimiento.' });
+      return;
+    }
+    const cuando = new Date(`${draftAgenda.fecha}T${draftAgenda.hora}`);   // huso local
+    if (Number.isNaN(cuando.getTime())) {
+      setAvisoAgenda({ tipo: 'warn', texto: 'Fecha u hora inválida.' });
+      return;
+    }
+    setGuardandoAgenda(true);
+    const nota = draftAgenda.nota.trim();
+    // Primer teléfono cargado entre las estaciones del operador (si hay).
+    const conTel = estaciones.find((e) => e.telefono || e.telefono_norm);
+    const tel = conTel ? (conTel.telefono || `+${conTel.telefono_norm}`) : '';
+    const descripcion = [
+      tel ? `Tel: ${tel}` : '',
+      nota ? `Nota: ${nota}` : '',
+      `Ficha: ${window.location.origin}/campanas?op=${operador.id}`,
+    ].filter(Boolean).join('\n');
+    const r = await agendarEnCalendario({
+      titulo: tituloAgenda(draftAgenda.tipo, operador.nombre || 'operador'),
+      descripcion,
+      fechaHoraISO: cuando.toISOString(),
+      operadorId: operador.id,
+      canal: draftAgenda.tipo,
+      usuario: myId,
+    });
+    setGuardandoAgenda(false);
+    if (r?.error) {
+      // Warn inline: el form queda abierto con lo tipeado para reintentar.
+      setAvisoAgenda({ tipo: 'warn', texto: r.error.message || 'No se pudo agendar.' });
+      return;
+    }
+    setDraftAgenda(null);
+    if (r?.skipped) {
+      setAvisoAgenda({ tipo: 'skip', texto: 'Calendario no configurado todavía.' });
+      return;
+    }
+    setAvisoAgenda({ tipo: 'ok', htmlLink: r?.htmlLink || null });
+    // El endpoint ya registró la actividad tipo 'agenda' → solo refrescamos.
     recargarActividades();
   };
 
@@ -1016,9 +1125,100 @@ export default function FichaOperador({ operador, onClose, onPatch, vista = 'pan
             </Seccion>
           )}
 
-          {/* Actividad: registrar + timeline (últimas 100) */}
+          {/* Actividad: agendar seguimiento (Calendar) + registrar + timeline (últimas 100) */}
           {!cargando && (
-            <Seccion titulo={`Actividad (${acts.length})`}>
+            <Seccion
+              titulo={`Actividad (${acts.length})`}
+              extra={!draftAgenda && <LinkAccion onClick={abrirAgenda}>📅 Agendar seguimiento</LinkAccion>}
+            >
+              {draftAgenda && (
+                <div
+                  // Escape cierra SOLO el form (stopPropagation frena el
+                  // listener de document que cierra la ficha entera).
+                  onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); cerrarAgenda(); } }}
+                  style={{
+                    border: `1px solid ${T.faint2}`, borderRadius: 9, background: '#fff',
+                    padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 10,
+                  }}
+                >
+                  <div>
+                    <div style={etiquetaCampoSt}>Tipo</div>
+                    <select
+                      value={draftAgenda.tipo}
+                      onChange={(e) => setDraftAgenda((d) => (d ? { ...d, tipo: e.target.value } : d))}
+                      style={selSt}
+                    >
+                      {TIPOS_ACTIVIDAD.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </div>
+                  {/* Fecha + hora concretas (inputs nativos = mobile-friendly). */}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={etiquetaCampoSt}>Fecha</div>
+                      <input
+                        type="date"
+                        value={draftAgenda.fecha}
+                        onChange={(e) => setDraftAgenda((d) => (d ? { ...d, fecha: e.target.value } : d))}
+                        style={{ ...inputSt, padding: '6px 10px', fontSize: 12, fontFamily: T.fontMono, width: '100%', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div style={{ width: 108, flexShrink: 0 }}>
+                      <div style={etiquetaCampoSt}>Hora</div>
+                      <input
+                        type="time"
+                        value={draftAgenda.hora}
+                        onChange={(e) => setDraftAgenda((d) => (d ? { ...d, hora: e.target.value } : d))}
+                        style={{ ...inputSt, padding: '6px 10px', fontSize: 12, fontFamily: T.fontMono, width: '100%', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={etiquetaCampoSt}>Nota</div>
+                    <input
+                      value={draftAgenda.nota}
+                      onChange={(e) => setDraftAgenda((d) => (d ? { ...d, nota: e.target.value } : d))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') guardarAgenda(); }}
+                      placeholder="pedir por Juan… (opcional)"
+                      style={{ ...inputSt, width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 11, color: T.ink3 }}>
+                    Crea el evento con alarma en tu Google Calendar y queda en el timeline.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <Btn sm accent onClick={guardarAgenda} disabled={guardandoAgenda} style={{ opacity: guardandoAgenda ? 0.5 : 1 }}>
+                      {guardandoAgenda ? 'Agendando…' : '📅 Agendar'}
+                    </Btn>
+                    <Btn sm onClick={cerrarAgenda} disabled={guardandoAgenda}>Cancelar</Btn>
+                  </div>
+                </div>
+              )}
+              {avisoAgenda && (
+                <div style={{
+                  borderRadius: 9, padding: '10px 14px', fontSize: 12.5, fontWeight: 600, marginBottom: 10,
+                  display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                  ...(avisoAgenda.tipo === 'ok'
+                    ? { background: '#e8f2ea', border: `1.5px solid ${T.ok}`, color: T.ok }
+                    : avisoAgenda.tipo === 'skip'
+                      ? { background: T.faint, border: `1px solid ${T.faint2}`, color: T.ink3 }
+                      : { background: '#fdf3e4', border: `1.5px solid ${T.warn}`, color: T.ink }),
+                }}>
+                  {avisoAgenda.tipo === 'ok' ? (
+                    <>
+                      📅 Agendado
+                      {avisoAgenda.htmlLink && (
+                        <a href={avisoAgenda.htmlLink} target="_blank" rel="noreferrer" style={{ color: T.ok, fontWeight: 700 }}>
+                          ver evento ↗
+                        </a>
+                      )}
+                    </>
+                  ) : avisoAgenda.tipo === 'skip' ? (
+                    `📅 ${avisoAgenda.texto}`
+                  ) : (
+                    `⚠️ ${avisoAgenda.texto}`
+                  )}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
                 <select value={nuevaAct.tipo} onChange={(e) => setNuevaAct((a) => ({ ...a, tipo: e.target.value }))} style={selSt}>
                   {TIPOS_ACTIVIDAD.map(([v, l]) => <option key={v} value={v}>{l}</option>)}

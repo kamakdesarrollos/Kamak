@@ -27,7 +27,45 @@ const ESTADOS_COLA = ['VOLVER A LLAMAR', 'NO ATIENDE', 'SIN LLAMAR'];
 // Estados que abren mini-form opcional (decisor nombre/mail + próximo paso).
 const ESTADOS_CON_FORM = ['DECISOR IDENTIFICADO', 'LEAD CALIENTE', 'PASÓ MAIL'];
 const PAGE_COLA = 50;
-const FORM_VACIO = { decisorNombre: '', decisorEmail: '', proximoPaso: '' };
+
+// yyyy-mm-dd LOCAL de mañana: default del input date de VOLVER A LLAMAR.
+const fechaManana = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+// Form de la tarjeta: decisor (estados con form) + fecha/hora/agendar (VOLVER
+// A LLAMAR — pedido de Franco: "llamar el 25/7 a las 10am y que se me ponga en
+// el calendario de Google con una alarma"). Factory (no constante) porque el
+// default de fecha es "mañana" al momento de abrir cada tarjeta.
+const formVacio = () => ({
+  decisorNombre: '', decisorEmail: '', proximoPaso: '',
+  fecha: fechaManana(), hora: '10:00', agendar: true,
+});
+
+// POST /api/campana/agendar → evento en el Google Calendar del que llama, con
+// alarma (el endpoint además registra la actividad). Mismo patrón de fetch
+// autenticado que UsuariosContext.updateUsuario. Respuestas del contrato:
+// {ok, htmlLink} | {skipped:'sin calendario configurado'} | {error}.
+const agendarEnCalendario = async (body) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return { error: { message: 'No hay sesión activa.' } };
+    const r = await fetch('/api/campana/agendar', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const resp = await r.json().catch(() => ({}));
+    if (!r.ok || resp?.error) return { error: { message: resp?.error || `Error ${r.status} al agendar` } };
+    return resp;
+  } catch (e) {
+    return { error: { message: e?.message || 'Error de red al agendar' } };
+  }
+};
 
 // camp_operadores.prioridad es text libre → ranking tolerante para ordenar
 // dentro de cada grupo (sin prioridad va al final, desempata updated_at asc).
@@ -232,12 +270,51 @@ function PanelDetalle({ estado, form, setForm, guardando, onGuardar, onVolver })
         <span style={{ fontSize: 11.5, color: T.ink3 }}>todos los campos son opcionales</span>
       </div>
       {esVolver ? (
-        <input
-          {...inp}
-          placeholder="¿Cuándo / nota? (ej: mañana 10hs, pedir por Juan)"
-          value={form.proximoPaso}
-          onChange={set('proximoPaso')}
-        />
+        <>
+          {/* Fecha + hora CONCRETAS (antes era texto libre): con ellas se arma
+              el próximo paso y, si el checkbox queda prendido, el evento en
+              Google Calendar con alarma. Inputs nativos = mobile-friendly. */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              {...inp}
+              type="date"
+              aria-label="Fecha para volver a llamar"
+              value={form.fecha}
+              onChange={set('fecha')}
+              style={{ ...INPUT, flex: 1, width: 'auto', minWidth: 0 }}
+            />
+            <input
+              {...inp}
+              type="time"
+              aria-label="Hora para volver a llamar"
+              value={form.hora}
+              onChange={set('hora')}
+              style={{ ...INPUT, width: 118, flexShrink: 0 }}
+            />
+          </div>
+          <input
+            {...inp}
+            placeholder="Nota (ej: pedir por Juan)"
+            value={form.proximoPaso}
+            onChange={set('proximoPaso')}
+          />
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700,
+            color: form.agendar ? T.accent2 : T.ink2, cursor: 'pointer', userSelect: 'none',
+            padding: '8px 10px', borderRadius: 8,
+            background: form.agendar ? T.accentSoft : T.faint,
+            border: `1.5px solid ${form.agendar ? T.accent : T.faint2}`,
+            transition: 'background .15s ease, border-color .15s ease, color .15s ease',
+          }}>
+            <input
+              type="checkbox"
+              checked={form.agendar}
+              onChange={(ev) => setForm((f) => ({ ...f, agendar: ev.target.checked }))}
+              style={{ width: 16, height: 16, accentColor: T.accent, cursor: 'pointer', flexShrink: 0 }}
+            />
+            📅 Agendar en Google Calendar
+          </label>
+        </>
       ) : (
         <>
           <input {...inp} placeholder="Nombre del decisor" value={form.decisorNombre} onChange={set('decisorNombre')} />
@@ -334,11 +411,14 @@ export default function ColaLlamadas({ onVerFicha, filtroBandera = null, compact
 
   // ── Estado de la tarjeta actual ────────────────────────────────────────────
   const [estadoSel, setEstadoSel] = useState(null); // estado elegido que espera mini-form
-  const [form, setForm] = useState(FORM_VACIO);
+  const [form, setForm] = useState(formVacio);
   const [guardando, setGuardando] = useState(false);
   const [colision, setColision] = useState(null);   // { nombre, canal }
   const [errGuardar, setErrGuardar] = useState('');
   const [exito, setExito] = useState(false);
+  // Resultado del agendado en Calendar: { tipo:'ok'|'skip'|'warn', texto?, htmlLink? }.
+  // Vive aparte del flujo de la tarjeta (la cola avanza sin esperar al POST).
+  const [toastAgenda, setToastAgenda] = useState(null);
 
   // Estaciones ya vistas en esta sesión (registradas o salteadas): las
   // filtramos de las recargas para no ciclar sobre lo mismo (ej: una que quedó
@@ -346,6 +426,8 @@ export default function ColaLlamadas({ onVerFicha, filtroBandera = null, compact
   const vistasRef = useRef(new Set());
   const timerRef = useRef(null);
   useEffect(() => () => clearTimeout(timerRef.current), []);
+  const toastTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(toastTimerRef.current), []);
 
   // Filtro vigente al momento de disparar cada carga: cargarCola lo lee de acá
   // para mantenerse estable (no depende de filtroBandera) y poder descartar
@@ -474,9 +556,17 @@ export default function ColaLlamadas({ onVerFicha, filtroBandera = null, compact
   // ── Acciones ───────────────────────────────────────────────────────────────
   const resetTarjeta = useCallback(() => {
     setEstadoSel(null);
-    setForm(FORM_VACIO);
+    setForm(formVacio());
     setColision(null);
     setErrGuardar('');
+  }, []);
+
+  // Toast chico auto-desvaneciente con el resultado del agendado (se setea en
+  // el .then del POST — disparado desde un handler, nunca en un effect).
+  const mostrarToast = useCallback((t) => {
+    setToastAgenda(t);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastAgenda(null), 6000);
   }, []);
 
   const avanzar = useCallback(() => {
@@ -504,7 +594,16 @@ export default function ColaLlamadas({ onVerFicha, filtroBandera = null, compact
     const payload = { estadoLlamada, usuario: usuarioId };
     const nom = (extra.decisorNombre || '').trim();
     const mail = (extra.decisorEmail || '').trim();
-    const paso = (extra.proximoPaso || '').trim();
+    const nota = (extra.proximoPaso || '').trim();
+    // VOLVER A LLAMAR con fecha+hora concretas → el próximo paso queda legible
+    // ("25/07/2026 10:00 — pedir por Juan"); sin fecha, la nota sola como antes.
+    const esVolver = estadoLlamada === 'VOLVER A LLAMAR';
+    let paso = nota;
+    if (esVolver && extra.fecha && extra.hora) {
+      const [a, m, d] = extra.fecha.split('-');
+      const legible = `${d}/${m}/${a} ${extra.hora}`;
+      paso = nota ? `${legible} — ${nota}` : legible;
+    }
     if (nom) payload.decisorNombre = nom;
     if (mail) payload.decisorEmail = mail;
     if (paso) payload.proximoPaso = paso;
@@ -540,6 +639,38 @@ export default function ColaLlamadas({ onVerFicha, filtroBandera = null, compact
       } catch (e) { console.warn('[llamadas] notif lead caliente falló (no crítico)', e?.message); }
     }
 
+    // VOLVER A LLAMAR con el checkbox 📅 prendido → evento en Google Calendar
+    // con alarma. SIN await y best-effort: la llamada YA quedó registrada; el
+    // resultado del POST llega como toast (ok / calendario sin configurar /
+    // warn) y un fallo jamás pisa el guardado.
+    if (esVolver && extra.agendar && extra.fecha && extra.hora) {
+      const cuando = new Date(`${extra.fecha}T${extra.hora}`);   // huso local
+      if (!Number.isNaN(cuando.getTime())) {
+        const nomOp = operadores[est.operador_id]?.nombre;
+        const titulo = nomOp
+          ? `Llamar a ${nomOp} — ${est.nombre || 'estación'}`
+          : `Llamar a ${est.nombre || 'estación'}`;
+        const tel = est.telefono || (est.telefono_norm ? `+${est.telefono_norm}` : '');
+        const descripcion = [
+          tel ? `Tel: ${tel}` : '',
+          nota ? `Nota: ${nota}` : '',
+          est.operador_id ? `Ficha: ${window.location.origin}/campanas?op=${est.operador_id}` : '',
+        ].filter(Boolean).join('\n');
+        agendarEnCalendario({
+          titulo,
+          descripcion,
+          fechaHoraISO: cuando.toISOString(),
+          ...(est.operador_id ? { operadorId: est.operador_id } : {}),
+          estacionId: est.id,
+          usuario: usuarioId,
+        }).then((r) => {
+          if (r?.error) mostrarToast({ tipo: 'warn', texto: r.error.message || 'No se pudo agendar' });
+          else if (r?.skipped) mostrarToast({ tipo: 'skip' });
+          else mostrarToast({ tipo: 'ok', htmlLink: r?.htmlLink || null });
+        });
+      }
+    }
+
     vistasRef.current.add(est.id);
     setHechasHoy((h) => h + 1);
     setExito(true);
@@ -548,7 +679,7 @@ export default function ColaLlamadas({ onVerFicha, filtroBandera = null, compact
       setExito(false);
       avanzar();
     }, 700);
-  }, [cola, idx, guardando, usuarioId, usuarios, registrarLlamada, avanzar, crearNotificacion, operadores]);
+  }, [cola, idx, guardando, usuarioId, usuarios, registrarLlamada, avanzar, crearNotificacion, operadores, mostrarToast]);
 
   const elegirEstado = useCallback((estado) => {
     if (guardando) return;
@@ -641,7 +772,7 @@ export default function ColaLlamadas({ onVerFicha, filtroBandera = null, compact
               setForm={setForm}
               guardando={guardando}
               onGuardar={() => guardar(estadoSel, form)}
-              onVolver={() => { setEstadoSel(null); setForm(FORM_VACIO); }}
+              onVolver={() => { setEstadoSel(null); setForm(formVacio()); }}
             />
           ) : (
             <GridEstados deshabilitado={guardando} onElegir={elegirEstado} />
@@ -667,6 +798,34 @@ export default function ColaLlamadas({ onVerFicha, filtroBandera = null, compact
         }}>
           <div style={{ fontSize: 84, fontWeight: 900, color: T.ok, lineHeight: 1, animation: 'colaLlamadasPop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1)' }}>✓</div>
           <div style={{ fontWeight: 800, fontSize: 16, color: T.ok }}>¡Guardada!</div>
+        </div>
+      )}
+      {/* Toast chico con el resultado del agendado (llega async, la cola ya avanzó). */}
+      {toastAgenda && (
+        <div style={{
+          position: compacto ? 'absolute' : 'fixed',
+          bottom: compacto ? 8 : 18, left: '50%', transform: 'translateX(-50%)',
+          zIndex: compacto ? 30 : 2100, maxWidth: '92vw', textAlign: 'center',
+          padding: '9px 18px', borderRadius: 999, fontSize: 12.5, fontWeight: 700,
+          boxShadow: '0 6px 18px -8px rgba(20,18,15,0.35)',
+          animation: 'colaLlamadasIn 0.25s ease',
+          ...(toastAgenda.tipo === 'ok'
+            ? { background: '#e8f2ea', border: `1.5px solid ${T.ok}`, color: T.ok }
+            : toastAgenda.tipo === 'skip'
+              ? { background: T.faint, border: `1.5px solid ${T.faint2}`, color: T.ink3, fontWeight: 600 }
+              : { background: '#fdf3e4', border: `1.5px solid ${T.warn}`, color: T.ink }),
+        }}>
+          {toastAgenda.tipo === 'ok' ? (
+            toastAgenda.htmlLink ? (
+              <a href={toastAgenda.htmlLink} target="_blank" rel="noreferrer" style={{ color: T.ok, textDecoration: 'underline' }}>
+                📅 Agendado — ver evento ↗
+              </a>
+            ) : '📅 Agendado'
+          ) : toastAgenda.tipo === 'skip' ? (
+            '📅 Calendario no configurado todavía'
+          ) : (
+            `⚠️ Calendar: ${toastAgenda.texto || 'no se pudo agendar'} (la llamada quedó registrada)`
+          )}
         </div>
       )}
       <style>{`
