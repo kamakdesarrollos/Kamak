@@ -77,20 +77,22 @@ export default function ProveedorCC() {
   );
   const estadoCC = estadoCCProveedor(saldoTotal);
 
-  // Obras con actividad en la CC (derivadas del libro; 'General' = asientos sin obra).
+  // Cuentas de la CC (derivadas del libro):
+  //  • 'General' = TODOS los movimientos (todas las obras + los sin obra). Es la
+  //    vista maestra: va SIEMPRE primero y es la que se muestra por defecto.
+  //  • luego una cuenta por cada obra con actividad, que filtra solo esa obra.
   const obras = useMemo(() => {
+    if (!libro.length) return [];
     const map = new Map();
-    let hayGeneral = false;
     for (const r of libro) {
       if (r.obraId) map.set(r.obraId, r.obraNombre || r.obraId);
-      else hayGeneral = true;
     }
-    const arr = [...map.entries()].map(([oid, nombre]) => ({ id: oid, nombre }));
-    if (hayGeneral) arr.push({ id: OBRA_GENERAL, nombre: 'General' });
-    return arr;
+    const porObra = [...map.entries()].map(([oid, nombre]) => ({ id: oid, nombre }));
+    return [{ id: OBRA_GENERAL, nombre: 'General' }, ...porObra];
   }, [libro]);
 
-  const rowsDeObra = (obraId) => libro.filter(r => obraId === OBRA_GENERAL ? !r.obraId : r.obraId === obraId);
+  // 'General' devuelve TODO el libro; cada obra, solo sus asientos.
+  const rowsDeObra = (obraId) => obraId === OBRA_GENERAL ? libro : libro.filter(r => r.obraId === obraId);
   const saldoObra = (obraId) => rowsDeObra(obraId).reduce((s, r) => s + (r.debe || 0) - (r.haber || 0), 0);
 
   const selObraId = selectedObraId || obras[0]?.id || null;
