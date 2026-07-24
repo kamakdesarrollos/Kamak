@@ -269,8 +269,17 @@ export default function ProveedorCC() {
                   {saldoSel.length === 0 && (
                     <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin movimientos en esta obra.</div>
                   )}
-                  {saldoSel.map((e, i) => {
+                  {/* Orden inverso: el movimiento más nuevo queda arriba (extracto).
+                      Cada fila conserva su saldoAcum, calculado en orden cronológico. */}
+                  {[...saldoSel].reverse().map((e, i) => {
                     const facturaAbierta = e.tipo === 'factura' ? facturasAbiertas.find(x => x.id === e.ref) : null;
+                    // Comprobante asociado (URL pública en Storage): la factura trae el
+                    // suyo; los pagos/anticipos, el del movimiento vinculado por ref.
+                    const comprobanteUrl = e.tipo === 'factura'
+                      ? facturasProv.find(f => f.id === e.ref)?.comprobanteUrl
+                      : (e.tipo === 'pago' || e.tipo === 'anticipo' || e.tipo === 'credito')
+                        ? movimientos.find(m => m.id === e.ref)?.comprobanteUrl
+                        : null;
                     return (
                     <div key={`${e.ref}-${e.tipo}-${i}`} style={{ display: 'flex', padding: '8px 12px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, background: i % 2 === 1 ? T.faint : 'transparent' }}>
                       <span style={{ flex: 0.8, fontFamily: T.fontMono, color: T.ink2, fontSize: 11 }}>{fmtFecha(e.fecha)}</span>
@@ -302,6 +311,13 @@ export default function ProveedorCC() {
                             onClick={() => setCreditoFactura(facturaAbierta)}>
                             Crédito
                           </span>
+                        )}
+                        {comprobanteUrl && (
+                          <a href={comprobanteUrl} target="_blank" rel="noreferrer"
+                            style={{ fontSize: 13, lineHeight: 1, textDecoration: 'none', opacity: 0.75 }}
+                            title="Ver comprobante" onClick={ev => ev.stopPropagation()}>
+                            {comprobanteUrl.endsWith('.pdf') ? '📄' : '🖼'}
+                          </a>
                         )}
                         {e.legacy && (
                           <span style={{ color: T.accent, cursor: 'pointer', fontSize: 13 }}
