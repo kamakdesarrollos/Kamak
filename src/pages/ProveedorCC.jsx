@@ -247,7 +247,7 @@ export default function ProveedorCC() {
               <div style={{ padding: 24, textAlign: 'center', color: T.ink3, fontSize: 12 }}>Sin obras con CC. Registrá un pago para crear una.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: isMobile ? 480 : 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: isMobile ? 580 : 'auto' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}` }}>
                   <div className="k-h" style={{ fontSize: 16 }}>CC · {obras.find(o => o.id === selObraId)?.nombre || selObraId}</div>
                   <Chip style={{ fontSize: 10 }}>
@@ -259,12 +259,13 @@ export default function ProveedorCC() {
                 {/* Table header */}
                 <div style={{ display: 'flex', padding: '6px 12px', background: T.faint, borderBottom: `1.5px solid ${T.faint2}`, fontSize: 10, fontWeight: 700, color: T.ink2, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                   <span style={{ flex: 0.8 }}>Fecha</span>
-                  <span style={{ flex: 2.5 }}>Concepto</span>
+                  <span style={{ flex: 2.0 }}>Concepto</span>
+                  <span style={{ flex: 1.1 }}>Obra</span>
                   <span style={{ flex: 0.8, textAlign: 'center' }}>Tipo</span>
                   <span style={{ flex: 1, textAlign: 'right' }}>Debe</span>
                   <span style={{ flex: 1, textAlign: 'right' }}>Haber</span>
                   <span style={{ flex: 1, textAlign: 'right' }}>Saldo</span>
-                  <span style={{ flex: 0.4 }}></span>
+                  <span style={{ flex: 0.9, textAlign: 'right' }}>Comprobante</span>
                 </div>
 
                 <div style={{ flex: 1, overflow: isMobile ? 'visible' : 'auto' }}>
@@ -285,7 +286,11 @@ export default function ProveedorCC() {
                     return (
                     <div key={`${e.ref}-${e.tipo}-${i}`} style={{ display: 'flex', padding: '8px 12px', borderBottom: `1px solid ${T.faint2}`, alignItems: 'center', fontSize: 12, background: i % 2 === 1 ? T.faint : 'transparent' }}>
                       <span style={{ flex: 0.8, fontFamily: T.fontMono, color: T.ink2, fontSize: 11 }}>{fmtFecha(e.fecha)}</span>
-                      <span style={{ flex: 2.5, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.concepto}</span>
+                      <span style={{ flex: 2.0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.concepto}</span>
+                      <span style={{ flex: 1.1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: e.obraId ? T.ink : T.ink3 }}
+                        title={e.obraId ? (e.obraNombre || e.obraId) : 'Sin obra (general)'}>
+                        {e.obraId ? (e.obraNombre || e.obraId) : 'General'}
+                      </span>
                       <span style={{ flex: 0.8, textAlign: 'center' }}>
                         <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, background: T.faint, color: TIPO_COLOR[e.tipo] || T.ink2, fontWeight: 700 }}>
                           {TIPO_LABEL[e.tipo] || e.tipo}
@@ -300,7 +305,7 @@ export default function ProveedorCC() {
                       <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, fontWeight: 800, color: e.saldoAcum > 1 ? T.accent : T.ok }}>
                         {e.saldoAcum < -1 ? `(a favor) $ ${fmtN(e.saldoAcum)}` : `$ ${fmtN(e.saldoAcum)}`}
                       </span>
-                      <span style={{ flex: 0.4, textAlign: 'right', display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                      <span style={{ flex: 0.9, textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                         {facturaAbierta && (
                           <span style={{ color: T.accent, cursor: 'pointer', fontSize: 10, fontWeight: 700 }}
                             onClick={() => setPagarFactura(facturaAbierta)}>
@@ -314,13 +319,13 @@ export default function ProveedorCC() {
                             Crédito
                           </span>
                         )}
-                        {comprobanteUrl && (
-                          <a href={comprobanteUrl} target="_blank" rel="noreferrer"
-                            style={{ fontSize: 13, lineHeight: 1, textDecoration: 'none', opacity: 0.75 }}
-                            title="Ver comprobante" onClick={ev => ev.stopPropagation()}>
-                            {comprobanteUrl.endsWith('.pdf') ? '📄' : '🖼'}
-                          </a>
-                        )}
+                        {comprobanteUrl
+                          ? <a href={comprobanteUrl} target="_blank" rel="noreferrer"
+                              style={{ fontSize: 11, fontWeight: 700, color: T.accent, textDecoration: 'none', whiteSpace: 'nowrap' }}
+                              title="Ver comprobante" onClick={ev => ev.stopPropagation()}>
+                              📎 Ver
+                            </a>
+                          : !facturaAbierta && !e.legacy && <span style={{ color: T.ink3 }}>—</span>}
                         {e.legacy && (
                           <span style={{ color: T.accent, cursor: 'pointer', fontSize: 13 }}
                             onClick={() => { if (confirm('¿Eliminar este asiento manual?')) removeCC(e.ref); }}>×</span>
@@ -333,10 +338,10 @@ export default function ProveedorCC() {
                 {/* Footer saldo (de la obra seleccionada) */}
                 {saldoSel.length > 0 && (
                   <div style={{ display: 'flex', padding: '7px 12px', background: T.faint, borderTop: `1.5px solid ${T.faint2}`, fontSize: 12, fontWeight: 800 }}>
-                    <span style={{ flex: 4.1 }}>Saldo actual</span>
+                    <span style={{ flex: 4.7 }}>Saldo actual</span>
                     <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, color: T.accent }}>$ {fmtN(saldoSel.reduce((s, e) => s + (e.debe || 0), 0))}</span>
                     <span style={{ flex: 1, textAlign: 'right', fontFamily: T.fontMono, color: T.ok }}>$ {fmtN(saldoSel.reduce((s, e) => s + (e.haber || 0), 0))}</span>
-                    <span style={{ flex: 1.4, textAlign: 'right', fontFamily: T.fontMono, color: saldoObra(selObraId) > 1 ? T.accent : T.ok }}>
+                    <span style={{ flex: 1.9, textAlign: 'right', fontFamily: T.fontMono, color: saldoObra(selObraId) > 1 ? T.accent : T.ok }}>
                       {saldoObra(selObraId) > 1 ? `$ ${fmtN(saldoObra(selObraId))}` : saldoObra(selObraId) < -1 ? `A favor $ ${fmtN(saldoObra(selObraId))}` : 'Al día'}
                     </span>
                   </div>
