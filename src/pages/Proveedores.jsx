@@ -547,9 +547,11 @@ export default function Proveedores() {
                 {/* Saldo — solo admin. Debajo, deuda en facturas pendientes (cuentas
                     por pagar) si la hay: es independiente del saldo CC. */}
                 {isAdmin && (
-                  <span style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: saldo > 0 ? T.warn : T.ok }}>
-                      {saldo > 1 ? `$ ${fmtN(saldo)}` : saldo < -1 ? `A favor $ ${fmtN(saldo)}` : '—'}
+                  <span style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, minWidth: 0 }}>
+                    <span style={{ fontFamily: T.fontMono, fontWeight: 800, fontSize: 11, whiteSpace: 'nowrap', color: saldo > 0 ? T.warn : T.ok }}>
+                      {saldo > 1 ? `$ ${fmtN(saldo)}` : saldo < -1
+                        ? <><span style={{ fontFamily: T.font, fontWeight: 700, fontSize: 8.5, letterSpacing: 0.3, opacity: 0.8 }}>A FAVOR </span>{`$ ${fmtN(saldo)}`}</>
+                        : '—'}
                     </span>
                     {deudaFacturas[p.id] > 0 && (
                       <span style={{ fontSize: 9, fontFamily: T.fontMono, color: T.accent, fontWeight: 700 }}
