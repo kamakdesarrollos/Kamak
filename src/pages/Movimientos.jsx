@@ -353,7 +353,17 @@ function MovRow({ m, cajas, onRemove, isAdmin, pendingSolIds, onSolicitar }) {
         {hover && !isPendingSol && (
           isAdmin
             ? <span style={{ color: T.ink3, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
-                onClick={() => { if (confirm('¿Eliminar este movimiento?')) onRemove(m.id); }}>×</span>
+                onClick={() => {
+                  // Si el movimiento es el pago de una orden de pago, borrarlo revierte
+                  // el pago: la factura vuelve a quedar impaga y el proveedor a deber.
+                  // Avisamos explícitamente antes de confirmar.
+                  const msg = m.facturaPendienteId
+                    ? `⚠️ Este movimiento es el PAGO de una orden de pago${m.proveedor ? ` de ${m.proveedor}` : ''}.\n\n`
+                      + `Si lo eliminás, esa factura vuelve a quedar IMPAGA y ${m.proveedor || 'el proveedor'} `
+                      + `quedará con un saldo pendiente de $ ${fmtN(m.monto)}.\n\n¿Eliminar igual?`
+                    : '¿Eliminar este movimiento?';
+                  if (confirm(msg)) onRemove(m.id);
+                }}>×</span>
             : <span style={{ color: T.warn, cursor: 'pointer', fontSize: 11, fontWeight: 700, lineHeight: 1 }}
                 title="Solicitar eliminación"
                 onClick={() => setShowSolModal(true)}>✕</span>
