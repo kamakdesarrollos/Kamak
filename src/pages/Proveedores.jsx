@@ -209,22 +209,20 @@ function NuevoProveedorModal({ onClose, onSave, initial = null }) {
               </div>
             </div>
           )}
-          {esAdmin && (
-            <div>
-              <label style={labelSt}>Saldo inicial de la cuenta (opcional)</label>
-              <div style={{ fontSize: 10, color: T.ink3, marginBottom: 6, marginTop: -1 }}>
-                Si el proveedor ya trae un saldo de antes. No mueve ninguna caja: es solo el arranque de la cuenta corriente.
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.2fr', gap: 10 }}>
-                <select style={{ ...inputSt, cursor: 'pointer' }} value={saldoDir} onChange={e => setSaldoDir(e.target.value)}>
-                  <option value="favor">Tenemos a favor</option>
-                  <option value="debe">Le debemos</option>
-                </select>
-                <input style={inputSt} type="number" min="0" inputMode="numeric"
-                  value={saldoMonto} onChange={e => setSaldoMonto(e.target.value)} placeholder="0" />
-              </div>
+          <div>
+            <label style={labelSt}>Saldo inicial de la cuenta (opcional)</label>
+            <div style={{ fontSize: 10, color: T.ink3, marginBottom: 6, marginTop: -1 }}>
+              Si el proveedor ya trae un saldo de antes. No mueve ninguna caja: es solo el arranque de la cuenta corriente.
             </div>
-          )}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.2fr', gap: 10 }}>
+              <select style={{ ...inputSt, cursor: 'pointer' }} value={saldoDir} onChange={e => setSaldoDir(e.target.value)}>
+                <option value="favor">Tenemos a favor</option>
+                <option value="debe">Le debemos</option>
+              </select>
+              <input style={inputSt} type="number" min="0" inputMode="numeric"
+                value={saldoMonto} onChange={e => setSaldoMonto(e.target.value)} placeholder="0" />
+            </div>
+          </div>
           <div>
             <label style={labelSt}>Calificación</label>
             <StarRating value={form.calificacion || 0} onChange={v => set('calificacion', v)} size={22} />
