@@ -59,7 +59,8 @@ export default function FacturaPendienteModal({ onClose }) {
 
   const prov = proveedores.find(p => p.id === proveedorId) || null;
   const montoNum = Math.round(parseFloat((monto || '').replace(/[^0-9.]/g, '')) || 0);
-  const canSave = montoNum > 0 && !!proveedorId;
+  // Comprobante OBLIGATORIO: no se crea la orden/factura sin adjuntar el PDF/foto.
+  const canSave = montoNum > 0 && !!proveedorId && !!file;
 
   // Autocompletar CUIT desde el proveedor al seleccionarlo (sin pisar lo tipeado a mano).
   const onSelectProveedor = (id) => {
@@ -240,10 +241,12 @@ export default function FacturaPendienteModal({ onClose }) {
           </div>
 
           <div>
-            <label style={labelSt}>Comprobante (PDF / foto)</label>
+            <label style={labelSt}>Comprobante (PDF / foto) *</label>
             <input type="file" accept="image/*,application/pdf" capture={isMobile ? 'environment' : undefined} style={{ ...inputSt, padding: '5px 8px' }}
               onChange={e => setFile(e.target.files?.[0] || null)} />
-            {file && <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>{file.name}</div>}
+            {file
+              ? <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>{file.name}</div>
+              : <div style={{ fontSize: 10, color: T.warn, marginTop: 3, fontWeight: 700 }}>Obligatorio: adjuntá el comprobante para crear la orden.</div>}
           </div>
 
           <Divider />

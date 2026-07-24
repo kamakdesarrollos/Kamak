@@ -2475,6 +2475,13 @@ async function ejecutarAccion(tipo, datos, user, ctx, mediaUrl = null) {
       return '⚠️ Los pagos a proveedor los registra un Admin.';
     }
 
+    // Comprobante OBLIGATORIO también por WhatsApp: sin foto/PDF del pago no se
+    // registra (mismo criterio que RegistrarPagoModal en la app). Se chequea ANTES
+    // del match de facturas para no dejar un pago a medio confirmar sin comprobante.
+    if (!mediaUrl) {
+      return '📎 Para registrar el pago necesito el *comprobante*. Reenviá el pago adjuntando la foto o PDF (transferencia, echeq o recibo).';
+    }
+
     // ── Match pago → factura pendiente de pago (Cuentas por Pagar) ────────────
     // ANTES de crear el movimiento: ¿hay alguna factura ABIERTA de este proveedor
     // cuyo saldo ≈ monto del pago (tolerancia 0,5%)? Si la factura ya viene

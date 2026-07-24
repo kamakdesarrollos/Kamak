@@ -88,7 +88,8 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
   // Guard de sobrepago (fix: antes el excedente desaparecía — el saldo clampea en 0).
   const validacion = facturaVinc && montoNum > 0 ? validarPagoFactura(facturaVinc, montoNum) : null;
   const excedente = validacion?.excedente || 0;
-  const puedeConfirmar = montoNum > 0 && !subiendo && !guardando &&
+  // Comprobante OBLIGATORIO: no se registra el pago sin adjuntar el PDF/foto.
+  const puedeConfirmar = montoNum > 0 && !!file && !subiendo && !guardando &&
     (!facturaVinc || validacion?.ok || (excedente > 0 && excedenteComoAnticipo));
 
   // Al elegir una factura del selector, sugerimos su saldo como monto (si el
@@ -108,15 +109,21 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
     setGuardando(true);
     setErrorMsg('');
 
-    // Subir el comprobante del pago (si lo adjuntaron). Best-effort: si la subida
-    // falla, el pago se registra igual (sin doc) y se loguea.
-    let comprobanteUrl = null;
-    if (file) {
-      setSubiendo(true);
-      try { comprobanteUrl = await uploadFoto(file, 'pagos'); }
-      catch (err) { console.error('[RegistrarPago] subir comprobante:', err); }
+    // Comprobante OBLIGATORIO del pago. Si la subida falla, NO se registra el pago
+    // (antes era best-effort: se guardaba sin doc). Sin comprobante no hay pago.
+    if (!file) { setGuardando(false); setErrorMsg('Adjuntá el comprobante del pago para continuar.'); return; }
+    let comprobanteUrl;
+    setSubiendo(true);
+    try {
+      comprobanteUrl = await uploadFoto(file, 'pagos');
+    } catch (err) {
+      console.error('[RegistrarPago] subir comprobante:', err);
       setSubiendo(false);
+      setGuardando(false);
+      setErrorMsg('No se pudo subir el comprobante: ' + (err?.message || 'error') + '. El pago no se registró.');
+      return;
     }
+    setSubiendo(false);
 
     const concFinal = concepto.trim()
       || (facturaVinc ? `Pago factura ${facturaVinc.numero || ''} · ${provNombre}`.trim().replace(/ · $/, '')
@@ -343,11 +350,13 @@ export default function RegistrarPagoModal({ proveedor = '', proveedorId = null,
           </div>
 
           <div>
-            <label style={labelSt}>Comprobante del pago (PDF / foto)</label>
+            <label style={labelSt}>Comprobante del pago (PDF / foto) *</label>
             <input type="file" accept="image/*,application/pdf" capture={isMobile ? 'environment' : undefined}
               style={{ ...inputSt, padding: '5px 8px' }}
               onChange={e => setFile(e.target.files?.[0] || null)} />
-            {file && <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>{file.name}</div>}
+            {file
+              ? <div style={{ fontSize: 10, color: T.ink3, marginTop: 3 }}>{file.name}</div>
+              : <div style={{ fontSize: 10, color: T.warn, marginTop: 3, fontWeight: 700 }}>Obligatorio: adjuntá el comprobante para registrar el pago.</div>}
           </div>
 
           {/* La retención del fondo de reparo todavía NO está implementada: el pago
